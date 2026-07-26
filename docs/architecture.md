@@ -93,6 +93,7 @@ graph BT
   compose --> redstone
   compose --> ui
   compose --> multiplayer
+  compose --> render
 ```
 
 **mx-ui の行に `kit` が無いことに注意。** mx-gameplay と mx-redstone には点線の kit エッジがあるが、

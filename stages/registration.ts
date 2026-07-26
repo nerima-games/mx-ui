@@ -23,14 +23,14 @@
  * see vitest.config.ts, and docs/testing.md for the `it.effect` + `Deferred`
  * deadlock the DOM suite has to avoid when it arrives.
  */
-import { Effect, Ref } from 'effect'
+import { Effect, Layer, Ref } from 'effect'
 import {
   emptyCaptionQueue,
   expireCaptions,
   type CaptionQueue,
   type CaptionSettings,
 } from '../domain/caption'
-import type { DeltaTimeSecs, StageRegistration } from '../domain/frame-contract'
+import type { DeltaTimeSecs, GameModule, StageRegistration } from '../domain/frame-contract'
 import {
   hudViewModel,
   spawnSnapshot,
@@ -117,11 +117,32 @@ export const uiStages = (state: UiFrameState): ReadonlyArray<StageRegistration> 
 /**
  * Build the module's state and its stages together.
  *
- * Not yet a `GameModule` (plan.md §4.1): that type carries a
- * `Layer.Layer<ROut, E, RIn>`, and `RIn` cannot be named until mc-sim's and
- * mc-audio's public APIs exist. Returning the stages alone is the honest subset.
+ * This is exactly `GameModule.frameStages` — see `uiModule` below.
  */
 export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>> = Effect.map(
   makeUiFrameState,
   uiStages,
 )
+
+/**
+ * mx-ui as a `GameModule` (plan.md §4.1).
+ *
+ * This used to say "not yet a `GameModule`: that type carries a
+ * `Layer.Layer<ROut, E, RIn>`, and `RIn` cannot be named until mc-sim's and
+ * mc-audio's public APIs exist". The Layer was never the obstacle — mx-ui
+ * provides no service through the frame contract; mounting a UI is a separate,
+ * deliberately small surface (see the module header and docs/public-api.md).
+ * The obstacle was that `frameStages` was an ARRAY, and these stages are built
+ * from `Ref`s allocated in an Effect. The vertical-slice spike made it an
+ * Effect, and the shape this file had already been forced into became the
+ * contract.
+ *
+ * `RIn` is `never` and stays `never`. When `ui:hud-sync` starts reading mc-sim
+ * and `ui:overlay-sync` starts asking mc-audio whether the autoplay gate has
+ * opened, those services are acquired in `frameStages` — the `RRegister`
+ * parameter — because this repository builds nothing they have to supply.
+ */
+export const uiModule: GameModule<never, never, never> = {
+  layers: Layer.empty,
+  frameStages: makeUiStages,
+}

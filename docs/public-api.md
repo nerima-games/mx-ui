@@ -25,9 +25,9 @@ interface StageRegistration {
   readonly run: (dt: DeltaTimeSecs) => Effect.Effect<void, never, FrameServices>
 }
 
-interface GameModule<ROut, E, RIn> {
+interface GameModule<ROut, E, RIn, RRegister = never> {
   readonly layers: Layer.Layer<ROut, E, RIn>          // 提供するサービス群
-  readonly frameStages: ReadonlyArray<StageRegistration>
+  readonly frameStages: Effect.Effect<ReadonlyArray<StageRegistration>, never, RRegister>
 }
 ```
 
@@ -93,17 +93,31 @@ mx-ui 自身の正しさが要求しているのは「HUD が**このフレー�
 `REGRESSION: mx-ui does not order itself against mc-render either, though §4.2 puts hud-sync after post-fx`
 が `render:` 接頭辞のエッジがゼロであることを固定している。
 
-## 4. `GameModule` はまだ実装していない
+## 4. `GameModule` を実装した（`uiModule`）
 
-`stages/registration.ts` が公開しているのは `makeUiStages`（`Effect<ReadonlyArray<StageRegistration>>`）であって、
-`GameModule` ではない。
+ここには長らく「`GameModule` はまだ実装していない。`RIn` は mc-sim と mc-audio の公開 API が
+存在するまで名前を付けられないから」と書いてあった。**Layer は障害ではなかった。**
 
-理由は型で詰まるからである。`GameModule<ROut, E, RIn>` は `Layer.Layer<ROut, E, RIn>` を持つが、
-**`RIn` は mc-sim と mc-audio の公開 API が存在するまで名前を付けられない**。
-mx-ui の Layer が要求するのは「`InventoryService` と `CaptionEventStream` がある文脈」であり、
-その 2 つがまだ無い。
+mx-ui はフレーム契約を通じてサービスを公開しない。UI を mount させる面は別の、意図的に小さい面である
+（§4-1）。だから `layers` は空であり、最初から空だった。
 
-`makeUiStages` は正直な部分集合である。`GameModule` は mc-sim / mc-audio の publish 後に足す。
+本当の障害は **`frameStages` が配列だったこと**である。本リポジトリの stage は Effect の中で確保した
+`Ref` から組み立てられるので、`ReadonlyArray` 型のフィールドに入れる方法が無かった。
+縦切りスパイクが `frameStages` を Effect にしたことで、このファイルが既に取っていた形が契約になった。
+
+```typescript
+export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>>
+
+export const uiModule: GameModule<never, never, never> = {
+  layers: Layer.empty,
+  frameStages: makeUiStages,
+}
+```
+
+`RIn` は `never` のままである。`ui:hud-sync` が mc-sim を読み、`ui:overlay-sync` が
+mc-audio に autoplay ゲートの状態を尋ねるようになったとき、それらは `frameStages` の中で —
+つまり `RRegister` パラメータで — 取得される。本リポジトリはそれらが供給しなければならないものを
+何も構築しないからである。
 
 ### 4-1. mount 面の想定形（未実装）
 
