@@ -130,7 +130,7 @@ export type UiMount = {
 
 ## 5. `index.ts` の全 export
 
-`index.ts` は 7 モジュールを `export *` している。分類:
+`index.ts` は 6 モジュールを `export *` している（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。
@@ -155,14 +155,25 @@ export type UiMount = {
 | `EXPERIENCE_MODULE_STAGE_PREFIXES` | `readonly string[]` | 内部(可視)（回帰テスト用） |
 | `OWN_STAGE_PREFIX` | `'ui:'` | 内部(可視)（回帰テスト用） |
 
-### `domain/frame-contract.ts`
+### `domain/frame-contract.ts` — **バレルには載せない**
+
+`index.ts` はこのファイルを `export *` **しない**。末尾のコメントが存在と削除予定を記すだけである。
 
 | export | 種別 | 分類 |
 | --- | --- | --- |
-| `StageId` | type + `Brand.refined` | **契約**（mc-kernel から借用中） |
-| `DeltaTimeSecs` | type + `Brand.refined` | **契約**（mc-kernel から借用中） |
-| `StageRegistration` | interface | **契約**（mc-kernel から借用中） |
-| `FrameServices` | type（現状 `never`） | **契約**（mc-kernel から借用中） |
+| `StageId` | type + `Brand.refined` | **非公開**（所有者は mc-kernel） |
+| `DeltaTimeSecs` | type + `Brand.refined` | **非公開**（所有者は mc-kernel） |
+| `StageRegistration` | interface | **非公開**（所有者は mc-kernel）。`makeUiStages` の**戻り値の形**としてだけ観測される |
+| `FrameServices` | type（現状 `never`） | **非公開**（所有者は mc-kernel） |
+
+**re-export しない理由。** このファイルは mc-kernel が publish された時点でまるごと消える
+（[versioning.md](./versioning.md) §6）。バレルに載せると `StageId` / `DeltaTimeSecs` /
+`StageRegistration` が**所有していないパッケージの公開 API** になり、
+約束済みの削除がすべての消費者にとっての破壊的変更に化ける。
+消費者はこの語彙を kernel から取る。型は構造的に同一なので、
+kernel から import した消費者は `makeUiStages` の戻り値に対してそのまま型検査を通る。
+mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしており、mx-gameplay / mx-redstone も同じである。
+固定しているテスト: `REGRESSION: does not republish mc-kernel’s vocabulary as its own`。
 
 `FrameServices = never` は意図的な乖離である。kernel は `ClockPort` の別名にしているが、
 ここで `ClockPort` を再掲すると kernel と同じ文字列 ID を持つ**別の** `Context.Tag` ができてしまう。
@@ -219,6 +230,12 @@ export されているのに公開 API ではない、というのは矛盾に�
 `re-exports the stage registration contract — the part mc-compose actually consumes`（契約）、
 `REGRESSION: every accessibility asset plan.md §3.13 asks to carry over is still exported`（消えたら困る資産）、
 `re-exports the view-model domain and the modal stack, which the per-screen previews drive`（プレビューが駆動するもの）。
+
+4 つ目は**不在**を固定するブロックである —
+`REGRESSION: does not republish mc-kernel’s vocabulary as its own` が
+`StageId` と `DeltaTimeSecs` がバレルに現れないことを assert する。
+「見えるが公開ではない」の管理はドキュメントでできるが、
+「所有していないものを公開する」はドキュメントでは止められない——消えるのが約束だからである。
 
 2 つ目のブロックは分類ではなく**存在保証**である。
 plan.md §3.13 が「引き継ぐ」と言っているアクセシビリティ資産は、

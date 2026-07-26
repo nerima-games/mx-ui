@@ -77,21 +77,22 @@ UI の要素はほぼ全て「どこか他のモジュールのルールが出�
 ### セットアップ
 
 ```console
-$ direnv allow          # devenv 経由で nodejs_22 + pnpm が入る
+$ direnv allow          # flake.nix の devShell で nodejs_22 + corepack が入る
 $ pnpm install
 ```
 
-devenv を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推奨）を用意する。
+Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推奨）を用意する。
 
-> **注意**: `devenv.lock` はコミットされていない。生成には `devenv` の実行が必要なため、
-> 初回に devenv を動かした人がコミットすること。
+> **注意**: ツールチェーンは `devenv.nix` から `flake.nix` + `flake.lock` に移行済みである。
+> `flake.lock` はコミットされているので、`nix develop`（`.envrc` は `use flake`）は
+> 誰の手元でも同じ nixpkgs に解決される。`devenv.nix` / `devenv.lock` はもう存在しない。
 
 ### コマンド
 
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json` と `tsconfig.test.json` の両方を型検査 |
-| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない） |
+| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm lint:fix` | oxlint の自動修正 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm test:watch` | vitest watch |
@@ -112,6 +113,9 @@ devenv を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` �
   mc-kernel が publish された時点で消し、`import type { StageRegistration } from '@nerima-games/mc-kernel'` に置き換える。
   ここに再掲してよいのは frame 契約だけで、他の kernel 型を 2 つ目のコピーとして持つことは禁止
   （語彙の home は 1 つ、plan.md §3.1）。
+  **このファイルは `index.ts` から re-export していない。** 所有していない語彙（`StageId` /
+  `DeltaTimeSecs` / `StageRegistration`）を公開 API に載せると、上記の削除が
+  すべての消費者にとっての破壊的変更になるためである。
 - **DOM コードはまだ 1 行も無い。** `tsconfig.base.json` は既に `"lib": ["ES2024", "DOM"]` を宣言している
   — 16 リポジトリ中 DOM を持つのはここだけである — が、これは「最初の画面を足すときに
   ビルド設定の変更を同時にやらなくて済むように」先に置いてあるだけで、現状 `domain/` は全て純粋な導出である。
@@ -137,7 +141,7 @@ lint        oxlint: 14 files, 97 rules, Found 0 warnings and 0 errors
 check:deps  OK — 14 file(s) scanned, allowed direct dependencies:
             @nerima-games/mc-audio, @nerima-games/mc-sim
             (plus @nerima-games/mc-kernel, which every repository may import)
-test        vitest 3.2.7 — 5 files, 73 tests passed (485ms)
+test        vitest 3.2.7 — 5 files, 75 tests passed (485ms)
 ```
 
 数字はスケルトンが育つたびに動く。**再現は `pnpm verify` であり、本節はその時点のスナップショットである。**

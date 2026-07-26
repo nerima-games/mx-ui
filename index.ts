@@ -30,8 +30,18 @@
 
 export * from './domain/accessibility'
 export * from './domain/caption'
-export * from './domain/frame-contract'
 export * from './domain/hud-view-model'
 export * from './domain/modal-stack'
 export * from './stages/registration'
 export * from './stages/stage-ids'
+
+// --- Provisional ---------------------------------------------------------------
+// `domain/frame-contract.ts` is a temporary local stand-in for
+// @nerima-games/mc-kernel and is NOT re-exported. It carries a deletion date —
+// see its "WHY THIS FILE EXISTS AND WHEN IT DIES" header — and re-exporting it
+// would make `StageId`, `DeltaTimeSecs` and `StageRegistration` published API of
+// a package that does not own them, so deleting the stand-in would become a
+// breaking change for every consumer. Consumers take that vocabulary from
+// kernel; the types are structurally identical, so a consumer importing them
+// from kernel typechecks against the signatures above. Same call, and the same
+// reason, as mc-sim's and mc-render's barrels.

@@ -149,6 +149,14 @@ import type { StageRegistration } from '@nerima-games/mc-kernel'
 `StageRegistration` とブランドの述語・エラーメッセージは**意図的に文字単位で同一**にしてあるので、
 置き換えは import 文の差し替えで済む。
 
+**この削除が MINOR で済むのは、`index.ts` がこのファイルを re-export していないからである。**
+`export *` していた時期があり、その形のままだと `StageId` / `DeltaTimeSecs` / `StageRegistration` が
+「所有していないパッケージの公開 API」になり、**約束済みの削除がそのまま MAJOR**に化けていた。
+今は `index.ts` の末尾コメントがファイルの存在と削除予定だけを記し、名前は 1 つも出していない
+（`test/public-api.test.ts` の
+`REGRESSION: does not republish mc-kernel’s vocabulary as its own` が固定している）。
+mc-sim / mc-render / mc-playground-kit のバレル、および mx-gameplay / mx-redstone も同じ形である。
+
 唯一の意図的な乖離は `FrameServices` で、kernel は `ClockPort` の別名にしているが
 ここでは `never` である。`ClockPort` を再掲すると kernel と同じ文字列 ID を持つ**別の**
 `Context.Tag` ができてしまい、見分けがつかない 2 つのタグは狭すぎる型よりはるかに悪い。

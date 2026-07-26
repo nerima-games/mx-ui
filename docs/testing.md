@@ -11,7 +11,7 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 | ゲート | 何を捕まえるか |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト + ツール）の両方。**出荷ソースには Node 型が無い** — `types: []` を継承しているので、画面の中で `process.env` を読むと落ちる |
-| `pnpm lint` | oxlint。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない |
+| `pnpm lint` | oxlint。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm check:deps` | 依存ホワイトリスト / 循環 / 推移閉包 / kit の実行時混入 / **壁時計の直読み**（DN-UI-10） |
 | `pnpm test` | vitest |
 | `pnpm test:coverage` | カバレッジ計測。**閾値は未設定**（§5） |
@@ -25,14 +25,14 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 
 ```
 vitest 3.2.7
- ✓ test/public-api.test.ts                 (5 tests)
- ✓ test/stage-registration.test.ts         (11 tests)
+ ✓ test/public-api.test.ts                 (6 tests)
+ ✓ test/stage-registration.test.ts         (12 tests)
  ✓ test/accessibility.test.ts              (17 tests)
  ✓ test/view-model.test.ts                 (20 tests)
  ✓ test/check-dependency-whitelist.test.ts (20 tests)
 
  Test Files  5 passed (5)
-      Tests  73 passed (73)
+      Tests  75 passed (75)
    Duration  485ms
 ```
 
@@ -45,7 +45,7 @@ vitest 3.2.7
 | `test/accessibility.test.ts` | DN-UI-1（色覚 / reduced-motion / リマップ）/ DN-UI-4（Escape 単一ハンドラ） |
 | `test/stage-registration.test.ts` | DN-UI-8（`after` は制約のみ）/ DN-UI-9（再入可能）/ DN-UI-3 / DN-UI-10 |
 | `test/check-dependency-whitelist.test.ts` | 依存境界 / DN-UI-5（kit 不要）/ DN-UI-10 |
-| `test/public-api.test.ts` | 公開バレル / アクセシビリティ資産の存在保証 |
+| `test/public-api.test.ts` | 公開バレル / アクセシビリティ資産の存在保証 / **kernel 語彙を再公開していないこと** |
 
 API は `@effect/vitest` の `it.effect` + `Effect.sync`。
 
@@ -169,7 +169,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 - 参照実装（`takeokunn/ts-minecraft`）は branches / functions / lines / statements の全てに **99%** を強制している
   （`vitest.config.ts:128-133`）。
 - **スケルトンに閾値を課しても意味がない。** 型定義と純粋関数だけのモジュールがいくつかあれば簡単に満たせてしまい、
-  実装の品質について何も語らない数字になる。現状の 5 ファイル 69 テストは
+  実装の品質について何も語らない数字になる。現状の 5 ファイル 75 テストは
   `domain/` の純粋関数をほぼ全部通っているので、閾値を入れれば**今日でも通る**。
   それは「通した」ではなく「まだ何も無い」という意味である。
 - 計測とレポートは常に動かしている（`pnpm test:coverage`）ので、数字はいつでも見える。
