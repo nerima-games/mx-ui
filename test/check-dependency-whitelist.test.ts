@@ -7,6 +7,7 @@
  * is one import away from being a repository that depends on all of the game,
  * and these assertions are what stops that.
  */
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import {
@@ -17,6 +18,7 @@ import {
   findBannedTimeSources,
   isToolingOrTestPath,
   REPOSITORY_POLICY,
+  SCAN_ROOTS,
   type DeclaredDependencies,
   type PolicyView,
 } from '../scripts/check-dependency-whitelist'
@@ -365,6 +367,39 @@ describe('the roster, read from the seat of another repository', () => {
           seatOf('@nerima-games/mc-render'),
         ),
       ).toBeUndefined()
+    }),
+  )
+})
+
+// ---------------------------------------------------------------------------
+// What the gate calls "shipped" and what npm actually ships must be one set.
+//
+// These are two hand-maintained lists describing the same thing that could not
+// see each other, and both halves have now gone wrong in this organisation, in
+// opposite directions:
+//
+//   - mx-multiplayer had `stages` in SCAN_ROOTS but NOT in isToolingOrTestPath,
+//     so its first stage registration would have been classified as tooling --
+//     and tooling may import a devDependency. That is rule 6, the same hole
+//     that left the shipped build with no input stage at all.
+//   - mc-render had the mirror image: `stages/` was correctly shipped source to
+//     the gate, and `files` omitted it, so `npm publish` would have produced a
+//     package with none of its five stage registrations in it.
+//
+// Neither is visible from inside its own half, and this repository is correct
+// today -- which is exactly when to pin it, because the hole opens on the day
+// someone adds the next root.
+// ---------------------------------------------------------------------------
+describe('the published package and the dependency gate agree on what ships', () => {
+  it.effect('every shipped source root the gate scans is in package.json `files`', () =>
+    Effect.sync(() => {
+      const shipped = SCAN_ROOTS.filter((root) => !isToolingOrTestPath(`${root}/probe.ts`))
+      const files: ReadonlyArray<string> = JSON.parse(
+        readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+      ).files
+
+      const missing = shipped.filter((root) => !files.includes(root))
+      expect(missing, `these roots ship code but npm would not include them: ${missing.join(', ')}`).toStrictEqual([])
     }),
   )
 })
