@@ -1001,21 +1001,150 @@ DN-UI-4 は「閉じる責務はフレーム側単一ハンドラ」と言う。
 `test/hud-view.test.ts` の
 `carries the icon distinction on SHAPE and LENGTH as well as colour (palette G3)` が固定する。
 
-### DN-UI-13g まだ届いていないもの — 集合として固定する
+### DN-UI-13g 届いていなかった 3 つ — 集合は空になった
 
-`test/palette-css.test.ts` の
-`REGRESSION: records exactly which guarded tokens are DECLARED but not yet REFERENCED` が
-`['focusRing', 'statusBusy', 'statusOk']` ちょうどを assert する。
+`test/palette-css.test.ts` のこの assertion は長らく
+`['focusRing', 'statusBusy', 'statusOk']` ちょうどだった。**いまは `[]` である。**
 
 `--mx-ui-focus-ring` をルートに宣言することと、画面がフォーカスリングを**描く**ことは別である。
 `surveyPalette` は `GUARDED_TOKENS` の 14 個全部を測るので、どの要素も参照していないトークンは
-**保証がまだ数値についてだけのトークン**である。3 つとも CSS を書き足しても埋まらない:
+**保証がまだ数値についてだけのトークン**だった。3 つとも CSS を書き足しても埋まらず、
+書き足して埋まらないという事実そのものが「何を作るべきか」の指定になっていた:
 
-- `FOCUS_RING` — フォーカスできる要素が無い。コントロールにはキーが要り、キーは mc-render のものである（DN-UI-13c）。
-- `STATUS_OK` / `STATUS_BUSY` — 自動保存インジケータが無い。**これは居心地が悪い**:
-  `status ok / status alert` は**この調査が参照実装で見つけた当の対**であり
-  （`#d7f7c2` と `#ffd6d2` が protanopia で 12 しか離れていない）、
-  それを表示するコンポーネントがこのリポジトリにまだ無い。
+- `FOCUS_RING` — フォーカスできる要素が無かった。→ DN-UI-13i
+- `STATUS_OK` / `STATUS_BUSY` — 自動保存インジケータが無かった。**これが居心地の悪い方**であり、
+  `status ok / status alert` は**この調査が参照実装で見つけた当の対**（`#d7f7c2` と `#ffd6d2` が
+  protanopia で 12 しか離れていない）だったので、
+  **調査の目玉の修正がこのリポジトリの中で理論のままだった**。→ DN-UI-13h
 
-**消えたことを検出できるのはピン留めしたテストだけ**なので、集合として固定してある。
-消費者が付いた瞬間にこのテストが落ちる——それが気づき方である。
+**テストは消さず、掃き出しとして残してある。** 1 度閉じたことと閉じ続けることは別で、
+`GUARDED_TOKENS` に足されて誰も参照しないトークンは、まったく同じ穴を 1 つずつ静かに開け直す
+（`surveyPalette` はそれを緑と報告し続ける）。
+
+### DN-UI-13h 自動保存インジケータ — 状態は 3 要素、失敗は失効しない
+
+**要素を 3 つ作る。1 つ作って色を差し替えない。**
+
+`domain/save-status.ts` が状態と時間、`application/save-indicator.ts` が要素である。
+DOM 側の形を決めているのは 1 つの要求だけである: **状態は色無しで区別できなければならない。**
+
+これは上品な追加ではなく**調査の発見そのもの**である。G3 は各対に非色チャネルの宣言を要求し、
+DN-UI-13f は「属性では満たせない」と書いている。したがって
+
+```
+⟳  Saving world…    STATUS_BUSY
+✔  World saved      STATUS_OK
+✖  Save failed      STATUS_ALERT
+```
+
+の 3 行が**それぞれ独立した要素**として mount 時に建ち、描画は `hidden` の付け外しだけになる。買えるもの:
+
+1. **フレーム経路で色を 1 度も書かない。** hud-view が許している「どの `var()` を持つかの差し替え」すら起きない。
+2. **テキストも書かない。** `textContent = x` は同じ値でもテキストノードを作り直す（DN-UI-13d）。
+   そして**言葉は最強の非色チャネル**なので、恒久的に持つ価値がある。
+3. **3 つの status トークンが mount 時に要素へ届く。** 1 要素方式だと
+   「`STATUS_BUSY` は画面に届いたか」の答えが**最後に描いた状態に依存**し、
+   `test/palette-css.test.ts` が閉じたはずの穴が形を変えて戻ってくる。
+4. `removeChild` は要らないままである。
+
+**そして時間の設計が 4 行のうち 3 行で判断になっている。**
+
+| 状態 | 表示 | 期間 |
+| --- | --- | --- |
+| `idle` | 無し | — |
+| `saving` | する | ホストが別のことを言うまで。**mx-ui は測らない** |
+| `saved` | する | `SAVED_VISIBLE_SECS`（3 秒）。`CAPTION_LIFETIME_SECS` と同じ数で、同じであることが意図である |
+| `failed` | する | ホストが別のことを言うまで。**失効しない** |
+
+**`failed` が失効しないのが核心である。** 確認は領収書であり、見逃しても費用は無い——
+確認している当の出来事はもう起きている。失敗は警告であり、見逃すとワールドを失う。
+そして「保存に失敗しました」を最も見逃すのは、HUD の隅ではなくゲームを見ていたプレイヤーであって、
+**3 秒のトーストはまさにその人を落とす機構**である。
+
+これは副産物として、**参照実装が潰していた 2 状態のもう 1 本の差**でもある: 片方は消え、片方は残る。
+`Distinguisher` の union には入れていない（あれは一目で読む channel の集合である）が、実在し、無料である。
+
+**`saving` も測らない。** 保存を所有しているのは mc-sim であり、
+N 秒で諦めるスピナは「書き込みは終わった」と嘘をつく——DN-UI-6 がハーフハートで拒否したのと同じ種類の嘘である。
+
+**スピナは入れなかった。** 回る `⟳` は装飾アニメーションであり、reduced-motion で消さねばならない
+（`domain/accessibility.ts`）。つまり**足した上で、最も注意深く保存を見ているプレイヤーからは即座に取り上げる**
+ことになる。状態はグリフと 3 語で既に運ばれているので、動きが足す情報はゼロで、忘れうる箇所が 1 つ増えるだけである。
+
+**この作業がパレット側の穴も 1 つ露出させた。** `CRITICAL_PAIRS` は `STATUS_ALERT` を含む 2 対を宣言して
+止まっていた（参照実装の欠陥が「失敗」の話だったから）。4 状態のインジケータは
+**「保存済み」対「保存中」**もプレイヤーに比べさせる。宣言されていない対は全対掃き出しが
+**偶然**守っているだけで約束ではなく、G3 が非色チャネルを要求しない。
+`status ok / status busy` を宣言に足した——最悪 108 単位離れており、
+deuteranopia でのコントラストは **1.11:1**。つまり `heart full / shank full` と同じく**彩度で分かれている**対であり、
+グリフは飾りではなく信号の大半である。
+
+回帰テスト（`test/save-indicator.test.ts`、15 本）。中核はこの 1 本:
+
+- `names the reference’s two values, shows they collapse, and shows the screen does not depend on them`
+  — `#d7f7c2` / `#ffd6d2` を**そのまま書いて**潰れることを assert し、
+  そのうえで画面側が別要素・別グリフ・別の文であることを assert する。
+  `test/view-model.test.ts` の同名の主張は**パレットについて**、これは**画面について**である。
+
+### DN-UI-13i フォーカスリング — リングは描画、キーは入力
+
+**「フォーカスできる要素が無い」の本当の理由は「コントロールにはキーが要る」ではなかった。**
+
+DN-UI-13c は設定画面を作らない理由を書き、その帰結として `FOCUS_RING` に消費者が無かった。
+しかし**フォーカスリングは描画の問題であって入力の問題ではない**。要素は、このリポジトリが
+キーストロークを 1 つも取らずに、focusable にでき、スタイルもできる。3 つを分けると所有者が違う:
+
+| 事柄 | 必要な動詞 | 所有者 |
+| --- | --- | --- |
+| スロットがフォーカスを持てる | `setAttribute` | mx-ui |
+| フォーカスが**どう見えるか** | `style.setProperty` | mx-ui |
+| フォーカスを**動かす**キーストローク | `addEventListener` | mc-render |
+| 動いたことを mx-ui に**伝える** | — | mc-render |
+
+上 2 つは `application/dom-surface.ts` に既にある動詞だけで足りる。**面は 1 メンバも広げていない。**
+特に `focus()` も `addEventListener` も足していない——前者はフォーカスを動かす動詞、後者は観測する動詞で、
+どちらも入力であり、入力は mc-render のものである（plan.md §2.3-2、決定はフレーム級 = DN-UI-4）。
+
+**作ったもの: ホットバーを roving `tabindex` の 1 タブストップにした。**
+
+- 9 スロットのうち 1 つだけが `tabindex="0"`、残りは `"-1"`。文書のタブ順で**ホットバー全体が 1 停留点**になる。
+- リングは**スロットごとの専用要素**である（`data-mx-ui="slot-focus-ring"`）。
+  `FOCUS_RING` の金 3px を `FOCUS_RING_SHADOW` の暗色 5px の内側に置く——
+  `CRITICAL_PAIRS` が宣言する `weight` チャネルが**2 つの実寸**として存在する。
+- 色は mount 時に入り、フォーカスは `hidden` の 1 属性で切り替わる。**フレーム経路で色を書かない。**
+
+**リングを枠ではなく別要素にしたのは、パレットの文をそのまま構造にするためである。**
+`domain/palette.ts` は `FOCUS_RING` を `SLOT_SELECTED` と分けて持つ理由をこう書いている:
+「"Which slot is the game using" と "which control is the keyboard on" は別の問いであり、
+キーボードで操作しているプレイヤーは**両方を同時に**訊いている」。
+**2 つの問い、2 つの要素**であり、別々のスロットで同時に点く。
+`test/hud-view.test.ts` の
+`REGRESSION: the ring and the SELECTION are different questions on different slots` がこれを固定する。
+
+**リスナ無しで正直でいられる理由。** タブストップとリングは**同じスロット**に置かれる。
+だから Tab でブラウザが**ネイティブに**フォーカスする要素は、mx-ui がリングを描いた要素と
+**構成上一致する**。キーを 1 つも取らず、何も観測せずに一致する。
+
+**まだ mc-render のものである半分、正確に。** 入力の所有者が `setKeyboardFocus` を呼ぶまで、
+Tab を押したプレイヤーが見るのは**ユーザーエージェント既定のリング**であってパレットのそれではない。
+これは DN-UI-1a が拒否した「後ろに何も無いフック」ではない——リングもトークンもタブストップも実在し到達可能である——が、
+**このリポジトリだけでは閉じられない唯一の点**であり、閉じるにはキーストロークに気づく必要がある。
+
+`setKeyboardFocus` が渡された index は `hotbarSlotIndex` を通る。
+`selectedHotbarIndex` が通るのと**同じ導出**である: どちらも境界を越えて来る index で、
+どちらも `9` / `-1` / `NaN` になりうる。**選択を見失う HUD と消えるリングは同じバグ 2 回**なので、
+導出は 1 つである（DN-UI-7c / DN-UI-4「2 回導出される決定は、いずれ違うように導出される」）。
+
+`role="group"` + `aria-label="Hotbar"` をホットバー行に付けた。DN-UI-1c が参照実装で記録している
+「見えるラベルが兄弟要素だと何も読み上げられない」の同型で、
+**名前の無いフォーカス停留点は何も告げない停留点**である。静的なのでフレーム費用はゼロ。
+
+回帰テスト（`test/hud-view.test.ts`、describe `the hotbar is focusable, and mx-ui still owns no keys`、7 本）:
+
+- `is ONE tab stop, not nine — a roving tabindex the browser honours natively`
+- `draws NO ring until somebody says where the keyboard is`
+- `REGRESSION: the ring and the SELECTION are different questions on different slots`
+- `carries the ring on WEIGHT as well as colour, as two real widths (palette G3)`
+- `clamps a told index through the SAME derivation the selection uses (DN-UI-7a)`
+- `re-stating the same focus mutates nothing`
+- `REGRESSION: making a slot focusable did not add a listener or a way to move focus`

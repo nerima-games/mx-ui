@@ -141,6 +141,23 @@ const safeWholeNumber = (value: number): number =>
   clamp(Math.floor(value), 0, Number.MAX_SAFE_INTEGER)
 
 /**
+ * A number somebody handed us, made into a hotbar slot.
+ *
+ * Exported because there are now TWO questions of this shape and they must have
+ * one answer. mc-sim's `selectedHotbarIndex` says which slot the player is
+ * holding; whoever owns input says which slot the keyboard is on
+ * (`HudView.setKeyboardFocus`). Both are indices from across a boundary, both can
+ * arrive as `9`, `-1` or `NaN`, and both must land on a real slot rather than on
+ * none — a HUD that loses its selection and a focus ring that vanishes are the
+ * same bug twice.
+ *
+ * DN-UI-7c is the record of what a second copy costs, and DN-UI-4 states the
+ * general rule: 「2 回導出される決定は、いずれ違うように導出される」.
+ */
+export const hotbarSlotIndex = (value: number): number =>
+  clamp(Math.floor(value), 0, HOTBAR_SLOT_COUNT - 1)
+
+/**
  * Split a point total into full / half / empty icons.
  *
  * Half icons are the whole reason this is a function rather than a division. The
@@ -222,7 +239,7 @@ export const slotView = (
  * long the input was, so the DOM layer never has to reason about a short array.
  */
 export const hudViewModel = (snapshot: VitalsSnapshot): HudViewModel => {
-  const selectedIndex = clamp(Math.floor(snapshot.selectedHotbarIndex), 0, HOTBAR_SLOT_COUNT - 1)
+  const selectedIndex = hotbarSlotIndex(snapshot.selectedHotbarIndex)
   const healthPoints = safePoints(snapshot.healthPoints, snapshot.maxHealthPoints)
 
   return {

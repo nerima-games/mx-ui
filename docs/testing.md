@@ -26,7 +26,7 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 `check:deps` が壁時計禁止まで見ているのは oxlint 0.12 が該当ルールを実装していないためで、
 経緯は `oxlint.json` の冒頭と DN-UI-10 にある。
 
-## 2. 現状の suite（2026-07-26 実測）
+## 2. 現状の suite（2026-07-27 実測）
 
 ```
 vitest 3.2.7
@@ -35,19 +35,26 @@ vitest 3.2.7
  ✓ test/accessibility.test.ts              (17 tests)
  ✓ test/view-model.test.ts                 (49 tests)
  ✓ test/inventory-mirror.test.ts           (6 tests)
- ✓ test/check-dependency-whitelist.test.ts (20 tests)
+ ✓ test/check-dependency-whitelist.test.ts (21 tests)
  ✓ test/api-lock.test.ts                   (26 tests)
  ✓ test/dom-surface.test.ts                (4 tests)
- ✓ test/hud-view.test.ts                   (14 tests)
+ ✓ test/hud-view.test.ts                   (21 tests)
  ✓ test/screen-views.test.ts               (10 tests)
  ✓ test/palette-css.test.ts                (6 tests)
+ ✓ test/save-indicator.test.ts             (15 tests)
 
- Test Files  11 passed (11)
-      Tests  175 passed (175)
+ Test Files  12 passed (12)
+      Tests  198 passed (198)
 ```
 
-後半 4 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
+後半 5 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
 jsdom も `@vitest-environment` プラグマも入っていない（§3）。
+
+`save-indicator.test.ts` は**新しい 2 コンポーネントのうち 1 つ**のためのファイルで、
+純粋な時間設計（`domain/save-status.ts`）と要素（`application/save-indicator.ts`）の両方を持つ。
+1 ファイルに置いているのは、そのコンポーネントの主張——**参照実装が潰していた 2 状態を色以外で区別する**——が
+2 層にまたがって初めて成立するからである。もう 1 つ（フォーカスリング）は
+`hud-view.test.ts` に describe を 1 つ増やしている（DN-UI-13i）。
 
 `view-model.test.ts` が 20 → 35 に増えたのはプレビューの finding 4 件と gap 2 件を
 assertion として降ろしたぶんで、35 → 49 に増えたのは**その gap 2 件を埋めたぶん**である。
@@ -70,9 +77,10 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 | `test/check-dependency-whitelist.test.ts` | 依存境界 / DN-UI-5（kit 不要）/ DN-UI-10 |
 | `test/public-api.test.ts` | 公開バレル / アクセシビリティ資産の存在保証 / **kernel 語彙を再公開していないこと** / **DN-UI-4（リスナ API を配らないこと）** |
 | `test/dom-surface.test.ts` | **DN-UI-13（構造型が実 DOM の部分集合であること、`domain/` が document に届かないこと）** |
-| `test/hud-view.test.ts` | **DN-UI-13（パレット適用 / 冪等性 / reduced-motion / リスナ皆無）/ DN-UI-6 / DN-UI-7c** |
+| `test/hud-view.test.ts` | **DN-UI-13（パレット適用 / 冪等性 / reduced-motion / リスナ皆無）/ DN-UI-13i（フォーカスリング）/ DN-UI-6 / DN-UI-7c** |
 | `test/screen-views.test.ts` | **DN-UI-13（字幕はテキスト / `unknown` は空ではない）/ DN-UI-1a（属性は canvas だけ）/ DN-UI-3** |
-| `test/palette-css.test.ts` | **DN-UI-11 + DN-UI-13（全トークンが DOM に届くこと、まだ届いていない 3 つ）** |
+| `test/palette-css.test.ts` | **DN-UI-11 + DN-UI-13g（全トークンが DOM に届くこと。未参照集合は空になった）** |
+| `test/save-indicator.test.ts` | **DN-UI-13h（自動保存インジケータ、状態と表示時間、色以外での区別）/ DN-UI-10 / DN-UI-11b** |
 
 API は `@effect/vitest` の `it.effect` + `Effect.sync`。
 
@@ -174,7 +182,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | 1 | `pnpm verify` が green | ✅ |
 | 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ❌ |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
-| 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ 部分的（**消費者はできた**——`application/` が 23 トークン全部をカスタムプロパティにし、色覚属性は canvas だけに付き、reduced-motion は transition を**削除**し、字幕は `textContent` である。残るのは 3 点で、**どれも CSS を書き足せば済むものではない**——下記） |
+| 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ **理由が狭まった**（**未参照トークンはゼロになった**——3 つとも消費者が付いた。残る 2 点は**どちらもブラウザにしか答えられない問い**である——下記） |
 | 5 | 99% カバレッジゲートが有効 | ❌（完成時に有効化、§5） |
 
 ### プレビューの条件（満たしている）
@@ -277,30 +285,52 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
   スロット選択は色に加えて枠 2px→3px（`['weight']`）である。
 - **色覚属性は canvas にしか付かず、canvas はトークンを 1 つも持たない。**
   だから属性をキーにしたセレクタがトークンに届く経路が存在しない（DN-UI-1a の失敗モード）。
+- **guarded トークンは 14 個すべてが要素に届く。** `test/palette-css.test.ts` の掃き出しは
+  いま `[]` を assert する。長く残っていた 3 つは 2 つの理由から残っており、
+  **どちらの理由も CSS では埋まらず、コンポーネントが要った**:
+  - `STATUS_OK` / `STATUS_BUSY` → `application/save-indicator.ts`（DN-UI-13h）。
+    **これが居心地の悪かった方**である——`status ok / status alert` は
+    **この調査が参照実装で見つけた当の対**（`#d7f7c2` と `#ffd6d2`）であり、
+    パレットは値を輝度のはしごで直したのに、**それを表示するコンポーネントが無いので修正が理論のままだった**。
+    3 状態はそれぞれ独立した要素（`⟳` / `✔` / `✖` ＋ 3 語）で建つので、区別は色に依存しない。
+  - `FOCUS_RING` → `application/slot-element.ts` のリング要素 + `HudView.setKeyboardFocus`（DN-UI-13i）。
+    ホットバーが roving `tabindex` の 1 タブストップになった。
+    **DOM 面は 1 メンバも広げていない**——`focus()` も `addEventListener` も足していない。
 
-**まだ証明されていない**（そしてどれも CSS では埋まらない）:
+**まだ証明されていない**（そして**どちらもブラウザの問い**である。だから完成条件 3 と 4 は別行である）:
 
-1. **3 つの guarded トークンに消費者が無い。** `test/palette-css.test.ts` が集合として固定している:
-   `FOCUS_RING`（フォーカスできる要素が無い——コントロールにはキーが要り、キーは mc-render のものである）、
-   `STATUS_OK` / `STATUS_BUSY`（自動保存インジケータが無い）。
-   **後者は居心地が悪い**: `status ok / status alert` は**この調査が参照実装で見つけた当の対**であり、
-   それを表示するコンポーネントがまだ無い。この 3 つについては保証は依然として数値についてだけである。
-2. **幾何は誰も見ていない。** 保証は「guarded な内容がスクリムの**上に**留まる」ことを前提にする。
+1. **幾何は誰も見ていない。** 保証は「guarded な内容がスクリムの**上に**留まる」ことを前提にする。
    レンダラは HUD ルートに `background-color: var(--mx-ui-scrim)` を置き、
    guarded な要素を全部その中に作るので**包含は構造的**だが、
    「スクリム背景を持つ要素の中にある」と「スクリムのピクセルの上にある」は同じではない。
    幅・高さ・位置・`z-index`・ホスト側のスタイルシートは 1 つも assert していない。
-   これはブラウザの問いであり、完成条件 3 と 4 が別行なのはそのためである。
-3. **`var()` は誰も解決していない。** 偽 document は参照文字列を記録するだけで、
+   同じ穴が新しい 2 つにもある: フォーカスリングが**スロットの上に見えるか**（`outline` と `box-shadow` の
+   重なり順）も、自動保存インジケータが**他の HUD 要素に隠れないか**も、レイアウトの問いである。
+2. **`var()` は誰も解決していない。** 偽 document は参照文字列を記録するだけで、
    カスケードを実行しない。プロパティ名は宣言側と参照側が同じ定数から来るので**自己整合**だが、
    ブラウザが実際にその色を描くことは測っていない。
    出荷側の面倒は [versioning.md](./versioning.md) §4（`files` / `exports` / tsc だけでは足りないビルド）。
-2. **mc-sim にレシピモデルが無い。** クラフト**画面**はあり、渡されたものを射影する。
-   しかし「このグリッドは何か作るか」に射影すべき答えが無い（mc-sim の `api-lock.md` に `Recipe` が無い）。
-   だから `CraftingSnapshot.result` は実際 `undefined` で、ビューモデルは `unknown` を返す。
-   **それは正しい挙動であって仮置きではない**が、mc-sim がレシピを所有するまで
-   本物のクラフト結果は出せない。レシピ照合は plan.md §2.3-1 で mc-sim のものであり、
-   ここで発明することがこのリポジトリのしてはならないことである。
+
+**そして 1 つだけ、ブラウザでも埋まらないものが残っている**（別種なので番号を分ける）:
+
+- **フォーカスは移動を通知してくれる相手がいない。** リング・トークン・タブストップは実在し、
+  Tab はネイティブに効く（ストップは 1 つで、リングはそのスロットに描かれるので**構成上一致する**）。
+  しかし入力の所有者が `setKeyboardFocus` を呼ぶまで、mx-ui は**キーボードがどこへ行ったか知らない**——
+  知るには `addEventListener` が要り、それは意図的に語彙に無い（DN-UI-4 / DN-UI-13c、DN-UI-13i に詳細）。
+  **これは mc-render 側の半分**であって、このリポジトリのテストで閉じられるものではない。
+
+**別件として残っているもの:**
+
+- **mc-sim にレシピモデルが無い。** クラフト**画面**はあり、渡されたものを射影する。
+  しかし「このグリッドは何か作るか」に射影すべき答えが無い（mc-sim の `api-lock.md` に `Recipe` が無い）。
+  だから `CraftingSnapshot.result` は実際 `undefined` で、ビューモデルは `unknown` を返す。
+  **それは正しい挙動であって仮置きではない**が、mc-sim がレシピを所有するまで
+  本物のクラフト結果は出せない。レシピ照合は plan.md §2.3-1 で mc-sim のものであり、
+  ここで発明することがこのリポジトリのしてはならないことである。
+- **保存イベントを供給する相手もまだいない。** `domain/save-status.ts` は `SaveStatus` を受け取る形で、
+  それを作るのは「フレームを駆動する誰か」である——`VitalsSnapshot` が最初のカットからそうであるのと同じ位置である。
+  字幕と違って**刈り取るキューが無い**（値が 1 つで、失効は読み取り時の引き算）ので、
+  `ui:overlay-sync` に足す仕事は無く、stage は変えていない。
 
 ### アクセシビリティ検証はユニットテストでは閉じない
 

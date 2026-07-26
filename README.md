@@ -118,7 +118,7 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
   **このファイルは `index.ts` から re-export していない。** 所有していない語彙（`StageId` /
   `DeltaTimeSecs` / `StageRegistration`）を公開 API に載せると、上記の削除が
   すべての消費者にとっての破壊的変更になるためである。
-- **`application/` が DOM 層である**（HUD / 字幕 / インベントリ）。`domain/` の射影を要素にし、
+- **`application/` が DOM 層である**（HUD / 字幕 / インベントリ / 自動保存インジケータ）。`domain/` の射影を要素にし、
   `domain/` を import する——**逆は無い**（`test/dom-surface.test.ts` が固定）。
   `domain/` は今も全て純粋な導出なので、テストは vitest の `environment: 'node'` のままである。
   jsdom も `@vitest-environment` プラグマも入れていない: レンダラは `HTMLElement` ではなく
@@ -158,8 +158,20 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
   mc-sim の形はミラーで写し（provisional、`test/inventory-mirror.test.ts` が pin）、
   スロットはホットバーと**同じ `slotView()`** を通り、
   **mc-sim が所有する問い（スタッキング・レシピ）は `unknown` を返して当てずっぽうを言わない**（DN-UI-12）。
-  残る gap は 1 件で前より狭い——**トークンを CSS にする消費者がまだ無い**ことと、
-  **mc-sim にレシピモデルが無い**こと。どちらもこのリポジトリの中では閉じられない。
+  **そしてその欠陥は、いまは画面の上で直っている。** 長らく `STATUS_OK` と `STATUS_BUSY` は
+  **どの要素も参照しないトークン**で（`FOCUS_RING` と合わせて 3 つ）、
+  つまり**調査の目玉の修正が値のままでどこにも描かれていなかった**。
+  `application/save-indicator.ts` が自動保存インジケータであり、
+  4 状態（idle / saving / saved / failed）を**それぞれ独立した要素**で建てる——
+  `⟳ Saving world…` / `✔ World saved` / `✖ Save failed`。
+  **区別はグリフと言葉が担い、色は 3 本目の信号である**（`saved` / `saving` は deuteranopia で 1.11:1 しかない）。
+  **`failed` は失効しない**: 確認は領収書だが失敗は警告で、3 秒のトーストはそれを最も見逃す人を落とす（DN-UI-13h）。
+  `FOCUS_RING` はホットバーを roving `tabindex` の**1 タブストップ**にして埋めた。
+  リングはスロットごとの専用要素（金 3px / 暗色 5px）で、`SLOT_SELECTED` とは**別の要素**である——
+  「ゲームが使っているスロット」と「キーボードがいるコントロール」は別の問いだからである。
+  **DOM 面は 1 メンバも広げていない**（`focus()` も `addEventListener` も足していない）。
+  **まだ mc-render のものである半分**は、フォーカスを動かすキーストロークとその通知である（DN-UI-13i）。
+  残る gap は **mc-sim にレシピモデルが無い**こと。このリポジトリの中では閉じられない。
 - **build / publish パイプラインは無い。** `exports` は TypeScript ソースを直接指しており `noEmit: true`。
   `version` は `0.x` に留める（[docs/versioning.md](./docs/versioning.md)）。
 - **カバレッジ閾値は未設定。** 計測とレポートは常に動かしており、99% ゲートは完成条件到達時に有効化する
@@ -169,18 +181,18 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
   （[docs/design-notes.md](./docs/design-notes.md) DN-UI-2）。まだそういうテストは 1 本も無いが、
   最初の 1 本を書く人が参照実装で確定済みの罠を踏み直さないよう、先に記録してある。
 
-### 検証（2026-07-26 実測）
+### 検証（2026-07-27 実測）
 
 `pnpm install` と `pnpm verify` はいずれも 0 で終了する。
 
 ```
 typecheck   tsc 3 プロジェクト（build / test / preview）ともエラーなし
-lint        oxlint: 30 files, 97 rules, Found 0 warnings and 0 errors
-check:deps  OK — 30 file(s) scanned, allowed direct dependencies:
+lint        oxlint: 48 files, 97 rules, Found 0 warnings and 0 errors
+check:deps  OK — 48 file(s) scanned, allowed direct dependencies:
             @nerima-games/mc-audio, @nerima-games/mc-sim
             (plus @nerima-games/mc-kernel, which every repository may import)
-api:check   OK — api-lock.md matches the public API (141 entries)
-test        vitest 3.2.7 — 7 files, 139 tests passed
+api:check   OK — api-lock.md matches the public API (207 entries)
+test        vitest 3.2.7 — 12 files, 198 tests passed
 ```
 
 数字はスケルトンが育つたびに動く。**再現は `pnpm verify` であり、本節はその時点のスナップショットである。**
@@ -194,7 +206,7 @@ test        vitest 3.2.7 — 7 files, 139 tests passed
 | [docs/architecture.md](./docs/architecture.md) | 4 階層、全 16 リポジトリの依存グラフ、名詞/動詞ルール、体験モジュール間ゼロエッジ、画面別分割を採らない理由 |
 | [docs/responsibility.md](./docs/responsibility.md) | 責務と、**明示的な非スコープ**（それぞれの行き先つき） |
 | [docs/public-api.md](./docs/public-api.md) | 公開 API。stage 登録 + 将来の mount 面、契約と「可視だが公開ではない」もの |
-| [docs/design-notes.md](./docs/design-notes.md) | **設計注意 DN-UI-1 〜 DN-UI-10。** 参照実装の `path:line` と、それを守る回帰テスト名 |
+| [docs/design-notes.md](./docs/design-notes.md) | **設計注意 DN-UI-1 〜 DN-UI-13。** 参照実装の `path:line` と、それを守る回帰テスト名 |
 | [docs/porting.md](./docs/porting.md) | 参照実装からの移植元と**実測 LOC**、`input/` の境界訂正、移植順序 |
 | [docs/testing.md](./docs/testing.md) | 検証ゲート、`it.effect` デッドロック、完成条件、99% ゲートの投入時期 |
 | [docs/versioning.md](./docs/versioning.md) | 0.x → 1.0.0 方針、GitHub Packages、mx-ui だけが抱えるアセット同梱の面倒 |

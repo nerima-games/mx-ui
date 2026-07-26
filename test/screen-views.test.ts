@@ -11,6 +11,13 @@
  * labels and calling it done would put a screen in this repository whose central
  * behaviour is unreachable and untestable — which is the 「hook with nothing
  * behind it」 DN-UI-1a spent a paragraph rejecting.
+ *
+ * That argument survives the focus ring (DN-UI-13i), and it is worth saying why,
+ * because the ring looks like a counter-example. Making a slot FOCUSABLE needs
+ * `setAttribute` and nothing else; making a rebind field WORK needs a
+ * `KeyboardEvent.code`, which needs a listener, which is not in the vocabulary.
+ * "Focusable" and "operable" were never the same claim — the ring is the first,
+ * a settings screen is the second.
  */
 import { describe, expect, it } from 'vitest'
 import { COLOR_VISION_FILTER_TARGET } from '../domain/accessibility'

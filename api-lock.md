@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 183
+exported declarations: 200
 supporting declarations: 7
 
 ## Exported
@@ -334,6 +334,18 @@ const FOCUS_RING: Rgb;
 const FOCUS_RING_SHADOW: Rgb;
 ```
 
+### FOCUS_RING_SHADOW_WIDTH  `const`
+
+```ts
+const FOCUS_RING_SHADOW_WIDTH = "5px";
+```
+
+### FOCUS_RING_WIDTH  `const`
+
+```ts
+const FOCUS_RING_WIDTH = "3px";
+```
+
 ### GUARDED_TOKENS  `const`
 
 ```ts
@@ -386,6 +398,7 @@ type HudView = {
     readonly root: DomElement;
     readonly render: (model: HudViewModel) => void;
     readonly setMotion: (motion: MotionPreference) => void;
+    readonly setKeyboardFocus: (index: number | undefined) => void;
 };
 ```
 
@@ -406,6 +419,12 @@ type HudViewModel = {
 
 ```ts
 const ICON_EMPTY: Rgb;
+```
+
+### IDLE_SAVE_STATUS  `const`
+
+```ts
+const IDLE_SAVE_STATUS: SaveStatus;
 ```
 
 ### INK  `const`
@@ -757,6 +776,30 @@ type Rgb = readonly [number, number, number];
 type RgbChannels = readonly [number, number, number];
 ```
 
+### SAVED_VISIBLE_SECS  `const`
+
+```ts
+const SAVED_VISIBLE_SECS = 3;
+```
+
+### SAVE_MESSAGES  `const`
+
+```ts
+const SAVE_MESSAGES: ReadonlyArray<SaveMessage>;
+```
+
+### SAVE_STATUS_GLYPH  `const`
+
+```ts
+const SAVE_STATUS_GLYPH: Readonly<Record<SaveMessage, string>>;
+```
+
+### SAVE_STATUS_LABEL  `const`
+
+```ts
+const SAVE_STATUS_LABEL: Readonly<Record<SaveMessage, string>>;
+```
+
 ### SCRIM  `const`
 
 ```ts
@@ -841,6 +884,36 @@ const SURFACE: Rgb;
 const SURFACE_RAISED: Rgb;
 ```
 
+### SaveIndicator  `type`
+
+```ts
+type SaveIndicator = {
+    readonly root: DomElement;
+    readonly render: (message: SaveMessage | undefined) => void;
+};
+```
+
+### SaveMessage  `type`
+
+```ts
+type SaveMessage = 'saving' | 'saved' | 'failed';
+```
+
+### SaveState  `type`
+
+```ts
+type SaveState = 'idle' | SaveMessage;
+```
+
+### SaveStatus  `type`
+
+```ts
+type SaveStatus = {
+    readonly state: SaveState;
+    readonly sinceSecs: number;
+};
+```
+
 ### ScreenId  `type`
 
 ```ts
@@ -863,6 +936,8 @@ type SlotElement = {
     readonly durabilityHidden: AttributeCell;
     readonly durabilityWidth: PercentCell;
     readonly durabilityColor: StyleCell;
+    readonly tabStop: AttributeCell;
+    readonly focusRingHidden: AttributeCell;
 };
 ```
 
@@ -1110,6 +1185,12 @@ const createIconElement: (factory: DomElementFactory, kind: IconKind) => IconEle
 const createInventoryView: (factory: DomElementFactory, parent: DomElement) => InventoryView;
 ```
 
+### createSaveIndicator  `const`
+
+```ts
+const createSaveIndicator: (factory: DomElementFactory, parent: DomElement) => SaveIndicator;
+```
+
 ### createSlotElement  `const`
 
 ```ts
@@ -1174,6 +1255,12 @@ const hex: (color: Rgb) => string;
 
 ```ts
 const hideSlotElementAtMount: (slot: SlotElement) => void;
+```
+
+### hotbarSlotIndex  `const`
+
+```ts
+const hotbarSlotIndex: (value: number) => number;
 ```
 
 ### hudViewModel  `const`
@@ -1260,6 +1347,18 @@ const resolveMotionPreference: (setting: MotionSetting, systemPrefersReducedMoti
 const retireIconElement: (icon: IconElement) => void;
 ```
 
+### saveStatus  `const`
+
+```ts
+const saveStatus: (state: SaveState, atSecs: number) => SaveStatus;
+```
+
+### saveStatusMessage  `const`
+
+```ts
+const saveStatusMessage: (status: SaveStatus, nowSecs: number, savedVisibleSecs?: number) => SaveMessage | undefined;
+```
+
 ### separation  `const`
 
 ```ts
@@ -1270,6 +1369,18 @@ const separation: (left: Rgb, right: Rgb) => number;
 
 ```ts
 const setSlotHidden: (slot: SlotElement, hidden: boolean) => void;
+```
+
+### setSlotKeyboardFocus  `const`
+
+```ts
+const setSlotKeyboardFocus: (slot: SlotElement, focused: boolean) => void;
+```
+
+### setSlotTabStop  `const`
+
+```ts
+const setSlotTabStop: (slot: SlotElement, tabbable: boolean) => void;
 ```
 
 ### shouldAnimate  `const`

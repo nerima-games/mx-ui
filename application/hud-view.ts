@@ -50,12 +50,28 @@
  * stopPropagation、閉じる責務はフレーム側単一ハンドラ(mc-render の入力設計と対)」.
  * `domain/modal-stack.ts` holds the decision; mc-render delivers the key; this
  * file draws the result.
+ *
+ * `setKeyboardFocus` is the same split applied one level down, and it is worth
+ * being precise about because it looks like an exception and is not. The hotbar
+ * IS focusable now — a roving `tabindex` makes it a single tab stop, which the
+ * browser honours natively with no listener anywhere — and mx-ui draws the ring
+ * out of `FOCUS_RING` / `FOCUS_RING_SHADOW`. What it does not do is take the
+ * keystroke that moves focus, or watch for the focus event that would tell it the
+ * player pressed Tab: neither `addEventListener` nor `focus()` is in
+ * `application/dom-surface.ts`. A focus RING is a rendering concern; a focus
+ * MOVE is an input one, and they were only ever the same thing because nobody
+ * had separated them.
  */
 import {
   animationDurationMs,
   type MotionPreference,
 } from '../domain/accessibility'
-import { HOTBAR_SLOT_COUNT, type HudViewModel, type IconState } from '../domain/hud-view-model'
+import {
+  HOTBAR_SLOT_COUNT,
+  hotbarSlotIndex,
+  type HudViewModel,
+  type IconState,
+} from '../domain/hud-view-model'
 import {
   createIconElement,
   retireIconElement,
@@ -81,7 +97,13 @@ import {
   type TextCell,
 } from './dom-write'
 import { declarePalette, PALETTE_VAR } from './palette-css'
-import { createSlotElement, updateSlotElement, type SlotElement } from './slot-element'
+import {
+  createSlotElement,
+  setSlotKeyboardFocus,
+  setSlotTabStop,
+  updateSlotElement,
+  type SlotElement,
+} from './slot-element'
 
 /**
  * How long the XP bar takes to slide, at full motion.
@@ -93,6 +115,17 @@ import { createSlotElement, updateSlotElement, type SlotElement } from './slot-e
  * remember?」 a question with a single answer (`domain/accessibility.ts`).
  */
 export const EXPERIENCE_TRANSITION_MS = 220
+
+/**
+ * Where the hotbar's single tab stop sits when nobody has said where the keyboard
+ * is.
+ *
+ * Slot 0, and NOT the selected slot: `setKeyboardFocus(undefined)` means "the
+ * keyboard is not here", and seeding the tab stop from mc-sim's selection would
+ * answer the keyboard's question with the game's — the two `domain/palette.ts`
+ * keeps `FOCUS_RING` and `SLOT_SELECTED` apart in order to keep separate.
+ */
+const DEFAULT_TAB_STOP_INDEX = 0
 
 /** A row of hearts or shanks, grown on demand. */
 type IconRowElement = {
@@ -115,6 +148,34 @@ export type HudView = {
    * mc-sim's state.
    */
   readonly setMotion: (motion: MotionPreference) => void
+  /**
+   * Say which hotbar slot the keyboard is on, or `undefined` for "not here".
+   *
+   * THE SEAM, and the half of the focus ring that is not mx-ui's. mx-ui makes a
+   * slot focusable and decides what focus LOOKS like; it cannot move focus
+   * (`focus()` is not in `application/dom-surface.ts`) and cannot observe it
+   * (`addEventListener` is not, and must never be — DN-UI-4/DN-UI-13c). Both of
+   * those are input, and input is mc-render's (plan.md §2.3-2). So the input
+   * owner says where the keyboard went, exactly as it hands over a colour-vision
+   * mode (`applyColorVision`) and a motion preference (`setMotion`) rather than
+   * mx-ui reading either.
+   *
+   * Separate from `render` for the same reason `setMotion` is: this is not a
+   * projection of mc-sim's state, and threading it through `HudViewModel` would
+   * put an input fact inside one.
+   *
+   * The index is clamped by `hotbarSlotIndex`, the SAME derivation
+   * `selectedHotbarIndex` goes through — a `9` or a `NaN` from across a boundary
+   * moves the ring to a real slot rather than losing it (DN-UI-7a).
+   *
+   * WHAT IS STILL OPEN, precisely: until the input owner calls this, a player who
+   * presses Tab lands on the default stop and sees the USER AGENT's focus ring
+   * rather than the palette's. That is not a hook with nothing behind it — the
+   * ring, the tokens and the tab stop are all real and all reachable — but it is
+   * the one thing this repository cannot close on its own, because closing it
+   * means noticing a keystroke.
+   */
+  readonly setKeyboardFocus: (index: number | undefined) => void
 }
 
 type HudCells = {
@@ -233,6 +294,14 @@ export const createHudView = (
 
   const hotbarRow = factory.createElement('div')
   hotbarRow.setAttribute('data-mx-ui', 'hotbar')
+  // The hotbar is ONE tab stop, so it needs one accessible name. DN-UI-1c records
+  // the reference discovering the same thing about its rebind fields: 「the
+  // visible label is a sibling `<span>`, so a screen reader would otherwise
+  // announce this only as "edit text"」. A focusable element with no name is a
+  // focus stop that announces nothing, which is a worse outcome than not being
+  // reachable at all. Static, so it costs nothing per frame.
+  hotbarRow.setAttribute('role', 'group')
+  hotbarRow.setAttribute('aria-label', 'Hotbar')
   root.appendChild(hotbarRow)
 
   const hotbar: Array<SlotElement> = []
@@ -273,7 +342,30 @@ export const createHudView = (
     writeStyle(cells.experienceTransition, `width ${String(durationMs)}ms linear`)
   }
 
+  /**
+   * Move the tab stop and the ring together.
+   *
+   * They are the same slot whenever the ring is drawn at all, which is what makes
+   * the browser's native Tab agree with what mx-ui painted without anybody
+   * listening for a key.
+   */
+  const applyKeyboardFocus = (index: number | undefined): void => {
+    const focusedIndex = index === undefined ? undefined : hotbarSlotIndex(index)
+    const tabStopIndex = focusedIndex ?? DEFAULT_TAB_STOP_INDEX
+    for (let slotIndex = 0; slotIndex < hotbar.length; slotIndex += 1) {
+      const slot = hotbar[slotIndex]
+      if (slot === undefined) {
+        continue
+      }
+      setSlotTabStop(slot, slotIndex === tabStopIndex)
+      setSlotKeyboardFocus(slot, slotIndex === focusedIndex)
+    }
+  }
+
   applyMotion(motion)
+  // At mount the keyboard is not here: the hotbar is reachable by Tab and no ring
+  // is drawn, because nothing has said one should be.
+  applyKeyboardFocus(undefined)
   parent.appendChild(root)
 
   return {
@@ -299,5 +391,6 @@ export const createHudView = (
       writeHidden(cells.deathHidden, !model.dead)
     },
     setMotion: applyMotion,
+    setKeyboardFocus: applyKeyboardFocus,
   }
 }

@@ -14,9 +14,35 @@
  * of this file for the inventory screen would put that guard back in play once
  * more, which is why the inventory screen imports this one.
  *
- * Escape: no listener, no `tabindex`, no focus management. A slot is a thing to
- * look at here; making it a thing to press means owning keys, and DN-UI-4 says
- * who owns keys.
+ * ---------------------------------------------------------------------------
+ * A slot is now a thing to LOOK AT and to REACH — but still not to press
+ * ---------------------------------------------------------------------------
+ *
+ * This header used to say 「no listener, no `tabindex`, no focus management」, and
+ * two thirds of that survive. The `tabindex` was wrong, and `FOCUS_RING` sitting
+ * in `GUARDED_TOKENS` with nothing referencing it was the evidence: a token whose
+ * guarantee is measured and whose colour reaches no element is a guarantee about
+ * numbers (`test/palette-css.test.ts`, DN-UI-13g).
+ *
+ * The three things are separable, and only one of them is mc-render's:
+ *
+ *   | thing                                  | verb needed          | owner     |
+ *   | -------------------------------------- | -------------------- | --------- |
+ *   | a slot CAN hold focus                  | `setAttribute`       | mx-ui     |
+ *   | what focus LOOKS like                  | `style.setProperty`  | mx-ui     |
+ *   | the keystroke that MOVES focus         | `addEventListener`   | mc-render |
+ *   | telling mx-ui where focus went         | —                    | mc-render |
+ *
+ * The first two need nothing that is not already in `application/dom-surface.ts`,
+ * which is the whole argument: a focus RING is a rendering concern. The surface
+ * was not widened by a single member to build it — and specifically it did NOT
+ * grow `focus()` or `addEventListener`, which are the two verbs that would let
+ * this file move focus or observe it. Both are input, and input is mc-render's
+ * (plan.md §2.3-2) with the decision at frame level (DN-UI-4).
+ *
+ * Pressing is still not here. A slot has no activation, no `role="button"` and no
+ * click; making it pressable is the half that needs a key or a pointer event, and
+ * that half has not moved.
  */
 import type { SlotView } from '../domain/hud-view-model'
 import type { DomElement, DomElementFactory } from './dom-surface'
@@ -63,6 +89,24 @@ const BORDER_WEIGHT = '2px'
  */
 const SELECTED_BORDER_WEIGHT = '3px'
 
+/**
+ * The keyboard focus ring, which is TWO widths as well as two colours.
+ *
+ * `domain/palette.ts` on `FOCUS_RING`: 「A single-colour ring has to contrast with
+ * whatever it lands on and cannot, so the pair carries itself: gold against
+ * near-black is 10.2:1 in every mode, on any background, because the background
+ * is not part of the comparison」. `CRITICAL_PAIRS` declares
+ * `focus ring / focus ring shadow` as `alsoDistinguishedBy: ['weight']`, and this
+ * is the DOM half of that declaration: three pixels of gold inside five pixels of
+ * near-black, so the two are told apart by thickness and not only by colour.
+ *
+ * The gold width is the reference's:
+ * `<reference-impl>/packages/presentation/menu/main-menu-styles.ts:90` draws
+ * `outline: 3px solid #ffe090` over an `rgba(20, 29, 25, .94)` ring.
+ */
+export const FOCUS_RING_WIDTH = '3px'
+export const FOCUS_RING_SHADOW_WIDTH = '5px'
+
 export type SlotElement = {
   readonly root: DomElement
   readonly hiddenFlag: AttributeCell
@@ -76,6 +120,9 @@ export type SlotElement = {
   readonly durabilityHidden: AttributeCell
   readonly durabilityWidth: PercentCell
   readonly durabilityColor: StyleCell
+  /** `'0'` for the group's single tab stop, `'-1'` for every other member. */
+  readonly tabStop: AttributeCell
+  readonly focusRingHidden: AttributeCell
 }
 
 /**
@@ -112,6 +159,36 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
   durabilityFill.setAttribute('data-mx-ui', 'slot-durability-fill')
   durabilityTrack.appendChild(durabilityFill)
 
+  // The focus ring, as its OWN element rather than as a border on the slot.
+  //
+  // That is not a layout convenience, it is the palette's own sentence made
+  // structural: 「"Which slot is the game using" and "which control is the
+  // keyboard on" are different questions and a player who is navigating by
+  // keyboard is asking both at once」. The game's answer is the slot's border
+  // (`SLOT_SELECTED` at 3px); the keyboard's answer is this overlay. Two
+  // questions, two elements, and both can be visible on two different slots at
+  // the same moment.
+  //
+  // It also keeps both colours off the frame path entirely: they are written here
+  // and never again, and focusing is one `hidden` toggle.
+  const focusRing = factory.createElement('div')
+  focusRing.setAttribute('data-mx-ui', 'slot-focus-ring')
+  focusRing.setAttribute('hidden', '')
+  focusRing.style.setProperty('position', 'absolute')
+  focusRing.style.setProperty('left', '0')
+  focusRing.style.setProperty('top', '0')
+  focusRing.style.setProperty('right', '0')
+  focusRing.style.setProperty('bottom', '0')
+  focusRing.style.setProperty(
+    'outline',
+    `${FOCUS_RING_WIDTH} solid ${PALETTE_VAR.focusRing}`,
+  )
+  focusRing.style.setProperty(
+    'box-shadow',
+    `0 0 0 ${FOCUS_RING_SHADOW_WIDTH} ${PALETTE_VAR.focusRingShadow}`,
+  )
+  root.appendChild(focusRing)
+
   const slot: SlotElement = {
     root,
     hiddenFlag: attributeCell(root, 'hidden'),
@@ -125,7 +202,15 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
     durabilityHidden: attributeCell(durabilityTrack, 'hidden'),
     durabilityWidth: percentCell(durabilityFill, 'width'),
     durabilityColor: styleCell(durabilityFill, 'background-color'),
+    tabStop: attributeCell(root, 'tabindex'),
+    focusRingHidden: attributeCell(focusRing, 'hidden'),
   }
+  // The ring was hidden directly above; tell its cell so, or the first call
+  // issues a redundant write from the construction side, where the 「unchanged
+  // re-render mutates nothing」 test cannot see it. `tabStop` is deliberately NOT
+  // seeded: a slot has no `tabindex` until somebody makes it part of a focus
+  // group, so an inventory slot stays exactly as unfocusable as it was.
+  slot.focusRingHidden.previous = ''
 
   return slot
 }
@@ -146,6 +231,44 @@ export const hideSlotElementAtMount = (slot: SlotElement): void => {
 /** Show or hide a built slot, diffed. */
 export const setSlotHidden = (slot: SlotElement, hidden: boolean): void => {
   writeHidden(slot.hiddenFlag, hidden)
+}
+
+/**
+ * Make this slot the group's single tab stop, or take it out of the tab order.
+ *
+ * The roving-`tabindex` pattern: exactly one member of a group carries `'0'` and
+ * the rest carry `'-1'`, so the whole group is ONE stop in the document's tab
+ * order rather than nine, and Tab out of it lands wherever it would have.
+ *
+ * The property that makes this honest without a listener: the tab stop and the
+ * ring are put on the same slot by `createHudView`, so the element the browser
+ * NATIVELY focuses on Tab is the element mx-ui has drawn the ring on. They agree
+ * by construction, with no key taken and nothing observed.
+ *
+ * `'-1'` rather than removing the attribute: a `-1` element is still
+ * programmatically focusable, which is what lets whoever owns input move focus
+ * inside the group without mx-ui rewriting the attribute first.
+ */
+export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
+  writeAttribute(slot.tabStop, tabbable ? '0' : '-1')
+}
+
+/**
+ * Draw, or stop drawing, the keyboard focus ring on this slot.
+ *
+ * One attribute write, and never a colour: both halves of the ring
+ * (`FOCUS_RING` over `FOCUS_RING_SHADOW`) were installed on a dedicated element
+ * at mount.
+ *
+ * Separate from `updateSlotElement` because focus is not part of the view model.
+ * `SlotView.selected` is mc-sim's answer to "what is the player holding"; this is
+ * the input owner's answer to "where is the keyboard", and threading the second
+ * through a projection of the first would merge the two questions
+ * `domain/palette.ts` keeps `FOCUS_RING` and `SLOT_SELECTED` apart to keep
+ * separate.
+ */
+export const setSlotKeyboardFocus = (slot: SlotElement, focused: boolean): void => {
+  writeHidden(slot.focusRingHidden, !focused)
 }
 
 /**

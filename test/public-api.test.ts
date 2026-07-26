@@ -118,6 +118,15 @@ describe('public API surface', () => {
         'DEFAULT_CAPTION_SETTINGS',
         'EXPERIENCE_MODULE_STAGE_PREFIXES',
         'OWN_STAGE_PREFIX',
+        // The save indicator's timing, which is a derivation like any other:
+        // pure, clock-free (DN-UI-10) and testable without a document.
+        'IDLE_SAVE_STATUS',
+        'SAVED_VISIBLE_SECS',
+        'saveStatus',
+        'saveStatusMessage',
+        // One derivation for "which of the nine slots is this number", shared by
+        // mc-sim's selection and by the keyboard's focus (DN-UI-7c).
+        'hotbarSlotIndex',
       ]
 
       for (const name of internal) {
@@ -133,6 +142,21 @@ describe('public API surface', () => {
         'createHudView',
         'createCaptionView',
         'createInventoryView',
+        // The autosave indicator, and the two names a translation layer or a
+        // preview needs to reach its strings. It is pinned here because it is the
+        // component the palette survey's headline finding is about: `STATUS_OK`
+        // and `STATUS_BUSY` reached no element until it existed, so dropping it
+        // would put the survey's fix back to being about numbers (DN-UI-13g/h).
+        'createSaveIndicator',
+        'SAVE_STATUS_GLYPH',
+        'SAVE_STATUS_LABEL',
+        // The focus ring's two halves: the widths that carry the `weight`
+        // channel, and — through `HudView.setKeyboardFocus` — the seam where
+        // whoever owns input says where the keyboard went (DN-UI-13i).
+        'FOCUS_RING_WIDTH',
+        'FOCUS_RING_SHADOW_WIDTH',
+        'setSlotTabStop',
+        'setSlotKeyboardFocus',
         // The palette's consumer. Until this existed, the guarantee in
         // `domain/palette.ts` was proved about numbers and about nothing on a
         // screen — `docs/testing.md` §4 criterion 4 was ⚠️ for exactly that.

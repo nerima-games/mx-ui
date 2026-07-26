@@ -144,8 +144,8 @@ export type UiMount = {
 
 ## 5. `index.ts` の全 export
 
-`index.ts` は 17 モジュールを `export *` している——`domain/` の 6、`stages/` の 2、
-そして **`application/` の 9**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
+`index.ts` は 19 モジュールを `export *` している——`domain/` の 7、`stages/` の 2、
+そして **`application/` の 10**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。
@@ -225,8 +225,14 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 | --- | --- |
 | `HEALTH_POINTS_PER_HEART` / `DEFAULT_MAX_HEALTH_POINTS` / `DEFAULT_MAX_HUNGER_POINTS` / `HOTBAR_SLOT_COUNT` | 定数 |
 | `IconState` / `HotbarSlotSnapshot` / `VitalsSnapshot` / `SlotView` / `HudViewModel` | type |
-| `iconRow` / `hudViewModel` / `slotView` | 純粋関数 |
+| `iconRow` / `hudViewModel` / `slotView` / `hotbarSlotIndex` | 純粋関数 |
 | `spawnSnapshot` | プレビュー・テスト用のリテラル |
+
+`hotbarSlotIndex` は `hudViewModel` の中のローカル式だった。export したのは
+**同じ問いが 2 つになった**からである——mc-sim の `selectedHotbarIndex` と、
+入力の所有者が言う「キーボードはどのスロットにいるか」（`HudView.setKeyboardFocus`、DN-UI-13i）。
+どちらも境界を越えて来る index で、どちらも `9` / `-1` / `NaN` になりうる（DN-UI-7a）。
+**選択を見失う HUD と消えるフォーカスリングは同じバグ 2 回**なので、導出は 1 つである。
 
 `SlotView` は以前 `HotbarSlotView` という名前だった。改名したのは
 `domain/inventory-view-model.ts` が**同じ型と同じ射影関数**を使うようになったからで、
@@ -273,13 +279,14 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 | モジュール | export | 種別 | 分類 |
 | --- | --- | --- | --- |
 | `application/dom-surface.ts` | `DomNode` / `DomStyle` / `DomElement` / `DomElementFactory` / `DomAttributeTarget` | type | **契約(暫定)** — mc-compose が `document` を渡すときの受け口 |
-| `application/hud-view.ts` | `createHudView` / `HudView` / `EXPERIENCE_TRANSITION_MS` | 関数 + type + 定数 | **契約(暫定)** |
+| `application/hud-view.ts` | `createHudView` / `HudView`（`render` / `setMotion` / `setKeyboardFocus`）/ `EXPERIENCE_TRANSITION_MS` | 関数 + type + 定数 | **契約(暫定)** |
 | `application/caption-view.ts` | `createCaptionView` / `CaptionView` | 関数 + type | **契約(暫定)** |
 | `application/inventory-view.ts` | `createInventoryView` / `InventoryView` | 関数 + type | **契約(暫定)** |
+| `application/save-indicator.ts` | `createSaveIndicator` / `SaveIndicator` / `SAVE_MESSAGES` / `SAVE_STATUS_GLYPH` / `SAVE_STATUS_LABEL` | 関数 + type + 定数 | **契約(暫定)** |
 | `application/accessibility-dom.ts` | `COLOR_VISION_ATTRIBUTE` / `ColorVisionCell` / `colorVisionCell` / `applyColorVision` | 定数 + type + 関数 | **契約(暫定)** — canvas は mc-render のものだから |
 | `application/palette-css.ts` | `PALETTE_PROPERTY_PREFIX` / `PALETTE_PROPERTY` / `PALETTE_SOURCE` / `PALETTE_VALUE` / `PALETTE_VAR` / `PALETTE_TOKEN_NAMES` / `PaletteTokenName` / `declarePalette` | 定数 + type + 関数 | 内部(可視) |
 | `application/dom-write.ts` | `TextCell` / `StyleCell` / `PercentCell` / `AttributeCell` と各 `*Cell` / `write*` / `clearStyle` | type + 関数 | 内部(可視) |
-| `application/slot-element.ts` | `SlotElement` / `createSlotElement` / `updateSlotElement` / `setSlotHidden` / `hideSlotElementAtMount` / `DURABILITY_LOW_PERCENT` | type + 関数 + 定数 | 内部(可視) |
+| `application/slot-element.ts` | `SlotElement` / `createSlotElement` / `updateSlotElement` / `setSlotHidden` / `hideSlotElementAtMount` / `setSlotTabStop` / `setSlotKeyboardFocus` / `DURABILITY_LOW_PERCENT` / `FOCUS_RING_WIDTH` / `FOCUS_RING_SHADOW_WIDTH` | type + 関数 + 定数 | 内部(可視) |
 | `application/icon-element.ts` | `IconKind` / `IconElement` / `createIconElement` / `updateIconElement` / `retireIconElement` | type + 関数 | 内部(可視) |
 
 **「暫定」の意味**は §4-1 と同じである。mc-compose がまだ mount していないので、
@@ -316,6 +323,19 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
 | `CaptionEvent` / `CaptionSettings` / `CaptionQueue` / `CaptionLineView` | type |
 | `emptyCaptionQueue` | 定数 |
 | `receiveCaption` / `expireCaptions` / `captionLines` | 純粋関数 |
+
+### `domain/save-status.ts` — すべて内部(可視)
+
+| export | 種別 |
+| --- | --- |
+| `SAVED_VISIBLE_SECS`（3）/ `IDLE_SAVE_STATUS` | 定数 |
+| `SaveMessage` / `SaveState` / `SaveStatus` | type |
+| `saveStatus` / `saveStatusMessage` | 純粋関数 |
+
+自動保存インジケータの**状態と表示時間**である。要素は `application/save-indicator.ts`。
+`domain/caption.ts` と同じくクロックを取らず、時刻は引数で受ける（DN-UI-10）。
+**stage は増やしていない**——字幕と違って刈り取るキューが無く、
+失効は読み取り時の引き算だからである（DN-UI-13h）。
 
 ### `domain/accessibility.ts` — すべて内部(可視)
 

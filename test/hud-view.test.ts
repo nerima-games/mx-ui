@@ -23,6 +23,7 @@ import {
 } from '../domain/hud-view-model'
 import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../domain/palette'
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../application/hud-view'
+import { FOCUS_RING_SHADOW_WIDTH, FOCUS_RING_WIDTH } from '../application/slot-element'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../application/palette-css'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
@@ -232,6 +233,129 @@ describe('the HUD renderer honours reduced motion', () => {
     expect(fill?.style.properties.get('transition')).toBe(
       `width ${String(EXPERIENCE_TRANSITION_MS)}ms linear`,
     )
+  })
+})
+
+describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
+  const ringOf = (slot: FakeElement | undefined): FakeElement | undefined =>
+    slot?.find('data-mx-ui', 'slot-focus-ring')
+
+  it('is ONE tab stop, not nine — a roving tabindex the browser honours natively', () => {
+    // This is what makes the focus ring honest without a listener: exactly one
+    // slot is in the document's tab order, so the element the browser focuses on
+    // Tab is the element mx-ui has drawn the ring on. `-1` rather than no
+    // attribute, so the other eight stay programmatically focusable for whoever
+    // owns input.
+    const { root } = mount()
+    const slots = root.findAll('data-mx-ui', 'slot')
+
+    expect(slots.map((slot) => slot.attributes.get('tabindex'))).toStrictEqual([
+      '0',
+      ...Array<string>(8).fill('-1'),
+    ])
+    // And the group has a name. DN-UI-1c: 「the visible label is a sibling
+    // `<span>`, so a screen reader would otherwise announce this only as "edit
+    // text"」 — a focus stop with no accessible name announces nothing.
+    expect(root.find('data-mx-ui', 'hotbar')?.attributes.get('aria-label')).toBe('Hotbar')
+  })
+
+  it('draws NO ring until somebody says where the keyboard is', () => {
+    // A ring means "the keyboard is here". Drawing one at mount would make it
+    // decoration, which is the 「後ろに何も無いフック」 DN-UI-1a rejects from the
+    // other direction. `undefined` is a real state, not an absence of one.
+    const { root, view } = mount()
+    const slots = root.findAll('data-mx-ui', 'slot')
+
+    expect(slots.every((slot) => ringOf(slot)?.attributes.get('hidden') === '')).toBe(true)
+
+    view.setKeyboardFocus(3)
+    expect(ringOf(slots[3])?.attributes.has('hidden')).toBe(false)
+
+    view.setKeyboardFocus(undefined)
+    expect(slots.every((slot) => ringOf(slot)?.attributes.get('hidden') === '')).toBe(true)
+    // The tab stop goes home rather than disappearing: the hotbar stays
+    // reachable, it just is not where the keyboard currently is.
+    expect(slots[0]?.attributes.get('tabindex')).toBe('0')
+  })
+
+  it('REGRESSION: the ring and the SELECTION are different questions on different slots', () => {
+    // `domain/palette.ts` on `FOCUS_RING`: 「Kept distinct from `SLOT_SELECTED`.
+    // "Which slot is the game using" and "which control is the keyboard on" are
+    // different questions and a player who is navigating by keyboard is asking
+    // both at once」. This is that sentence, expressed as two elements that can
+    // be lit on two different slots at the same moment.
+    const { root, view } = mount()
+    view.render(hudViewModel({ ...spawnSnapshot, selectedHotbarIndex: 1 }))
+    view.setKeyboardFocus(7)
+
+    const slots = root.findAll('data-mx-ui', 'slot')
+    expect(slots[1]?.style.properties.get('border-color')).toBe(PALETTE_VAR.slotSelected)
+    expect(ringOf(slots[1])?.attributes.get('hidden')).toBe('')
+    expect(slots[7]?.style.properties.get('border-color')).toBe(PALETTE_VAR.slotBorder)
+    expect(ringOf(slots[7])?.attributes.has('hidden')).toBe(false)
+  })
+
+  it('carries the ring on WEIGHT as well as colour, as two real widths (palette G3)', () => {
+    // `CRITICAL_PAIRS` declares focus-ring / focus-ring-shadow as
+    // `alsoDistinguishedBy: ['weight']`, and 「A single-colour ring has to contrast
+    // with whatever it lands on and cannot, so the pair carries itself」. Three
+    // pixels of gold inside five of near-black: both colours are `var()`
+    // references installed at MOUNT, so focusing writes no colour at all.
+    const { root, factory, view } = mount()
+    const ring = ringOf(root.findAll('data-mx-ui', 'slot')[0])
+
+    expect(ring?.style.properties.get('outline')).toBe(
+      `${FOCUS_RING_WIDTH} solid ${PALETTE_VAR.focusRing}`,
+    )
+    expect(ring?.style.properties.get('box-shadow')).toBe(
+      `0 0 0 ${FOCUS_RING_SHADOW_WIDTH} ${PALETTE_VAR.focusRingShadow}`,
+    )
+    expect(FOCUS_RING_WIDTH).not.toBe(FOCUS_RING_SHADOW_WIDTH)
+
+    const before = factory.mark()
+    view.setKeyboardFocus(0)
+    // One attribute per slot that moved, and not a single style write.
+    expect(factory.since(before).map((mutation) => `${mutation.kind}:${mutation.name}`)).toStrictEqual([
+      'removeAttribute:hidden',
+    ])
+  })
+
+  it('clamps a told index through the SAME derivation the selection uses (DN-UI-7a)', () => {
+    // Both indices arrive from across a boundary and both can be `9`, `-1` or
+    // `NaN`. A HUD that loses its selection and a ring that vanishes are the same
+    // bug twice, so there is one `hotbarSlotIndex` and not two copies of it.
+    const { root, view } = mount()
+    const slots = root.findAll('data-mx-ui', 'slot')
+
+    view.setKeyboardFocus(9)
+    expect(slots[8]?.attributes.get('tabindex')).toBe('0')
+    view.setKeyboardFocus(-1)
+    expect(slots[0]?.attributes.get('tabindex')).toBe('0')
+    view.setKeyboardFocus(Number.NaN)
+    expect(slots[0]?.attributes.get('tabindex')).toBe('0')
+    expect(ringOf(slots[0])?.attributes.has('hidden')).toBe(false)
+  })
+
+  it('re-stating the same focus mutates nothing', () => {
+    const { factory, view } = mount()
+    view.setKeyboardFocus(4)
+    const before = factory.mark()
+    view.setKeyboardFocus(4)
+    expect(factory.since(before)).toStrictEqual([])
+  })
+
+  it('REGRESSION: making a slot focusable did not add a listener or a way to move focus', () => {
+    // The half that is still mc-render's, pinned from three directions.
+    // `application/dom-surface.ts` has no `addEventListener` (so nothing can
+    // observe focus) and no `focus()` (so nothing can move it), and both
+    // absences are what keep the Escape decision single (DN-UI-4/DN-UI-13c).
+    const { view, root, parent } = mount()
+    view.render(hudViewModel(spawnSnapshot))
+    view.setKeyboardFocus(2)
+
+    expect(root.listenersInTree()).toStrictEqual([])
+    expect(parent.listenersInTree()).toStrictEqual([])
+    expect('focus' in (root.findAll('data-mx-ui', 'slot')[0] ?? {})).toBe(false)
   })
 })
 

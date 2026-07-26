@@ -589,6 +589,22 @@ export const CRITICAL_PAIRS: ReadonlyArray<CriticalPair> = [
     alsoDistinguishedBy: ['shape'],
   },
   {
+    left: { name: 'status ok', color: STATUS_OK },
+    right: { name: 'status busy', color: STATUS_BUSY },
+    why: 'whether the save has finished or is still running',
+    // The gap building `application/save-indicator.ts` exposed. The survey
+    // declared the two pairs involving `STATUS_ALERT` and stopped, because the
+    // reference's defect was about failure; but an indicator with four states
+    // makes the player compare "saved" against "saving" too, and an undeclared
+    // pair is one the all-pairs sweep guards by ACCIDENT rather than by promise.
+    //
+    // 108 units apart at worst and 1.11:1 under deuteranopia — so like `heart
+    // full / shank full` this pair is separated by CHROMA, the channel dichromacy
+    // compresses hardest, and the glyphs (`✔` against `⟳`) are most of the signal
+    // rather than a decoration on top of it.
+    alsoDistinguishedBy: ['shape'],
+  },
+  {
     left: { name: 'focus ring', color: FOCUS_RING },
     right: { name: 'focus ring shadow', color: FOCUS_RING_SHADOW },
     why: 'where the keyboard is, on any background at all',

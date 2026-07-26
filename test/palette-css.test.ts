@@ -1,11 +1,14 @@
 /**
  * The bridge between the palette's numbers and a document.
  *
- * `docs/testing.md` §4 records completion criterion 4 as ⚠️ with a precise
+ * `docs/testing.md` §4 recorded completion criterion 4 as ⚠️ with a precise
  * reason: 「パレットに消費者が無い。トークンは値であり、CSS にする層がまだ無い。だから保証
  * …は数値については証明済みで、描かれた画面については未証明である」. This file is the
  * consumer, and the sweep below is what stops it from becoming a PARTIAL
  * consumer without anybody noticing — which would be the same gap, quieter.
+ *
+ * That partial-consumer gap was real for three tokens and is now closed; the
+ * sweep stays, because closing it once is not the same as keeping it closed.
  */
 import { describe, expect, it } from 'vitest'
 import * as palette from '../domain/palette'
@@ -21,9 +24,11 @@ import {
 import { captionLines, emptyCaptionQueue } from '../domain/caption'
 import { hudViewModel, spawnSnapshot } from '../domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../domain/inventory-view-model'
+import { saveStatus, saveStatusMessage } from '../domain/save-status'
 import { createCaptionView } from '../application/caption-view'
 import { createHudView } from '../application/hud-view'
 import { createInventoryView } from '../application/inventory-view'
+import { createSaveIndicator } from '../application/save-indicator'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
 const isRgb = (value: unknown): value is palette.Rgb =>
@@ -86,32 +91,33 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
     expect(PALETTE_PROPERTY_PREFIX).toBe('--mx-ui-')
   })
 
-  it('REGRESSION: records exactly which guarded tokens are DECLARED but not yet REFERENCED', () => {
-    // The precise remaining edge of criterion 4 in `docs/testing.md` §4, made
-    // measurable instead of argued.
+  it('REGRESSION: EVERY guarded token now reaches an element — the set is empty', () => {
+    // This assertion used to read `['focusRing', 'statusBusy', 'statusOk']`, and
+    // the note beside it said each member was open for a reason no amount of CSS
+    // could close. Both reasons are closed now, by components rather than by
+    // stylesheets, which is what the note predicted would be needed:
     //
-    // Declaring `--mx-ui-focus-ring` on a root is not the same as a screen
-    // drawing a focus ring. `surveyPalette` measures every entry in
-    // `GUARDED_TOKENS`, so a token that no element references is a token whose
-    // guarantee is still about numbers only — which is precisely the gap this
-    // directory was written to close. The set below is the part still open, and
-    // each member is open for a reason that is not fixable by writing more CSS:
+    //   FOCUS_RING       — `application/slot-element.ts` builds the ring as its
+    //   FOCUS_RING_SHADOW  own element and `HudView.setKeyboardFocus` lights it.
+    //                      The hotbar is a roving `tabindex` group, so it is ONE
+    //                      native tab stop. What stayed with mc-render is the
+    //                      keystroke that MOVES focus, not the ring that shows it:
+    //                      the surface still has no `addEventListener` and no
+    //                      `focus()` (DN-UI-4, DN-UI-13c).
     //
-    //   FOCUS_RING       — nothing is focusable. A focus ring needs a control,
-    //   FOCUS_RING_SHADOW  a control needs keys, and keys are mc-render's
-    //                      (plan.md §2.3-2) with the decision at frame level
-    //                      (DN-UI-4). See `test/screen-views.test.ts` on settings.
-    //
-    //   STATUS_OK        — the autosave indicator is not built. This is the
+    //   STATUS_OK        — `application/save-indicator.ts` exists. This was the
     //   STATUS_BUSY        uncomfortable one: `status ok / status alert` is THE
     //                      pair the survey found collapsed in the reference
     //                      (`#d7f7c2` vs `#ffd6d2`, 12 units apart under
-    //                      protanopia), and the component that would show it does
-    //                      not exist here yet. `STATUS_ALERT` reaches the screen
-    //                      through the death overlay; its partner does not.
+    //                      protanopia), and the fix was theoretical while no
+    //                      component showed it. Each message owns an element with
+    //                      its own colour, so all three status tokens are
+    //                      referenced at MOUNT rather than in whichever state
+    //                      happened to render last.
     //
-    // When one of these gets a consumer, THIS TEST is the one that fails, and
-    // that is the intended way to notice.
+    // The test is kept as a SWEEP rather than deleted. A token added to
+    // `GUARDED_TOKENS` and never surfaced would reopen exactly this gap one token
+    // at a time, silently, because `surveyPalette` would keep reporting it green.
     const factory = fakeDocument()
     const parent = factory.createElement('div') as FakeElement
     const hud = createHudView(factory, parent, 'full')
@@ -120,9 +126,11 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
     captions.render(captionLines(emptyCaptionQueue, 0))
     const inventory = createInventoryView(factory, parent)
     inventory.render(inventoryViewModel(emptyInventorySnapshot))
+    const saveIndicator = createSaveIndicator(factory, parent)
+    saveIndicator.render(saveStatusMessage(saveStatus('saved', 0), 0))
 
     const referenced = new Set<string>()
-    for (const root of [hud.root, captions.root, inventory.root]) {
+    for (const root of [hud.root, captions.root, inventory.root, saveIndicator.root]) {
       for (const element of (root as FakeElement).walk()) {
         for (const [property, value] of element.style.properties) {
           if (property.startsWith(PALETTE_PROPERTY_PREFIX)) {
@@ -143,7 +151,11 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
       return guardedNames.has(constantName) && !referenced.has(name)
     })
 
-    expect([...unreferencedGuarded].sort()).toStrictEqual(['focusRing', 'statusBusy', 'statusOk'])
+    expect([...unreferencedGuarded].sort()).toStrictEqual([])
+    // And the sweep is only worth its assertion if it found something. A typo in
+    // the camelCase-to-CONSTANT mapping above would make the list empty for the
+    // wrong reason.
+    expect(referenced.size).toBeGreaterThanOrEqual(palette.GUARDED_TOKENS.length)
   })
 
   it('declares the whole set on one element and writes each property exactly once', () => {
