@@ -64,6 +64,17 @@ describe('public API surface', () => {
         'COLOR_VISION_MODES',
         'COLOR_VISION_FILTER_TARGET',
         'colorVisionAttribute',
+        // …and the daltonisation ITSELF. The four names above are the SWITCH,
+        // and a switch with no matrix behind it corrects nothing: the reference
+        // kept the matrices in `index.html:445-460` and they were left there
+        // when the rest was carried over. `pnpm preview --stats` reported the
+        // half-carry as F5. Pinned here for the same reason as everything else
+        // in this list — carried over and then quietly dropped is
+        // indistinguishable from never carried over.
+        'colorVisionMatrix',
+        'colorVisionMatrixValues',
+        'applyColorVisionMatrix',
+        'COLOR_VISION_FILTER_COLOR_SPACE',
         // reduced-motion
         'resolveMotionPreference',
         'animationDurationMs',

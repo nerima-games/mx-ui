@@ -21,7 +21,8 @@ mx-ui が所有するのは「19 点の体力はハート 9 個と半分であ�
 mx-ui は音を鳴らさない。字幕イベントを購読するだけであり、鳴らす側は mc-audio が所有する。
 
 **mc-playground-kit は不要**（plan.md §3.13:「kit 不要(DOMのみで起動)」）。
-プレビューは DOM だけで起動するので、背後にミニ世界を用意する糊がいらない。
+各画面は自分の状態モックだけで起動するので、背後にミニ世界を用意する糊がいらない。
+実装された `apps/preview-screens/` は依存 0 個で動いており、この主張は現に検証済みである。
 ただし「kit は devDependency 専用」という組織全体のルールはここでも生きている
 （`test/check-dependency-whitelist.test.ts` の `§2.3-2: mc-playground-kit is devDependency-only`）。
 
@@ -91,14 +92,15 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
 
 | コマンド | 内容 |
 | --- | --- |
-| `pnpm typecheck` | `tsconfig.build.json` と `tsconfig.test.json` の両方を型検査 |
+| `pnpm typecheck` | `tsconfig.build.json` / `tsconfig.test.json` / `tsconfig.preview.json` を型検査 |
 | `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm lint:fix` | oxlint の自動修正 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm test:watch` | vitest watch |
 | `pnpm test:coverage` | カバレッジ計測（閾値は未設定。[docs/testing.md](./docs/testing.md) §5） |
 | `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + 壁時計直読み禁止の検査 |
-| `pnpm verify` | `typecheck && lint && check:deps && test`。CI と同じ内容 |
+| `pnpm preview` | 各画面プレビュー（[apps/preview-screens/](./apps/preview-screens/README.md)）。**`pnpm verify` には入れていない** |
+| `pnpm verify` | `typecheck && lint && check:deps && api:check && test`。CI と同じ内容 |
 
 ## 現状
 
@@ -120,8 +122,27 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
   — 16 リポジトリ中 DOM を持つのはここだけである — が、これは「最初の画面を足すときに
   ビルド設定の変更を同時にやらなくて済むように」先に置いてあるだけで、現状 `domain/` は全て純粋な導出である。
   そのためテストは vitest の `environment: 'node'` で走る。`types: []` は継承しているので Node グローバルは入らない。
-- **プレビューはまだ無い。** 完成条件は「テスト green + 各画面のプレビューが単体で操作可能」
-  （plan.md §3.13:「状態モック付きプレビュー(各画面を単体起動して操作)」）。プレビューは `apps/preview-*/` に置く（§4.1）。
+- **各画面プレビューは動く**（`pnpm preview`、[apps/preview-screens/](./apps/preview-screens/README.md)）。
+  plan.md §6 Step 2 の完了条件「テスト green + **内蔵プレビューが操作可能**」の後半は、これで満たしている
+  （[docs/testing.md](./docs/testing.md) §4）。
+  HUD / インベントリ / 設定 / 字幕の 4 画面が `--screen` で**単体起動**し、状態はモック、依存は 0 個、
+  壁時計の読み取りも 0 箇所（時計はキーで進む数値である）。
+  **DOM ではなく端末にビューモデルを描いている。** 理由は「プレビューすべき DOM コードがまだ無い」ことと
+  「検証対象のビューモデルが純粋関数であること」で、詳細と**失うもの**（レイアウト崩れ・フォーカスリング・
+  スクリーンリーダーは一切見えない）は `apps/preview-screens/main.ts` 冒頭に書いてある。
+  `tsconfig.build.json` は**触っていない**——プレビューは専用プロジェクトで型検査するので、
+  「出荷ソースに Node 型が無い」保証はそのまま残っている。
+  **初回実行で 4 件の欠陥を出した**（`pnpm preview --stats`）。
+  空スロットが耐久度を報告し続ける / NaN 体力で「空のハート列 + `dead: false`」になる /
+  NaN の選択 index でどのスロットも選択されなくなる / XP バーが 1 レベル早く 100% になる——
+  **4 件とも既存の 20 本のビューモデルテストが捕まえていなかった**。
+  どれも「バージョン境界を越えて来る値」の話で、テストは妥当な入力を渡すからである。
+  **4 件とも修正し、`test/view-model.test.ts` の assertion にした**（DN-UI-7a〜7d）。
+  現在 finding は 0 件である。
+  残るのは **gap 2 件**——mx-ui が色を 1 つも定義していないこと（ただし `feColorMatrix` の
+  補正行列は参照実装から引き継ぎ、算術をテストで固定した。DN-UI-1a）と、
+  インベントリ／クラフトにビューモデルが無いこと。**どちらも「無い」ことを assert するテストで
+  ピン留めしてある**ので、埋まればテストが落ちる（沈黙ではなく diff になる）。
 - **build / publish パイプラインは無い。** `exports` は TypeScript ソースを直接指しており `noEmit: true`。
   `version` は `0.x` に留める（[docs/versioning.md](./docs/versioning.md)）。
 - **カバレッジ閾値は未設定。** 計測とレポートは常に動かしており、99% ゲートは完成条件到達時に有効化する
@@ -136,12 +157,13 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
 `pnpm install` と `pnpm verify` はいずれも 0 で終了する。
 
 ```
-typecheck   tsc 2 プロジェクトともエラーなし
-lint        oxlint: 14 files, 97 rules, Found 0 warnings and 0 errors
-check:deps  OK — 14 file(s) scanned, allowed direct dependencies:
+typecheck   tsc 3 プロジェクト（build / test / preview）ともエラーなし
+lint        oxlint: 27 files, 97 rules, Found 0 warnings and 0 errors
+check:deps  OK — 27 file(s) scanned, allowed direct dependencies:
             @nerima-games/mc-audio, @nerima-games/mc-sim
             (plus @nerima-games/mc-kernel, which every repository may import)
-test        vitest 3.2.7 — 5 files, 75 tests passed (485ms)
+api:check   OK — api-lock.md matches the public API (70 entries)
+test        vitest 3.2.7 — 6 files, 119 tests passed
 ```
 
 数字はスケルトンが育つたびに動く。**再現は `pnpm verify` であり、本節はその時点のスナップショットである。**

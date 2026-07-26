@@ -44,9 +44,45 @@ UI 側の選択肢も同じ 4 つ: `packages/presentation/settings/settings-over
 > (SVG feColorMatrix daltonization) live in index.html; this just flips the
 > body data attribute the CSS rules key on.
 
-つまりモジュールがやるのは `<body>` の data 属性を切り替えることだけで、
+つまり参照実装のモジュールがやるのは `<body>` の data 属性を切り替えることだけで、
 **適用範囲を決めるのは CSS 側**である。`domain/accessibility.ts` の `COLOR_VISION_FILTER_TARGET = 'canvas'`
 と `colorVisionAttribute` はこの分担をそのまま写している。
+
+**ただし行列そのものも、ここが置き場である。**
+
+スイッチだけを引き継ぐと、**後ろに何も無いフック**が残る。
+`data-color-vision="protanopia"` は CSS が指す先があって初めて意味を持ち、その先＝
+`feColorMatrix` の 20 個の数は参照実装の `index.html:445-460` にあった。
+`pnpm preview --stats` はこの半端さを finding として報告した（当時の F5）。
+**「引き継ぐ」は半分では満たされない。**
+
+行列を mx-ui の `domain/` に置く理由は 2 つある。
+
+1. **アクセシビリティを所有しているのはこのリポジトリである**（plan.md §3.13）。
+   フィルタが掛かる canvas を所有するのは mc-render だが、**設定を所有してはいない**。
+   置き場が無いままだと、最初にスタイルシートを書いた人がこの 20 個の数を別に再導出する。
+2. **行列は算術なので、ここでならテストできる。** 参照実装ではマークアップだったので 1 度も検査されていない。
+   `applyColorVisionMatrix` は他の導出と同じく `environment: 'node'` で走る。
+
+分担そのものは変わっていない。**このモジュールが決めるのは値、スコープを決めるのはスタイルシート**である。
+
+carry over した内容:
+
+| 名前 | 参照実装の出所 | 何を守っているか |
+| --- | --- | --- |
+| `colorVisionMatrix(mode)` | `index.html:451-459` | 補正行列 3 つ。`off` は `undefined` = フィルタを入れない |
+| `colorVisionMatrixValues(mode)` | 同上 | `<feColorMatrix values>` の文字列そのもの |
+| `COLOR_VISION_FILTER_COLOR_SPACE = 'sRGB'` | `index.html:448-450` | SVG 既定の linearRGB では**中間調が明るくなりすぎる**。1 単語だが、補正と色褪せの差である |
+| `applyColorVisionMatrix` | （参照実装に対応物なし） | 行和 1 とグレー不変を検査可能にするための算術 |
+
+**行和が全て 1 である**（`index.html:445-447` が明記）。
+これは白とグレーが素通しされるということで、**補正がシーン全体を色被りさせない**根拠である。
+近似ではなく厳密なので、符号を 1 つ書き間違えれば即座に破れる。テストはそこを見ている。
+
+**シミュレーションと補正を取り違えないこと。** `apps/preview-screens/ansi.ts` の行列は
+Viénot–Brettel–Mollon の**シミュレーション**（プレイヤーに何が見えるか）であり、
+`domain/accessibility.ts` の行列は**補正**（何を描き直すか）である。
+入れ替えると、設定が直そうとしている当のものを壊す。両ファイルの冒頭が互いにそう書いている。
 
 **なぜ canvas だけなのか。** 補正はピクセル単位の色変換である。
 これを文書全体に掛けると、**UI クロームも一緒に変換される**。
@@ -74,6 +110,18 @@ if (mode === 'off') {
 - `REGRESSION: the filter targets the canvas only, never the whole document`
 - `the mode set matches the reference exactly, so its saved settings stay readable`
 - `"off" removes the attribute rather than setting it to a string`
+
+行列側（`test/view-model.test.ts`、describe `colour vision correction (the feColorMatrix matrices themselves)`。
+プレビューの finding は `test/view-model.test.ts` に降ろす規約なのでここにある）:
+
+- `REGRESSION: every mode that sets the attribute also has a matrix, and \`off\` has neither`
+  — 片方だけ立つと、属性を消したのにフィルタが残る（またはその逆）
+- `the matrices are the reference’s, number for number`
+- `REGRESSION: every row sums to 1, so greys and whites pass through unchanged`
+- `the red-green corrections move red into the blue channel, which is the channel that is intact`
+  — ダルトナイゼーションとは**これ**である。行和 1 を満たしたまま何も補正しない行列は書けるので、
+  この 1 本が「フィルタとして妥当」と「補正として有効」を分けている
+- `REGRESSION: the filter is declared in sRGB, not the SVG default`
 
 ### DN-UI-1b reduced-motion — 既定は OS、そして「短く」ではなく「ゼロ」
 
@@ -412,6 +460,64 @@ mc-sim は別リポジトリであり、ピン留めされたバージョン境�
 出力のホットバーが常に 9 スロットなのは DOM 層のためで、
 **DOM 層が短い配列について考えなくて済む**。
 
+### DN-UI-7a `Math.min`/`Math.max` は NaN を素通しする
+
+**クランプが止めていたのは簡単な半分だけだった。**
+
+`Math.min(Math.max(NaN, 0), 20)` は `0` ではなく `NaN` である。NaN との比較は全て false だからで、
+`9` と `-1` は止まるが `NaN` は素通しした。`pnpm preview --stats` が 3 つの症状として報告している
+（当時の F2 / F3、および本文に出ていなかった 2 件）:
+
+| 入力 | 旧挙動 | 直った後 |
+| --- | --- | --- |
+| `healthPoints: NaN` | 全アイコン empty **かつ `dead: false`** | 全アイコン empty **かつ `dead: true`** |
+| `selectedHotbarIndex: NaN` | **どのスロットも選択されない** | スロット 0（`-1` と同じ） |
+| `count: NaN` | `countLabel: "NaN"` を HUD に描く | `empty: true`、ラベル無し |
+| `experienceLevel: NaN` | `experienceLevelLabel: "NaN"` | `"0"` |
+| `maxHealthPoints: Infinity` | **`RangeError` を投げる**（`Array.from({length: Infinity})`） | アイコン 0 個 |
+
+**そして NaN こそがこの節の想定していた入力である。** クランプを選んだ理由は
+「値がバージョン境界を越えて来るから」であり、ゼロ最大値での除算・意味が変わったフィールド・
+形の違うセーブの読み込みは、どれも `9` ではなく `NaN` を寄越す。
+
+規則は 1 つ: **`clamp` は NaN を `low` にする。**
+
+`low` である理由は DN-UI-6 と同じである。`[low, high]` の中で、
+**スナップショットが主張していない体力を発明しない**唯一の値が `low` だからである。
+`high` に倒せば、死んでいるかもしれないプレイヤーに満タンのハート列を見せることになり、
+それは DN-UI-6 が名指しで禁じている嘘そのものである。
+
+**throw にはしない。** この節の前提（「HUD が例外を投げるのは、HUD が一瞬間違っているより悪い」）は
+そのまま生きている。むしろ `Infinity` の行は、旧実装に**唯一許されない結果**が実在したことを示している。
+
+### DN-UI-7b 列とフラグは同じ数から導く
+
+**旧実装の本当の欠陥は NaN そのものではなく、`dead` が独立した式だったことである。**
+
+```typescript
+hearts: iconRow(snapshot.healthPoints, snapshot.maxHealthPoints),  // クランプ経由
+dead:   Math.floor(snapshot.healthPoints) <= 0,                    // クランプを経由しない
+```
+
+**同じ 1 つの問いに 2 つの導出があれば、いずれ違う答えを出す。** DN-UI-4 が Escape について
+「2 回導出される決定は、いずれ違うように導出される」と書いているのと同じ話である。
+現在は両方が `safePoints(...)` の 1 つの値を読む。
+
+### DN-UI-7c 空スロットは全フィールドが空である
+
+`empty` ガードは `itemId` と `countLabel` を消していたが `durabilityPercent` を消していなかった
+（当時の F1）。「フィールドがあれば描く」と書いた DOM 層——**それが自然な書き方である**——は、
+空スロットの下に耐久バーを描く。プレイ中に到達する: **道具が壊れると `count: 0` と耐久度が残る**。
+
+### DN-UI-7d XP バーは `floor`、耐久度は `round`
+
+`Math.round(0.999 * 100)` は `100` である。すると XP バーが満タンなのに
+**隣のレベル表示が上がらない**（当時の F4）。プレイヤーには固まった HUD に見え、
+しかもこの矛盾は画面上で確認できてしまう。`Math.floor` なら **1.0 だけが 100 に届く**。
+
+`durabilityPercent` は `Math.round` のままである。**そちらの 100% は出来事の主張ではなく**、
+隣に矛盾を作る数字も無い。異なる 2 つの丸めがあるのは事故ではなく判断である。
+
 回帰テスト（`test/view-model.test.ts`）:
 
 - `a snapshot from across a version boundary is clamped rather than trusted`
@@ -419,8 +525,17 @@ mc-sim は別リポジトリであり、ピン留めされたバージョン境�
 - `the view model always has exactly 9 slots, however short the snapshot`
 - `experience progress becomes a clamped whole percentage`
 - `a slot holding zero of something is empty, not a zero-count item`
+- `REGRESSION: NaN is clamped like any other bad value — Math.min/Math.max pass it through`（DN-UI-7a）
+- `REGRESSION: a non-finite maximum yields no icons rather than throwing`（同）
+- `REGRESSION: a NaN selected index still selects a slot, exactly as 9 and -1 do`（同）
+- `REGRESSION: a NaN count is not drawn as the text "NaN"`（同）
+- `REGRESSION: a NaN experience level is not drawn as the text "NaN"`（同）
+- `REGRESSION: NaN health makes the heart row and the \`dead\` flag agree`（DN-UI-7b）
+- `REGRESSION: an empty slot reports NO durability — every field goes, not just the obvious two`（DN-UI-7c）
+- `REGRESSION: the XP bar does not read 100% one level early`（DN-UI-7d）
 
-最後の 1 本は別種で、`count: 0` の `itemId` 付きスロットは**空**として扱う。
+`a slot holding zero of something is empty, not a zero-count item` は別種で、
+`count: 0` の `itemId` 付きスロットは**空**として扱う。
 「0 個の石」を描くと、プレイヤーは持っていないものを持っているように見る。
 
 ---

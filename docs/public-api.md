@@ -217,9 +217,13 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 
 | export | 種別 |
 | --- | --- |
-| `ColorVisionMode` / `MotionSetting` / `MotionPreference` / `InputAction` / `KeyBindings` / `RebindResult` | type |
-| `COLOR_VISION_MODES` / `COLOR_VISION_FILTER_TARGET` / `REBIND_CLEAR_KEYS` | 定数 |
-| `colorVisionAttribute` / `resolveMotionPreference` / `animationDurationMs` / `shouldAnimate` / `rebind` / `unboundActions` | 純粋関数 |
+| `ColorVisionMode` / `ColorVisionMatrix` / `RgbChannels` / `MotionSetting` / `MotionPreference` / `InputAction` / `KeyBindings` / `RebindResult` | type |
+| `COLOR_VISION_MODES` / `COLOR_VISION_FILTER_TARGET` / `COLOR_VISION_FILTER_COLOR_SPACE` / `REBIND_CLEAR_KEYS` | 定数 |
+| `colorVisionAttribute` / `colorVisionMatrix` / `colorVisionMatrixValues` / `applyColorVisionMatrix` / `resolveMotionPreference` / `animationDurationMs` / `shouldAnimate` / `rebind` / `unboundActions` | 純粋関数 |
+
+`colorVisionMatrix` 以下の 3 つと `COLOR_VISION_FILTER_COLOR_SPACE` は
+**`feColorMatrix` ダルトナイゼーションそのもの**である。参照実装ではマークアップ（`index.html:445-460`）
+だったので carry over から漏れていた。スイッチだけでは後ろに何も無いフックが残る（DN-UI-1a）。
 
 ### `domain/modal-stack.ts` — すべて内部(可視)
 

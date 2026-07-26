@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 57
+exported declarations: 63
 supporting declarations: 7
 
 ## Exported
@@ -22,6 +22,12 @@ supporting declarations: 7
 
 ```ts
 const CAPTION_LIFETIME_SECS = 3;
+```
+
+### COLOR_VISION_FILTER_COLOR_SPACE  `const`
+
+```ts
+const COLOR_VISION_FILTER_COLOR_SPACE: "sRGB";
 ```
 
 ### COLOR_VISION_FILTER_TARGET  `const`
@@ -72,6 +78,33 @@ type CaptionSettings = {
     readonly captionsEnabled: boolean;
     readonly audioUnlocked: boolean;
 };
+```
+
+### ColorVisionMatrix  `type`
+
+```ts
+type ColorVisionMatrix = readonly [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number
+];
 ```
 
 ### ColorVisionMode  `type`
@@ -231,6 +264,12 @@ type RebindResult = {
 };
 ```
 
+### RgbChannels  `type`
+
+```ts
+type RgbChannels = readonly [number, number, number];
+```
+
 ### ScreenId  `type`
 
 ```ts
@@ -287,6 +326,12 @@ type VitalsSnapshot = {
 const animationDurationMs: (baseMs: number, motion: MotionPreference) => number;
 ```
 
+### applyColorVisionMatrix  `const`
+
+```ts
+const applyColorVisionMatrix: (channels: RgbChannels, matrix: ColorVisionMatrix) => RgbChannels;
+```
+
 ### captionLines  `const`
 
 ```ts
@@ -303,6 +348,18 @@ const closeScreen: (stack: ModalStack, screen: ScreenId) => ModalStack;
 
 ```ts
 const colorVisionAttribute: (mode: ColorVisionMode) => string | undefined;
+```
+
+### colorVisionMatrix  `const`
+
+```ts
+const colorVisionMatrix: (mode: ColorVisionMode) => ColorVisionMatrix | undefined;
+```
+
+### colorVisionMatrixValues  `const`
+
+```ts
+const colorVisionMatrixValues: (mode: ColorVisionMode) => string | undefined;
 ```
 
 ### emptyCaptionQueue  `const`

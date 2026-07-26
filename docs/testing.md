@@ -10,11 +10,16 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 
 | ゲート | 何を捕まえるか |
 | --- | --- |
-| `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト + ツール）の両方。**出荷ソースには Node 型が無い** — `types: []` を継承しているので、画面の中で `process.env` を読むと落ちる |
+| `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）、`tsconfig.test.json`（テスト + ツール）、`tsconfig.preview.json`（`apps/` の dev アプリ）の 3 プロジェクト。**出荷ソースには Node 型が無い** — `types: []` を継承しているので、画面の中で `process.env` を読むと落ちる。プレビューが Node の stdio を使えるのは**別プロジェクト**だからであって、build 側を緩めたからではない（§4） |
 | `pnpm lint` | oxlint。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm check:deps` | 依存ホワイトリスト / 循環 / 推移閉包 / kit の実行時混入 / **壁時計の直読み**（DN-UI-10） |
+| `pnpm api:check` | `api-lock.md` と公開 API の乖離（plan.md §6 Step 0-3） |
 | `pnpm test` | vitest |
 | `pnpm test:coverage` | カバレッジ計測。**閾値は未設定**（§5） |
+
+**`apps/`（プレビュー）は `SCAN_ROOTS` にも lint 対象にも入っている。**
+`pnpm verify` はプレビューを*実行*しないが、型検査・lint・依存ゲート・壁時計禁止はすべて適用される。
+「dev アプリだから検査しない」にすると、依存を 1 つ足すのに最も抵抗の少ない場所ができてしまう。
 
 `pnpm` は `corepack` 経由で 9.15.0（`package.json` の `packageManager` でピン留め）。
 
@@ -26,15 +31,21 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 ```
 vitest 3.2.7
  ✓ test/public-api.test.ts                 (6 tests)
- ✓ test/stage-registration.test.ts         (12 tests)
+ ✓ test/stage-registration.test.ts         (15 tests)
  ✓ test/accessibility.test.ts              (17 tests)
- ✓ test/view-model.test.ts                 (20 tests)
+ ✓ test/view-model.test.ts                 (35 tests)
  ✓ test/check-dependency-whitelist.test.ts (20 tests)
+ ✓ test/api-lock.test.ts                   (26 tests)
 
- Test Files  5 passed (5)
-      Tests  75 passed (75)
-   Duration  485ms
+ Test Files  6 passed (6)
+      Tests  119 passed (119)
 ```
+
+`view-model.test.ts` が 20 → 35 に増えているのは、プレビューの finding 4 件と gap 2 件を
+assertion として降ろしたぶんである（§4 の「プレビューが実際に何を見つけたか」）。
+
+**プレビュー（`apps/`）にテストは無い。** 意図的である——プレビューは検査対象ではなく検査**手段**であり、
+そこで見つかったことは `test/view-model.test.ts` に assertion として降ろすのが正しい置き場所である（§4）。
 
 **この数字はスケルトンが育つたびに動く。** 権威は `pnpm verify` の出力であって本節ではない。
 本節が古くなっていたら、それは suite が増えたということである。
@@ -132,20 +143,93 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | --- | --- | --- |
 | 1 | `pnpm verify` が green | ✅ |
 | 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ❌ |
-| 3 | **各画面のプレビューが単体で起動し操作できる** | ❌（プレビューは 1 本も無い） |
-| 4 | アクセシビリティ資産 4 つが目視で確認済み | ❌ |
+| 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
+| 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ 部分的（4 つとも操作でき、**補正行列も引き継いで算術をテストで固定した**。残るのは mx-ui が色を 1 つも定義していないことで、コントラスト表はプレビューが発明した色を測っている——下記 G1） |
 | 5 | 99% カバレッジゲートが有効 | ❌（完成時に有効化、§5） |
 
-### プレビューの条件
+### プレビューの条件（満たしている）
 
-- 各画面が**単体で**起動する。背後にゲームが要らない。
-- **mc-playground-kit を使わない**（DN-UI-5、plan.md §3.13:「kit 不要(DOMのみで起動)」）。
-- 置き場は `apps/preview-*/`（plan.md §4.1: 「プレビューは契約に含めない(各リポジトリ内の dev アプリ)」）。
-- 状態はモックである。`domain/hud-view-model.ts` の `spawnSnapshot` がその最小形で、
+`apps/preview-screens/`。`pnpm preview` で起動、`pnpm preview --screen captions` で字幕画面だけを起動する。
+
+- **各画面が単体で起動する。** 背後にゲームは要らない（`--screen hud | inventory | settings | captions`）。
+- **mc-playground-kit を使っていない**（DN-UI-5、plan.md §3.13:「kit 不要」）。依存は 0 個である。
+- 置き場は `apps/preview-screens/`（plan.md §4.1）。`index.ts` から export されず、`pnpm verify` は実行しない。
+- 状態はモックである（`apps/preview-screens/state.ts`）。
   「リテラルを渡せば HUD が出る」ようにビューモデルが純粋関数であることがこれを可能にしている。
 
 `ui:overlay-sync` が mc-sim の状態を一切読まないのは、この条件のための構造である
 （[responsibility.md](./responsibility.md) §1）。
+
+#### なぜ端末レンダラなのか（DOM プレビューではなく）
+
+mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だからブラウザプレビューが自明に見えるが、
+**今日の時点では違う**。理由は 4 つあり、詳細は `apps/preview-screens/main.ts` の冒頭にある。要約:
+
+1. **プレビューすべき DOM コードが無い。** `domain/` に `document` は 1 度も現れない。
+   ブラウザプレビューはまず DOM 層を書くことを要求し、それを `apps/` に書けば
+   出荷されないコードのプレビューになる。
+2. **検証対象のビューモデルは純粋関数である。** 端末レンダラはその**もう 1 つの独立した射影**であり、
+   モデルについて分かったことはブラウザにそのまま移る。
+3. ブラウザプレビューはバンドラとブラウザを要求し、対価は**どのビューモデルも主張していない**レイアウト忠実度である。
+   `--once --ascii` の出力は pipe でき diff でき issue に貼れる。
+4. **アクセシビリティは端末のほうが測れる。** コントラスト比も色覚シミュレーションも RGB 上の算術であり、
+   `--stats` が「どのモードでどの色対が潰れるか」の表を出す。
+
+**失うものは実在する**: レイアウト崩れ、重なり、フォーカスリング、スクリーンリーダーの読み上げ。
+どれも DOM の問いであり、最初の画面が書かれたときブラウザプレビューは**これの代わりではなく隣に**置く。
+
+**既存の保証は弱めていない。** `tsconfig.build.json` は `types: []` を継承し続けており、
+プレビューは専用の `tsconfig.preview.json`（`types: ["node"]`）で型検査する。
+「画面の中で `process.env` を読むと落ちる」は以前と同じ範囲でそのまま成立している。
+
+#### プレビューが実際に何を見つけたか
+
+`pnpm preview --stats` は数値レポートを出す。レポートは 2 つのリストを持つ。
+
+- **finding** — **実行時の測定**であり、記録された期待値は 1 つも無い。直せば自動的に消える。
+- **gap** — **無いもの**。走らせて測れないので、消えたことを検出できるのはピン留めしたテストだけである。
+
+**この区別が要るのは、finding を直しても件数が減らないレポートは読まれなくなるからである。**
+
+初回実行の finding は 4 件で、**4 件とも直して `test/view-model.test.ts` の assertion にした**。
+現在の finding は 0 件である。全文は
+[`apps/preview-screens/README.md`](../apps/preview-screens/README.md) にある。要約:
+
+- **空スロットが `durabilityPercent` を報告し続けていた（F1）。** `empty` ガードが `itemId` と
+  `countLabel` は消すのに `durabilityPercent` は消していなかった。「フィールドがあれば描く」と書いた
+  DOM 層は空スロットの下に耐久バーを描く。道具が壊れた直後に到達する。→ DN-UI-7c
+- **NaN 体力が「空のハート列 + `dead: false`」になっていた（F2/F3）。** `clamp` が
+  `Math.min`/`Math.max` なので NaN を素通しし、列は「体力ゼロ」と言い、フラグは「生存」と言っていた。
+  同じ穴が `selectedHotbarIndex`・`count`・`experienceLevel` にもあり、
+  `maxHealthPoints: Infinity` に至っては **`RangeError` を投げていた**——
+  DN-UI-7 が唯一許していない結果である。→ DN-UI-7a / DN-UI-7b
+- **XP バーが 1 レベル早く 100% になっていた（F4）。** `Math.round(0.999)` が `1`。→ DN-UI-7d
+
+**4 件とも既存の 20 本のビューモデルテストが捕まえていなかった。**
+どれも「境界を越えて来る値」に関するもので、テストは妥当な入力を渡すからである。
+**プレビューが値の妥当さを仮定しないのは、それが検査手段の仕事だからである。**
+
+残っている gap は 2 件で、どちらも `test/view-model.test.ts` の
+describe `gaps the preview found that are recorded rather than filled` がピン留めしている。
+**テストが assert しているのは「無い」ことである。** 埋めればテストが落ち、
+欠落が埋まったことが diff として見える——沈黙ではなく。
+
+- **G1: mx-ui が色を 1 つも定義していない**（完成条件 4 が依然 ⚠️ である理由）。
+  **半分は閉じた。** `feColorMatrix` の補正行列は参照実装の `index.html:445-460` から
+  `domain/accessibility.ts` に引き継ぎ、行和 1・グレー不変・赤緑分離をテストで固定した（DN-UI-1a）。
+  行列は mc-render の canvas に掛かるので、パレットが無くても完結している。
+  残るのはパレット／トークン／スタイルシートが無いことで、コントラスト表は
+  **プレビュー自身が発明した色**を測っている。ハーネスは本物、被検体は仮置きである。
+  **ここでパレットを発明しない。** 発明すれば欠落が見えなくなる。
+  必要なものは決まっている: `palette.ts` の `CRITICAL_PAIRS` 5 対
+  （ハート満/空、耐久 高/低、XP バー/トラック、ハート/肉、選択スロット/枠）が
+  4 モード全部で潰れないこと。それを測らずに出るパレットは、誰も検査していないパレットである。
+- **G2: インベントリ／クラフトにビューモデルが無い。** plan.md §3.13 は 4 画面を挙げるが
+  `domain/` に導出があるのは 3 つ。**意図的に埋めていない**: インベントリの*状態*は mc-sim の所有
+  （plan.md §2.3-1）で、その形はまだ publish されていない。今書けば読み取るスナップショット型を
+  発明することになり、`api-lock.md` がそれを**公開 API として固定する**。
+  `index.ts` が `domain/frame-contract.ts` について既に記録している罠と同じものである。
+  形が分かってから足すのは安く、当てずっぽうを取り消すのは高い。
 
 ### アクセシビリティ検証はユニットテストでは閉じない
 
