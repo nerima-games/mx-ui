@@ -1,0 +1,26 @@
+{
+  // Shipped source only: `index.ts`, the view-model domain, and the stage
+  // registrations.
+  //
+  // NOTE the asymmetry with the other repositories: tsconfig.base.json adds
+  // "DOM" to `lib` here, because mx-ui IS the DOM repository (plan.md §3.13).
+  // `types: []` is still inherited, so Node globals remain out — a `process.env`
+  // read in a screen would fail this project, which is what keeps mx-ui
+  // browser-only.
+  //
+  // The current first cut deliberately contains no DOM code at all: everything
+  // in `domain/` is pure state derivation, which is why the test suite runs
+  // under vitest's `environment: 'node'`. DOM rendering arrives with the
+  // per-screen previews.
+  "extends": "./tsconfig.base.json",
+  "include": ["index.ts", "domain/**/*.ts", "stages/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "coverage",
+    "dist",
+    "test/**",
+    "scripts/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
