@@ -34,6 +34,35 @@ import {
   spawnSnapshot,
   type VitalsSnapshot,
 } from '../domain/hud-view-model'
+import {
+  emptyInventorySnapshot,
+  INVENTORY_MAIN_COLUMNS,
+  INVENTORY_MAIN_SLOT_COUNT,
+  INVENTORY_SLOT_COUNT,
+  inventoryViewModel,
+  regionOf,
+  type InventorySnapshot,
+  type MirroredInventory,
+} from '../domain/inventory-view-model'
+import {
+  COLLAPSE_SEPARATION,
+  cssColor,
+  hex,
+  HEART,
+  KNOWN_NEAR_COLLISIONS,
+  relativeLuminance,
+  SCRIM,
+  SCRIM_ALPHA,
+  separation,
+  simulateColorVision,
+  STATUS_ALERT,
+  STATUS_BUSY,
+  STATUS_OK,
+  surveyPalette,
+  TEXT_CONTRAST_MIN,
+  UI_CONTRAST_MIN,
+  type Rgb,
+} from '../domain/palette'
 
 const withVitals = (overrides: Partial<VitalsSnapshot>): VitalsSnapshot => ({
   ...spawnSnapshot,
@@ -521,91 +550,465 @@ describe('colour vision correction (the feColorMatrix matrices themselves)', () 
 })
 
 /**
- * Two gaps that are NOT fixed, pinned so that closing them is a diff.
+ * The palette (was G1).
  *
- * `pnpm preview --stats` reports both. Neither can be closed by inventing the
- * missing piece here — that is what makes them gaps rather than bugs — so what
- * these tests assert is the ABSENCE, in the exact shape the addition will take.
- * A finding that lives only in a report is a finding nobody reads; a finding
- * that lives in a failing test is a finding that gets closed.
+ * These replace `GAP: mx-ui defines no colours, so nothing here can be
+ * contrast-checked`, which asserted the ABSENCE of a token set. The tokens now
+ * exist, so the assertions are about what they guarantee — and the guarantee is
+ * narrow on purpose, because the wide version ("WCAG AA on a Minecraft HUD") is
+ * not honourable over a backdrop the renderer chooses.
+ *
+ * Everything below reads ONE derivation, `surveyPalette()`, which is the same
+ * one `pnpm preview --stats` prints. A second copy of this arithmetic in the
+ * preview is how the report and the tests would eventually disagree.
  */
-describe('gaps the preview found that are recorded rather than filled', () => {
-  it.effect('GAP: mx-ui defines no colours, so nothing here can be contrast-checked', () =>
+describe('the palette keeps its guarantee', () => {
+  it.effect('REGRESSION: every guarded token clears its floor over ANY world pixel', () =>
     Effect.sync(() => {
-      // F5, second half. The correction matrices above are now carried over and
-      // they act on mc-render's canvas, so they are complete without a palette.
-      // What is still missing is mx-ui's OWN colours: there is no token, no
-      // theme and no stylesheet anywhere in the repository, so
-      // `apps/preview-screens/palette.ts` measures colours the preview invented
-      // and `--stats` §5 says so in a footnote.
+      // G1. HUD text does not sit on a colour this repository controls — it
+      // sits on `SCRIM`, which is translucent, over whatever mc-render drew.
+      // So the ratio is taken against the worst pixel there is rather than a
+      // convenient one, and the bound is exact rather than sampled because
+      // composite luminance is monotone in the backdrop. `boundIsExact` is the
+      // side condition that makes the two-endpoint check valid; a token that
+      // failed it would be one that vanishes into the scrim over some world,
+      // and it is reported as below-floor rather than measured wrongly.
+      const survey = surveyPalette()
+
+      expect(survey.tokensBelowFloor).toStrictEqual([])
+      expect(survey.tokens.length).toBeGreaterThan(0)
+      for (const token of survey.tokens) {
+        expect(token.boundIsExact).toBe(true)
+        expect(token.worstContrast).toBeGreaterThanOrEqual(token.floor)
+      }
+
+      // The floors are WCAG 2.2's, not house numbers: §1.4.3 for text, §1.4.11
+      // for icons, meters and borders.
+      expect(TEXT_CONTRAST_MIN).toBe(4.5)
+      expect(UI_CONTRAST_MIN).toBe(3)
+    }),
+  )
+
+  it.effect('REGRESSION: no critical pair collapses under any of the four colour-vision modes', () =>
+    Effect.sync(() => {
+      // G2, and the reason it matters here rather than somewhere else: DN-UI-1a
+      // scopes the daltonisation correction to the CANVAS, so it never touches
+      // one colour in `domain/palette.ts`. These pairs have to survive
+      // un-corrected or they do not survive.
+      const survey = surveyPalette()
+
+      expect(survey.collapsedPairs).toStrictEqual([])
+      for (const reading of survey.pairs) {
+        expect(reading.worstSeparation).toBeGreaterThanOrEqual(COLLAPSE_SEPARATION)
+        // All four modes measured, `off` included — a pair that only works for
+        // trichromats is the failure, and a pair that only works for
+        // dichromats would be a different one.
+        expect(reading.perMode.map((mode) => mode.mode)).toStrictEqual([...COLOR_VISION_MODES])
+      }
+
+      // The five pairs the preview named as the specification while there was
+      // nothing to measure are all still on the list.
+      const named = survey.pairs.map((reading) => `${reading.pair.left.name} / ${reading.pair.right.name}`)
+      expect(named).toContain('heart full / heart empty')
+      expect(named).toContain('durability high / durability low')
+      expect(named).toContain('xp fill / xp track')
+      expect(named).toContain('heart full / shank full')
+      expect(named).toContain('slot selected / slot border')
+    }),
+  )
+
+  it.effect('REGRESSION: the pair the reference collapses is the pair this palette fixed', () =>
+    Effect.sync(() => {
+      // The survey's actual finding, kept as a test so that anyone tempted to
+      // "restore the reference values" is told why they were changed.
       //
-      // Inventing a palette to make the harness look finished would make the
-      // gap invisible — the same mistake `screen-inventory.ts` refuses to make
-      // by drawing a plausible grid. So: no palette, and this test names it.
+      // `<reference-impl>/index.html:159` inks a successful autosave `#d7f7c2`
+      // and `:212` inks a FAILED one `#ffd6d2`. Simulated, those two are 12
+      // units apart under protanopia and 22 under deuteranopia, against a
+      // collapse threshold of 24 out of the 442-unit cube — so a red-green
+      // dichromat cannot tell "world saved" from "save failed", two strings of
+      // similar length in the same place on the same backdrop.
       //
-      // WHAT MUST EXIST when someone closes this. The preview's
-      // `CRITICAL_PAIRS` is the specification: pairs of colours that MEAN
-      // different things (heart full / heart empty, durability high /
-      // durability low, xp bar / xp track, heart / shank, slot selected / slot
-      // border) and must stay distinguishable under all four modes. A palette
-      // that ships without those five pairs measured is a palette nobody has
-      // checked. When the tokens land, this test is replaced by one that
-      // asserts the pairs, and `palette.ts` imports them instead of inventing.
-      const paletteNames = [
-        'PALETTE',
-        'COLORS',
-        'COLOURS',
-        'COLOR_TOKENS',
-        'COLOUR_TOKENS',
-        'THEME',
-        'TOKENS',
-        'HUD_COLORS',
-        'HUD_COLOURS',
-        'CRITICAL_PAIRS',
-      ]
-      for (const name of paletteNames) {
-        expect(Object.keys(ui)).not.toContain(name)
+      // Nothing in the reference could have caught it:
+      // `<reference-impl>/e2e/ui/accessibility.e2e.ts:10` compares a text node
+      // against its own background and never one STATE against another.
+      const REFERENCE_OK: Rgb = [215, 247, 194] // index.html:159
+      const REFERENCE_ERROR: Rgb = [255, 214, 210] // index.html:212
+
+      const worstReference = Math.min(
+        ...COLOR_VISION_MODES.map((mode) =>
+          separation(
+            simulateColorVision(REFERENCE_OK, mode),
+            simulateColorVision(REFERENCE_ERROR, mode),
+          ),
+        ),
+      )
+      expect(worstReference).toBeLessThan(COLLAPSE_SEPARATION)
+
+      const worstOurs = Math.min(
+        ...COLOR_VISION_MODES.map((mode) =>
+          separation(simulateColorVision(STATUS_OK, mode), simulateColorVision(STATUS_ALERT, mode)),
+        ),
+      )
+      expect(worstOurs).toBeGreaterThanOrEqual(COLLAPSE_SEPARATION)
+
+      // And the fix is a LUMINANCE ladder, not a hue swap. That is the general
+      // rule the survey forced: dichromacy compresses hue and largely preserves
+      // luminance, so a set separated by luminance survives by construction.
+      expect(relativeLuminance(STATUS_OK)).toBeGreaterThan(relativeLuminance(STATUS_BUSY))
+      expect(relativeLuminance(STATUS_BUSY)).toBeGreaterThan(relativeLuminance(STATUS_ALERT))
+    }),
+  )
+
+  it.effect('REGRESSION: shape coding is not the only distinguisher, and it is not optional either', () =>
+    Effect.sync(() => {
+      // G3, and it is BOTH directions on purpose.
+      //
+      // Colour may not be the only channel: `<reference-impl>/index.html:416`
+      // scopes the daltonisation filter to the canvas and justifies leaving the
+      // DOM HUD un-corrected by asserting the HUD "already carries
+      // icon/shape/numeric redundancy". A palette that removed the redundancy
+      // would invalidate a decision taken in another repository.
+      //
+      // And shape may not be the only channel either: a pair cannot buy its way
+      // past the separation test by declaring a glyph. Both lists are empty.
+      const survey = surveyPalette()
+
+      expect(survey.pairsWithoutRedundancy).toStrictEqual([])
+      expect(survey.collapsedPairs).toStrictEqual([])
+      for (const reading of survey.pairs) {
+        expect(reading.pair.alsoDistinguishedBy.length).toBeGreaterThan(0)
+      }
+
+      // Health versus hunger is the pair that proves the point rather than
+      // merely passing it: it clears the separation floor, but its contrast
+      // ratio is under 3:1 in every mode, so it is separated by CHROMA — the
+      // channel dichromacy compresses hardest. The three icon shapes are most
+      // of that signal, which is why `IconState` has three members and not a
+      // percentage.
+      const heartVsShank = survey.pairs.find(
+        (reading) => reading.pair.left.name === 'heart full' && reading.pair.right.name === 'shank full',
+      )
+      expect(heartVsShank?.hueOnly).toBe(true)
+      expect(heartVsShank?.pair.alsoDistinguishedBy).toContain('shape')
+    }),
+  )
+
+  it.effect('REGRESSION: a token that lands on top of another is a failure until somebody explains it', () =>
+    Effect.sync(() => {
+      // The sweep runs over EVERY pair of meaning-bearing tokens, not just the
+      // declared ones, so adding a colour that happens to collide with one
+      // already there fails here rather than in a bug report. The escape hatch
+      // is `KNOWN_NEAR_COLLISIONS`, which costs a written reason.
+      const survey = surveyPalette()
+      expect(survey.undeclaredNearCollisions).toStrictEqual([])
+
+      // There is exactly one acknowledged collision and it records a limit of
+      // the colour space rather than a slip: searching sRGB for an "alert"
+      // colour that clears 4.5:1 over the worst world pixel AND stays clear of
+      // hunger-orange under all three dichromacies returns only greys and
+      // purples. On a dark HUD there is no red that is both an alarm and
+      // distinct from hunger.
+      expect(KNOWN_NEAR_COLLISIONS).toHaveLength(1)
+      for (const collision of KNOWN_NEAR_COLLISIONS) {
+        expect(collision.why.length).toBeGreaterThan(40)
       }
     }),
   )
 
-  it.effect('GAP: inventory and crafting are screen ids, not derivations', () =>
+  it.effect('the tokens render for a stylesheet through exactly one function', () =>
     Effect.sync(() => {
-      // F6. plan.md §3.13 names four screens; three have a pure derivation in
-      // `domain/`. `inventory` and `crafting` exist only as two members of the
-      // `ScreenId` union — the modal stack can open, raise and close them, and
-      // that much is real and tested — but there is no slot grid, no stacking
-      // rule and no recipe matcher.
-      //
-      // NOT FIXED, deliberately. mc-sim owns the inventory STATE (plan.md
-      // §2.3-1) and has not published its shape. A derivation written now would
-      // have to invent the snapshot type it reads, and `api-lock.md` would
-      // publish that invention as this package's surface — where changing it
-      // later is a breaking change for every consumer. That is the exact trap
-      // `index.ts` already documents for `domain/frame-contract.ts`. Adding the
-      // derivation once the shape is known is cheap; un-publishing a guessed
-      // one is not.
-      //
-      // WHAT MUST EXIST when someone closes this: a pure
-      // `inventoryViewModel(snapshot) => …` beside `hudViewModel`, taking
-      // mc-sim's slot array and returning the screen's regions (main, hotbar,
-      // armour, offhand, crafting grid) with the same per-slot projection
-      // `hotbarSlotView` already performs — layout is mx-ui's, stacking rules
-      // and recipes are mc-sim's.
-      expect(ui.openScreen(ui.emptyModalStack, 'inventory')).toStrictEqual(['inventory'])
-      expect(ui.openScreen(['inventory'], 'crafting')).toStrictEqual(['inventory', 'crafting'])
+      // The DOM layer must not hand-write `rgba(...)`. The reference had to
+      // write the same contrast fix into four files because there was no token
+      // to change; the same absence is what produces four spellings of one
+      // colour.
+      expect(hex(HEART)).toBe('#e02828')
+      expect(cssColor(HEART)).toBe('#e02828')
+      expect(cssColor(SCRIM, SCRIM_ALPHA)).toBe('rgba(10, 14, 18, 0.9)')
+      // Alpha is clamped rather than validated, for the reason DN-UI-7 clamps:
+      // a stylesheet that throws is worse than one that is briefly wrong.
+      expect(cssColor(SCRIM, 5)).toBe('#0a0e12')
+      expect(cssColor(SCRIM, Number.NaN)).toBe('#0a0e12')
+    }),
+  )
 
-      const derivations = [
-        'inventoryViewModel',
-        'craftingViewModel',
-        'INVENTORY_SLOT_COUNT',
-        'CRAFTING_GRID_SIZE',
-        'canStack',
-        'matchRecipe',
-      ]
-      for (const name of derivations) {
+  it.effect('REGRESSION: the SIMULATION is not the CORRECTION, and neither file holds both', () =>
+    Effect.sync(() => {
+      // DN-UI-1a: a simulation shows what a player SEES, a correction changes
+      // what is DRAWN. Swapping them breaks precisely what the setting exists
+      // to fix. They live in two modules that point at each other; this asserts
+      // they have not converged.
+      const red: Rgb = [255, 0, 0]
+      const simulated = simulateColorVision(red, 'protanopia')
+
+      // The simulation DESTROYS the red/green distinction — that is its job.
+      expect(simulated[0]).toBeLessThan(255)
+      // The correction preserves the red channel and redistributes into blue,
+      // which `test/view-model.test.ts` above already pins. The two transforms
+      // therefore disagree about red, and that disagreement is the invariant.
+      const correction = colorVisionMatrix('protanopia')
+      if (correction === undefined) {
+        throw new Error('protanopia lost its correction matrix')
+      }
+      const corrected = applyColorVisionMatrix([1, 0, 0], correction)
+      expect(corrected[0]).toBe(1)
+      expect(simulateColorVision(red, 'off')).toStrictEqual(red)
+    }),
+  )
+})
+
+/**
+ * The inventory and crafting screens (was G2).
+ *
+ * These replace `GAP: inventory and crafting are screen ids, not derivations`,
+ * which asserted the absence of a derivation. The derivation exists now; what
+ * these assert is the part the deferral was right about — that mx-ui must not
+ * answer a question mc-sim owns, and must say so rather than guess.
+ */
+describe('inventory and crafting project state without interpreting it', () => {
+  const inventoryWith = (overrides: Partial<InventorySnapshot>): InventorySnapshot => ({
+    ...emptyInventorySnapshot,
+    ...overrides,
+  })
+
+  const filled = (index: number, item: string, count: number): MirroredInventory => ({
+    slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, slot) =>
+      slot === index ? { item, count } : undefined,
+    ),
+  })
+
+  it.effect('the projection is pure, total and the same for the same input', () =>
+    Effect.sync(() => {
+      const snapshot = inventoryWith({ inventory: filled(0, 'DIAMOND_PICKAXE', 1) })
+
+      expect(inventoryViewModel(snapshot)).toStrictEqual(inventoryViewModel(snapshot))
+      // Nothing is mutated: the caller's snapshot is a value, not a handle.
+      expect(snapshot.inventory.slots).toHaveLength(INVENTORY_SLOT_COUNT)
+      expect(() => inventoryViewModel(emptyInventorySnapshot)).not.toThrow()
+    }),
+  )
+
+  it.effect('REGRESSION: the slot projection is SHARED with the hotbar, never re-derived', () =>
+    Effect.sync(() => {
+      // The point of the whole exercise. DN-UI-7c is the record of what a
+      // second per-slot projection costs: the `empty` guard cleared `itemId`
+      // and `countLabel` and not `durabilityPercent`, and a DOM layer drew a
+      // durability bar under an empty slot. An inventory screen with its own
+      // copy would have reproduced that bug once more, in a screen where a
+      // player looks at thirty-six slots instead of nine.
+      const model = inventoryViewModel(
+        inventoryWith({
+          inventory: filled(0, 'DIAMOND_PICKAXE', 1),
+          durabilityBySlot: new Map([[0, 0.5]]),
+        }),
+      )
+      const hotbar = regionOf(model, 'hotbar')
+      if (hotbar?.kind !== 'slots') {
+        throw new Error('the hotbar region should be projected')
+      }
+
+      // Byte for byte what `hudViewModel` produces for the same slot.
+      expect(hotbar.slots[0]).toStrictEqual(
+        hudViewModel(
+          withVitals({
+            hotbar: [{ itemId: 'DIAMOND_PICKAXE', count: 1, durability: 0.5 }],
+            selectedHotbarIndex: 0,
+          }),
+        ).hotbar[0],
+      )
+
+      // Including the empty-slot rule, which is the one that was got wrong.
+      const emptied = inventoryViewModel(
+        inventoryWith({ inventory: { slots: [] }, durabilityBySlot: new Map([[0, 0.5]]) }),
+      )
+      const emptyHotbar = regionOf(emptied, 'hotbar')
+      if (emptyHotbar?.kind !== 'slots') {
+        throw new Error('the hotbar region should be projected')
+      }
+      expect(emptyHotbar.slots[0]?.empty).toBe(true)
+      expect(emptyHotbar.slots[0]?.durabilityPercent).toBeUndefined()
+    }),
+  )
+
+  it.effect('layout is mx-ui’s: 36 flat slots become a hotbar and a 9x3 grid', () =>
+    Effect.sync(() => {
+      // mc-sim hands over a flat array and says nothing about shape, which is
+      // correct — "nine of these are a hotbar" is a fact about a screen. Every
+      // region is a fixed length however short the input, so the DOM layer
+      // never reasons about a short array (the same call `hudViewModel` makes).
+      const model = inventoryViewModel(inventoryWith({ inventory: { slots: [] } }))
+      const hotbar = regionOf(model, 'hotbar')
+      const main = regionOf(model, 'main')
+
+      if (hotbar?.kind !== 'slots' || main?.kind !== 'slots') {
+        throw new Error('both player regions should be projected')
+      }
+      expect(hotbar.slots).toHaveLength(HOTBAR_SLOT_COUNT)
+      expect(main.slots).toHaveLength(INVENTORY_MAIN_SLOT_COUNT)
+      expect(main.columns).toBe(INVENTORY_MAIN_COLUMNS)
+      expect(HOTBAR_SLOT_COUNT + INVENTORY_MAIN_SLOT_COUNT).toBe(INVENTORY_SLOT_COUNT)
+
+      // The hotbar carries the selection; the grid has none of its own.
+      expect(hotbar.slots.filter((slot) => slot.selected)).toHaveLength(1)
+      expect(main.slots.filter((slot) => slot.selected)).toHaveLength(0)
+    }),
+  )
+
+  it.effect('REGRESSION: a state this repository cannot interpret is UNKNOWN, never guessed', () =>
+    Effect.sync(() => {
+      // The one that matters. Three separate questions mc-sim owns, each of
+      // which has a plausible wrong answer that looks like progress:
+      const model = inventoryViewModel(emptyInventorySnapshot)
+
+      // 1. Recipes. mc-sim has no recipe model at all — there is no `Recipe` in
+      //    its api-lock — so "does this grid make anything" is unanswered.
+      //    Drawing an EMPTY output square would say "nothing you can make",
+      //    which is a claim this repository is not entitled to make and which
+      //    is wrong exactly when the player is confused about a recipe.
+      expect(model.crafting).toStrictEqual({ kind: 'unknown' })
+      expect(model.crafting).not.toStrictEqual({ kind: 'no-match' })
+
+      // 2. Stacking. Whether the carried stack merges into a slot is a stacking
+      //    rule, and `mc-sim/domain/inventory.ts` owns it — top up partial
+      //    stacks first, cap at MAX_STACK_COUNT. Comparing item ids here would
+      //    reproduce a third of that rule, get the cap wrong, and be wrong
+      //    silently inside a highlight the player reads as a promise.
+      expect(model.mergeTargets).toStrictEqual({ kind: 'unknown' })
+
+      // 3. Regions mc-sim does not have. Four empty squares tell the player
+      //    they are wearing no armour; mc-sim has said nothing at all.
+      const armour = regionOf(model, 'armour')
+      const offhand = regionOf(model, 'offhand')
+      expect(armour?.kind).toBe('unknown')
+      expect(offhand?.kind).toBe('unknown')
+      expect(regionOf(model, 'crafting-grid')?.kind).toBe('unknown')
+
+      // An unknown region explains itself, so the absence is legible in a
+      // preview instead of looking like a rendering bug.
+      if (armour?.kind !== 'unknown') {
+        throw new Error('armour should be unknown')
+      }
+      expect(armour.why.length).toBeGreaterThan(0)
+    }),
+  )
+
+  it.effect('“no recipe matches” and “mc-sim has not answered” are DIFFERENT screens', () =>
+    Effect.sync(() => {
+      // Three-valued on purpose. Collapsing the middle value is the bug: a
+      // player staring at a grid needs to know whether the game has decided
+      // there is nothing to make, or has not looked yet.
+      const grid = { gridWidth: 2, grid: [undefined, undefined, undefined, undefined] }
+
+      expect(
+        inventoryViewModel(inventoryWith({ crafting: { ...grid, result: undefined } })).crafting,
+      ).toStrictEqual({ kind: 'unknown' })
+
+      expect(
+        inventoryViewModel(inventoryWith({ crafting: { ...grid, result: { _tag: 'NoMatch' } } }))
+          .crafting,
+      ).toStrictEqual({ kind: 'no-match' })
+
+      const matched = inventoryViewModel(
+        inventoryWith({
+          crafting: { ...grid, result: { _tag: 'Match', output: { item: 'OAK_PLANKS', count: 4 } } },
+        }),
+      )
+      expect(matched.crafting.kind).toBe('match')
+      if (matched.crafting.kind !== 'match') {
+        throw new Error('should have matched')
+      }
+      // Projected through the SAME `slotView` as everything else, so the output
+      // square and a hotbar slot cannot disagree about when to print a count.
+      expect(matched.crafting.output.itemId).toBe('OAK_PLANKS')
+      expect(matched.crafting.output.countLabel).toBe('4')
+    }),
+  )
+
+  it.effect('one derivation serves both screens — the grid width comes from the snapshot', () =>
+    Effect.sync(() => {
+      // plan.md §3.13 names inventory and crafting separately, but they differ
+      // only in how wide the grid is, and mc-sim's container knows that. A
+      // second `craftingViewModel` would be a second derivation of one
+      // projection, which is the mistake DN-UI-7c records.
+      const twoByTwo = inventoryViewModel(
+        inventoryWith({ crafting: { gridWidth: 2, grid: Array.from({ length: 4 }), result: undefined } }),
+      )
+      const threeByThree = inventoryViewModel(
+        inventoryWith({ crafting: { gridWidth: 3, grid: Array.from({ length: 9 }), result: undefined } }),
+      )
+
+      const gridOf = (model: ReturnType<typeof inventoryViewModel>): number => {
+        const region = regionOf(model, 'crafting-grid')
+        return region?.kind === 'slots' ? region.columns : 0
+      }
+      expect(gridOf(twoByTwo)).toBe(2)
+      expect(gridOf(threeByThree)).toBe(3)
+
+      // A width this module cannot read is a container it does not know, not a
+      // 2x2 with a typo.
+      const nonsense = inventoryViewModel(
+        inventoryWith({ crafting: { gridWidth: Number.NaN, grid: [], result: undefined } }),
+      )
+      expect(regionOf(nonsense, 'crafting-grid')?.kind).toBe('unknown')
+    }),
+  )
+
+  it.effect('REGRESSION: this repository implements no stacking rule and no recipe matcher', () =>
+    Effect.sync(() => {
+      // plan.md §2.3-1 assigns both to mc-sim. The barrel is the place a
+      // violation would show up, because a helper this useful does not stay
+      // private for long.
+      for (const name of ['canStack', 'matchRecipe', 'mergeStacks', 'craftingResult', 'MAX_STACK_COUNT']) {
         expect(Object.keys(ui)).not.toContain(name)
       }
+
+      // And the projection does not answer either question even when the
+      // answer looks obvious: two identical items, no merge highlight, because
+      // nobody was asked.
+      const model = inventoryViewModel(
+        inventoryWith({
+          inventory: filled(0, 'COBBLESTONE', 32),
+          carried: { item: 'COBBLESTONE', count: 32 },
+        }),
+      )
+      expect(model.carried?.itemId).toBe('COBBLESTONE')
+      expect(model.mergeTargets).toStrictEqual({ kind: 'unknown' })
+    }),
+  )
+
+  it.effect('a snapshot from across a version boundary is clamped, exactly as the HUD’s is', () =>
+    Effect.sync(() => {
+      // DN-UI-7 applies here for the same reason it applies there: the value
+      // crosses a pinned version boundary from mc-sim. A screen that throws is
+      // worse than a screen that is briefly wrong.
+      const model = inventoryViewModel(
+        inventoryWith({
+          inventory: filled(0, 'STONE', Number.NaN),
+          selectedHotbarIndex: Number.NaN,
+        }),
+      )
+      const hotbar = regionOf(model, 'hotbar')
+      if (hotbar?.kind !== 'slots') {
+        throw new Error('the hotbar region should be projected')
+      }
+
+      expect(hotbar.slots.filter((slot) => slot.selected)).toHaveLength(1)
+      expect(hotbar.slots[0]?.selected).toBe(true)
+      expect(hotbar.slots[0]?.countLabel).toBeUndefined()
+      expect(hotbar.slots[0]?.empty).toBe(true)
+
+      expect(() =>
+        inventoryViewModel(inventoryWith({ selectedHotbarIndex: Number.POSITIVE_INFINITY })),
+      ).not.toThrow()
+    }),
+  )
+
+  it.effect('the modal stack still owns opening and closing these two screens', () =>
+    Effect.sync(() => {
+      // Carried over from the test this block replaces: the part that WAS real
+      // before the derivation existed is still real and still checked.
+      expect(ui.openScreen(ui.emptyModalStack, 'inventory')).toStrictEqual(['inventory'])
+      expect(ui.openScreen(['inventory'], 'crafting')).toStrictEqual(['inventory', 'crafting'])
     }),
   )
 })

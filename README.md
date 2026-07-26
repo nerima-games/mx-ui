@@ -139,10 +139,20 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
   どれも「バージョン境界を越えて来る値」の話で、テストは妥当な入力を渡すからである。
   **4 件とも修正し、`test/view-model.test.ts` の assertion にした**（DN-UI-7a〜7d）。
   現在 finding は 0 件である。
-  残るのは **gap 2 件**——mx-ui が色を 1 つも定義していないこと（ただし `feColorMatrix` の
-  補正行列は参照実装から引き継ぎ、算術をテストで固定した。DN-UI-1a）と、
-  インベントリ／クラフトにビューモデルが無いこと。**どちらも「無い」ことを assert するテストで
-  ピン留めしてある**ので、埋まればテストが落ちる（沈黙ではなく diff になる）。
+  **gap 2 件は埋めた。**
+  **`domain/palette.ts`** がパレットを持つ（旧 G1）。値は参照実装から掘ってあるが、
+  掘ってから測って**2 つ動かし、1 件の実際の欠陥を見つけた**——参照実装の自動保存インジケータは
+  成功 `#d7f7c2` と失敗 `#ffd6d2` が protanopia で 12 しか離れておらず（潰れ閾値 24）、
+  **赤緑色覚特性のプレイヤーは保存の成否を区別できない**。参照実装の e2e ゲートは
+  テキストを自分の背景とだけ比べるので構造上これを見られない。
+  保証は狭く言ってある: **テキスト 4.5:1 / アイコン 3:1、mx-ui 自身の面に対して、
+  スクリムについてはあり得る最悪の世界ピクセルの上で**。世界の上のグリフには何も主張しない（DN-UI-11）。
+  **`domain/inventory-view-model.ts`** がインベントリ／クラフトを射影する（旧 G2）。
+  mc-sim の形はミラーで写し（provisional、`test/inventory-mirror.test.ts` が pin）、
+  スロットはホットバーと**同じ `slotView()`** を通り、
+  **mc-sim が所有する問い（スタッキング・レシピ）は `unknown` を返して当てずっぽうを言わない**（DN-UI-12）。
+  残る gap は 1 件で前より狭い——**トークンを CSS にする消費者がまだ無い**ことと、
+  **mc-sim にレシピモデルが無い**こと。どちらもこのリポジトリの中では閉じられない。
 - **build / publish パイプラインは無い。** `exports` は TypeScript ソースを直接指しており `noEmit: true`。
   `version` は `0.x` に留める（[docs/versioning.md](./docs/versioning.md)）。
 - **カバレッジ閾値は未設定。** 計測とレポートは常に動かしており、99% ゲートは完成条件到達時に有効化する
@@ -158,12 +168,12 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
 
 ```
 typecheck   tsc 3 プロジェクト（build / test / preview）ともエラーなし
-lint        oxlint: 27 files, 97 rules, Found 0 warnings and 0 errors
-check:deps  OK — 27 file(s) scanned, allowed direct dependencies:
+lint        oxlint: 30 files, 97 rules, Found 0 warnings and 0 errors
+check:deps  OK — 30 file(s) scanned, allowed direct dependencies:
             @nerima-games/mc-audio, @nerima-games/mc-sim
             (plus @nerima-games/mc-kernel, which every repository may import)
-api:check   OK — api-lock.md matches the public API (70 entries)
-test        vitest 3.2.7 — 6 files, 119 tests passed
+api:check   OK — api-lock.md matches the public API (141 entries)
+test        vitest 3.2.7 — 7 files, 139 tests passed
 ```
 
 数字はスケルトンが育つたびに動く。**再現は `pnpm verify` であり、本節はその時点のスナップショットである。**

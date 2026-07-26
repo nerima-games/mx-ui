@@ -53,9 +53,15 @@ import {
   HOTBAR_SLOT_COUNT,
   type VitalsSnapshot,
 } from '../../domain/hud-view-model'
+import {
+  emptyInventorySnapshot,
+  INVENTORY_MAIN_SLOT_COUNT,
+  INVENTORY_SLOT_COUNT,
+  inventoryViewModel,
+  regionOf,
+} from '../../domain/inventory-view-model'
 import { escapePressed, openScreen, type ModalStack } from '../../domain/modal-stack'
-import { COLLAPSE_DISTANCE, contrastRatio, distance, hex, simulate } from './ansi'
-import { CRITICAL_PAIRS } from './palette'
+import { COLLAPSE_SEPARATION, hex, surveyPalette } from '../../domain/palette'
 import { DEFAULT_BINDINGS, PREVIEW_ACTIONS, SAMPLE_CAPTIONS, SAMPLE_HOTBAR } from './state'
 
 const pad = (text: string, width: number): string =>
@@ -126,31 +132,109 @@ const probeOverflow = (): { readonly emitted: number; readonly kept: number; rea
 // Colour vision
 // ---------------------------------------------------------------------------
 
-type PairProbe = {
-  readonly mode: string
-  readonly pair: string
-  readonly apart: number
-  readonly ratio: number
-  readonly collapsed: boolean
-  readonly why: string
+/**
+ * The palette table is `surveyPalette()` and nothing else.
+ *
+ * The preview used to compute this itself over colours it had invented. It now
+ * prints the SAME derivation `test/view-model.test.ts` asserts, which is the
+ * only arrangement in which a clean table here and a green suite there mean the
+ * same thing.
+ */
+const paletteLines = (): ReadonlyArray<string> => {
+  const survey = surveyPalette()
+
+  const tokenRows = survey.tokens.map(
+    (token) =>
+      `    ${pad(token.name, 20)}${pad(hex(token.color), 10)}${pad(token.role, 6)}` +
+      `worst ${pad(`${token.worstContrast.toFixed(2)}:1`, 9)}floor ${pad(`${token.floor.toFixed(1)}:1`, 8)}` +
+      `${token.meetsFloor ? '' : '  BELOW FLOOR'}${token.boundIsExact ? '' : '  BOUND NOT EXACT'}`,
+  )
+
+  const pairRows = survey.pairs.flatMap((reading) => [
+    `    ${reading.pair.left.name} / ${reading.pair.right.name}  —  ${reading.pair.why}`,
+    `      also carried by: ${reading.pair.alsoDistinguishedBy.join(', ')}${
+      reading.hueOnly
+        ? `   (separated by CHROMA, not luminance — so "${reading.pair.alsoDistinguishedBy.join('/')}" carries most of it)`
+        : ''
+    }`,
+    ...reading.perMode.map(
+      (mode) =>
+        `      ${pad(mode.mode, 14)}${pad(hex(mode.left), 10)}${pad(hex(mode.right), 10)}` +
+        `apart ${padNumber(mode.separation.toFixed(0), 4)}   contrast ${mode.contrast.toFixed(2)}:1` +
+        `${mode.separation < COLLAPSE_SEPARATION ? '   COLLAPSED' : ''}`,
+    ),
+  ])
+
+  return [
+    '  the palette (domain/palette.ts), measured — not the preview’s own colours any more',
+    '',
+    '  legibility, against the HUD scrim over the WORST world pixel there is:',
+    ...tokenRows,
+    `    tokens below their floor: ${
+      survey.tokensBelowFloor.length === 0 ? 'none' : survey.tokensBelowFloor.join(', ')
+    }`,
+    '',
+    '  pairs that must stay distinguishable, as SIMULATED (not corrected — the',
+    '  daltonisation filter is canvas-only, so these colours are never corrected):',
+    ...pairRows,
+    '',
+    `    collapse threshold: ${String(COLLAPSE_SEPARATION)} of 442 (the sRGB cube diagonal)`,
+    `    collapsed pairs: ${survey.collapsedPairs.length === 0 ? 'none' : survey.collapsedPairs.join(', ')}`,
+    `    pairs carried by hue alone: ${
+      survey.pairsWithoutRedundancy.length === 0 ? 'none' : survey.pairsWithoutRedundancy.join(', ')
+    }`,
+    `    undeclared near-collisions across ALL token pairs: ${
+      survey.undeclaredNearCollisions.length === 0
+        ? 'none'
+        : survey.undeclaredNearCollisions
+            .map((entry) => `${entry.left}/${entry.right} (${entry.separation.toFixed(0)})`)
+            .join(', ')
+    }`,
+    '    NOTE: the table SIMULATES a deficiency; the matrices above CORRECT one. Different transforms.',
+  ]
 }
 
-const probeColorPairs = (): ReadonlyArray<PairProbe> =>
-  COLOR_VISION_MODES.flatMap((mode) =>
-    CRITICAL_PAIRS.map((pair) => {
-      const left = simulate(pair.left.rgb, mode)
-      const right = simulate(pair.right.rgb, mode)
-      const apart = distance(left, right)
-      return {
-        mode,
-        pair: `${pair.left.name} / ${pair.right.name}`,
-        apart,
-        ratio: contrastRatio(left, right),
-        collapsed: apart < COLLAPSE_DISTANCE,
-        why: pair.why,
-      }
-    }),
-  )
+/**
+ * The inventory and crafting projection, which used to be gap G2.
+ *
+ * What is printed is deliberately the UNKNOWNS as much as the slots: the point
+ * of this derivation is that it refuses to answer questions mc-sim owns, and a
+ * report that only showed the grid would hide the refusal.
+ */
+const inventoryLines = (): ReadonlyArray<string> => {
+  const model = inventoryViewModel({
+    ...emptyInventorySnapshot,
+    inventory: {
+      slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) =>
+        index === 0 ? { item: 'diamond_pickaxe', count: 1 } : index === 11 ? { item: 'cobblestone', count: 64 } : undefined,
+      ),
+    },
+    durabilityBySlot: new Map([[0, 0.82]]),
+    crafting: { gridWidth: 2, grid: Array.from({ length: 4 }), result: undefined },
+  })
+
+  const describe = (id: 'hotbar' | 'main' | 'armour' | 'offhand' | 'crafting-grid'): string => {
+    const region = regionOf(model, id)
+    if (region === undefined) {
+      return `  ${pad(id, 16)}(absent)`
+    }
+    return region.kind === 'slots'
+      ? `  ${pad(id, 16)}${padNumber(region.slots.length, 3)} slots, ${String(region.columns)} wide, ${String(region.slots.filter((slot) => !slot.empty).length)} occupied`
+      : `  ${pad(id, 16)}UNKNOWN — ${region.why}`
+  }
+
+  return [
+    `  layout is mx-ui’s: ${String(INVENTORY_SLOT_COUNT)} flat slots from mc-sim become 9 + ${String(INVENTORY_MAIN_SLOT_COUNT)}`,
+    describe('hotbar'),
+    describe('main'),
+    describe('armour'),
+    describe('offhand'),
+    describe('crafting-grid'),
+    `  crafting result   ${model.crafting.kind}   (mc-sim owns recipe matching — "unknown" is NOT "no-match")`,
+    `  merge targets     ${model.mergeTargets.kind}   (mc-sim owns stacking — this repo has no canStack)`,
+    '  every slot above is projected by the SAME slotView() the hotbar uses (DN-UI-7c)',
+  ]
+}
 
 // ---------------------------------------------------------------------------
 // Modal stack
@@ -255,8 +339,7 @@ const collectFindings = (): ReadonlyArray<Finding> => {
   }
 
   // 5. The daltonisation matrices, which used to be missing outright, are now
-  //    carried over — so the only thing left to report is the half that cannot
-  //    be fixed by porting: mx-ui still owns no colours of its own.
+  //    carried over.
   if (colorVisionMatrix('protanopia') === undefined) {
     findings.push({
       title: 'the colour-vision setting has nothing in this repository to act on',
@@ -264,6 +347,30 @@ const collectFindings = (): ReadonlyArray<Finding> => {
         'domain/accessibility.ts carries over the SWITCH — colorVisionAttribute() and',
         'COLOR_VISION_FILTER_TARGET = "canvas" — but not the feColorMatrix daltonisation itself.',
         'A data attribute with no filter behind it corrects nothing.',
+      ],
+    })
+  }
+
+  // 6. The palette's own guarantee, measured. Everything `surveyPalette`
+  //    reports is a defect by construction, so any non-empty list is a finding
+  //    rather than a note — and it disappears from this report the moment the
+  //    palette is fixed, which is what separates a finding from a gap.
+  const palette = surveyPalette()
+  const paletteFaults = [
+    ...palette.tokensBelowFloor.map((name) => `${name} does not clear its contrast floor`),
+    ...palette.collapsedPairs.map((name) => `${name} collapses under a colour-vision mode`),
+    ...palette.pairsWithoutRedundancy.map((name) => `${name} is carried by hue alone`),
+    ...palette.undeclaredNearCollisions.map(
+      (entry) => `${entry.left} and ${entry.right} are ${entry.separation.toFixed(0)} apart and undeclared`,
+    ),
+  ]
+  if (paletteFaults.length > 0) {
+    findings.push({
+      title: 'the palette does not keep the guarantee domain/palette.ts states',
+      detail: [
+        ...paletteFaults,
+        'The same survey is asserted by test/view-model.test.ts, describe "the palette keeps its',
+        'guarantee", so this finding and a red suite are the same event seen twice.',
       ],
     })
   }
@@ -292,30 +399,31 @@ type Gap = {
 
 const KNOWN_GAPS: ReadonlyArray<Gap> = [
   {
-    title: 'mx-ui defines no colours, so §5’s contrast table measures the preview’s own',
-    pinnedBy: 'test/view-model.test.ts — "GAP: mx-ui defines no colours, so nothing here can be contrast-checked"',
+    title: 'no stylesheet ships the palette yet, and the recipe half of crafting has no owner',
+    pinnedBy:
+      'test/view-model.test.ts — describe "the palette keeps its guarantee" and ' +
+      '"inventory and crafting project state without interpreting it"',
     detail: [
-      'The correction is now complete: domain/accessibility.ts owns the switch AND the three',
-      'feColorMatrix daltonisation matrices, transcribed from the reference’s index.html:445-460 and',
-      'printed in §5 above. Those act on mc-render’s canvas, so they need no palette from here.',
-      'What is still missing is mx-ui’s OWN colours. There is no token, no theme and no stylesheet',
-      'anywhere in the repository, so apps/preview-screens/palette.ts invents every hex value it',
-      'measures. The harness is real; those five CRITICAL_PAIRS are the specification a real palette',
-      'has to satisfy. Inventing one here to make the table look authoritative would hide the gap.',
-    ],
-  },
-  {
-    title: 'inventory and crafting have no view model to preview',
-    pinnedBy: 'test/view-model.test.ts — "GAP: inventory and crafting are screen ids, not derivations"',
-    detail: [
-      'plan.md §3.13 names four screens: HUD, inventory/crafting, settings, captions. Three have a',
-      'pure derivation in domain/. `inventory` and `crafting` appear only as two members of the',
-      'ScreenId union in domain/modal-stack.ts — no slot grid, no stacking rule, no recipe matcher.',
-      'Not filled, deliberately: mc-sim owns the inventory STATE (plan.md §2.3-1) and has not',
-      'published its shape, so a derivation written now would invent the snapshot type it reads and',
-      'api-lock.md would publish that invention as this package’s surface. The preview shows the',
-      'modal-stack behaviour instead and says so on screen rather than drawing a plausible grid,',
-      'which would make the gap look like progress.',
+      'What USED to be here were two gaps: mx-ui defined no colours at all, and inventory/crafting',
+      'had no derivation. Both are closed — domain/palette.ts owns the tokens and states a',
+      'guarantee this report measures in §5, and domain/inventory-view-model.ts projects the',
+      'screens through the same slotView() the hotbar uses. What is left is narrower and is two',
+      'separate things, kept in one entry because neither is fixable inside this repository today.',
+      '',
+      '  1. THE PALETTE HAS NO CONSUMER. The tokens are values; nothing turns them into CSS,',
+      '     because there is no DOM layer yet. So the guarantee — 4.5:1 for text and 3:1 for icons',
+      '     against the HUD scrim over any world pixel — is proved about the NUMBERS and not yet',
+      '     about a rendered screen. It also assumes HUD content stays on the scrim; a stylesheet',
+      '     that puts a label outside it leaves the guarantee behind, and no test can see that',
+      '     until there is a stylesheet to test. docs/versioning.md §4 records the packaging half',
+      '     (files, exports, a build step that is not just tsc — mx-ui alone of the sixteen).',
+      '',
+      '  2. MC-SIM HAS NO RECIPE MODEL. The crafting SCREEN exists and projects what it is given,',
+      '     but "does this grid make anything" has no answer to project: there is no Recipe in',
+      '     mc-sim’s api-lock.md, so CraftingSnapshot.result is undefined in practice and the view',
+      '     model reports `unknown`. That is the correct behaviour, not a placeholder — but the',
+      '     screen cannot show a real crafting result until mc-sim owns one. Recipe matching is',
+      '     mc-sim’s by plan.md §2.3-1 and inventing it here is what this repository must not do.',
     ],
   },
 ]
@@ -327,7 +435,6 @@ const KNOWN_GAPS: ReadonlyArray<Gap> = [
 export const buildStatsReport = (): ReadonlyArray<string> => {
   const lifetime = probeCaptionLifetime()
   const overflow = probeOverflow()
-  const pairs = probeColorPairs()
   const findings = collectFindings()
 
   const motionRows: ReadonlyArray<string> = (
@@ -408,15 +515,7 @@ export const buildStatsReport = (): ReadonlyArray<string> => {
       ]
     }),
     '',
-    '  pairs that must stay distinguishable, as simulated:',
-    `  ${pad('mode', 14)}${pad('pair', 34)}${pad('as seen', 18)}${pad('apart', 8)}${pad('contrast', 10)}`,
-    ...pairs.map(
-      (probe) =>
-        `  ${pad(probe.mode, 14)}${pad(probe.pair, 34)}${pad(colorPairHex(probe.pair, probe.mode), 18)}${pad(probe.apart.toFixed(0), 8)}${pad(`${probe.ratio.toFixed(2)}:1`, 10)}${probe.collapsed ? 'COLLAPSED' : ''}`,
-    ),
-    `  collapse threshold: ${String(COLLAPSE_DISTANCE)} of 442 (the RGB cube diagonal)`,
-    '  NOTE: these colours are the preview’s own — mx-ui defines no palette. See gap G1.',
-    '  NOTE: the table SIMULATES a deficiency; the matrices above CORRECT one. Different transforms.',
+    ...paletteLines(),
     '',
     '6. key rebinding',
     `  clear keys: ${[...REBIND_CLEAR_KEYS].join(', ')}`,
@@ -428,6 +527,9 @@ export const buildStatsReport = (): ReadonlyArray<string> => {
     '',
     '7. the modal stack and the one Escape handler',
     ...probeEscapeSequence(),
+    '',
+    '8. inventory and crafting',
+    ...inventoryLines(),
     '',
     `findings: ${String(findings.length)}  (measured — an entry appears only while the behaviour is still wrong)`,
   ]
@@ -459,13 +561,4 @@ export const buildStatsReport = (): ReadonlyArray<string> => {
 
   lines.push('')
   return lines
-}
-
-/** The two simulated colours of a pair, for the table. Kept beside the probe it serves. */
-const colorPairHex = (pairName: string, mode: string): string => {
-  const pair = CRITICAL_PAIRS.find((candidate) => `${candidate.left.name} / ${candidate.right.name}` === pairName)
-  if (pair === undefined) {
-    return ''
-  }
-  return `${hex(simulate(pair.left.rgb, mode))} ${hex(simulate(pair.right.rgb, mode))}`
 }

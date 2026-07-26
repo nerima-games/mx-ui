@@ -144,7 +144,7 @@ export type UiMount = {
 
 ## 5. `index.ts` の全 export
 
-`index.ts` は 6 モジュールを `export *` している（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
+`index.ts` は 8 モジュールを `export *` している（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。
@@ -189,6 +189,29 @@ kernel から import した消費者は `makeUiStages` の戻り値に対して�
 mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしており、mx-gameplay / mx-redstone も同じである。
 固定しているテスト: `REGRESSION: does not republish mc-kernel’s vocabulary as its own`。
 
+### 5-1. ではなぜインベントリのミラーは**載せる**のか
+
+`domain/inventory-view-model.ts` も mc-sim の `Inventory` / `Slot` / `ItemStack` をローカル再掲している。
+それは `export *` されている。**逆の判断であり、意図的である。**
+
+判断を分けているのは**ミラーが何を指しているか**である。
+
+| ミラー | 指しているもの | バレル | 削除・置換のコスト |
+| --- | --- | --- | --- |
+| `domain/frame-contract.ts` | mc-kernel の**契約**。mc-compose が消費する | 載せない | 載せれば約束済みの削除が MAJOR に化ける |
+| `mx-gameplay/domain/chunk-store-port.ts` | mc-worldgen の**サービス**（`Context.Tag`） | 載せない | 他リポジトリのサービスの再公開。タグキー衝突という実害もある |
+| `domain/inventory-view-model.ts` のミラー | 本リポジトリの純粋関数の**引数型** | **載せる** | mc-compose は `inventoryViewModel` を呼ばない → §5 の表で MINOR |
+| `VitalsSnapshot` | 同上（最初のカットから載っている） | **載っている** | 同上 |
+
+つまり**「他人の語彙を再公開するな」であって「他人の形を写すな」ではない**。
+`VitalsSnapshot` が最初から後者をやっていて誰も問題視しなかったのは、
+それが mx-ui の関数が「何を渡してほしいか」の表明だからである。インベントリのミラーも同じ位置にいる。
+
+`test/inventory-mirror.test.ts` の
+`REGRESSION: the mirror is published as a PARAMETER, not as mc-sim’s vocabulary` が
+この 2 方向（ミラーは載る / `StageId` と `DeltaTimeSecs` は載らない）を 1 本で固定している。
+詳細は [design-notes.md](./design-notes.md) DN-UI-12。
+
 `FrameServices = never` は意図的な乖離である。kernel は `ClockPort` の別名にしているが、
 ここで `ClockPort` を再掲すると kernel と同じ文字列 ID を持つ**別の** `Context.Tag` ができてしまう。
 見分けがつかない 2 つのタグは、狭すぎる型よりはるかに悪い。
@@ -200,9 +223,46 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 | export | 種別 |
 | --- | --- |
 | `HEALTH_POINTS_PER_HEART` / `DEFAULT_MAX_HEALTH_POINTS` / `DEFAULT_MAX_HUNGER_POINTS` / `HOTBAR_SLOT_COUNT` | 定数 |
-| `IconState` / `HotbarSlotSnapshot` / `VitalsSnapshot` / `HotbarSlotView` / `HudViewModel` | type |
-| `iconRow` / `hudViewModel` | 純粋関数 |
+| `IconState` / `HotbarSlotSnapshot` / `VitalsSnapshot` / `SlotView` / `HudViewModel` | type |
+| `iconRow` / `hudViewModel` / `slotView` | 純粋関数 |
 | `spawnSnapshot` | プレビュー・テスト用のリテラル |
+
+`SlotView` は以前 `HotbarSlotView` という名前だった。改名したのは
+`domain/inventory-view-model.ts` が**同じ型と同じ射影関数**を使うようになったからで、
+「ホットバーの」と名乗る型が 36 スロットのインベントリにも出てくるのは誤りである。
+`slotView` を export したのも同じ理由（DN-UI-7c / DN-UI-12）。
+どちらもビューモデルの型なので [versioning.md](./versioning.md) §5 では**破壊的変更ではない**。
+
+### `domain/inventory-view-model.ts` — すべて内部(可視)
+
+| export | 種別 |
+| --- | --- |
+| `INVENTORY_SLOT_COUNT`（36、mc-sim のミラー）/ `INVENTORY_MAIN_COLUMNS` / `INVENTORY_MAIN_ROWS` / `INVENTORY_MAIN_SLOT_COUNT` | 定数 |
+| `MirroredItemId` / `MirroredItemStack` / `MirroredSlot` / `MirroredInventory` | type（**mc-sim のミラー**、provisional） |
+| `CraftingSnapshot` / `CraftingResultSnapshot` / `InventorySnapshot` | type |
+| `RegionId` / `SlotRegion` / `CraftingOutcomeView` / `MergeTargets` / `InventoryViewModel` | type |
+| `inventoryViewModel` / `slotSnapshotOf` / `regionOf` | 純粋関数 |
+| `emptyInventorySnapshot` | プレビュー・テスト用のリテラル |
+
+**ミラーがバレルに載る理由**は §5-1 に書く。
+
+### `domain/palette.ts` — すべて内部(可視)
+
+| export | 種別 |
+| --- | --- |
+| `SCRIM` / `SCRIM_ALPHA` / `SURFACE` / `SURFACE_RAISED` / `METER_TRACK` / `SLOT_FILL` / `SLOT_FILL_ALPHA` | 面のトークン |
+| `INK` / `INK_MUTED` / `INK_FAINT` | インク |
+| `HEART` / `SHANK` / `ICON_EMPTY` / `XP_FILL` / `XP_FILL_HIGHLIGHT` / `XP_LEVEL` / `SLOT_BORDER` / `SLOT_SELECTED` | HUD |
+| `STATUS_OK` / `STATUS_BUSY` / `STATUS_ALERT` / `DURABILITY_HIGH` / `DURABILITY_LOW` / `FOCUS_RING` / `FOCUS_RING_SHADOW` | 状態とフォーカス |
+| `Rgb` / `TokenRole` / `GuardedToken` / `Distinguisher` / `CriticalPair` / `TokenReading` / `PairReading` / `PaletteSurvey` | type |
+| `GUARDED_TOKENS` / `CRITICAL_PAIRS` / `KNOWN_NEAR_COLLISIONS` / `COLLAPSE_SEPARATION` / `TEXT_CONTRAST_MIN` / `UI_CONTRAST_MIN` | 保証の宣言 |
+| `hex` / `cssColor` / `relativeLuminance` / `contrastRatio` / `separation` / `simulateColorVision` / `compositeOver` / `worstCaseContrastOnScrim` / `surveyPalette` | 純粋関数 |
+| `SCRIM_OVER_DARKEST_WORLD` / `SCRIM_OVER_BRIGHTEST_WORLD` | 合成の両端 |
+
+**このモジュールはスタイルシートではない。** 値と、値を検査する算術だけである。
+`document` を触らないので、宣言している保証（DN-UI-11）が主張ではなくテストになっている。
+`simulateColorVision` が**シミュレーション**であって `domain/accessibility.ts` の
+`colorVisionMatrix`（**補正**）ではないことは DN-UI-1a / DN-UI-11d を参照。
 
 ### `domain/caption.ts` — すべて内部(可視)
 

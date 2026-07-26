@@ -24,6 +24,13 @@
  * declares the `DOM` lib — mx-ui is the one repository of the sixteen that does
  * — so adding the first screen is not also a build-configuration change.
  *
+ * `domain/palette.ts` is not an exception to that. It is colour VALUES and the
+ * arithmetic that checks them; it emits no stylesheet and imports no DOM type,
+ * which is what lets the contrast and colour-vision guarantee it states be a
+ * test rather than a claim. The stylesheet that consumes it arrives with the
+ * first screen, and shipping it is a packaging problem this repository alone
+ * has (docs/versioning.md §4).
+ *
  * When those screens arrive, their tests must be written with plain `it` +
  * `Effect.runPromise`, NOT `it.effect`. See docs/testing.md.
  */
@@ -31,7 +38,9 @@
 export * from './domain/accessibility'
 export * from './domain/caption'
 export * from './domain/hud-view-model'
+export * from './domain/inventory-view-model'
 export * from './domain/modal-stack'
+export * from './domain/palette'
 export * from './stages/registration'
 export * from './stages/stage-ids'
 
@@ -45,3 +54,14 @@ export * from './stages/stage-ids'
 // kernel; the types are structurally identical, so a consumer importing them
 // from kernel typechecks against the signatures above. Same call, and the same
 // reason, as mc-sim's and mc-render's barrels.
+//
+// `domain/inventory-view-model.ts` carries a mirror too — mc-sim's `Inventory`,
+// `Slot` and `ItemStack` — and IS re-exported, which is the opposite call. The
+// difference is what the mirror denotes. `frame-contract` mirrors kernel's
+// CONTRACT, the thing mc-compose consumes, so republishing it would make a
+// promised deletion breaking for every consumer. The inventory mirror is the
+// PARAMETER of one of this repository's own pure functions, exactly as
+// `VitalsSnapshot` has been since the first cut: mc-compose does not call
+// `inventoryViewModel`, so narrowing the parameter when mc-sim is published is
+// a MINOR bump under docs/versioning.md §5, not a breaking change. Pinned by
+// `test/inventory-mirror.test.ts`.

@@ -1,4 +1,4 @@
-# 設計ノート（DN-UI-1 〜 DN-UI-10）
+# 設計ノート（DN-UI-1 〜 DN-UI-12）
 
 plan.md §3.13 / §3.6 / §2.3 の「設計注意」を展開したもの。
 
@@ -503,11 +503,19 @@ dead:   Math.floor(snapshot.healthPoints) <= 0,                    // クラン�
 「2 回導出される決定は、いずれ違うように導出される」と書いているのと同じ話である。
 現在は両方が `safePoints(...)` の 1 つの値を読む。
 
-### DN-UI-7c 空スロットは全フィールドが空である
+### DN-UI-7c 空スロットは全フィールドが空である — そして射影は 1 つである
 
 `empty` ガードは `itemId` と `countLabel` を消していたが `durabilityPercent` を消していなかった
 （当時の F1）。「フィールドがあれば描く」と書いた DOM 層——**それが自然な書き方である**——は、
 空スロットの下に耐久バーを描く。プレイ中に到達する: **道具が壊れると `count: 0` と耐久度が残る**。
+
+**この節が DN-UI-12 の根拠でもある。** 欠陥の本体は「1 つ書き忘れた」ことではなく、
+**スロットの射影が 1 か所にしか無いという保証が無かった**ことである。
+インベントリ画面が自前の射影を書けば、この 3 フィールド目の判断を**もう一度**することになり、
+今度は 36 スロットぶん間違える。したがって `slotView` は export され、
+`domain/inventory-view-model.ts` は全リージョンをそれ経由で射影する。
+`REGRESSION: the slot projection is SHARED with the hotbar, never re-derived` が
+ホットバーの 1 スロットとインベントリの同じスロットを `toStrictEqual` で突き合わせている。
 
 ### DN-UI-7d XP バーは `floor`、耐久度は `round`
 
@@ -664,3 +672,201 @@ oxlint 0.12 は `no-restricted-syntax` も `no-restricted-properties` も**実�
   - `REGRESSION: expiry takes the time as an argument — nothing here reads a clock`
 - `test/stage-registration.test.ts`:
   - ``REGRESSION: caption ageing is driven by accumulated `dt`, never by a wall clock``
+
+---
+
+## DN-UI-11 パレットは「何を、何に対して」保証するかを言う
+
+**mx-ui は長らく色を 1 つも定義していなかった。** トークンもテーマもスタイルシートも無く、
+`domain/accessibility.ts` は「スタイルシートが key にする属性」の名前だけを持ち、
+プレビューのコントラスト表は**プレビュー自身が発明した hex 値**を測っていた。
+ハーネスは本物、被検体は仮置きである（当時の G1）。
+
+`domain/palette.ts` がこれを埋める。埋め方に 3 つの判断がある。
+
+### DN-UI-11a 参照実装から掘る。ただし測ってから採る
+
+参照実装には**パレットが無い**。`packages/presentation` だけで生の色リテラルが実測約 460 個、
+色の CSS カスタムプロパティは `--icon-fill` と `--vital-glow` の 2 つだけである。
+その代償が参照実装自身のソースに出ている——**同一のコントラスト修正が 4 ファイルに複写されている**:
+
+> white on a gradient whose lightest stop is `#6d6d6d` yields 5.36:1;
+> the old `#e0e0e0`-on-`#7e7e7e` was 3.92:1 — a real fail
+
+`packages/presentation/settings/settings-overlay-dom.ts:70` と `:231`、
+`packages/presentation/menu/confirm-dialog.ts:69`、
+`packages/presentation/menu/death-screen-styles.ts:67`。
+**1 か所に書く場所が無かったから 4 回書いてある。** これがトークンモジュールを置く理由である。
+
+値は参照実装から取った（各定数に `<reference-impl>/path:line` を書いてある）。
+ただし**取ってから測り、2 つは動かした**:
+
+| トークン | 参照実装 | 採った値 | 理由 |
+| --- | --- | --- | --- |
+| `HEART` | `index.html:287` `#c81919` | `#e02828` | 最悪世界ピクセル上で 2.61:1。アイコンの下限 3:1 に届かない |
+| `ICON_EMPTY` | `index.html:263` `#2d2d2d` | `#767676` | 同 1.10:1。**明るい地面の上で消える空ハート**は DN-UI-6 の嘘の別ルートである |
+| `STATUS_BUSY` | `index.html:204` `#ffe38a` | `#e8c040` | `STATUS_OK` と潰れる。`#e8c040` は参照実装が隣の役割で使っている値（`index.html:147` / `:496`） |
+| `STATUS_ALERT` | `index.html:212` `#ffd6d2` | `#f4553f` | **下記の実際の欠陥** |
+
+### DN-UI-11b 調査が見つけた欠陥 — 参照実装の自動保存インジケータ
+
+`index.html:159` は保存成功のインクを `#d7f7c2`、`:212` は**保存失敗**を `#ffd6d2` にしている。
+シミュレートすると、この 2 つは protanopia で **12**、deuteranopia で **22** しか離れていない
+（潰れ閾値は 442 の立方体対角に対して 24）。
+
+**赤緑色覚特性のプレイヤーは「ワールドを保存しました」と「保存に失敗しました」を区別できない。**
+同じ場所に、同じ背景の上に、同じくらいの長さの文字列が出る。
+
+参照実装のアクセシビリティゲートには**構造的に見えない**。
+`e2e/ui/accessibility.e2e.ts:10` はテキストノードの `color` を自分の `background-color` と比べる。
+**ある状態と別の状態を比べることは 1 度もしない**——そしてプレイヤーが実際にする比較はそちらである。
+同じ穴のせいで、ハート・肉・XP・選択スロットという**意味を担う色は 1 つも検査されていない**。
+どれもテキストではなく塗りだからである。
+
+直し方は色相の入れ替えではなく**輝度のはしご**である（OK 0.85 / BUSY 0.57 / ALERT 0.29）。
+二色覚は色相を圧縮し、**輝度はおおむね保存する**。だから輝度で分けた集合は構成上生き残り、
+色相で分けた集合は運で生き残る。
+
+### DN-UI-11c 保証は「mx-ui 自身の面に対して」だけ
+
+**レンダリングされた世界の上で「WCAG AA」は誰も守れない主張である。** 背景はプレイヤーが向いた方角で決まる。
+だから主張を真になるまで狭めて、`surveyPalette` で強制する。
+
+| # | 保証 | 対象 |
+| --- | --- | --- |
+| G1 | テキスト 4.5:1 / アイコン・メーター・枠 3:1 | **宣言した面に対して**。`SCRIM` は半透明なので、**あり得る最悪の世界ピクセル**の上での合成に対して測る |
+| G2 | 全 `CRITICAL_PAIRS` が 4 モードすべてで `COLLAPSE_SEPARATION` 以上離れている | シミュレーション後の sRGB 距離 |
+| G3 | 全ペアが色以外のチャンネル（形・輪郭・長さ・太さ・位置・数字）を 1 つ以上宣言している | — |
+
+**保証しないもの**: レンダリングされたシーンの上に直接描かれるもの。canvas は mc-render の資産であり
+（plan.md §3.9）、任意の世界ピクセルの上のグリフにコントラスト下限は無く、mx-ui はそれを主張しない。
+**`SCRIM` がトークンであってデコレーションでないのはこのためである** — 上の主張を守れるものにしている機構が
+スクリムであり、そこから出た内容は保証も一緒に置いていく。
+
+G1 の最悪値が**標本ではなく厳密**なのは、合成の輝度が背景の各チャンネルについて単調だからである。
+ただしコントラスト比は背景輝度について V 字なので、両端を見て真の最小になるのは
+**前景の輝度が合成の範囲の外にあるとき**だけである。`surveyPalette` はこれを仮定せず
+`boundIsExact` として**検査**する。満たさないトークンは「ある世界の上でスクリムに溶ける」トークンであり、
+静かに誤って測られるのではなく落ちなければならない。
+
+### DN-UI-11d 補正はこの色に届かない
+
+DN-UI-1a のとおり、`feColorMatrix` ダルトナイゼーションは **canvas にだけ**掛かる。
+つまり `domain/palette.ts` の色は**1 つも補正されない**。
+参照実装も同じ判断をしており、`index.html:416` がその根拠として
+「the HUD already carries icon/shape/numeric redundancy」と書いている。
+
+したがって **G2 は「あると良いもの」ではない**。色覚特性のあるプレイヤーにとって、
+HUD の後ろに立っているのはこれだけである。そして G3 を壊すことは
+**別リポジトリで下された判断を無効にする**ことでもある。
+
+回帰テスト（`test/view-model.test.ts`、describe `the palette keeps its guarantee`）:
+
+- `REGRESSION: every guarded token clears its floor over ANY world pixel`
+- `REGRESSION: no critical pair collapses under any of the four colour-vision modes`
+- `REGRESSION: the pair the reference collapses is the pair this palette fixed`
+  — 参照実装の 2 値を**そのまま入れて潰れることを assert している**。
+  「参照実装の値に戻す」人に理由が伝わるようにするためである
+- `REGRESSION: shape coding is not the only distinguisher, and it is not optional either`
+  — 両方向である。色は唯一のチャンネルであってはならないが、**形を宣言すれば距離テストを免除される、でもない**
+- `REGRESSION: a token that lands on top of another is a failure until somebody explains it`
+  — 宣言済みペアだけでなく**全トークン対**を掃く。逃げ道は `KNOWN_NEAR_COLLISIONS` で、書かれた理由を要求する
+- `the tokens render for a stylesheet through exactly one function`
+- `REGRESSION: the SIMULATION is not the CORRECTION, and neither file holds both`
+
+`KNOWN_NEAR_COLLISIONS` は 1 件しかなく、それは**手抜きではなく色空間の限界**を記録している。
+最悪世界ピクセル上で 4.5:1 を確保し、かつ 3 種の二色覚すべてで空腹オレンジから 40 単位離れる
+「警告色」を sRGB 全体から探すと、**返ってくるのはグレーと紫だけ**である。
+暗い HUD の上に、警報でもあり空腹とも区別できる赤は**存在しない**。
+だからその区別は領域・形・トーストの文字が全部担っており、後で発見されるのではなくここに書いてある。
+
+---
+
+## DN-UI-12 ミラーは組織の既定手であって、この画面だけの例外ではない
+
+`inventory` と `crafting` は plan.md §3.13 が挙げる 4 画面のうちの 2 つでありながら、
+長く `ScreenId` union のメンバーでしかなかった（当時の G2）。
+保留には理由が書かれていた——**mc-sim がインベントリ状態を所有し、その形をまだ publish していない。
+今書けば読み取るスナップショット型を発明することになり、`api-lock.md` がそれを公開面として固定する。**
+
+**この論はそれ自体は正しい。しかしこの事例に固有ではない。** 同じ論が組織の全ミラーの論である:
+
+| ミラー | 何を写しているか | pin しているテスト |
+| --- | --- | --- |
+| `domain/frame-contract.ts`（本リポジトリ） | mc-kernel の frame 契約 | `test/public-api.test.ts` |
+| `mx-gameplay/domain/chunk-store-port.ts` | mc-worldgen の `ChunkStore` **全体** | `test/chunk-store-mirror.test.ts` |
+| `mc-render/domain/camera-mirror.ts` | mc-sim のカメラ姿勢 | `test/camera-mirror.test.ts` |
+| 各 `domain/kernel-vocabulary.ts` | kernel 語彙 | 各 `test/kernel-mirror.test.ts` |
+| **`VitalsSnapshot`（`domain/hud-view-model.ts`）** | **mc-sim のプレイヤー状態** | — |
+
+最後の行が決定的である。**`VitalsSnapshot` は最初のカットから `api-lock.md` に載っている。**
+保留の論を一貫して適用すれば、`hudViewModel` も書けなかったことになる。
+
+### 前提も事実として間違っていた
+
+**mc-sim の形は「未知」ではなく「未 publish」である。**
+`mc-sim/domain/inventory.ts` が `Inventory` / `Slot` / `ItemStack` / `ItemId` /
+`INVENTORY_SLOT_COUNT` を定義しており、**mc-sim 自身の `api-lock.md` の `## Exported` に 5 つとも載っている**。
+「GitHub Packages にまだ無い」が障害の全部であり、**それはミラーパターンが発明された当の障害である**
+（mx-gameplay が mc-worldgen に対して既に渡った橋と同一）。
+
+### 保留が正しかった部分は残してある
+
+`domain/inventory-view-model.ts` のミラー節は provisional と明記し、置換手順（1. 依存を足す
+2. 節を消す 3. import を差し替える）を持ち、`test/inventory-mirror.test.ts` が**双方向の代入**で
+形を pin している。意図的な広げ方 2 つ（`count` を brand しない / `durability` は mc-sim に無い）も
+そこに書いてある。
+
+### chunk-store-port と 1 点だけ違う — バレルに載せる
+
+mx-gameplay はミラーを `index.ts` から export **しない**。
+`ChunkStore` は `Context.Tag` であり、**他リポジトリのサービス**を再公開することになるからである
+（同じ文字列キーの 2 つのタグは実行時に 1 つのサービスで型としては別物、という実害がある）。
+
+このミラーはタグでもサービスでもない。**本リポジトリ自身の純粋関数の引数型**である。
+mc-compose は `inventoryViewModel` を呼ばないので、mc-sim publish 時に引数を狭めるのは
+[versioning.md](./versioning.md) §5 の MINOR であり、破壊的変更ではない。
+**`VitalsSnapshot` が最初から占めているのと同じ位置**である。
+`REGRESSION: the mirror is published as a PARAMETER, not as mc-sim’s vocabulary` が
+この区別（ミラーは載る / kernel 語彙は載らない）を 1 本で固定している。
+
+### 射影しかしない。解釈はしない
+
+plan.md §2.3-1 は**スタッキング規則とレシピ照合を mc-sim に割り当てている**。
+したがってこのファイルに `canStack` も `matchRecipe` も無く、あってはならない。
+
+| mc-sim が所有 | mx-ui が所有 |
+| --- | --- |
+| 2 つのスタックが合体するか | 画面が対象スロットをハイライトするか |
+| グリッドがレシピに一致するか | 出力マスをどこに描くか |
+| 36 スロットと中身 | そのうち 9 がホットバーで 27 がグリッドであること |
+
+**そして答えを持っていないときは `unknown` を射影する。** これが一番効くところである:
+
+- **クラフト結果は 3 値である。** `match` / `no-match` / `unknown`。
+  `no-match` は「作れるものは無い」という**主張**であり、mx-ui にその資格は無い。
+  mc-sim にはレシピモデルが**存在しない**（`api-lock.md` に `Recipe` が無い）ので、
+  実際の値は `unknown` である。空の出力マスを描けば嘘になり、
+  しかも**プレイヤーがレシピに迷っているまさにそのとき**に嘘になる。
+- **合体可能スロットは mc-sim が答える。** ここで `itemId` を比べれば `addItem` の 3 分の 1 を再実装し、
+  `MAX_STACK_COUNT` の上限を取りこぼす。しかも**プレイヤーが約束と読むハイライトの中で、静かに**間違える。
+- **mc-sim に無いリージョンは `unknown` である。** 防具枠を空のマス 4 つで描けば
+  「あなたは何も装備していない」と言ったことになる。mc-sim は**何も言っていない**。別の画面である。
+
+回帰テスト（`test/view-model.test.ts`、describe
+`inventory and crafting project state without interpreting it`）:
+
+- `the projection is pure, total and the same for the same input`
+- `REGRESSION: the slot projection is SHARED with the hotbar, never re-derived`（DN-UI-7c）
+- `layout is mx-ui’s: 36 flat slots become a hotbar and a 9x3 grid`
+- `REGRESSION: a state this repository cannot interpret is UNKNOWN, never guessed`
+- `“no recipe matches” and “mc-sim has not answered” are DIFFERENT screens`
+- `one derivation serves both screens — the grid width comes from the snapshot`
+- `REGRESSION: this repository implements no stacking rule and no recipe matcher`
+- `a snapshot from across a version boundary is clamped, exactly as the HUD’s is`（DN-UI-7）
+
+および `test/inventory-mirror.test.ts` の 6 本。
+
+**画面が 2 つで導出が 1 つ**なのは、インベントリとクラフトが**グリッドの幅しか違わない**からである。
+その幅は mc-sim のコンテナが知っている（`CraftingSnapshot.gridWidth`）ので、
+`craftingViewModel` を別に建てれば 1 つの射影の 2 つ目の導出になる——DN-UI-7c が記録している当の間違いである。

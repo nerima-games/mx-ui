@@ -53,7 +53,19 @@ export type VitalsSnapshot = {
   readonly selectedHotbarIndex: number
 }
 
-export type HotbarSlotView = {
+/**
+ * One projected slot — hotbar, inventory grid, armour, offhand or crafting.
+ *
+ * Named for the SLOT and not for the hotbar because `domain/inventory-view-model.ts`
+ * projects its grids through the very same function (`slotView` below). There is
+ * one answer in this repository to "what does the screen show for a slot", and
+ * DN-UI-7c is the record of what a second one costs: the `empty` guard cleared
+ * two of three fields, the DOM layer drew a durability bar under an empty slot,
+ * and the bug was reachable in ordinary play the moment a tool broke. An
+ * inventory screen with its own copy of that projection would have reproduced
+ * it exactly once more.
+ */
+export type SlotView = {
   readonly index: number
   readonly itemId: string | undefined
   /** Vanilla hides the count for a single item; so do we. */
@@ -68,7 +80,7 @@ export type HudViewModel = {
   readonly shanks: ReadonlyArray<IconState>
   readonly experienceLevelLabel: string
   readonly experiencePercent: number
-  readonly hotbar: ReadonlyArray<HotbarSlotView>
+  readonly hotbar: ReadonlyArray<SlotView>
   readonly dead: boolean
 }
 
@@ -154,11 +166,21 @@ export const iconRow = (points: number, maxPoints: number): ReadonlyArray<IconSt
   })
 }
 
-const hotbarSlotView = (
+/**
+ * THE per-slot projection, exported because a second screen needs it.
+ *
+ * `domain/inventory-view-model.ts` calls this for every region it draws, so a
+ * hotbar slot and an inventory slot cannot disagree about what "empty" means or
+ * about when a count is worth printing. `selectedIndex` is passed rather than
+ * derived so that a region with no selection can simply pass one that never
+ * matches — the inventory grid has no cursor of its own, the hotbar does, and
+ * the difference is the caller's to state rather than this function's to guess.
+ */
+export const slotView = (
   slot: HotbarSlotSnapshot | undefined,
   index: number,
   selectedIndex: number,
-): HotbarSlotView => {
+): SlotView => {
   const count = safeWholeNumber(slot?.count ?? 0)
   const empty = slot?.itemId === undefined || count === 0
 
@@ -216,7 +238,7 @@ export const hudViewModel = (snapshot: VitalsSnapshot): HudViewModel => {
     // event, and no counter sits beside it to contradict.)
     experiencePercent: Math.floor(clamp(snapshot.experienceProgress, 0, 1) * 100),
     hotbar: Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) =>
-      hotbarSlotView(snapshot.hotbar[index], index, selectedIndex),
+      slotView(snapshot.hotbar[index], index, selectedIndex),
     ),
     dead: healthPoints <= 0,
   }

@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 63
+exported declarations: 134
 supporting declarations: 7
 
 ## Exported
@@ -22,6 +22,12 @@ supporting declarations: 7
 
 ```ts
 const CAPTION_LIFETIME_SECS = 3;
+```
+
+### COLLAPSE_SEPARATION  `const`
+
+```ts
+const COLLAPSE_SEPARATION = 24;
 ```
 
 ### COLOR_VISION_FILTER_COLOR_SPACE  `const`
@@ -40,6 +46,12 @@ const COLOR_VISION_FILTER_TARGET: "canvas";
 
 ```ts
 const COLOR_VISION_MODES: ReadonlyArray<ColorVisionMode>;
+```
+
+### CRITICAL_PAIRS  `const`
+
+```ts
+const CRITICAL_PAIRS: ReadonlyArray<CriticalPair>;
 ```
 
 ### CaptionEvent  `type`
@@ -113,6 +125,57 @@ type ColorVisionMatrix = readonly [
 type ColorVisionMode = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia';
 ```
 
+### CraftingOutcomeView  `type`
+
+```ts
+type CraftingOutcomeView = {
+    readonly kind: 'match';
+    readonly output: SlotView;
+} | {
+    readonly kind: 'no-match';
+} | {
+    readonly kind: 'unknown';
+};
+```
+
+### CraftingResultSnapshot  `type`
+
+```ts
+type CraftingResultSnapshot = {
+    readonly _tag: 'Match';
+    readonly output: MirroredItemStack;
+} | {
+    readonly _tag: 'NoMatch';
+};
+```
+
+### CraftingSnapshot  `type`
+
+```ts
+type CraftingSnapshot = {
+    readonly gridWidth: number;
+    readonly grid: ReadonlyArray<MirroredSlot>;
+    readonly result: CraftingResultSnapshot | undefined;
+};
+```
+
+### CriticalPair  `type`
+
+```ts
+type CriticalPair = {
+    readonly left: {
+        readonly name: string;
+        readonly color: Rgb;
+    };
+    readonly right: {
+        readonly name: string;
+        readonly color: Rgb;
+    };
+    readonly why: string;
+    readonly alsoDistinguishedBy: ReadonlyArray<Distinguisher>;
+};
+```
+
 ### DEFAULT_CAPTION_SETTINGS  `const`
 
 ```ts
@@ -131,6 +194,24 @@ const DEFAULT_MAX_HEALTH_POINTS = 20;
 const DEFAULT_MAX_HUNGER_POINTS = 20;
 ```
 
+### DURABILITY_HIGH  `const`
+
+```ts
+const DURABILITY_HIGH: Rgb;
+```
+
+### DURABILITY_LOW  `const`
+
+```ts
+const DURABILITY_LOW: Rgb;
+```
+
+### Distinguisher  `type`
+
+```ts
+type Distinguisher = 'shape' | 'outline' | 'length' | 'weight' | 'position' | 'numeral';
+```
+
 ### EXPERIENCE_MODULE_STAGE_PREFIXES  `const`
 
 ```ts
@@ -147,10 +228,45 @@ type EscapeOutcome = {
 };
 ```
 
+### FOCUS_RING  `const`
+
+```ts
+const FOCUS_RING: Rgb;
+```
+
+### FOCUS_RING_SHADOW  `const`
+
+```ts
+const FOCUS_RING_SHADOW: Rgb;
+```
+
+### GUARDED_TOKENS  `const`
+
+```ts
+const GUARDED_TOKENS: ReadonlyArray<GuardedToken>;
+```
+
+### GuardedToken  `type`
+
+```ts
+type GuardedToken = {
+    readonly name: string;
+    readonly color: Rgb;
+    readonly role: TokenRole;
+    readonly on: 'scrim' | 'surface' | 'surfaceRaised';
+};
+```
+
 ### HEALTH_POINTS_PER_HEART  `const`
 
 ```ts
 const HEALTH_POINTS_PER_HEART = 2;
+```
+
+### HEART  `const`
+
+```ts
+const HEART: Rgb;
 ```
 
 ### HOTBAR_SLOT_COUNT  `const`
@@ -169,19 +285,6 @@ type HotbarSlotSnapshot = {
 };
 ```
 
-### HotbarSlotView  `type`
-
-```ts
-type HotbarSlotView = {
-    readonly index: number;
-    readonly itemId: string | undefined;
-    readonly countLabel: string | undefined;
-    readonly durabilityPercent: number | undefined;
-    readonly selected: boolean;
-    readonly empty: boolean;
-};
-```
-
 ### HudViewModel  `type`
 
 ```ts
@@ -190,9 +293,57 @@ type HudViewModel = {
     readonly shanks: ReadonlyArray<IconState>;
     readonly experienceLevelLabel: string;
     readonly experiencePercent: number;
-    readonly hotbar: ReadonlyArray<HotbarSlotView>;
+    readonly hotbar: ReadonlyArray<SlotView>;
     readonly dead: boolean;
 };
+```
+
+### ICON_EMPTY  `const`
+
+```ts
+const ICON_EMPTY: Rgb;
+```
+
+### INK  `const`
+
+```ts
+const INK: Rgb;
+```
+
+### INK_FAINT  `const`
+
+```ts
+const INK_FAINT: Rgb;
+```
+
+### INK_MUTED  `const`
+
+```ts
+const INK_MUTED: Rgb;
+```
+
+### INVENTORY_MAIN_COLUMNS  `const`
+
+```ts
+const INVENTORY_MAIN_COLUMNS = 9;
+```
+
+### INVENTORY_MAIN_ROWS  `const`
+
+```ts
+const INVENTORY_MAIN_ROWS = 3;
+```
+
+### INVENTORY_MAIN_SLOT_COUNT  `const`
+
+```ts
+const INVENTORY_MAIN_SLOT_COUNT: number;
+```
+
+### INVENTORY_SLOT_COUNT  `const`
+
+```ts
+const INVENTORY_SLOT_COUNT = 36;
 ```
 
 ### IconState  `type`
@@ -207,6 +358,42 @@ type IconState = 'full' | 'half' | 'empty';
 type InputAction = 'moveForward' | 'moveBack' | 'moveLeft' | 'moveRight' | 'jump' | 'sneak' | 'sprint' | 'inventory' | 'drop' | 'chat';
 ```
 
+### InventorySnapshot  `type`
+
+```ts
+type InventorySnapshot = {
+    readonly inventory: MirroredInventory;
+    readonly selectedHotbarIndex: number;
+    readonly durabilityBySlot: ReadonlyMap<number, number> | undefined;
+    readonly carried: MirroredSlot;
+    readonly armour: ReadonlyArray<MirroredSlot> | undefined;
+    readonly offhand: MirroredSlot | undefined;
+    readonly crafting: CraftingSnapshot | undefined;
+    readonly mergeableSlotIndices: ReadonlySet<number> | undefined;
+};
+```
+
+### InventoryViewModel  `type`
+
+```ts
+type InventoryViewModel = {
+    readonly regions: ReadonlyArray<SlotRegion>;
+    readonly carried: SlotView | undefined;
+    readonly crafting: CraftingOutcomeView;
+    readonly mergeTargets: MergeTargets;
+};
+```
+
+### KNOWN_NEAR_COLLISIONS  `const`
+
+```ts
+const KNOWN_NEAR_COLLISIONS: ReadonlyArray<{
+    readonly left: string;
+    readonly right: string;
+    readonly why: string;
+}>;
+```
+
 ### KeyBindings  `type`
 
 ```ts
@@ -217,6 +404,52 @@ type KeyBindings = ReadonlyMap<InputAction, string>;
 
 ```ts
 const MAX_VISIBLE_CAPTIONS = 4;
+```
+
+### METER_TRACK  `const`
+
+```ts
+const METER_TRACK: Rgb;
+```
+
+### MergeTargets  `type`
+
+```ts
+type MergeTargets = {
+    readonly kind: 'known';
+    readonly indices: ReadonlySet<number>;
+} | {
+    readonly kind: 'unknown';
+};
+```
+
+### MirroredInventory  `type`
+
+```ts
+type MirroredInventory = {
+    readonly slots: ReadonlyArray<MirroredSlot>;
+};
+```
+
+### MirroredItemId  `type`
+
+```ts
+type MirroredItemId = string;
+```
+
+### MirroredItemStack  `type`
+
+```ts
+type MirroredItemStack = {
+    readonly item: MirroredItemId;
+    readonly count: number;
+};
+```
+
+### MirroredSlot  `type`
+
+```ts
+type MirroredSlot = MirroredItemStack | undefined;
 ```
 
 ### ModalStack  `type`
@@ -243,6 +476,42 @@ type MotionSetting = 'system' | 'full' | 'reduced';
 const OWN_STAGE_PREFIX = "ui:";
 ```
 
+### PairReading  `type`
+
+```ts
+type PairReading = {
+    readonly pair: CriticalPair;
+    readonly perMode: ReadonlyArray<{
+        readonly mode: ColorVisionMode;
+        readonly left: Rgb;
+        readonly right: Rgb;
+        readonly separation: number;
+        readonly contrast: number;
+    }>;
+    readonly worstSeparation: number;
+    readonly worstMode: ColorVisionMode;
+    readonly collapsed: boolean;
+    readonly hueOnly: boolean;
+};
+```
+
+### PaletteSurvey  `type`
+
+```ts
+type PaletteSurvey = {
+    readonly tokens: ReadonlyArray<TokenReading>;
+    readonly pairs: ReadonlyArray<PairReading>;
+    readonly tokensBelowFloor: ReadonlyArray<string>;
+    readonly collapsedPairs: ReadonlyArray<string>;
+    readonly pairsWithoutRedundancy: ReadonlyArray<string>;
+    readonly undeclaredNearCollisions: ReadonlyArray<{
+        readonly left: string;
+        readonly right: string;
+        readonly separation: number;
+    }>;
+};
+```
+
 ### REBIND_CLEAR_KEYS  `const`
 
 ```ts
@@ -264,16 +533,173 @@ type RebindResult = {
 };
 ```
 
+### RegionId  `type`
+
+```ts
+type RegionId = 'hotbar' | 'main' | 'armour' | 'offhand' | 'crafting-grid';
+```
+
+### Rgb  `type`
+
+```ts
+type Rgb = readonly [number, number, number];
+```
+
 ### RgbChannels  `type`
 
 ```ts
 type RgbChannels = readonly [number, number, number];
 ```
 
+### SCRIM  `const`
+
+```ts
+const SCRIM: Rgb;
+```
+
+### SCRIM_ALPHA  `const`
+
+```ts
+const SCRIM_ALPHA = 0.9;
+```
+
+### SCRIM_OVER_BRIGHTEST_WORLD  `const`
+
+```ts
+const SCRIM_OVER_BRIGHTEST_WORLD: Rgb;
+```
+
+### SCRIM_OVER_DARKEST_WORLD  `const`
+
+```ts
+const SCRIM_OVER_DARKEST_WORLD: Rgb;
+```
+
+### SHANK  `const`
+
+```ts
+const SHANK: Rgb;
+```
+
+### SLOT_BORDER  `const`
+
+```ts
+const SLOT_BORDER: Rgb;
+```
+
+### SLOT_FILL  `const`
+
+```ts
+const SLOT_FILL: Rgb;
+```
+
+### SLOT_FILL_ALPHA  `const`
+
+```ts
+const SLOT_FILL_ALPHA = 0.55;
+```
+
+### SLOT_SELECTED  `const`
+
+```ts
+const SLOT_SELECTED: Rgb;
+```
+
+### STATUS_ALERT  `const`
+
+```ts
+const STATUS_ALERT: Rgb;
+```
+
+### STATUS_BUSY  `const`
+
+```ts
+const STATUS_BUSY: Rgb;
+```
+
+### STATUS_OK  `const`
+
+```ts
+const STATUS_OK: Rgb;
+```
+
+### SURFACE  `const`
+
+```ts
+const SURFACE: Rgb;
+```
+
+### SURFACE_RAISED  `const`
+
+```ts
+const SURFACE_RAISED: Rgb;
+```
+
 ### ScreenId  `type`
 
 ```ts
 type ScreenId = 'pause' | 'settings' | 'inventory' | 'crafting' | 'chat' | 'achievements' | 'statistics';
+```
+
+### SlotRegion  `type`
+
+```ts
+type SlotRegion = {
+    readonly kind: 'slots';
+    readonly id: RegionId;
+    readonly columns: number;
+    readonly slots: ReadonlyArray<SlotView>;
+} | {
+    readonly kind: 'unknown';
+    readonly id: RegionId;
+    readonly why: string;
+};
+```
+
+### SlotView  `type`
+
+```ts
+type SlotView = {
+    readonly index: number;
+    readonly itemId: string | undefined;
+    readonly countLabel: string | undefined;
+    readonly durabilityPercent: number | undefined;
+    readonly selected: boolean;
+    readonly empty: boolean;
+};
+```
+
+### TEXT_CONTRAST_MIN  `const`
+
+```ts
+const TEXT_CONTRAST_MIN = 4.5;
+```
+
+### TokenReading  `type`
+
+```ts
+type TokenReading = {
+    readonly name: string;
+    readonly color: Rgb;
+    readonly role: TokenRole;
+    readonly on: GuardedToken['on'];
+    readonly worstContrast: number;
+    readonly floor: number;
+    readonly meetsFloor: boolean;
+    readonly boundIsExact: boolean;
+};
+```
+
+### TokenRole  `type`
+
+```ts
+type TokenRole = 'text' | 'ui';
+```
+
+### UI_CONTRAST_MIN  `const`
+
+```ts
+const UI_CONTRAST_MIN = 3;
 ```
 
 ### UI_STAGE_IDS  `const`
@@ -320,6 +746,24 @@ type VitalsSnapshot = {
 };
 ```
 
+### XP_FILL  `const`
+
+```ts
+const XP_FILL: Rgb;
+```
+
+### XP_FILL_HIGHLIGHT  `const`
+
+```ts
+const XP_FILL_HIGHLIGHT: Rgb;
+```
+
+### XP_LEVEL  `const`
+
+```ts
+const XP_LEVEL: Rgb;
+```
+
 ### animationDurationMs  `const`
 
 ```ts
@@ -362,10 +806,34 @@ const colorVisionMatrix: (mode: ColorVisionMode) => ColorVisionMatrix | undefine
 const colorVisionMatrixValues: (mode: ColorVisionMode) => string | undefined;
 ```
 
+### compositeOver  `const`
+
+```ts
+const compositeOver: (color: Rgb, alpha: number, backdrop: Rgb) => Rgb;
+```
+
+### contrastRatio  `const`
+
+```ts
+const contrastRatio: (left: Rgb, right: Rgb) => number;
+```
+
+### cssColor  `const`
+
+```ts
+const cssColor: (color: Rgb, alpha?: number) => string;
+```
+
 ### emptyCaptionQueue  `const`
 
 ```ts
 const emptyCaptionQueue: CaptionQueue;
+```
+
+### emptyInventorySnapshot  `const`
+
+```ts
+const emptyInventorySnapshot: InventorySnapshot;
 ```
 
 ### emptyModalStack  `const`
@@ -392,6 +860,12 @@ const expireCaptions: (queue: CaptionQueue, nowSecs: number, lifetimeSecs?: numb
 const gameplayInputSuppressed: (stack: ModalStack) => boolean;
 ```
 
+### hex  `const`
+
+```ts
+const hex: (color: Rgb) => string;
+```
+
 ### hudViewModel  `const`
 
 ```ts
@@ -402,6 +876,12 @@ const hudViewModel: (snapshot: VitalsSnapshot) => HudViewModel;
 
 ```ts
 const iconRow: (points: number, maxPoints: number) => ReadonlyArray<IconState>;
+```
+
+### inventoryViewModel  `const`
+
+```ts
+const inventoryViewModel: (snapshot: InventorySnapshot) => InventoryViewModel;
 ```
 
 ### makeUiFrameState  `const`
@@ -440,10 +920,28 @@ const rebind: (bindings: KeyBindings, action: InputAction, code: string) => Rebi
 const receiveCaption: (queue: CaptionQueue, event: CaptionEvent, settings: CaptionSettings) => CaptionQueue;
 ```
 
+### regionOf  `const`
+
+```ts
+const regionOf: (model: InventoryViewModel, id: RegionId) => SlotRegion | undefined;
+```
+
+### relativeLuminance  `const`
+
+```ts
+const relativeLuminance: (color: Rgb) => number;
+```
+
 ### resolveMotionPreference  `const`
 
 ```ts
 const resolveMotionPreference: (setting: MotionSetting, systemPrefersReducedMotion: boolean) => MotionPreference;
+```
+
+### separation  `const`
+
+```ts
+const separation: (left: Rgb, right: Rgb) => number;
 ```
 
 ### shouldAnimate  `const`
@@ -452,10 +950,34 @@ const resolveMotionPreference: (setting: MotionSetting, systemPrefersReducedMoti
 const shouldAnimate: (motion: MotionPreference) => boolean;
 ```
 
+### simulateColorVision  `const`
+
+```ts
+const simulateColorVision: (color: Rgb, mode: ColorVisionMode) => Rgb;
+```
+
+### slotSnapshotOf  `const`
+
+```ts
+const slotSnapshotOf: (slot: MirroredSlot, durability: number | undefined) => HotbarSlotSnapshot;
+```
+
+### slotView  `const`
+
+```ts
+const slotView: (slot: HotbarSlotSnapshot | undefined, index: number, selectedIndex: number) => SlotView;
+```
+
 ### spawnSnapshot  `const`
 
 ```ts
 const spawnSnapshot: VitalsSnapshot;
+```
+
+### surveyPalette  `const`
+
+```ts
+const surveyPalette: () => PaletteSurvey;
 ```
 
 ### topOf  `const`
@@ -480,6 +1002,12 @@ const uiStages: (state: UiFrameState) => ReadonlyArray<StageRegistration>;
 
 ```ts
 const unboundActions: (bindings: KeyBindings, actions: ReadonlyArray<InputAction>) => ReadonlyArray<InputAction>;
+```
+
+### worstCaseContrastOnScrim  `const`
+
+```ts
+const worstCaseContrastOnScrim: (color: Rgb) => number;
 ```
 
 ## Supporting declarations

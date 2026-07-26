@@ -33,16 +33,20 @@ vitest 3.2.7
  ✓ test/public-api.test.ts                 (6 tests)
  ✓ test/stage-registration.test.ts         (15 tests)
  ✓ test/accessibility.test.ts              (17 tests)
- ✓ test/view-model.test.ts                 (35 tests)
+ ✓ test/view-model.test.ts                 (49 tests)
+ ✓ test/inventory-mirror.test.ts           (6 tests)
  ✓ test/check-dependency-whitelist.test.ts (20 tests)
  ✓ test/api-lock.test.ts                   (26 tests)
 
- Test Files  6 passed (6)
-      Tests  119 passed (119)
+ Test Files  7 passed (7)
+      Tests  139 passed (139)
 ```
 
-`view-model.test.ts` が 20 → 35 に増えているのは、プレビューの finding 4 件と gap 2 件を
-assertion として降ろしたぶんである（§4 の「プレビューが実際に何を見つけたか」）。
+`view-model.test.ts` が 20 → 35 に増えたのはプレビューの finding 4 件と gap 2 件を
+assertion として降ろしたぶんで、35 → 49 に増えたのは**その gap 2 件を埋めたぶん**である。
+**「無い」ことを assert していた 2 本は消え、「何を保証するか」を assert する 14 本になった**（§4）。
+`inventory-mirror.test.ts` は mc-sim のミラーを pin する新ファイルで、
+`mx-gameplay/test/chunk-store-mirror.test.ts` と同じ役割である（DN-UI-12）。
 
 **プレビュー（`apps/`）にテストは無い。** 意図的である——プレビューは検査対象ではなく検査**手段**であり、
 そこで見つかったことは `test/view-model.test.ts` に assertion として降ろすのが正しい置き場所である（§4）。
@@ -52,7 +56,8 @@ assertion として降ろしたぶんである（§4 の「プレビューが実
 
 | ファイル | 守っているもの |
 | --- | --- |
-| `test/view-model.test.ts` | DN-UI-6（ハーフハート）/ DN-UI-7（クランプ）/ DN-UI-3（字幕） |
+| `test/view-model.test.ts` | DN-UI-6（ハーフハート）/ DN-UI-7（クランプ）/ DN-UI-3（字幕）/ **DN-UI-11（パレットの保証）/ DN-UI-12（射影と unknown）** |
+| `test/inventory-mirror.test.ts` | **DN-UI-12（mc-sim ミラーの形と、それがバレルに載る理由）** |
 | `test/accessibility.test.ts` | DN-UI-1（色覚 / reduced-motion / リマップ）/ DN-UI-4（Escape 単一ハンドラ） |
 | `test/stage-registration.test.ts` | DN-UI-8（`after` は制約のみ）/ DN-UI-9（再入可能）/ DN-UI-3 / DN-UI-10 |
 | `test/check-dependency-whitelist.test.ts` | 依存境界 / DN-UI-5（kit 不要）/ DN-UI-10 |
@@ -144,7 +149,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | 1 | `pnpm verify` が green | ✅ |
 | 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ❌ |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
-| 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ 部分的（4 つとも操作でき、**補正行列も引き継いで算術をテストで固定した**。残るのは mx-ui が色を 1 つも定義していないことで、コントラスト表はプレビューが発明した色を測っている——下記 G1） |
+| 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ 部分的（4 つとも操作でき、補正行列を引き継ぎ、**パレットも定義して 4 モード全部で調査した**。残るのは**そのトークンを CSS にする消費者がまだ無い**ことで、保証は数値については証明済み、描かれた画面については未証明である——下記 G1） |
 | 5 | 99% カバレッジゲートが有効 | ❌（完成時に有効化、§5） |
 
 ### プレビューの条件（満たしている）
@@ -209,27 +214,48 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
 どれも「境界を越えて来る値」に関するもので、テストは妥当な入力を渡すからである。
 **プレビューが値の妥当さを仮定しないのは、それが検査手段の仕事だからである。**
 
-残っている gap は 2 件で、どちらも `test/view-model.test.ts` の
-describe `gaps the preview found that are recorded rather than filled` がピン留めしている。
-**テストが assert しているのは「無い」ことである。** 埋めればテストが落ち、
-欠落が埋まったことが diff として見える——沈黙ではなく。
+**gap は 2 件から 1 件になり、その 1 件は前より狭い。**
+「無い」ことを assert していた describe
+`gaps the preview found that are recorded rather than filled` は消えた。
+埋まった以上、そこにあるべきなのは**何を保証するか**の assertion である。
 
-- **G1: mx-ui が色を 1 つも定義していない**（完成条件 4 が依然 ⚠️ である理由）。
-  **半分は閉じた。** `feColorMatrix` の補正行列は参照実装の `index.html:445-460` から
-  `domain/accessibility.ts` に引き継ぎ、行和 1・グレー不変・赤緑分離をテストで固定した（DN-UI-1a）。
-  行列は mc-render の canvas に掛かるので、パレットが無くても完結している。
-  残るのはパレット／トークン／スタイルシートが無いことで、コントラスト表は
-  **プレビュー自身が発明した色**を測っている。ハーネスは本物、被検体は仮置きである。
-  **ここでパレットを発明しない。** 発明すれば欠落が見えなくなる。
-  必要なものは決まっている: `palette.ts` の `CRITICAL_PAIRS` 5 対
-  （ハート満/空、耐久 高/低、XP バー/トラック、ハート/肉、選択スロット/枠）が
-  4 モード全部で潰れないこと。それを測らずに出るパレットは、誰も検査していないパレットである。
-- **G2: インベントリ／クラフトにビューモデルが無い。** plan.md §3.13 は 4 画面を挙げるが
-  `domain/` に導出があるのは 3 つ。**意図的に埋めていない**: インベントリの*状態*は mc-sim の所有
-  （plan.md §2.3-1）で、その形はまだ publish されていない。今書けば読み取るスナップショット型を
-  発明することになり、`api-lock.md` がそれを**公開 API として固定する**。
-  `index.ts` が `domain/frame-contract.ts` について既に記録している罠と同じものである。
-  形が分かってから足すのは安く、当てずっぽうを取り消すのは高い。
+#### 埋めた 2 件
+
+- **旧 G1: mx-ui が色を 1 つも定義していない → `domain/palette.ts`。**
+  トークンは参照実装から掘った（各定数に `<reference-impl>/path:line`）。
+  ただし取ってから測り、**2 つは動かした**——`HEART` は最悪世界ピクセル上で 2.61:1 しか無く
+  アイコンの下限 3:1 に届かず、`ICON_EMPTY` は 1.10:1 で明るい地面の上では見えない。
+  **そして調査は実際の欠陥を 1 つ見つけた**: 参照実装の自動保存インジケータは
+  成功 `#d7f7c2`（`index.html:159`）と**失敗** `#ffd6d2`（`:212`）が
+  protanopia で 12、deuteranopia で 22 しか離れておらず（閾値 24）、
+  赤緑色覚特性のプレイヤーは**保存の成否を区別できない**。
+  参照実装の e2e ゲートは構造上これを見られない（テキストノードを自分の背景とだけ比べるので、
+  ある状態と別の状態を比べない）。詳細と保証の定義は DN-UI-11。
+- **旧 G2: インベントリ／クラフトにビューモデルが無い → `domain/inventory-view-model.ts`。**
+  保留の論（mc-sim の形が publish されていない）は正しいが**この事例に固有ではなく**、
+  組織の全ミラーの論である——そして `VitalsSnapshot` は最初のカットから同じことをしている。
+  さらに mc-sim の形は「未知」ではなく「未 publish」で、
+  `mc-sim/domain/inventory.ts` と mc-sim 自身の `api-lock.md` に載っている。
+  ミラーは provisional と明記し、`test/inventory-mirror.test.ts` が双方向で pin する。詳細は DN-UI-12。
+
+#### 残っている 1 件（G1、前より狭い）
+
+`pnpm preview --stats` が印字する。2 つの別々のことが 1 エントリに入っているのは、
+**どちらも今このリポジトリの中では閉じられない**からである。
+
+1. **パレットに消費者が無い。** トークンは値であり、CSS にする層がまだ無い。
+   だから保証（テキスト 4.5:1 / アイコン 3:1、スクリムの上、任意の世界ピクセルに対して）は
+   **数値については証明済みで、描かれた画面については未証明**である。
+   保証は「HUD の内容がスクリムの上に留まる」ことも前提にしており、
+   スタイルシートがラベルをスクリムの外に置けば保証は置き去りになる——
+   そしてスタイルシートが無い間、それを見るテストは書けない。
+   出荷側の面倒は [versioning.md](./versioning.md) §4（`files` / `exports` / tsc だけでは足りないビルド）。
+2. **mc-sim にレシピモデルが無い。** クラフト**画面**はあり、渡されたものを射影する。
+   しかし「このグリッドは何か作るか」に射影すべき答えが無い（mc-sim の `api-lock.md` に `Recipe` が無い）。
+   だから `CraftingSnapshot.result` は実際 `undefined` で、ビューモデルは `unknown` を返す。
+   **それは正しい挙動であって仮置きではない**が、mc-sim がレシピを所有するまで
+   本物のクラフト結果は出せない。レシピ照合は plan.md §2.3-1 で mc-sim のものであり、
+   ここで発明することがこのリポジトリのしてはならないことである。
 
 ### アクセシビリティ検証はユニットテストでは閉じない
 

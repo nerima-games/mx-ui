@@ -45,8 +45,9 @@ import {
   type KeyBindings,
   type MotionSetting,
 } from '../../domain/accessibility'
-import { contrastRatio, distance, hex, padEnd, simulate, COLLAPSE_DISTANCE, type Style } from './ansi'
-import { BAD, CRITICAL_PAIRS, GOOD, INK, MUTED, WARN } from './palette'
+import { CRITICAL_PAIRS, COLLAPSE_SEPARATION, UI_CONTRAST_MIN } from '../../domain/palette'
+import { contrastRatio, distance, hex, padEnd, simulate, type Style } from './ansi'
+import { BAD, GOOD, INK, MUTED, WARN } from './palette'
 
 const SAMPLE_ANIMATION_MS = 300
 
@@ -73,26 +74,37 @@ const bindingRows = (
 /**
  * The measurement that makes the colour-vision switch mean something.
  *
- * For each pair of colours that must stay distinguishable, the WCAG contrast
- * ratio and the raw distance AFTER the current simulation. A pair that collapses
- * is named and the reason it matters is printed next to it — a table of ratios
- * with no "so what" column is a table nobody acts on.
+ * The pairs come from `domain/palette.ts` now, and so do the colours in them —
+ * this table used to measure hexadecimal numbers the preview had invented and
+ * therefore told you something true about nothing that ships. It now measures
+ * the palette the game will draw with, and `test/view-model.test.ts` asserts
+ * the same survey, so a clean table here and a green suite there are the same
+ * fact rather than two opinions.
+ *
+ * Distance is the verdict and ratio is context. Ratio answers "can this be read
+ * against that background"; it does not answer "can these two marks be told
+ * apart", and a red/orange pair no dichromat can separate still posts a healthy
+ * ratio.
  */
 const contrastRows = (style: Style, mode: string): ReadonlyArray<string> =>
   CRITICAL_PAIRS.map((pair) => {
-    const left = simulate(pair.left.rgb, mode)
-    const right = simulate(pair.right.rgb, mode)
+    const left = simulate(pair.left.color, mode)
+    const right = simulate(pair.right.color, mode)
     const apart = distance(left, right)
     const ratio = contrastRatio(left, right)
-    const collapsed = apart < COLLAPSE_DISTANCE
+    const collapsed = apart < COLLAPSE_SEPARATION
 
     return `  ${style.paint(padEnd(`${pair.left.name} / ${pair.right.name}`, 34), MUTED)}${style.paint(
       padEnd(`${hex(left)} ${hex(right)}`, 18),
       INK,
     )}${style.paint(padEnd(`${apart.toFixed(0)} apart`, 12), collapsed ? BAD : GOOD)}${style.paint(
       padEnd(`${ratio.toFixed(2)}:1`, 10),
-      ratio < 3 ? WARN : GOOD,
-    )}${collapsed ? style.paint(`same colour — ${pair.why}`, BAD) : style.dim(pair.why)}`
+      ratio < UI_CONTRAST_MIN ? WARN : GOOD,
+    )}${
+      collapsed
+        ? style.paint(`same colour — ${pair.why}`, BAD)
+        : style.dim(`${pair.why}   [also: ${pair.alsoDistinguishedBy.join(', ')}]`)
+    }`
   })
 
 export const renderSettings = (
