@@ -1,4 +1,4 @@
-# 設計ノート（DN-UI-1 〜 DN-UI-12）
+# 設計ノート（DN-UI-1 〜 DN-UI-13）
 
 plan.md §3.13 / §3.6 / §2.3 の「設計注意」を展開したもの。
 
@@ -870,3 +870,152 @@ plan.md §2.3-1 は**スタッキング規則とレシピ照合を mc-sim に割
 **画面が 2 つで導出が 1 つ**なのは、インベントリとクラフトが**グリッドの幅しか違わない**からである。
 その幅は mc-sim のコンテナが知っている（`CraftingSnapshot.gridWidth`）ので、
 `craftingViewModel` を別に建てれば 1 つの射影の 2 つ目の導出になる——DN-UI-7c が記録している当の間違いである。
+
+## DN-UI-13 DOM 層 — 狭い構造面、冪等な描画、リスナ皆無
+
+**ルール: `application/` は `domain/` の射影を要素にする。`domain/` を import し、逆は無い。
+DOM には `application/dom-surface.ts` の構造型を通してだけ触る。**
+
+`domain/hud-view-model.ts` が最初から書いていた約束である:
+「When the DOM layer arrives it goes in a sibling module that imports this one,
+never the other way round」。`test/dom-surface.test.ts` の
+`REGRESSION: domain/ still cannot reach a document` が向きを固定する
+（`domain/` の全ファイルについて `application` への import が無く、`document.` / `window.` が
+コード中に現れないこと）。`lib` に DOM が入っているのはこのリポジトリだけなので、
+**これを守っているのはこのテストだけ**である。
+
+### DN-UI-13a なぜ `HTMLElement` を直接書かないのか — mc-render とは別の理由
+
+mc-render の `application/dom-surface.ts` は**書けないから**存在する（build プロジェクトに DOM lib が無い）。
+ここは違う。`tsconfig.base.json` は最初から `"lib": ["ES2024", "DOM"]` であり、
+`HTMLElement` は `domain/` でも書ける。**この非対称は事実として認めた上で、面はやはり要る。**
+
+1. **`environment: 'node'` を守るため。** `docs/testing.md` §2 はこれを既定ではなく判断として書いている。
+   `HTMLElement` に対して書かれたレンダラは jsdom を要求するか、
+   `as unknown as HTMLElement` を書いた偽物を要求する。**後者のほうが悪い**——
+   キャストこそ型安全を失う場所であり、しかもそれがテスト側にあるので、
+   偽物が実物からずれても落ちるものが無い。
+2. **リスナを配らないため。** この面に `addEventListener` は**無い**（DN-UI-13c）。
+
+### DN-UI-13b 代償 — mc-render のそれとは**別物**である
+
+mc-render の代償は「イベントのフィールドを全部 optional にする」ことだった。
+ブラウザが**渡してくる**値（リスナ引数の `Event`）を名指すので、`DomInputEvent` は
+`Event` の**上位型**でなければならない、という一方向の要求である。
+
+要素の構築は向きが逆で、代償の落ちる場所も違う。要素はブラウザが**返してくる**値
+（`createElement` の戻り）であり、同時にブラウザに**渡す**値（`appendChild` の引数）でもある。
+前者は上位型を要求し、後者は反変性により**下位型**を要求する。構造的な部分集合は両方にはなれない。
+
+| # | 代償 | 何が起きるか |
+| --- | --- | --- |
+| 1 | **`appendChild` はメソッド構文で書く**（`readonly appendChild: (...) => ...` ではなく） | プロパティ構文だと `strictFunctionTypes` が引数を反変に比べ、`HTMLElement` が代入不能になる（`Type 'DomNode' is missing the following properties from type 'Node': baseURI, childNodes, firstChild, isConnected, and 45 more`）。メソッド引数は**双変**なのでこれだけが抜け道である。**双変は実際に穴**であり、隠さずここに書く——偽の要素を実 `appendChild` に渡せるのはこれのおかげであり、無関係なオブジェクトを渡せるのも同じ理由である |
+| 2 | **親子の辺のためだけに 2 つ目のほぼ空の型（`DomNode`）が要る** | `DomElement` は使えない。双変はどちらか一方向が通れば良いが、`DomElement` と `Node` は**どちらの向きにも**代入不能である（`Node` に `setAttribute` が無い）。`{}` も使えない——何でも通してしまう。`nodeType` はすべての `Node` が持ち、かつノード階層を引き込まずに名指せる唯一のメンバである。mx-ui はこれを読まない |
+| 3 | **`textContent` は `string \| null`** | null は 1 度も書かず 1 度も読まないのに union で持つ。mc-render の「イベントのフィールドを全部 optional」の直接の対応物である。lib.dom が宣言を変えている（旧: `textContent: string \| null`、TypeScript 5.9: `get(): string` / `set(value: string \| null)`）ので、両方を満たす形が union である。mc-render が `requestPointerLock` の戻りを `unknown` にしたのと同じ判断——**このファイルはブラウザの年代を選ばない** |
+
+3 つとも「自然に書いた版がコンパイルを通らない」ことで見つかった。
+`test/fixtures/dom-surface.ts` を実 `lib.dom.d.ts` に対してコンパイルして診断 0 件を assert する
+`test/dom-surface.test.ts` が唯一の番人である——**`pnpm typecheck` は 1 と 2 の退行を見られない**。
+面を狭めれば fixture も一緒に直され、両方通ってしまうからである。
+
+**mc-render との運用差が 1 つある。** mc-render は fixture を全プロジェクトから `exclude` する
+（見えない DOM 型を名指すので）。ここは全プロジェクトに DOM lib があるので fixture を
+`tsconfig.json` / `tsconfig.test.json` にも**入れてある**。ゲートが 2 つになるだけで費用は無い。
+テストのほうが権威なのは、**誰かが lib を狭めたときに生き残るゲートだから**である。
+
+### DN-UI-13c Escape の所有者は語彙の問題である
+
+DN-UI-4 は「閉じる責務はフレーム側単一ハンドラ」と言う。従来これは**規律**だった。
+
+`application/dom-surface.ts` に `addEventListener` が無いので、いまは**構造**である。
+この面に対して書かれたレンダラはリスナを付けられない——動詞が語彙に無い。
+3 方向から固定してある:
+
+- `test/dom-surface.test.ts` — 面のソースに宣言が現れないこと。
+- `test/hud-view.test.ts` の `REGRESSION: attaches no event listener anywhere in its tree` —
+  偽 document は**わざと面より高機能**で `addEventListener` を実装しているので、
+  これは「偽物に記録できなかった」ではなく「レンダラが付けなかった」の観測である。
+- `test/public-api.test.ts` の `REGRESSION: exports no way for a renderer to take a key (DN-UI-4)`。
+
+**設定画面を作らなかったのはこの帰結である。** キーリマップは `KeyboardEvent.code` を要求し、
+入力サービスは mc-render のもの（plan.md §2.3-2）である。
+ラベルの一覧だけ描いて「設定画面ができた」と言えば、**中心の挙動が到達不能で検査不能な画面**が
+このリポジトリに残る——DN-UI-1a が 1 段落かけて拒否した「後ろに何も無いフック」そのものである。
+
+### DN-UI-13d 描画は差分である — セルという単位
+
+**すべての書き込みは「要素のメンバ＋最後に書いた値」を持つセルを通る。**
+`ui:hud-sync` は毎フレーム走り、HUD の入力はそのうちの数フレームでしか変わらない（plan.md §5.2）。
+`textContent = x` は x が同じでもテキストノードを破棄・再生成するので、無変更の書き込みは無料ではない。
+
+固定している性質は「速い」より強い: **モデルが変わらない再描画は DOM を 1 回も触らない**。
+偽 document が変更ログを持つので、これは機械の速度に依存しない厳密な assert になる
+（`expect(factory.since(before)).toStrictEqual([])`）。
+
+- 木は mount 時に 1 度だけ組み、以後は変異させる。**要素を消さない**——余ったアイコンは `hidden` にする。
+  だから面に `removeChild` が無く、すべてのセルが恒久的な要素参照を持てる。
+- **フレーム経路で色を書かない。** 色は mount 時に入る `var(--mx-ui-*)` 参照であり、
+  状態変化は「どの変数を参照するか」を差し替えるだけで、それも差分である。
+- 唯一割り当てるのはパーセント文字列で、`writePercent` が**数値を先に比べる**ので
+  実際に動いたフレームでしか作らない。
+- 割り当てが起きる唯一の経路は**ハート列が伸びたとき**（最大体力の変化）である。
+  毎フレームの出来事ではなく、代替（無限の上限に備えて先に確保する）は
+  `safeMaxPoints` が上限を持たない以上とれない。
+
+### DN-UI-13e トークンは mx-ui 自身のルートに宣言する
+
+**カスタムプロパティ。`:root` でも `<body>` でも生成スタイルシートでもなく、host から渡されたルートに。**
+
+- **生成スタイルシートは却下。** `document.head` が要り、`docs/public-api.md` §4-1 制約 1 が禁じている
+  （「`document` を自分で探しに行かない…探しに行くと、各画面プレビューが同一ページで
+  複数の mx-ui を立てられなくなる」）。スタイルシートは文書大域なので、
+  2 つの mx-ui が 1 組の規則を奪い合う——制約が防ごうとしていた当の結果である。
+- **要素ごとのインライン色も却下。** トークンの**値**が使うたびに DOM に入るので、
+  ハート 1 列で `HEART` が 10 回現れ、毎フレーム 10 回の色文字列比較が要る。
+  「パレットは画面に届いたか」の答えが N 個になる。
+- **`:root` / `<body>` はカスタムプロパティが**継承する**のが理由で却下。**
+  色覚属性は canvas に付く（DN-UI-1a）。トークンを `:root` に置くと両者が同じスコープに入り、
+  `body[data-color-vision="protanopia"] { --mx-ui-heart: … }` という**まったく自然な 1 行**が
+  書けるようになる——それは DN-UI-1a が禁じている当の失敗（コントラストを測って作った UI クロームを
+  再着色する）である。`test/screen-views.test.ts` が両側から固定している:
+  mx-ui のどの要素にも属性が付かず、canvas にはトークンが 1 つも無い。
+- **そして保証の範囲と一致する。** `domain/palette.ts` は G1 を「mx-ui 自身の面に対してだけ」と述べ、
+  「レンダリングされたシーンの上に直接描かれるもの」は保証**しない**と明記する。
+  ルートに閉じれば「トークンが**見える**要素の集合」と「保証が**覆う**要素の集合」が構成上一致する。
+  `:root` なら canvas 配下は前者に入って後者に入らず、それを言うものが何も無い。
+
+### DN-UI-13f G3 は属性では満たせない
+
+`CRITICAL_PAIRS` は各対に非色チャネルを宣言し、G1〜G3 の G3 は
+「belt AND braces」——G2 に通ったから形を免除、はしない——と明言する。
+`data-icon-state="half"` を出すだけのレンダラは `surveyPalette` の数値を全部緑に保ったまま、
+**その冗長性を削除する**。しかも参照実装が DOM HUD を**未補正のまま**にした判断
+（`<reference-impl>/index.html:416`：「the HUD already carries icon/shape/numeric redundancy」）は
+その冗長性の存在に支えられているので、削れば**別のリポジトリの決定を無効化する**。
+
+だからアイコンは 2 要素である: 中空グリフ（`♡` / `○`、`ICON_EMPTY`）の上に
+実体グリフ（`♥` / `●`、`HEART` / `SHANK`）を 100 / 50 / 0% でクリップする。
+`shape` と `length` と `position` が**要素として**あり、
+半分状態は DN-UI-6 が要求するとおり**半分のグリフ**になる（半ハートの文字は存在しないので、
+再着色では表現できない）。スロット選択は色に加えて枠 2px→3px（`weight`）である。
+`test/hud-view.test.ts` の
+`carries the icon distinction on SHAPE and LENGTH as well as colour (palette G3)` が固定する。
+
+### DN-UI-13g まだ届いていないもの — 集合として固定する
+
+`test/palette-css.test.ts` の
+`REGRESSION: records exactly which guarded tokens are DECLARED but not yet REFERENCED` が
+`['focusRing', 'statusBusy', 'statusOk']` ちょうどを assert する。
+
+`--mx-ui-focus-ring` をルートに宣言することと、画面がフォーカスリングを**描く**ことは別である。
+`surveyPalette` は `GUARDED_TOKENS` の 14 個全部を測るので、どの要素も参照していないトークンは
+**保証がまだ数値についてだけのトークン**である。3 つとも CSS を書き足しても埋まらない:
+
+- `FOCUS_RING` — フォーカスできる要素が無い。コントロールにはキーが要り、キーは mc-render のものである（DN-UI-13c）。
+- `STATUS_OK` / `STATUS_BUSY` — 自動保存インジケータが無い。**これは居心地が悪い**:
+  `status ok / status alert` は**この調査が参照実装で見つけた当の対**であり
+  （`#d7f7c2` と `#ffd6d2` が protanopia で 12 しか離れていない）、
+  それを表示するコンポーネントがこのリポジトリにまだ無い。
+
+**消えたことを検出できるのはピン留めしたテストだけ**なので、集合として固定してある。
+消費者が付いた瞬間にこのテストが落ちる——それが気づき方である。

@@ -16,25 +16,39 @@
  * without touching the other.
  *
  * ---------------------------------------------------------------------------
- * There is no DOM code in this repository YET, on purpose
+ * Two layers, and the line between them
  * ---------------------------------------------------------------------------
  *
- * Everything below is a pure state derivation, so the whole suite runs under
- * vitest's `environment: 'node'` in milliseconds. `tsconfig.base.json` already
- * declares the `DOM` lib — mx-ui is the one repository of the sixteen that does
- * — so adding the first screen is not also a build-configuration change.
+ * `domain/` is pure state derivation — no `document`, no clock, no service — so
+ * the whole suite runs under vitest's `environment: 'node'` in milliseconds.
+ * `domain/palette.ts` is part of that: colour VALUES and the arithmetic that
+ * checks them, which is what lets the contrast and colour-vision guarantee it
+ * states be a test rather than a claim.
  *
- * `domain/palette.ts` is not an exception to that. It is colour VALUES and the
- * arithmetic that checks them; it emits no stylesheet and imports no DOM type,
- * which is what lets the contrast and colour-vision guarantee it states be a
- * test rather than a claim. The stylesheet that consumes it arrives with the
- * first screen, and shipping it is a packaging problem this repository alone
- * has (docs/versioning.md §4).
+ * `application/` is the DOM layer that consumes them, and it arrived after the
+ * derivations rather than alongside them, on purpose: a renderer written against
+ * a tested projection is a dumb one, so a rendering bug and a derivation bug are
+ * never the same bug (`domain/hud-view-model.ts`). It writes through the narrow
+ * structural surface in `application/dom-surface.ts` rather than through
+ * `HTMLElement` directly — not because the DOM lib is missing (mx-ui is the one
+ * repository of the sixteen that has it) but because a fake document under
+ * `environment: 'node'` must satisfy the renderer WITHOUT A CAST, and because a
+ * surface with no `addEventListener` in it cannot grow a second owner for
+ * Escape (DN-UI-4).
  *
- * When those screens arrive, their tests must be written with plain `it` +
+ * Tests that drive DOM flows must be written with plain `it` +
  * `Effect.runPromise`, NOT `it.effect`. See docs/testing.md.
  */
 
+export * from './application/accessibility-dom'
+export * from './application/caption-view'
+export * from './application/dom-surface'
+export * from './application/dom-write'
+export * from './application/hud-view'
+export * from './application/icon-element'
+export * from './application/inventory-view'
+export * from './application/palette-css'
+export * from './application/slot-element'
 export * from './domain/accessibility'
 export * from './domain/caption'
 export * from './domain/hud-view-model'

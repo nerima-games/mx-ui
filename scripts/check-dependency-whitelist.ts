@@ -259,7 +259,15 @@ export const BANNED_TIME_SOURCES: ReadonlyArray<{ readonly pattern: RegExp; read
 ]
 
 /** Directories and files scanned for imports and banned time sources. */
-export const SCAN_ROOTS: ReadonlyArray<string> = ['apps', 'index.ts', 'domain', 'stages', 'scripts', 'test']
+export const SCAN_ROOTS: ReadonlyArray<string> = [
+  'apps',
+  'index.ts',
+  'domain',
+  'application',
+  'stages',
+  'scripts',
+  'test',
+]
 
 const SKIPPED_DIRECTORIES: ReadonlySet<string> = new Set([
   'node_modules',
@@ -910,7 +918,8 @@ const isTypeScriptSource = (filePath: string): boolean =>
   filePath.endsWith('.ts') && !filePath.endsWith('.d.ts')
 
 /**
- * Shipped source is `index.ts` and everything under `domain/` and `stages/`.
+ * Shipped source is `index.ts` and everything under `domain/`, `application/`
+ * and `stages/`.
  *
  * The distinction matters for rule 6: `test/` and `scripts/` may import
  * mc-playground-kit (that is what a preview harness is for), shipped source may
@@ -921,6 +930,7 @@ export const isToolingOrTestPath = (relativePath: string): boolean =>
   !(
     relativePath === 'index.ts' ||
     relativePath.startsWith('domain/') ||
+    relativePath.startsWith('application/') ||
     relativePath.startsWith('stages/')
   )
 

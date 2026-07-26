@@ -126,6 +126,44 @@ describe('public API surface', () => {
     }),
   )
 
+  it.effect('re-exports the DOM layer — the part that turns a view model into elements', () =>
+    Effect.sync(() => {
+      const dom = [
+        // The renderers.
+        'createHudView',
+        'createCaptionView',
+        'createInventoryView',
+        // The palette's consumer. Until this existed, the guarantee in
+        // `domain/palette.ts` was proved about numbers and about nothing on a
+        // screen — `docs/testing.md` §4 criterion 4 was ⚠️ for exactly that.
+        'declarePalette',
+        'PALETTE_PROPERTY',
+        'PALETTE_VAR',
+        'PALETTE_VALUE',
+        // The colour-vision switch, finally with a consumer (DN-UI-1a).
+        'applyColorVision',
+        'COLOR_VISION_ATTRIBUTE',
+      ]
+
+      for (const name of dom) {
+        expect(Object.keys(ui)).toContain(name)
+      }
+    }),
+  )
+
+  it.effect('REGRESSION: exports no way for a renderer to take a key (DN-UI-4)', () =>
+    Effect.sync(() => {
+      // The Escape decision has one owner: `escapePressed`, at frame level, paired
+      // with mc-render's input design. The barrel must not hand a consumer a
+      // renderer-side listener API, because the second owner is how one press
+      // closes two screens.
+      const listenerShaped = Object.keys(ui).filter(
+        (name) => name.toLowerCase().includes('listener') || name.toLowerCase().includes('eventtarget'),
+      )
+      expect(listenerShaped).toStrictEqual([])
+    }),
+  )
+
   it.effect('exposes the same implementations through the barrel as through the modules', () =>
     Effect.sync(() => {
       expect(ui.rebind).toBe(rebind)

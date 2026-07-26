@@ -13,10 +13,20 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 134
+exported declarations: 183
 supporting declarations: 7
 
 ## Exported
+
+### AttributeCell  `type`
+
+```ts
+type AttributeCell = {
+    readonly element: DomElement;
+    readonly name: string;
+    previous: string | undefined;
+};
+```
 
 ### CAPTION_LIFETIME_SECS  `const`
 
@@ -28,6 +38,12 @@ const CAPTION_LIFETIME_SECS = 3;
 
 ```ts
 const COLLAPSE_SEPARATION = 24;
+```
+
+### COLOR_VISION_ATTRIBUTE  `const`
+
+```ts
+const COLOR_VISION_ATTRIBUTE = "data-color-vision";
 ```
 
 ### COLOR_VISION_FILTER_COLOR_SPACE  `const`
@@ -89,6 +105,26 @@ type CaptionQueue = {
 type CaptionSettings = {
     readonly captionsEnabled: boolean;
     readonly audioUnlocked: boolean;
+};
+```
+
+### CaptionView  `type`
+
+```ts
+type CaptionView = {
+    readonly root: DomElement;
+    readonly render: (lines: ReadonlyArray<CaptionLineView>) => void;
+    readonly setMotion: (motion: MotionPreference) => void;
+};
+```
+
+### ColorVisionCell  `type`
+
+```ts
+type ColorVisionCell = {
+    readonly target: DomAttributeTarget;
+    previous: string | undefined;
+    applied: boolean;
 };
 ```
 
@@ -206,16 +242,74 @@ const DURABILITY_HIGH: Rgb;
 const DURABILITY_LOW: Rgb;
 ```
 
+### DURABILITY_LOW_PERCENT  `const`
+
+```ts
+const DURABILITY_LOW_PERCENT = 25;
+```
+
 ### Distinguisher  `type`
 
 ```ts
 type Distinguisher = 'shape' | 'outline' | 'length' | 'weight' | 'position' | 'numeral';
 ```
 
+### DomAttributeTarget  `type`
+
+```ts
+type DomAttributeTarget = {
+    setAttribute(name: string, value: string): void;
+    removeAttribute(name: string): void;
+};
+```
+
+### DomElement  `type`
+
+```ts
+type DomElement = DomNode & {
+    textContent: string | null;
+    readonly style: DomStyle;
+    setAttribute(name: string, value: string): void;
+    removeAttribute(name: string): void;
+    appendChild(child: DomNode): unknown;
+};
+```
+
+### DomElementFactory  `type`
+
+```ts
+type DomElementFactory = {
+    createElement(tagName: string): DomElement;
+};
+```
+
+### DomNode  `type`
+
+```ts
+type DomNode = {
+    readonly nodeType: number;
+};
+```
+
+### DomStyle  `type`
+
+```ts
+type DomStyle = {
+    setProperty(property: string, value: string): void;
+    removeProperty(property: string): void;
+};
+```
+
 ### EXPERIENCE_MODULE_STAGE_PREFIXES  `const`
 
 ```ts
 const EXPERIENCE_MODULE_STAGE_PREFIXES: readonly ["gameplay:", "redstone:", "ui:", "multiplayer:"];
+```
+
+### EXPERIENCE_TRANSITION_MS  `const`
+
+```ts
+const EXPERIENCE_TRANSITION_MS = 220;
 ```
 
 ### EscapeOutcome  `type`
@@ -285,6 +379,16 @@ type HotbarSlotSnapshot = {
 };
 ```
 
+### HudView  `type`
+
+```ts
+type HudView = {
+    readonly root: DomElement;
+    readonly render: (model: HudViewModel) => void;
+    readonly setMotion: (motion: MotionPreference) => void;
+};
+```
+
 ### HudViewModel  `type`
 
 ```ts
@@ -346,6 +450,24 @@ const INVENTORY_MAIN_SLOT_COUNT: number;
 const INVENTORY_SLOT_COUNT = 36;
 ```
 
+### IconElement  `type`
+
+```ts
+type IconElement = {
+    readonly root: DomElement;
+    readonly stateFlag: AttributeCell;
+    readonly hiddenFlag: AttributeCell;
+    readonly fillWidth: PercentCell;
+    previous: IconState | undefined;
+};
+```
+
+### IconKind  `type`
+
+```ts
+type IconKind = 'heart' | 'shank';
+```
+
 ### IconState  `type`
 
 ```ts
@@ -370,6 +492,15 @@ type InventorySnapshot = {
     readonly offhand: MirroredSlot | undefined;
     readonly crafting: CraftingSnapshot | undefined;
     readonly mergeableSlotIndices: ReadonlySet<number> | undefined;
+};
+```
+
+### InventoryView  `type`
+
+```ts
+type InventoryView = {
+    readonly root: DomElement;
+    readonly render: (model: InventoryViewModel) => void;
 };
 ```
 
@@ -476,6 +607,66 @@ type MotionSetting = 'system' | 'full' | 'reduced';
 const OWN_STAGE_PREFIX = "ui:";
 ```
 
+### PALETTE_PROPERTY  `const`
+
+```ts
+const PALETTE_PROPERTY: {
+    readonly scrim: "--mx-ui-scrim";
+    readonly surface: "--mx-ui-surface";
+    readonly surfaceRaised: "--mx-ui-surface-raised";
+    readonly meterTrack: "--mx-ui-meter-track";
+    readonly slotFill: "--mx-ui-slot-fill";
+    readonly ink: "--mx-ui-ink";
+    readonly inkMuted: "--mx-ui-ink-muted";
+    readonly inkFaint: "--mx-ui-ink-faint";
+    readonly heart: "--mx-ui-heart";
+    readonly shank: "--mx-ui-shank";
+    readonly iconEmpty: "--mx-ui-icon-empty";
+    readonly xpFill: "--mx-ui-xp-fill";
+    readonly xpFillHighlight: "--mx-ui-xp-fill-highlight";
+    readonly xpLevel: "--mx-ui-xp-level";
+    readonly slotBorder: "--mx-ui-slot-border";
+    readonly slotSelected: "--mx-ui-slot-selected";
+    readonly statusOk: "--mx-ui-status-ok";
+    readonly statusBusy: "--mx-ui-status-busy";
+    readonly statusAlert: "--mx-ui-status-alert";
+    readonly durabilityHigh: "--mx-ui-durability-high";
+    readonly durabilityLow: "--mx-ui-durability-low";
+    readonly focusRing: "--mx-ui-focus-ring";
+    readonly focusRingShadow: "--mx-ui-focus-ring-shadow";
+};
+```
+
+### PALETTE_PROPERTY_PREFIX  `const`
+
+```ts
+const PALETTE_PROPERTY_PREFIX = "--mx-ui-";
+```
+
+### PALETTE_SOURCE  `const`
+
+```ts
+const PALETTE_SOURCE: Readonly<Record<PaletteTokenName, Rgb>>;
+```
+
+### PALETTE_TOKEN_NAMES  `const`
+
+```ts
+const PALETTE_TOKEN_NAMES: ReadonlyArray<PaletteTokenName>;
+```
+
+### PALETTE_VALUE  `const`
+
+```ts
+const PALETTE_VALUE: Readonly<Record<PaletteTokenName, string>>;
+```
+
+### PALETTE_VAR  `const`
+
+```ts
+const PALETTE_VAR: Readonly<Record<PaletteTokenName, string>>;
+```
+
 ### PairReading  `type`
 
 ```ts
@@ -509,6 +700,21 @@ type PaletteSurvey = {
         readonly right: string;
         readonly separation: number;
     }>;
+};
+```
+
+### PaletteTokenName  `type`
+
+```ts
+type PaletteTokenName = keyof typeof PALETTE_PROPERTY;
+```
+
+### PercentCell  `type`
+
+```ts
+type PercentCell = {
+    readonly style: StyleCell;
+    previous: number;
 };
 ```
 
@@ -641,6 +847,25 @@ const SURFACE_RAISED: Rgb;
 type ScreenId = 'pause' | 'settings' | 'inventory' | 'crafting' | 'chat' | 'achievements' | 'statistics';
 ```
 
+### SlotElement  `type`
+
+```ts
+type SlotElement = {
+    readonly root: DomElement;
+    readonly hiddenFlag: AttributeCell;
+    readonly itemText: TextCell;
+    readonly countText: TextCell;
+    readonly emptyFlag: AttributeCell;
+    readonly mergeableFlag: AttributeCell;
+    readonly selectedFlag: AttributeCell;
+    readonly borderColor: StyleCell;
+    readonly borderWeight: StyleCell;
+    readonly durabilityHidden: AttributeCell;
+    readonly durabilityWidth: PercentCell;
+    readonly durabilityColor: StyleCell;
+};
+```
+
 ### SlotRegion  `type`
 
 ```ts
@@ -669,10 +894,29 @@ type SlotView = {
 };
 ```
 
+### StyleCell  `type`
+
+```ts
+type StyleCell = {
+    readonly style: DomStyle;
+    readonly property: string;
+    previous: string;
+};
+```
+
 ### TEXT_CONTRAST_MIN  `const`
 
 ```ts
 const TEXT_CONTRAST_MIN = 4.5;
+```
+
+### TextCell  `type`
+
+```ts
+type TextCell = {
+    readonly element: DomElement;
+    previous: string;
+};
 ```
 
 ### TokenReading  `type`
@@ -770,16 +1014,34 @@ const XP_LEVEL: Rgb;
 const animationDurationMs: (baseMs: number, motion: MotionPreference) => number;
 ```
 
+### applyColorVision  `const`
+
+```ts
+const applyColorVision: (cell: ColorVisionCell, mode: ColorVisionMode) => void;
+```
+
 ### applyColorVisionMatrix  `const`
 
 ```ts
 const applyColorVisionMatrix: (channels: RgbChannels, matrix: ColorVisionMatrix) => RgbChannels;
 ```
 
+### attributeCell  `const`
+
+```ts
+const attributeCell: (element: DomElement, name: string) => AttributeCell;
+```
+
 ### captionLines  `const`
 
 ```ts
 const captionLines: (queue: CaptionQueue, nowSecs: number, lifetimeSecs?: number) => ReadonlyArray<CaptionLineView>;
+```
+
+### clearStyle  `const`
+
+```ts
+const clearStyle: (cell: StyleCell) => void;
 ```
 
 ### closeScreen  `const`
@@ -792,6 +1054,12 @@ const closeScreen: (stack: ModalStack, screen: ScreenId) => ModalStack;
 
 ```ts
 const colorVisionAttribute: (mode: ColorVisionMode) => string | undefined;
+```
+
+### colorVisionCell  `const`
+
+```ts
+const colorVisionCell: (target: DomAttributeTarget) => ColorVisionCell;
 ```
 
 ### colorVisionMatrix  `const`
@@ -818,10 +1086,46 @@ const compositeOver: (color: Rgb, alpha: number, backdrop: Rgb) => Rgb;
 const contrastRatio: (left: Rgb, right: Rgb) => number;
 ```
 
+### createCaptionView  `const`
+
+```ts
+const createCaptionView: (factory: DomElementFactory, parent: DomElement, motion: MotionPreference) => CaptionView;
+```
+
+### createHudView  `const`
+
+```ts
+const createHudView: (factory: DomElementFactory, parent: DomElement, motion: MotionPreference) => HudView;
+```
+
+### createIconElement  `const`
+
+```ts
+const createIconElement: (factory: DomElementFactory, kind: IconKind) => IconElement;
+```
+
+### createInventoryView  `const`
+
+```ts
+const createInventoryView: (factory: DomElementFactory, parent: DomElement) => InventoryView;
+```
+
+### createSlotElement  `const`
+
+```ts
+const createSlotElement: (factory: DomElementFactory, index: number) => SlotElement;
+```
+
 ### cssColor  `const`
 
 ```ts
 const cssColor: (color: Rgb, alpha?: number) => string;
+```
+
+### declarePalette  `const`
+
+```ts
+const declarePalette: (root: DomElement) => void;
 ```
 
 ### emptyCaptionQueue  `const`
@@ -866,6 +1170,12 @@ const gameplayInputSuppressed: (stack: ModalStack) => boolean;
 const hex: (color: Rgb) => string;
 ```
 
+### hideSlotElementAtMount  `const`
+
+```ts
+const hideSlotElementAtMount: (slot: SlotElement) => void;
+```
+
 ### hudViewModel  `const`
 
 ```ts
@@ -900,6 +1210,12 @@ const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>>;
 
 ```ts
 const openScreen: (stack: ModalStack, screen: ScreenId) => ModalStack;
+```
+
+### percentCell  `const`
+
+```ts
+const percentCell: (element: DomElement, property: string) => PercentCell;
 ```
 
 ### pointerLockReleased  `const`
@@ -938,10 +1254,22 @@ const relativeLuminance: (color: Rgb) => number;
 const resolveMotionPreference: (setting: MotionSetting, systemPrefersReducedMotion: boolean) => MotionPreference;
 ```
 
+### retireIconElement  `const`
+
+```ts
+const retireIconElement: (icon: IconElement) => void;
+```
+
 ### separation  `const`
 
 ```ts
 const separation: (left: Rgb, right: Rgb) => number;
+```
+
+### setSlotHidden  `const`
+
+```ts
+const setSlotHidden: (slot: SlotElement, hidden: boolean) => void;
 ```
 
 ### shouldAnimate  `const`
@@ -974,10 +1302,22 @@ const slotView: (slot: HotbarSlotSnapshot | undefined, index: number, selectedIn
 const spawnSnapshot: VitalsSnapshot;
 ```
 
+### styleCell  `const`
+
+```ts
+const styleCell: (element: DomElement, property: string) => StyleCell;
+```
+
 ### surveyPalette  `const`
 
 ```ts
 const surveyPalette: () => PaletteSurvey;
+```
+
+### textCell  `const`
+
+```ts
+const textCell: (element: DomElement) => TextCell;
 ```
 
 ### topOf  `const`
@@ -1004,10 +1344,52 @@ const uiStages: (state: UiFrameState) => ReadonlyArray<StageRegistration>;
 const unboundActions: (bindings: KeyBindings, actions: ReadonlyArray<InputAction>) => ReadonlyArray<InputAction>;
 ```
 
+### updateIconElement  `const`
+
+```ts
+const updateIconElement: (icon: IconElement, state: IconState) => void;
+```
+
+### updateSlotElement  `const`
+
+```ts
+const updateSlotElement: (slot: SlotElement, view: SlotView, mergeable: boolean | undefined) => void;
+```
+
 ### worstCaseContrastOnScrim  `const`
 
 ```ts
 const worstCaseContrastOnScrim: (color: Rgb) => number;
+```
+
+### writeAttribute  `const`
+
+```ts
+const writeAttribute: (cell: AttributeCell, value: string | undefined) => void;
+```
+
+### writeHidden  `const`
+
+```ts
+const writeHidden: (cell: AttributeCell, hidden: boolean) => void;
+```
+
+### writePercent  `const`
+
+```ts
+const writePercent: (cell: PercentCell, percent: number) => void;
+```
+
+### writeStyle  `const`
+
+```ts
+const writeStyle: (cell: StyleCell, value: string) => void;
+```
+
+### writeText  `const`
+
+```ts
+const writeText: (cell: TextCell, text: string) => void;
 ```
 
 ## Supporting declarations

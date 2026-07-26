@@ -263,12 +263,23 @@ describe('§2.3-2: mc-playground-kit is devDependency-only', () => {
     }),
   )
 
-  it.effect('REGRESSION: `stages/` counts as shipped source, not as tooling', () =>
+  it.effect('REGRESSION: `stages/` and `application/` count as shipped source, not as tooling', () =>
     Effect.sync(() => {
       expect(isToolingOrTestPath('stages/registration.ts')).toBe(false)
       expect(isToolingOrTestPath('domain/hud-view-model.ts')).toBe(false)
+      // The DOM layer SHIPS. `tsconfig.preview.json` says it in as many words:
+      // 「When the first real DOM screen is written it belongs under `domain/`
+      // or a sibling module covered by tsconfig.build.json, NOT here: `apps/` is
+      // where dev tools live, and code that ships must be typechecked by the
+      // project that proves what it may depend on」. Getting this predicate
+      // wrong in the permissive direction would legalise a mc-playground-kit
+      // import from a renderer, which is the one import this project most needs
+      // to forbid.
+      expect(isToolingOrTestPath('application/hud-view.ts')).toBe(false)
+      expect(isToolingOrTestPath('application/dom-surface.ts')).toBe(false)
       expect(isToolingOrTestPath('index.ts')).toBe(false)
       expect(isToolingOrTestPath('test/view-model.test.ts')).toBe(true)
+      expect(isToolingOrTestPath('test/fake-dom.ts')).toBe(true)
       expect(isToolingOrTestPath('scripts/check-dependency-whitelist.ts')).toBe(true)
     }),
   )

@@ -13,7 +13,7 @@
   // under vitest's `environment: 'node'`. DOM rendering arrives with the
   // per-screen previews.
   "extends": "./tsconfig.base.json",
-  "include": ["index.ts", "domain/**/*.ts", "stages/**/*.ts"],
+  "include": ["index.ts", "domain/**/*.ts", "application/**/*.ts", "stages/**/*.ts"],
   "exclude": [
     "node_modules",
     "coverage",

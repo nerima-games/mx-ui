@@ -399,24 +399,29 @@ type Gap = {
 
 const KNOWN_GAPS: ReadonlyArray<Gap> = [
   {
-    title: 'no stylesheet ships the palette yet, and the recipe half of crafting has no owner',
+    title: 'three guarded tokens still have no component, and the recipe half of crafting has no owner',
     pinnedBy:
-      'test/view-model.test.ts — describe "the palette keeps its guarantee" and ' +
-      '"inventory and crafting project state without interpreting it"',
+      'test/palette-css.test.ts — "REGRESSION: records exactly which guarded tokens are DECLARED ' +
+      'but not yet REFERENCED"; test/view-model.test.ts — "inventory and crafting project state ' +
+      'without interpreting it"',
     detail: [
       'What USED to be here were two gaps: mx-ui defined no colours at all, and inventory/crafting',
-      'had no derivation. Both are closed — domain/palette.ts owns the tokens and states a',
-      'guarantee this report measures in §5, and domain/inventory-view-model.ts projects the',
-      'screens through the same slotView() the hotbar uses. What is left is narrower and is two',
-      'separate things, kept in one entry because neither is fixable inside this repository today.',
+      'had no derivation. Both closed. A third — "the palette has no consumer" — closed too:',
+      'application/ turns every token into a custom property on mx-ui’s own root and every screen',
+      'references them by name. What is left is narrower and is two separate things, kept in one',
+      'entry because neither is fixable inside this repository today.',
       '',
-      '  1. THE PALETTE HAS NO CONSUMER. The tokens are values; nothing turns them into CSS,',
-      '     because there is no DOM layer yet. So the guarantee — 4.5:1 for text and 3:1 for icons',
-      '     against the HUD scrim over any world pixel — is proved about the NUMBERS and not yet',
-      '     about a rendered screen. It also assumes HUD content stays on the scrim; a stylesheet',
-      '     that puts a label outside it leaves the guarantee behind, and no test can see that',
-      '     until there is a stylesheet to test. docs/versioning.md §4 records the packaging half',
-      '     (files, exports, a build step that is not just tsc — mx-ui alone of the sixteen).',
+      '  1. THREE GUARDED TOKENS REACH NO ELEMENT. surveyPalette measures all fourteen entries of',
+      '     GUARDED_TOKENS; the renderers reference eleven. FOCUS_RING is absent because nothing is',
+      '     focusable — a control needs keys, and keys are mc-render’s (plan.md §2.3-2) with the',
+      '     decision at frame level (DN-UI-4). STATUS_OK and STATUS_BUSY are absent because the',
+      '     autosave indicator is not built, which is the uncomfortable one: status ok / status',
+      '     alert is THE pair this survey found collapsed in the reference, and the component that',
+      '     would show it does not exist here yet. For those three the guarantee is still about',
+      '     numbers only. Note also what NO test in this repository can see: the guarantee assumes',
+      '     guarded content stays ON the scrim, and containment in the element that carries the',
+      '     scrim background is not the same as containment in its rendered pixels — that is a',
+      '     browser question, and it is why completion criterion 3 and 4 are separate lines.',
       '',
       '  2. MC-SIM HAS NO RECIPE MODEL. The crafting SCREEN exists and projects what it is given,',
       '     but "does this grid make anything" has no answer to project: there is no Recipe in',

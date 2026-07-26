@@ -9,6 +9,7 @@
   "include": [
     "index.ts",
     "domain/**/*.ts",
+    "application/**/*.ts",
     "stages/**/*.ts",
     "test/**/*.ts",
     "scripts/**/*.ts",

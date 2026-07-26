@@ -144,7 +144,8 @@ export type UiMount = {
 
 ## 5. `index.ts` の全 export
 
-`index.ts` は 8 モジュールを `export *` している（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
+`index.ts` は 17 モジュールを `export *` している——`domain/` の 6、`stages/` の 2、
+そして **`application/` の 9**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。
@@ -263,6 +264,49 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 `document` を触らないので、宣言している保証（DN-UI-11）が主張ではなくテストになっている。
 `simulateColorVision` が**シミュレーション**であって `domain/accessibility.ts` の
 `colorVisionMatrix`（**補正**）ではないことは DN-UI-1a / DN-UI-11d を参照。
+
+### `application/**` — DOM 層。**契約(暫定)** と 内部(可視) が混在する
+
+`application/` は `domain/` の射影を要素にする層である。`domain/` を import し、
+**逆は無い**（`test/dom-surface.test.ts` が固定）。
+
+| モジュール | export | 種別 | 分類 |
+| --- | --- | --- | --- |
+| `application/dom-surface.ts` | `DomNode` / `DomStyle` / `DomElement` / `DomElementFactory` / `DomAttributeTarget` | type | **契約(暫定)** — mc-compose が `document` を渡すときの受け口 |
+| `application/hud-view.ts` | `createHudView` / `HudView` / `EXPERIENCE_TRANSITION_MS` | 関数 + type + 定数 | **契約(暫定)** |
+| `application/caption-view.ts` | `createCaptionView` / `CaptionView` | 関数 + type | **契約(暫定)** |
+| `application/inventory-view.ts` | `createInventoryView` / `InventoryView` | 関数 + type | **契約(暫定)** |
+| `application/accessibility-dom.ts` | `COLOR_VISION_ATTRIBUTE` / `ColorVisionCell` / `colorVisionCell` / `applyColorVision` | 定数 + type + 関数 | **契約(暫定)** — canvas は mc-render のものだから |
+| `application/palette-css.ts` | `PALETTE_PROPERTY_PREFIX` / `PALETTE_PROPERTY` / `PALETTE_SOURCE` / `PALETTE_VALUE` / `PALETTE_VAR` / `PALETTE_TOKEN_NAMES` / `PaletteTokenName` / `declarePalette` | 定数 + type + 関数 | 内部(可視) |
+| `application/dom-write.ts` | `TextCell` / `StyleCell` / `PercentCell` / `AttributeCell` と各 `*Cell` / `write*` / `clearStyle` | type + 関数 | 内部(可視) |
+| `application/slot-element.ts` | `SlotElement` / `createSlotElement` / `updateSlotElement` / `setSlotHidden` / `hideSlotElementAtMount` / `DURABILITY_LOW_PERCENT` | type + 関数 + 定数 | 内部(可視) |
+| `application/icon-element.ts` | `IconKind` / `IconElement` / `createIconElement` / `updateIconElement` / `retireIconElement` | type + 関数 | 内部(可視) |
+
+**「暫定」の意味**は §4-1 と同じである。mc-compose がまだ mount していないので、
+`createHudView(factory, parent, motion)` という 3 引数の形は確定していない。
+確定するのは mc-compose が実際に消費したときであり、それまでは
+[versioning.md](./versioning.md) §5 の意味での破壊的変更は起きえない（消費者がいない）。
+
+### なぜ `HTMLElement` ではなく構造型なのか
+
+`tsconfig.base.json` は 16 リポジトリで唯一 `"lib": ["ES2024", "DOM"]` を宣言しており、
+**`HTMLElement` は書ける**。それでも `application/dom-surface.ts` がある理由は 2 つで、
+mc-render の理由（DOM lib が無い）とは**別物**である。
+
+1. **`vitest.config.ts` の `environment: 'node'` を守るため。**
+   `HTMLElement` に対して書かれたレンダラは、jsdom を入れるか
+   `as unknown as HTMLElement` を書いた偽物を使うかしないとテストできない。
+   後者のほうが悪い——キャストこそが型安全を失う場所であり、しかもそれがテスト側にあるので
+   偽物が実物からずれても誰も気づけない。
+2. **リスナを配らないため。** この面には `addEventListener` が**無い**。
+   だから DN-UI-4 の「Escape の所有者は 1 つ」は規律ではなく**語彙の問題**になる。
+   `test/public-api.test.ts` の
+   `REGRESSION: exports no way for a renderer to take a key (DN-UI-4)` が
+   バレル側からもこれを固定している。
+
+構造型が実 DOM の**真の部分集合**であることは `test/dom-surface.test.ts` が
+実 `lib.dom.d.ts` に対して fixture をコンパイルして診断 0 件を assert する（mc-render と同じ手口）。
+支払った代償は DN-UI-13 に書く。
 
 ### `domain/caption.ts` — すべて内部(可視)
 

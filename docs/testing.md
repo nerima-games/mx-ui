@@ -30,17 +30,24 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 
 ```
 vitest 3.2.7
- ✓ test/public-api.test.ts                 (6 tests)
+ ✓ test/public-api.test.ts                 (8 tests)
  ✓ test/stage-registration.test.ts         (15 tests)
  ✓ test/accessibility.test.ts              (17 tests)
  ✓ test/view-model.test.ts                 (49 tests)
  ✓ test/inventory-mirror.test.ts           (6 tests)
  ✓ test/check-dependency-whitelist.test.ts (20 tests)
  ✓ test/api-lock.test.ts                   (26 tests)
+ ✓ test/dom-surface.test.ts                (4 tests)
+ ✓ test/hud-view.test.ts                   (14 tests)
+ ✓ test/screen-views.test.ts               (10 tests)
+ ✓ test/palette-css.test.ts                (6 tests)
 
- Test Files  7 passed (7)
-      Tests  139 passed (139)
+ Test Files  11 passed (11)
+      Tests  175 passed (175)
 ```
+
+後半 4 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
+jsdom も `@vitest-environment` プラグマも入っていない（§3）。
 
 `view-model.test.ts` が 20 → 35 に増えたのはプレビューの finding 4 件と gap 2 件を
 assertion として降ろしたぶんで、35 → 49 に増えたのは**その gap 2 件を埋めたぶん**である。
@@ -61,7 +68,11 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 | `test/accessibility.test.ts` | DN-UI-1（色覚 / reduced-motion / リマップ）/ DN-UI-4（Escape 単一ハンドラ） |
 | `test/stage-registration.test.ts` | DN-UI-8（`after` は制約のみ）/ DN-UI-9（再入可能）/ DN-UI-3 / DN-UI-10 |
 | `test/check-dependency-whitelist.test.ts` | 依存境界 / DN-UI-5（kit 不要）/ DN-UI-10 |
-| `test/public-api.test.ts` | 公開バレル / アクセシビリティ資産の存在保証 / **kernel 語彙を再公開していないこと** |
+| `test/public-api.test.ts` | 公開バレル / アクセシビリティ資産の存在保証 / **kernel 語彙を再公開していないこと** / **DN-UI-4（リスナ API を配らないこと）** |
+| `test/dom-surface.test.ts` | **DN-UI-13（構造型が実 DOM の部分集合であること、`domain/` が document に届かないこと）** |
+| `test/hud-view.test.ts` | **DN-UI-13（パレット適用 / 冪等性 / reduced-motion / リスナ皆無）/ DN-UI-6 / DN-UI-7c** |
+| `test/screen-views.test.ts` | **DN-UI-13（字幕はテキスト / `unknown` は空ではない）/ DN-UI-1a（属性は canvas だけ）/ DN-UI-3** |
+| `test/palette-css.test.ts` | **DN-UI-11 + DN-UI-13（全トークンが DOM に届くこと、まだ届いていない 3 つ）** |
 
 API は `@effect/vitest` の `it.effect` + `Effect.sync`。
 
@@ -121,18 +132,32 @@ it('clicking Confirm resolves the dialog', async () => {
 `Effect.acquireRelease` の `acquire`（リスナの設置）がクリックより**後**に走るレースを
 参照実装が実際に踏んでいるためである（`confirm-dialog.test.ts:88-92`）。
 
-### document をどうやって与えるか — 未決
+### document をどうやって与えるか — 決着（A でも B でもない）
 
-2 案あり、まだ選んでいない。
+2 案を挙げて保留していた。**どちらも採らなかった。**
 
-| 案 | 内容 | 利点 | 欠点 |
-| --- | --- | --- | --- |
-| A | DOM を要るファイルの先頭に `// @vitest-environment jsdom` プラグマ | 設定変更なし。純粋テストは `node` のまま速い | ファイルが増えるほど宣言が散る |
-| B | vitest の project を 2 つに分ける（`node` / `jsdom`） | 環境の境界が 1 か所で見える | 設定が増える。ファイルの置き場所で環境が決まる |
+| 案 | 内容 | 採否 |
+| --- | --- | --- |
+| A | DOM を要るファイルの先頭に `// @vitest-environment jsdom` プラグマ | 不採用 |
+| B | vitest の project を 2 つに分ける（`node` / `jsdom`） | 不採用 |
+| **C** | **`test/fake-dom.ts` — 構造型を実装した 90 行の偽 document** | **採用** |
 
-`vitest.config.ts` のコメントが両案を挙げて「どちらでもよい」と保留している。
-**どちらを選んでも DN-UI-2 の書き方は変わらない。**
-デッドロックは environment ではなく `it.effect` のファイバ管理の問題だからである。
+`application/` は `HTMLElement` ではなく `application/dom-surface.ts` の**構造型**に対して書かれている。
+だから偽 document は**キャスト無しで**それを満たせる（`test/dom-surface.test.ts`）。
+environment は `node` のままで、suite は 1 秒を切ったままである。
+
+**C が A/B より優れているのは速度ではなく、答えられる問いの種類である。**
+「変更の無い再描画が DOM を 1 回も触らないこと」は jsdom では観測できない——
+*何も起きなかったこと*を報告する API が無いからである。偽 document は変更ログを持つので、
+`expect(factory.since(mark)).toStrictEqual([])` が書ける。これは §5.2 の主張そのものである。
+
+**DN-UI-2 の書き方は変わらない。** デッドロックは environment ではなく
+`it.effect` のファイバ管理の問題である。現状の DOM テストは fiber を fork しないので
+到達しないが、`it` + `Effect.runPromise` で書いてある——最初に fork するテストは
+これらをコピーして書かれるからである。
+
+**そしてブラウザは依然として必要である。** 偽 document は `var()` を解決せず、
+レイアウトを持たず、ピクセルを持たない。§4 の完成条件 3 と 4 が別行なのはそのためである。
 
 ## 4. 完成条件
 
@@ -149,7 +174,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | 1 | `pnpm verify` が green | ✅ |
 | 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ❌ |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
-| 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ 部分的（4 つとも操作でき、補正行列を引き継ぎ、**パレットも定義して 4 モード全部で調査した**。残るのは**そのトークンを CSS にする消費者がまだ無い**ことで、保証は数値については証明済み、描かれた画面については未証明である——下記 G1） |
+| 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ 部分的（**消費者はできた**——`application/` が 23 トークン全部をカスタムプロパティにし、色覚属性は canvas だけに付き、reduced-motion は transition を**削除**し、字幕は `textContent` である。残るのは 3 点で、**どれも CSS を書き足せば済むものではない**——下記） |
 | 5 | 99% カバレッジゲートが有効 | ❌（完成時に有効化、§5） |
 
 ### プレビューの条件（満たしている）
@@ -238,17 +263,37 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
   `mc-sim/domain/inventory.ts` と mc-sim 自身の `api-lock.md` に載っている。
   ミラーは provisional と明記し、`test/inventory-mirror.test.ts` が双方向で pin する。詳細は DN-UI-12。
 
-#### 残っている 1 件（G1、前より狭い）
+#### 保証はどこまで証明されたか（正確に）
 
-`pnpm preview --stats` が印字する。2 つの別々のことが 1 エントリに入っているのは、
-**どちらも今このリポジトリの中では閉じられない**からである。
+**証明された**（`environment: 'node'`、ブラウザ不要）:
 
-1. **パレットに消費者が無い。** トークンは値であり、CSS にする層がまだ無い。
-   だから保証（テキスト 4.5:1 / アイコン 3:1、スクリムの上、任意の世界ピクセルに対して）は
-   **数値については証明済みで、描かれた画面については未証明**である。
-   保証は「HUD の内容がスクリムの上に留まる」ことも前提にしており、
-   スタイルシートがラベルをスクリムの外に置けば保証は置き去りになる——
-   そしてスタイルシートが無い間、それを見るテストは書けない。
+- **全トークンが DOM に届く。** `test/palette-css.test.ts` が `domain/palette.ts` の
+  `Rgb` export を総なめして、`SCRIM_OVER_*`（測定の途中式であってトークンではない）を除く全部が
+  カスタムプロパティの出所であることを検査する。値は `cssColor` だけで作られ、
+  **アルファも運ばれる**（`SCRIM_ALPHA` を落とすと見た目は正しいまま保証が消える）。
+- **どの要素も色リテラルを持たない。** 全部 `var(--mx-ui-*)` 参照である。
+- **G3 の非色チャネルが実在する。** ハートは中空 `♡` の上に実体 `♥` を 100/50/0% でクリップするので、
+  `['shape']` と `['length']` が属性ではなく**要素として**ある。
+  スロット選択は色に加えて枠 2px→3px（`['weight']`）である。
+- **色覚属性は canvas にしか付かず、canvas はトークンを 1 つも持たない。**
+  だから属性をキーにしたセレクタがトークンに届く経路が存在しない（DN-UI-1a の失敗モード）。
+
+**まだ証明されていない**（そしてどれも CSS では埋まらない）:
+
+1. **3 つの guarded トークンに消費者が無い。** `test/palette-css.test.ts` が集合として固定している:
+   `FOCUS_RING`（フォーカスできる要素が無い——コントロールにはキーが要り、キーは mc-render のものである）、
+   `STATUS_OK` / `STATUS_BUSY`（自動保存インジケータが無い）。
+   **後者は居心地が悪い**: `status ok / status alert` は**この調査が参照実装で見つけた当の対**であり、
+   それを表示するコンポーネントがまだ無い。この 3 つについては保証は依然として数値についてだけである。
+2. **幾何は誰も見ていない。** 保証は「guarded な内容がスクリムの**上に**留まる」ことを前提にする。
+   レンダラは HUD ルートに `background-color: var(--mx-ui-scrim)` を置き、
+   guarded な要素を全部その中に作るので**包含は構造的**だが、
+   「スクリム背景を持つ要素の中にある」と「スクリムのピクセルの上にある」は同じではない。
+   幅・高さ・位置・`z-index`・ホスト側のスタイルシートは 1 つも assert していない。
+   これはブラウザの問いであり、完成条件 3 と 4 が別行なのはそのためである。
+3. **`var()` は誰も解決していない。** 偽 document は参照文字列を記録するだけで、
+   カスケードを実行しない。プロパティ名は宣言側と参照側が同じ定数から来るので**自己整合**だが、
+   ブラウザが実際にその色を描くことは測っていない。
    出荷側の面倒は [versioning.md](./versioning.md) §4（`files` / `exports` / tsc だけでは足りないビルド）。
 2. **mc-sim にレシピモデルが無い。** クラフト**画面**はあり、渡されたものを射影する。
    しかし「このグリッドは何か作るか」に射影すべき答えが無い（mc-sim の `api-lock.md` に `Recipe` が無い）。

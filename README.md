@@ -118,10 +118,17 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
   **このファイルは `index.ts` から re-export していない。** 所有していない語彙（`StageId` /
   `DeltaTimeSecs` / `StageRegistration`）を公開 API に載せると、上記の削除が
   すべての消費者にとっての破壊的変更になるためである。
-- **DOM コードはまだ 1 行も無い。** `tsconfig.base.json` は既に `"lib": ["ES2024", "DOM"]` を宣言している
-  — 16 リポジトリ中 DOM を持つのはここだけである — が、これは「最初の画面を足すときに
-  ビルド設定の変更を同時にやらなくて済むように」先に置いてあるだけで、現状 `domain/` は全て純粋な導出である。
-  そのためテストは vitest の `environment: 'node'` で走る。`types: []` は継承しているので Node グローバルは入らない。
+- **`application/` が DOM 層である**（HUD / 字幕 / インベントリ）。`domain/` の射影を要素にし、
+  `domain/` を import する——**逆は無い**（`test/dom-surface.test.ts` が固定）。
+  `domain/` は今も全て純粋な導出なので、テストは vitest の `environment: 'node'` のままである。
+  jsdom も `@vitest-environment` プラグマも入れていない: レンダラは `HTMLElement` ではなく
+  `application/dom-surface.ts` の**構造型**に対して書かれているので、90 行の偽 document が
+  **キャスト無しで**それを満たす。実 `Document` / `HTMLElement` も同じ型を満たすことは、
+  実 `lib.dom.d.ts` に対して fixture をコンパイルして診断 0 件を assert している（DN-UI-13）。
+  その面に `addEventListener` は**無い**——だから DN-UI-4「Escape の所有者は 1 つ」は規律ではなく語彙の問題である。
+  パレットの 23 トークンは mx-ui 自身のルートにカスタムプロパティとして宣言され、
+  どの要素も色リテラルを持たない。**モデルが変わらない再描画は DOM を 1 回も触らない**（plan.md §5.2）。
+  `types: []` は継承しているので Node グローバルは入らない。
 - **各画面プレビューは動く**（`pnpm preview`、[apps/preview-screens/](./apps/preview-screens/README.md)）。
   plan.md §6 Step 2 の完了条件「テスト green + **内蔵プレビューが操作可能**」の後半は、これで満たしている
   （[docs/testing.md](./docs/testing.md) §4）。
