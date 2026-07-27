@@ -74,6 +74,7 @@ import {
 } from '../domain/hud-view-model'
 import {
   createIconElement,
+  ICON_ROW_LABEL,
   retireIconElement,
   updateIconElement,
   type IconElement,
@@ -196,6 +197,11 @@ const createIconRow = (
 ): IconRowElement => {
   const container = factory.createElement('div')
   container.setAttribute('data-mx-ui', `${kind}-row`)
+  // A row of glyphs that nobody has named announces as twenty punctuation
+  // characters. `ICON_ROW_LABEL` says why this is the row's job rather than each
+  // icon's; static, so it costs nothing on the frame path.
+  container.setAttribute('role', 'group')
+  container.setAttribute('aria-label', ICON_ROW_LABEL[kind])
   parent.appendChild(container)
   return { kind, container, icons: [] }
 }

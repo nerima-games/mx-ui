@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 200
+exported declarations: 201
 supporting declarations: 7
 
 ## Exported
@@ -419,6 +419,12 @@ type HudViewModel = {
 
 ```ts
 const ICON_EMPTY: Rgb;
+```
+
+### ICON_ROW_LABEL  `const`
+
+```ts
+const ICON_ROW_LABEL: Readonly<Record<IconKind, string>>;
 ```
 
 ### IDLE_SAVE_STATUS  `const`

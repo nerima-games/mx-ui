@@ -69,6 +69,27 @@ const FILL_TOKEN: Readonly<Record<IconKind, string>> = {
   shank: PALETTE_VAR.shank,
 }
 
+/**
+ * What a row of these icons IS, in words.
+ *
+ * The glyphs are the whole content of the vitals display, and they are `♡` and
+ * `○` — characters a screen reader announces as "white heart suit" and "white
+ * circle", ten and ten of them in a row, with nothing anywhere saying which row
+ * is health and which is hunger. A player using a screen reader can hear that
+ * something changed and cannot hear whether they are about to starve or about to
+ * die.
+ *
+ * The reference asserted exactly this from the browser side —
+ * `<reference-impl>/e2e/ui/hud.e2e.ts:65-66` locates the two displays by
+ * `getByLabel('Health')` and `getByLabel('Hunger')` — and it is the one claim in
+ * the demoted E2E set that mx-ui could be asked and answered "no". The names are
+ * static, so they cost one `setAttribute` each at mount and nothing per frame.
+ */
+export const ICON_ROW_LABEL: Readonly<Record<IconKind, string>> = {
+  heart: 'Health',
+  shank: 'Hunger',
+}
+
 const FILL_PERCENT: Readonly<Record<IconState, number>> = {
   full: 100,
   half: 50,
