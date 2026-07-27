@@ -44,13 +44,14 @@ vitest 3.2.7
  ✓ test/save-indicator.test.ts             (15 tests)
  ✓ test/screen-mount.test.ts               (13 tests)
  ✓ test/modal-flows.test.ts                (6 tests)
- ✓ test/accessibility-gate.test.ts         (11 tests)
+ ✓ test/accessibility-gate.test.ts         (12 tests)
  ✓ test/main-menu.test.ts                  (20 tests)
- ✓ test/loading-screen.test.ts             (18 tests)
+ ✓ test/loading-screen.test.ts             (22 tests)
  ✓ test/crosshair.test.ts                  (16 tests)
+ ✓ test/caption-oracle.test.ts             (7 tests)
 
- Test Files  18 passed (18)
-      Tests  283 passed (283)
+ Test Files  19 passed (19)
+      Tests  294 passed (294)
 ```
 
 後半 11 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
@@ -81,6 +82,13 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 > **手で書いた数字が本文から導出されていない限りまた壊れる**という
 > `docs/e2e-triage.md` §2.1 の欄外注は、この節にもそのまま当てはまる。
 
+> **2026-07-27 追記 2。** 283 → 294 は
+> [dom-oracle-triage.md](./dom-oracle-triage.md) の移植 11 本ぶんである
+> （`caption-oracle` 7 本 + `loading-screen` に 4 本追記）。
+> **そして上の一覧はまたしても 1 件ずれていた** — `accessibility-gate` は
+> 11 ではなく 12 だった。前回の欄外注が書いたとおりのことが、
+> その欄外注を書いた次の版で起きている。
+
 | ファイル | 守っているもの |
 | --- | --- |
 | `test/view-model.test.ts` | DN-UI-6（ハーフハート）/ DN-UI-7（クランプ）/ DN-UI-3（字幕）/ **DN-UI-11（パレットの保証）/ DN-UI-12（射影と unknown）** |
@@ -100,6 +108,7 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 | `test/main-menu.test.ts` | **メニューの遷移は値であってリスナではない / 押せない control に `role="button"` を付けないこと / セーブ一覧は `unknown` であって空ではない** |
 | `test/loading-screen.test.ts` | **DN-UI-10（最低表示時間は引数で来る時刻の算術）/ 不定プログレスバーを描かないこと** |
 | `test/crosshair.test.ts` | **照準が自分用の scrim を連れて歩くこと（G1 の中に留まる唯一の方法）/ DN-UI-10（ヒットは継続時間でありタイマーではない）/ reduced-motion で信号を落とさないこと** |
+| `test/caption-oracle.test.ts` | **字幕を切ったら出ている字幕も消えること（参照実装の移植が出した欠陥。[dom-oracle-triage.md](./dom-oracle-triage.md) §5）/ 設定は `ui:overlay-sync` が毎フレーム適用すること** |
 
 API は `@effect/vitest` の `it.effect` + `Effect.sync`。
 
@@ -199,7 +208,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | # | 条件 | 状態 |
 | --- | --- | --- |
 | 1 | `pnpm verify` が green | ✅ |
-| 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ❌ |
+| 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ⚠️ **63 ファイル全部を triage 済み**（[dom-oracle-triage.md](./dom-oracle-triage.md)）。**移植すべきは 63 ファイルではない** — 25 ファイル / 203 本（45%）は所有者が別か、mx-ui が構造的に別の答えを出している。今日書けるのは 8 ファイル / 71 本で、うち 5 ファイル分は既存オラクルが持っている。**未着手は NEEDS-SCREEN の 29 ファイル / 176 本**で、これは画面の残作業そのものである |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
 | 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ **理由が狭まった**（**未参照トークンはゼロになった**——3 つとも消費者が付いた。残る 2 点は**どちらもブラウザにしか答えられない問い**である——下記） |
 | 5 | 99% カバレッジゲートが有効 | ❌（完成時に有効化、§5） |
@@ -419,3 +428,10 @@ plan.md §8 のリスク表:
 
 `packages/presentation/` のテストは実測 **63 ファイル / 10,862 LOC**（`input/` 除く）で、
 非テストコード 10,116 LOC とほぼ同量である。移植順序は [porting.md](./porting.md) §4。
+
+**ただし「オラクルとして移植」は「63 ファイルを移植する」ではない。**
+1 ファイルずつの判定は [dom-oracle-triage.md](./dom-oracle-triage.md) にある。
+本数は **456 本**で、`it.effect` だけを数えると 128 本しか見えない
+（`it.scoped` が 139 本ある — porting.md §4-2 の数え方はここが漏れる）。
+45% は mc-render / mc-sim の持ち物か、DN-UI-4 のように mx-ui が
+**面に動詞を置かないことで別の答えを出している**ものである。

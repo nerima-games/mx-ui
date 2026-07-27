@@ -25,6 +25,7 @@
  */
 import { Effect, Layer, Ref } from 'effect'
 import {
+  applyCaptionSettings,
   emptyCaptionQueue,
   expireCaptions,
   type CaptionQueue,
@@ -60,6 +61,16 @@ export type UiFrameState = {
   readonly snapshot: Ref.Ref<VitalsSnapshot>
   readonly hud: Ref.Ref<HudViewModel>
   readonly captions: Ref.Ref<CaptionQueue>
+  /**
+   * The player's caption choice, held so that `ui:overlay-sync` can ENFORCE it.
+   *
+   * It is a `Ref` rather than a constructor argument because it changes while
+   * the session runs — that is the whole point of a settings screen — and
+   * because the frame is the only place that can notice the change. Holding it
+   * as a constant would reproduce exactly the defect
+   * `applyCaptionSettings` exists to fix: a flag nobody re-reads.
+   */
+  readonly captionSettings: Ref.Ref<CaptionSettings>
   readonly modals: Ref.Ref<ModalStack>
   /** Monotonic seconds, accumulated from `dt`. Never read from a global. */
   readonly elapsedSecs: Ref.Ref<number>
@@ -74,10 +85,11 @@ export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function
   const snapshot = yield* Ref.make<VitalsSnapshot>(spawnSnapshot)
   const hud = yield* Ref.make<HudViewModel>(hudViewModel(spawnSnapshot))
   const captions = yield* Ref.make<CaptionQueue>(emptyCaptionQueue)
+  const captionSettings = yield* Ref.make<CaptionSettings>(DEFAULT_CAPTION_SETTINGS)
   const modals = yield* Ref.make<ModalStack>(emptyModalStack)
   const elapsedSecs = yield* Ref.make(0)
 
-  return { snapshot, hud, captions, modals, elapsedSecs }
+  return { snapshot, hud, captions, captionSettings, modals, elapsedSecs }
 })
 
 /**
@@ -109,7 +121,15 @@ export const uiStages = (state: UiFrameState): ReadonlyArray<StageRegistration> 
         // reading a global clock, and `pnpm check:deps` enforces it — so a
         // caption's age is an accumulation, not a reading.
         const nowSecs = yield* Ref.updateAndGet(state.elapsedSecs, (elapsed) => elapsed + dt)
-        yield* Ref.update(state.captions, (queue) => expireCaptions(queue, nowSecs))
+        // SETTINGS FIRST, then age. `receiveCaption` gates admission and cannot
+        // reach a caption that is already up, so turning captions off would
+        // otherwise leave the visible ones to drain through `expireCaptions` —
+        // for the rest of their lifetime, and forever if `dt` stops arriving.
+        // See `applyCaptionSettings`.
+        const settings = yield* Ref.get(state.captionSettings)
+        yield* Ref.update(state.captions, (queue) =>
+          expireCaptions(applyCaptionSettings(queue, settings), nowSecs),
+        )
       }),
   },
 ]

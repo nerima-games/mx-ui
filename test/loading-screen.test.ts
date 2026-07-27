@@ -313,3 +313,73 @@ describe('REGRESSION: there is no progress bar, and that is the finding', () => 
     expect(root.attributes.get('aria-live')).toBe('polite')
   })
 })
+
+/**
+ * Ported from `<reference-impl>/packages/presentation/loading/loading-screen.test.ts`
+ * — 「showError should render message via textContent without HTML injection」.
+ *
+ * The reference has to assert this at runtime because its DOM facade CAN parse
+ * markup: `DomOperationsService.setInnerHTML` exists and its own trading and
+ * inventory renderers call it, so 「this particular call site used textContent」
+ * is a fact about one call site that the next one is free to contradict.
+ *
+ * mx-ui answers the same question one level down, and `docs/dom-oracle-triage.md`
+ * records it as the reason this claim survives the port in a stronger form:
+ * `application/dom-surface.ts` has no `innerHTML`, no `insertAdjacentHTML` and no
+ * `createElementNS`, so a renderer written against it cannot express the failure
+ * — the same argument DN-UI-4 makes about `addEventListener`. What is left to
+ * test is that the reason genuinely travels as TEXT and does not leak into an
+ * attribute on the way.
+ */
+describe('a failure reason is TEXT, and the surface gives it no other way to travel', () => {
+  const HOSTILE = '<img src=x onerror="alert(1)">&<script>steal()</script>'
+
+  it('REGRESSION: a hostile reason reaches the document verbatim, as textContent', () => {
+    const { root, view } = mount()
+    view.render(loadingScreenView(failed(HOSTILE), 0))
+
+    const reason = root.find('data-mx-ui', 'loading-reason')
+    // Verbatim: NOT escaped, NOT stripped. Escaping here would be a second
+    // encoding on top of the one the DOM already performs, and would show the
+    // player `&lt;img&gt;` in the one sentence that is supposed to tell them
+    // what went wrong.
+    expect(reason?.textContent).toBe(HOSTILE)
+  })
+
+  it('REGRESSION: the reason never lands in an attribute, where markup WOULD be parsed', () => {
+    // The failure mode this rules out is not `innerHTML` — the surface has none
+    // — but a well-meaning `aria-label`, `title` or `data-reason` carrying the
+    // same string. `writeText` is the only route, and this is what says so.
+    const { root, view } = mount()
+    view.render(loadingScreenView(failed(HOSTILE), 0))
+
+    for (const element of root.walk()) {
+      for (const [name, value] of element.attributes) {
+        expect(value, `attribute ${name}`).not.toContain('<img')
+        expect(value, `attribute ${name}`).not.toContain('onerror')
+      }
+    }
+  })
+
+  it('REGRESSION: switching away from the failure takes the sentence with it', () => {
+    // `showError` -> `show` in the reference (「show should restore the loading
+    // view after an error」). A reason that outlives its state is a sentence
+    // about a failure sitting under a screen describing a different one.
+    const { root, view } = mount()
+    view.render(loadingScreenView(failed(HOSTILE), 0))
+    view.render(loadingScreenView(preparing, 0))
+
+    expect(root.find('data-mx-ui', 'loading-reason')?.textContent).toBe('')
+    expect(root.find('data-loading-state', 'failed')?.attributes.has('hidden')).toBe(true)
+  })
+
+  it('writes the reason once per change and not on a repeat', () => {
+    const { factory, view } = mount()
+    const view1 = loadingScreenView(failed(HOSTILE), 0)
+    view.render(view1)
+
+    const before = factory.mark()
+    view.render(view1)
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+})

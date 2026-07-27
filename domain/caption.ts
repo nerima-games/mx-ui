@@ -99,6 +99,44 @@ export const receiveCaption = (
 }
 
 /**
+ * Apply the player's caption setting to a queue that already has entries.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS EXISTS — it is a defect the reference's tests named and ours did not
+ * ---------------------------------------------------------------------------
+ *
+ * `receiveCaption` gates ADMISSION, and that is the only gate this module had.
+ * It answers 「a caption arrives while captions are off」 and says nothing about
+ * 「captions are turned off while captions are on screen」, which is the case a
+ * player actually produces: the reason somebody opens the settings and switches
+ * captions off is that captions are in the way AT THAT MOMENT.
+ *
+ * Without this, the visible entries survive the setting. They drain only
+ * through `expireCaptions`, which is driven by `dt` — so the lines stay up for
+ * the remainder of `CAPTION_LIFETIME_SECS`, and for as long as the frame is not
+ * advancing they stay up indefinitely. Turning a thing off and watching it
+ * remain is the failure that makes a player press the switch again.
+ *
+ * `<reference-impl>/packages/presentation/test/sound-captions.test.ts:124`
+ * — 「clears all rows when captions are turned off」 — is the oracle. The
+ * reference's `setSoundCaptionsEnabled(false)` clears its active rows in the
+ * same call that flips the flag.
+ *
+ * The identity return when captions are ENABLED matters for the same reason
+ * `expireCaptions` has one: this runs every frame, and a still frame must
+ * allocate nothing.
+ */
+export const applyCaptionSettings = (
+  queue: CaptionQueue,
+  settings: CaptionSettings,
+): CaptionQueue => {
+  if (settings.captionsEnabled) {
+    return queue
+  }
+  return queue.visible.length === 0 ? queue : emptyCaptionQueue
+}
+
+/**
  * Drop captions older than `CAPTION_LIFETIME_SECS`.
  *
  * `nowSecs` is a parameter, not a reading. That is what lets a scenario test

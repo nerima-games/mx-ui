@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 256
+exported declarations: 257
 supporting declarations: 7
 
 ## Exported
@@ -1339,6 +1339,7 @@ type UiFrameState = {
     readonly snapshot: Ref.Ref<VitalsSnapshot>;
     readonly hud: Ref.Ref<HudViewModel>;
     readonly captions: Ref.Ref<CaptionQueue>;
+    readonly captionSettings: Ref.Ref<CaptionSettings>;
     readonly modals: Ref.Ref<ModalStack>;
     readonly elapsedSecs: Ref.Ref<number>;
 };
@@ -1381,6 +1382,12 @@ const XP_LEVEL: Rgb;
 
 ```ts
 const animationDurationMs: (baseMs: number, motion: MotionPreference) => number;
+```
+
+### applyCaptionSettings  `const`
+
+```ts
+const applyCaptionSettings: (queue: CaptionQueue, settings: CaptionSettings) => CaptionQueue;
 ```
 
 ### applyColorVision  `const`
