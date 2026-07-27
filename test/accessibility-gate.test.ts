@@ -55,12 +55,22 @@ import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../domain/hud-vi
 import { emptyInventorySnapshot, inventoryViewModel } from '../domain/inventory-view-model'
 import { GUARDED_TOKENS, surveyPalette, type Rgb } from '../domain/palette'
 import { saveStatus, saveStatusMessage } from '../domain/save-status'
+import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../domain/crosshair'
+import { initialMainMenuState, mainMenuViewModel, openPanel } from '../domain/main-menu'
 import { createCaptionView } from '../application/caption-view'
 import { createHudView } from '../application/hud-view'
 import { createInventoryView } from '../application/inventory-view'
+import { createCrosshairView } from '../application/crosshair-view'
+import { createLoadingView } from '../application/loading-view'
+import { createMainMenuView } from '../application/main-menu-view'
 import { createSaveIndicator } from '../application/save-indicator'
 import { ICON_ROW_LABEL } from '../application/icon-element'
-import { PALETTE_SOURCE, PALETTE_VAR, type PaletteTokenName } from '../application/palette-css'
+import {
+  PALETTE_PROPERTY_PREFIX,
+  PALETTE_SOURCE,
+  PALETTE_VAR,
+  type PaletteTokenName,
+} from '../application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 /** `var(--mx-ui-ink)` back to `INK`'s three numbers. */
@@ -82,10 +92,33 @@ const sameColor = (left: Rgb, right: Rgb): boolean =>
  * `death screen`, and the three parameterised panels. Only the ones mx-ui HAS are
  * here — see this file's sibling report; a screen that does not exist cannot be
  * audited, and inventing one to audit it would be auditing the invention.
+ *
+ * `main menu` is no longer one of the absent ones, and the loading screen has
+ * joined it. The menu is swept on ALL THREE of its cards rather than on whichever
+ * one it happens to open with: the reference reached each card with a click, so a
+ * naming defect on the New World card was one click away from an audit that never
+ * went there.
  */
 const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeElement }> => {
   const factory = fakeDocument()
   const parent = factory.createElement('div') as FakeElement
+
+  const menu = createMainMenuView(factory, parent)
+  menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'new-world')))
+  menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'load-world')))
+  menu.render(mainMenuViewModel(initialMainMenuState))
+
+  const loading = createLoadingView(factory, parent)
+  // Rendered as FAILED and then back, for the reason the HUD is rendered dead
+  // and then alive: a state whose elements are only built when it occurs is a
+  // state the sweep sees only if the sweep happened to trigger it.
+  loading.render({ kind: 'failed', reason: 'chunk stream ended' })
+  loading.render({ kind: 'preparing', held: true })
+
+  const crosshair = createCrosshairView(factory, parent, 'full')
+  // Rendered mid-hit, so the heavier arms the hit marker uses are in the sweep
+  // rather than only the resting weight.
+  crosshair.render(crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }, 0))
 
   const hud = createHudView(factory, parent, 'full')
   // The death screen is a STATE of the HUD here rather than a screen of its own
@@ -114,10 +147,13 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   save.render(saveStatusMessage(saveStatus('failed', 0), 1))
 
   return [
+    { name: 'main menu', root: menu.root as FakeElement },
     { name: 'in-session HUD', root: hud.root as FakeElement },
     { name: 'inventory and crafting overlay', root: inventory.root as FakeElement },
     { name: 'captions', root: captions.root as FakeElement },
     { name: 'autosave indicator', root: save.root as FakeElement },
+    { name: 'loading screen', root: loading.root as FakeElement },
+    { name: 'crosshair', root: crosshair.root as FakeElement },
   ]
 }
 
@@ -197,6 +233,15 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     }))
 
     expect(census).toStrictEqual([
+      // The MENU is the row this census was always going to be tested by, and it
+      // is zero. A menu is made of things that look like buttons, and the
+      // half-measure — `role="button"` plus a `tabindex`, activation wired later
+      // — is the one `docs/e2e-triage.md` §3.6 already ruled against:
+      // 「押せない control に `role="button"` を付けるのは、届くのに使えない control を
+      // 作ることである」. A line that announces as a button and does nothing is worse
+      // for a screen-reader player than a line of text, because text does not
+      // promise. The day the entries become operable, this row is what changes.
+      { name: 'main menu', focusable: 0, tabStops: 0 },
       // Nine slots are programmatically focusable; exactly ONE of them is in the
       // document's tab order. That is the roving tabindex, and the difference
       // between the two numbers is the whole pattern: Tab reaches the hotbar
@@ -206,6 +251,17 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
       { name: 'inventory and crafting overlay', focusable: 0, tabStops: 0 },
       { name: 'captions', focusable: 0, tabStops: 0 },
       { name: 'autosave indicator', focusable: 0, tabStops: 0 },
+      // The reference makes its loading overlay focusable on failure
+      // (`loading-screen.ts:87` sets `overlay.tabIndex = -1` and `:108` calls
+      // `overlay.focus()`), which is a dialog pattern and needs both verbs mx-ui
+      // does not have. Without the focus MOVE, the `tabindex` alone would be a
+      // stop that announces an alert nobody was sent to.
+      { name: 'loading screen', focusable: 0, tabStops: 0 },
+      // The reticle is `aria-hidden` and unfocusable. `application/crosshair-view.ts`
+      // argues it at length: it is the one mark here with no text equivalent,
+      // and what a player who cannot see it needs is what is UNDER it, which
+      // this repository has no way to say.
+      { name: 'crosshair', focusable: 0, tabStops: 0 },
     ])
   })
 
@@ -261,41 +317,60 @@ describe('WCAG AA: every colour a screen writes is one the palette has measured'
   const survey = surveyPalette()
 
   for (const { name, root } of screens()) {
-    it(`${name}: every text colour resolves to a guarded token that clears its floor`, () => {
+    it(`${name}: every mark colour resolves to a guarded token that clears its floor`, () => {
       // The reference's finding was 「the settings "Done" button at 3.92:1」 — a
       // control that looked fine to whoever wrote it and was unreadable to a
       // player with low vision over the wrong background. The equivalent mistake
       // here is reaching past `PALETTE_VAR` for a colour nobody has measured:
       // the screen looks right on the developer's monitor and has no guarantee
       // behind it at all.
+      //
+      // `background-color` IS audited, and the crosshair is why. It has no text,
+      // so its arms are a `background-color`; an audit that read only `color`
+      // passed that screen without looking at a single one of its colours —
+      // vacuously green over the one screen in this repository that sits on no
+      // panel. The rule that makes both readable in one loop is the palette's own
+      // distinction rather than a list of properties: an UNGUARDED token is a
+      // surface (`SCRIM`, `SURFACE`, `METER_TRACK`, `SLOT_FILL` — deliberately
+      // unmeasured, because a backdrop is what other things are measured
+      // against), so it may back something; a GUARDED token is a mark and must
+      // clear its own floor wherever it is painted. Anything that is not a token
+      // at all fails either way, which is the case the old audit could not see in
+      // a background.
       const findings: Array<string> = []
 
       for (const element of root.walk()) {
-        const written = element.style.properties.get('color')
-        if (written === undefined) {
-          continue
-        }
         const where = element.attributes.get('data-mx-ui') ?? element.tagName
 
-        const token = TOKEN_BY_VAR.get(written)
-        if (token === undefined) {
-          findings.push(`${where}: colour "${written}" is not a palette token`)
-          continue
-        }
+        for (const property of ['color', 'background-color'] as const) {
+          const written = element.style.properties.get(property)
+          if (written === undefined) {
+            continue
+          }
 
-        const color = PALETTE_SOURCE[token]
-        const guarded = GUARDED_TOKENS.find((candidate) => sameColor(candidate.color, color))
-        if (guarded === undefined) {
-          // A colour can be a token and still be unguarded — `METER_TRACK` and
-          // `SURFACE` are, deliberately, because they are backdrops. Using one
-          // for TEXT puts a foreground where no floor was ever measured.
-          findings.push(`${where}: token ${token} carries text but is not guarded`)
-          continue
-        }
+          const token = TOKEN_BY_VAR.get(written)
+          if (token === undefined) {
+            findings.push(`${where}: ${property} "${written}" is not a palette token`)
+            continue
+          }
 
-        const reading = survey.tokens.find((candidate) => candidate.name === guarded.name)
-        if (reading === undefined || !reading.meetsFloor) {
-          findings.push(`${where}: ${guarded.name} is below its ${String(guarded.role)} floor`)
+          const color = PALETTE_SOURCE[token]
+          const guarded = GUARDED_TOKENS.find((candidate) => sameColor(candidate.color, color))
+          if (guarded === undefined) {
+            // A colour can be a token and still be unguarded — `METER_TRACK` and
+            // `SURFACE` are, deliberately, because they are backdrops. Using one
+            // for TEXT puts a foreground where no floor was ever measured; using
+            // one as a BACKGROUND is what it is for.
+            if (property === 'color') {
+              findings.push(`${where}: token ${token} carries text but is not guarded`)
+            }
+            continue
+          }
+
+          const reading = survey.tokens.find((candidate) => candidate.name === guarded.name)
+          if (reading === undefined || !reading.meetsFloor) {
+            findings.push(`${where}: ${guarded.name} is below its ${String(guarded.role)} floor`)
+          }
         }
       }
 
@@ -307,13 +382,36 @@ describe('WCAG AA: every colour a screen writes is one the palette has measured'
     // A sweep over an empty set passes. This pins that each screen really does
     // write colours the loop reaches, so deleting `declarePalette` or renaming
     // `data-mx-ui` turns the gate red rather than silently empty.
+    //
+    // WIDENED, and strictly upwards. It used to count only elements carrying a
+    // `color` property, which asked 「does this screen have text?」 rather than
+    // 「does this screen take its colours from the palette?」. The crosshair is
+    // where the difference stopped being academic: it has no text at all, so its
+    // arms are a `background-color` and a `box-shadow`, and the old count would
+    // have called a screen with two token references empty. Every screen that
+    // passed before still passes — a `color` reference is a token reference —
+    // and the `color`-shaped audit above is checked separately for non-vacuity
+    // at the bottom, so nothing that was being asked has stopped being asked.
     const written = screens().map(({ name, root }) => ({
       name,
+      references: [...root.walk()].filter((element) =>
+        [...element.style.properties].some(
+          ([property, value]) =>
+            !property.startsWith(PALETTE_PROPERTY_PREFIX) && value.includes('var(--mx-ui-'),
+        ),
+      ).length,
       colours: [...root.walk()].filter((element) => element.style.properties.has('color')).length,
     }))
 
     for (const screen of written) {
-      expect(screen.colours).toBeGreaterThan(0)
+      expect(screen.references, `${screen.name} references no palette token`).toBeGreaterThan(0)
     }
+
+    // And the `color` audit above is not sweeping an empty set either. Every
+    // screen that carries text must still write one; the crosshair is the only
+    // screen exempt, and it is exempt because it has no text rather than because
+    // it was added to a list.
+    const textless = written.filter((screen) => screen.colours === 0).map((screen) => screen.name)
+    expect(textless).toStrictEqual(['crosshair'])
   })
 })

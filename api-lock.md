@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 201
+exported declarations: 256
 supporting declarations: 7
 
 ## Exported
@@ -68,6 +68,42 @@ const COLOR_VISION_MODES: ReadonlyArray<ColorVisionMode>;
 
 ```ts
 const CRITICAL_PAIRS: ReadonlyArray<CriticalPair>;
+```
+
+### CROSSHAIR_ARM_HIT_WEIGHT  `const`
+
+```ts
+const CROSSHAIR_ARM_HIT_WEIGHT = "4px";
+```
+
+### CROSSHAIR_ARM_WEIGHT  `const`
+
+```ts
+const CROSSHAIR_ARM_WEIGHT = "2px";
+```
+
+### CROSSHAIR_HALO_WIDTH  `const`
+
+```ts
+const CROSSHAIR_HALO_WIDTH = "1px";
+```
+
+### CROSSHAIR_PULSE_SCALE  `const`
+
+```ts
+const CROSSHAIR_PULSE_SCALE = 1.45;
+```
+
+### CROSSHAIR_PULSE_SECS  `const`
+
+```ts
+const CROSSHAIR_PULSE_SECS = 0.12;
+```
+
+### CROSSHAIR_SIZE  `const`
+
+```ts
+const CROSSHAIR_SIZE = "20px";
 ```
 
 ### CaptionEvent  `type`
@@ -212,6 +248,33 @@ type CriticalPair = {
 };
 ```
 
+### CrosshairStatus  `type`
+
+```ts
+type CrosshairStatus = {
+    readonly modals: ModalStack;
+    readonly lastHitAtSecs: number | undefined;
+};
+```
+
+### CrosshairView  `type`
+
+```ts
+type CrosshairView = {
+    readonly root: DomElement;
+    readonly render: (model: CrosshairViewModel | undefined) => void;
+    readonly setMotion: (motion: MotionPreference) => void;
+};
+```
+
+### CrosshairViewModel  `type`
+
+```ts
+type CrosshairViewModel = {
+    readonly hit: boolean;
+};
+```
+
 ### DEFAULT_CAPTION_SETTINGS  `const`
 
 ```ts
@@ -228,6 +291,12 @@ const DEFAULT_MAX_HEALTH_POINTS = 20;
 
 ```ts
 const DEFAULT_MAX_HUNGER_POINTS = 20;
+```
+
+### DEFAULT_WORLD_NAME  `const`
+
+```ts
+const DEFAULT_WORLD_NAME = "New World";
 ```
 
 ### DURABILITY_HIGH  `const`
@@ -346,10 +415,28 @@ const FOCUS_RING_SHADOW_WIDTH = "5px";
 const FOCUS_RING_WIDTH = "3px";
 ```
 
+### GAME_MODES  `const`
+
+```ts
+const GAME_MODES: ReadonlyArray<GameMode>;
+```
+
+### GAME_MODE_LABEL  `const`
+
+```ts
+const GAME_MODE_LABEL: Readonly<Record<GameMode, string>>;
+```
+
 ### GUARDED_TOKENS  `const`
 
 ```ts
 const GUARDED_TOKENS: ReadonlyArray<GuardedToken>;
+```
+
+### GameMode  `type`
+
+```ts
+type GameMode = 'survival' | 'creative';
 ```
 
 ### GuardedToken  `type`
@@ -425,6 +512,18 @@ const ICON_EMPTY: Rgb;
 
 ```ts
 const ICON_ROW_LABEL: Readonly<Record<IconKind, string>>;
+```
+
+### IDLE_CROSSHAIR_STATUS  `const`
+
+```ts
+const IDLE_CROSSHAIR_STATUS: CrosshairStatus;
+```
+
+### IDLE_LOADING_STATUS  `const`
+
+```ts
+const IDLE_LOADING_STATUS: LoadingStatus;
 ```
 
 ### IDLE_SAVE_STATUS  `const`
@@ -556,16 +655,172 @@ const KNOWN_NEAR_COLLISIONS: ReadonlyArray<{
 type KeyBindings = ReadonlyMap<InputAction, string>;
 ```
 
+### LOADING_DETAIL  `const`
+
+```ts
+const LOADING_DETAIL: Readonly<Record<LoadingScreenView['kind'], string>>;
+```
+
+### LOADING_KICKER  `const`
+
+```ts
+const LOADING_KICKER: Readonly<Record<LoadingScreenView['kind'], string>>;
+```
+
+### LOADING_LABEL  `const`
+
+```ts
+const LOADING_LABEL: Readonly<Record<LoadingScreenView['kind'], string>>;
+```
+
+### LOADING_MINIMUM_VISIBLE_SECS  `const`
+
+```ts
+const LOADING_MINIMUM_VISIBLE_SECS = 2.5;
+```
+
+### LOADING_STATES  `const`
+
+```ts
+const LOADING_STATES: ReadonlyArray<LoadingScreenView['kind']>;
+```
+
+### LoadingProgress  `type`
+
+```ts
+type LoadingProgress = {
+    readonly kind: 'preparing';
+} | {
+    readonly kind: 'ready';
+} | {
+    readonly kind: 'failed';
+    readonly reason: string;
+};
+```
+
+### LoadingScreenView  `type`
+
+```ts
+type LoadingScreenView = {
+    readonly kind: 'preparing';
+    readonly held: boolean;
+} | {
+    readonly kind: 'failed';
+    readonly reason: string;
+};
+```
+
+### LoadingStatus  `type`
+
+```ts
+type LoadingStatus = {
+    readonly progress: LoadingProgress;
+    readonly startedAtSecs: number;
+};
+```
+
+### LoadingView  `type`
+
+```ts
+type LoadingView = {
+    readonly root: DomElement;
+    readonly render: (view: LoadingScreenView | undefined) => void;
+};
+```
+
+### MAIN_MENU_TITLE  `const`
+
+```ts
+const MAIN_MENU_TITLE = "nerima-games";
+```
+
 ### MAX_VISIBLE_CAPTIONS  `const`
 
 ```ts
 const MAX_VISIBLE_CAPTIONS = 4;
 ```
 
+### MENU_ACTION_LABEL  `const`
+
+```ts
+const MENU_ACTION_LABEL: {
+    readonly confirm: "Confirm";
+    readonly cancel: "Cancel";
+    readonly back: "Back";
+};
+```
+
+### MENU_FIELD_LABEL  `const`
+
+```ts
+const MENU_FIELD_LABEL: {
+    readonly 'world-name': "World name";
+    readonly 'game-mode': "Game mode";
+};
+```
+
+### MENU_PANELS  `const`
+
+```ts
+const MENU_PANELS: ReadonlyArray<MenuPanel>;
+```
+
+### MENU_PANEL_LABEL  `const`
+
+```ts
+const MENU_PANEL_LABEL: Readonly<Record<MenuPanel, string>>;
+```
+
 ### METER_TRACK  `const`
 
 ```ts
 const METER_TRACK: Rgb;
+```
+
+### MainMenuState  `type`
+
+```ts
+type MainMenuState = {
+    readonly panel: MenuPanel;
+    readonly draft: NewWorldDraft;
+};
+```
+
+### MainMenuView  `type`
+
+```ts
+type MainMenuView = {
+    readonly root: DomElement;
+    readonly render: (model: MainMenuViewModel) => void;
+};
+```
+
+### MainMenuViewModel  `type`
+
+```ts
+type MainMenuViewModel = {
+    readonly panel: MenuPanel;
+    readonly worldName: string;
+    readonly mode: GameMode;
+};
+```
+
+### MenuAction  `type`
+
+```ts
+type MenuAction = keyof typeof MENU_ACTION_LABEL;
+```
+
+### MenuField  `type`
+
+```ts
+type MenuField = keyof typeof MENU_FIELD_LABEL;
+```
+
+### MenuPanel  `type`
+
+```ts
+type MenuPanel = 'root' | 'new-world' | 'load-world';
 ```
 
 ### MergeTargets  `type`
@@ -624,6 +879,21 @@ type MotionPreference = 'full' | 'reduced';
 
 ```ts
 type MotionSetting = 'system' | 'full' | 'reduced';
+```
+
+### NO_SAVE_LIST_NOTE  `const`
+
+```ts
+const NO_SAVE_LIST_NOTE = "mc-save has not been asked. This list is unknown, which is not the same as empty.";
+```
+
+### NewWorldDraft  `type`
+
+```ts
+type NewWorldDraft = {
+    readonly name: string;
+    readonly mode: GameMode;
+};
 ```
 
 ### OWN_STAGE_PREFIX  `const`
@@ -749,6 +1019,18 @@ type PercentCell = {
 const REBIND_CLEAR_KEYS: ReadonlySet<string>;
 ```
 
+### ROOT_ENTRIES  `const`
+
+```ts
+const ROOT_ENTRIES: ReadonlyArray<RootEntry>;
+```
+
+### ROOT_ENTRY_LABEL  `const`
+
+```ts
+const ROOT_ENTRY_LABEL: Readonly<Record<RootEntry, string>>;
+```
+
 ### RebindResult  `type`
 
 ```ts
@@ -780,6 +1062,12 @@ type Rgb = readonly [number, number, number];
 
 ```ts
 type RgbChannels = readonly [number, number, number];
+```
+
+### RootEntry  `type`
+
+```ts
+type RootEntry = 'new-world' | 'load-world' | 'settings';
 ```
 
 ### SAVED_VISIBLE_SECS  `const`
@@ -1113,6 +1401,12 @@ const applyColorVisionMatrix: (channels: RgbChannels, matrix: ColorVisionMatrix)
 const attributeCell: (element: DomElement, name: string) => AttributeCell;
 ```
 
+### backToRoot  `const`
+
+```ts
+const backToRoot: (state: MainMenuState) => MainMenuState;
+```
+
 ### captionLines  `const`
 
 ```ts
@@ -1173,6 +1467,12 @@ const contrastRatio: (left: Rgb, right: Rgb) => number;
 const createCaptionView: (factory: DomElementFactory, parent: DomElement, motion: MotionPreference) => CaptionView;
 ```
 
+### createCrosshairView  `const`
+
+```ts
+const createCrosshairView: (factory: DomElementFactory, parent: DomElement, motion: MotionPreference) => CrosshairView;
+```
+
 ### createHudView  `const`
 
 ```ts
@@ -1191,6 +1491,18 @@ const createIconElement: (factory: DomElementFactory, kind: IconKind) => IconEle
 const createInventoryView: (factory: DomElementFactory, parent: DomElement) => InventoryView;
 ```
 
+### createLoadingView  `const`
+
+```ts
+const createLoadingView: (factory: DomElementFactory, parent: DomElement) => LoadingView;
+```
+
+### createMainMenuView  `const`
+
+```ts
+const createMainMenuView: (factory: DomElementFactory, parent: DomElement) => MainMenuView;
+```
+
 ### createSaveIndicator  `const`
 
 ```ts
@@ -1203,10 +1515,28 @@ const createSaveIndicator: (factory: DomElementFactory, parent: DomElement) => S
 const createSlotElement: (factory: DomElementFactory, index: number) => SlotElement;
 ```
 
+### crosshairViewModel  `const`
+
+```ts
+const crosshairViewModel: (status: CrosshairStatus, nowSecs: number, pulseSecs?: number) => CrosshairViewModel | undefined;
+```
+
 ### cssColor  `const`
 
 ```ts
 const cssColor: (color: Rgb, alpha?: number) => string;
+```
+
+### cycleGameMode  `const`
+
+```ts
+const cycleGameMode: (mode: GameMode) => GameMode;
+```
+
+### cycleWorldMode  `const`
+
+```ts
+const cycleWorldMode: (state: MainMenuState) => MainMenuState;
 ```
 
 ### declarePalette  `const`
@@ -1231,6 +1561,12 @@ const emptyInventorySnapshot: InventorySnapshot;
 
 ```ts
 const emptyModalStack: ModalStack;
+```
+
+### emptyNewWorldDraft  `const`
+
+```ts
+const emptyNewWorldDraft: NewWorldDraft;
 ```
 
 ### escapePressed  `const`
@@ -1281,10 +1617,34 @@ const hudViewModel: (snapshot: VitalsSnapshot) => HudViewModel;
 const iconRow: (points: number, maxPoints: number) => ReadonlyArray<IconState>;
 ```
 
+### initialMainMenuState  `const`
+
+```ts
+const initialMainMenuState: MainMenuState;
+```
+
 ### inventoryViewModel  `const`
 
 ```ts
 const inventoryViewModel: (snapshot: InventorySnapshot) => InventoryViewModel;
+```
+
+### loadingScreenView  `const`
+
+```ts
+const loadingScreenView: (status: LoadingStatus, nowSecs: number, minimumVisibleSecs?: number) => LoadingScreenView | undefined;
+```
+
+### loadingStatus  `const`
+
+```ts
+const loadingStatus: (progress: LoadingProgress, atSecs: number) => LoadingStatus;
+```
+
+### mainMenuViewModel  `const`
+
+```ts
+const mainMenuViewModel: (state: MainMenuState) => MainMenuViewModel;
 ```
 
 ### makeUiFrameState  `const`
@@ -1297,6 +1657,18 @@ const makeUiFrameState: Effect.Effect<UiFrameState>;
 
 ```ts
 const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>>;
+```
+
+### nameWorld  `const`
+
+```ts
+const nameWorld: (state: MainMenuState, name: string) => MainMenuState;
+```
+
+### openPanel  `const`
+
+```ts
+const openPanel: (state: MainMenuState, panel: MenuPanel) => MainMenuState;
 ```
 
 ### openScreen  `const`
@@ -1471,6 +1843,12 @@ const updateIconElement: (icon: IconElement, state: IconState) => void;
 
 ```ts
 const updateSlotElement: (slot: SlotElement, view: SlotView, mergeable: boolean | undefined) => void;
+```
+
+### worldNameLabel  `const`
+
+```ts
+const worldNameLabel: (draft: NewWorldDraft) => string;
 ```
 
 ### worstCaseContrastOnScrim  `const`

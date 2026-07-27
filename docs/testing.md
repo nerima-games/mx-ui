@@ -42,12 +42,18 @@ vitest 3.2.7
  ✓ test/screen-views.test.ts               (10 tests)
  ✓ test/palette-css.test.ts                (6 tests)
  ✓ test/save-indicator.test.ts             (15 tests)
+ ✓ test/screen-mount.test.ts               (13 tests)
+ ✓ test/modal-flows.test.ts                (6 tests)
+ ✓ test/accessibility-gate.test.ts         (11 tests)
+ ✓ test/main-menu.test.ts                  (20 tests)
+ ✓ test/loading-screen.test.ts             (18 tests)
+ ✓ test/crosshair.test.ts                  (16 tests)
 
- Test Files  12 passed (12)
-      Tests  198 passed (198)
+ Test Files  18 passed (18)
+      Tests  283 passed (283)
 ```
 
-後半 5 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
+後半 11 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
 jsdom も `@vitest-environment` プラグマも入っていない（§3）。
 
 `save-indicator.test.ts` は**新しい 2 コンポーネントのうち 1 つ**のためのファイルで、
@@ -68,6 +74,13 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 **この数字はスケルトンが育つたびに動く。** 権威は `pnpm verify` の出力であって本節ではない。
 本節が古くなっていたら、それは suite が増えたということである。
 
+> **2026-07-27 追記。** 上の一覧は実際に 3 ファイル分古かった
+> （`screen-mount` / `modal-flows` / `accessibility-gate` は `docs/e2e-triage.md` の
+> 移植で入ったが、ここには反映されていなかった）。その 3 つと、
+> メインメニュー / ローディング画面 / crosshair の 3 つを合わせて 198 → 283 になっている。
+> **手で書いた数字が本文から導出されていない限りまた壊れる**という
+> `docs/e2e-triage.md` §2.1 の欄外注は、この節にもそのまま当てはまる。
+
 | ファイル | 守っているもの |
 | --- | --- |
 | `test/view-model.test.ts` | DN-UI-6（ハーフハート）/ DN-UI-7（クランプ）/ DN-UI-3（字幕）/ **DN-UI-11（パレットの保証）/ DN-UI-12（射影と unknown）** |
@@ -81,6 +94,12 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 | `test/screen-views.test.ts` | **DN-UI-13（字幕はテキスト / `unknown` は空ではない）/ DN-UI-1a（属性は canvas だけ）/ DN-UI-3** |
 | `test/palette-css.test.ts` | **DN-UI-11 + DN-UI-13g（全トークンが DOM に届くこと。未参照集合は空になった）** |
 | `test/save-indicator.test.ts` | **DN-UI-13h（自動保存インジケータ、状態と表示時間、色以外での区別）/ DN-UI-10 / DN-UI-11b** |
+| `test/screen-mount.test.ts` | 親は**引数**であること（`docs/public-api.md` §4-1）/ ホットバー選択の ONLY 性 |
+| `test/modal-flows.test.ts` | DN-UI-4（Escape 単一ハンドラ）をフロー側から。キーは持たない |
+| `test/accessibility-gate.test.ts` | **全画面スイープ — フォーカス可能物の国勢調査と、書かれた色がトークンに解決すること** |
+| `test/main-menu.test.ts` | **メニューの遷移は値であってリスナではない / 押せない control に `role="button"` を付けないこと / セーブ一覧は `unknown` であって空ではない** |
+| `test/loading-screen.test.ts` | **DN-UI-10（最低表示時間は引数で来る時刻の算術）/ 不定プログレスバーを描かないこと** |
+| `test/crosshair.test.ts` | **照準が自分用の scrim を連れて歩くこと（G1 の中に留まる唯一の方法）/ DN-UI-10（ヒットは継続時間でありタイマーではない）/ reduced-motion で信号を落とさないこと** |
 
 API は `@effect/vitest` の `it.effect` + `Effect.sync`。
 

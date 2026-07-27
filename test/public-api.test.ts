@@ -127,6 +127,19 @@ describe('public API surface', () => {
         // One derivation for "which of the nine slots is this number", shared by
         // mc-sim's selection and by the keyboard's focus (DN-UI-7c).
         'hotbarSlotIndex',
+        // The menu's navigation, which is the half of a menu that is not a
+        // click, and the loading screen's floor, which is the whole of what the
+        // reference needed a stopwatch to observe.
+        'initialMainMenuState',
+        'openPanel',
+        'backToRoot',
+        'worldNameLabel',
+        'mainMenuViewModel',
+        'LOADING_MINIMUM_VISIBLE_SECS',
+        'loadingStatus',
+        'loadingScreenView',
+        'CROSSHAIR_PULSE_SECS',
+        'crosshairViewModel',
       ]
 
       for (const name of internal) {
@@ -142,6 +155,17 @@ describe('public API surface', () => {
         'createHudView',
         'createCaptionView',
         'createInventoryView',
+        // The two screens `docs/e2e-triage.md` §2.1 recorded as 「その画面が mx-ui に
+        // まだ無い」. They are pinned for the same reason the accessibility assets
+        // are: a screen that was built and then quietly dropped from the barrel
+        // is indistinguishable from one that was never built, and the triage row
+        // that depends on it would go on reading 「移植済み」.
+        'createMainMenuView',
+        'createLoadingView',
+        // The reticle. Pinned because its destination was doubted twice and
+        // settled twice (`docs/e2e-triage.md` #15): dropping it from the barrel
+        // would make it look unbuilt again.
+        'createCrosshairView',
         // The autosave indicator, and the two names a translation layer or a
         // preview needs to reach its strings. It is pinned here because it is the
         // component the palette survey's headline finding is about: `STATUS_OK`
