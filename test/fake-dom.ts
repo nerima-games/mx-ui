@@ -32,6 +32,30 @@ export type Mutation = {
   readonly value: string | undefined
 }
 
+/**
+ * `Mutation`s and `FakeElement`s are CYCLIC, and that makes them unsafe to hand
+ * to a matcher directly. Project through here first.
+ *
+ * A `Mutation` holds its `target`; a `FakeElement` holds the shared `log`; the
+ * log holds every `Mutation`. Vitest only walks the graph when an assertion
+ * FAILS, so `expect(factory.since(before)).toStrictEqual([])` is green and
+ * harmless right up to the moment a stray write appears -- and then the reporter
+ * follows the cycle, exhausts the heap, and kills the runner. The regression
+ * test reports nothing on the one day it fires, which is worse than not having
+ * it: a suite that dies looks like infrastructure trouble, not like the write it
+ * was built to name.
+ *
+ * `kind:name` is what these assertions actually mean ("nothing was written",
+ * "only the tabindex moved"), so nothing is lost by comparing the projection.
+ * The element identity was never the claim.
+ *
+ * `listenersInTree()` returns `ReadonlyArray<string>` and is already safe;
+ * `findAll()` returns `FakeElement`s and is NOT -- compare its length, or map it
+ * to attributes, but do not deep-equal it.
+ */
+export const writeNames = (mutations: ReadonlyArray<Mutation>): ReadonlyArray<string> =>
+  mutations.map((mutation) => `${mutation.kind}:${mutation.name}`)
+
 export type FakeDocument = DomElementFactory & {
   readonly mutations: Array<Mutation>
   readonly created: Array<FakeElement>

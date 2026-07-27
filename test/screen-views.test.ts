@@ -28,7 +28,7 @@ import { createCaptionView } from '../application/caption-view'
 import { createInventoryView } from '../application/inventory-view'
 import { createHudView } from '../application/hud-view'
 import { PALETTE_PROPERTY } from '../application/palette-css'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const enabled = { captionsEnabled: true, audioUnlocked: false }
 
@@ -99,7 +99,7 @@ describe('captions are rendered as TEXT', () => {
     view.render(lines)
     const before = factory.mark()
     view.render(lines)
-    expect(factory.since(before)).toStrictEqual([])
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 })
 
@@ -163,8 +163,15 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       }),
     )
 
+    // Compared by LENGTH, not deep-equalled. `findAll` returns `FakeElement`s,
+    // and a `FakeElement` holds the shared mutation log, which holds every
+    // `Mutation`, each of which holds its target — so deep-equalling the array
+    // is only safe while it is empty. On the day a `data-mergeable` element
+    // appears, the reporter would walk that cycle and kill the runner rather
+    // than name the element. `writeNames` in `./fake-dom` states the general
+    // rule; here the count IS the claim, so there is nothing to project.
     const root = view.root as FakeElement
-    expect(root.findAll('data-mergeable', '')).toStrictEqual([])
+    expect(root.findAll('data-mergeable', '')).toHaveLength(0)
   })
 
   it('re-rendering the same snapshot mutates nothing', () => {
@@ -176,7 +183,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     view.render(model)
     const before = factory.mark()
     view.render(model)
-    expect(factory.since(before)).toStrictEqual([])
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 })
 
@@ -198,7 +205,7 @@ describe('the colour-vision switch is applied to the canvas and to nothing else'
 
     const before = factory.mark()
     applyColorVision(cell, 'off')
-    expect(factory.since(before)).toStrictEqual([])
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
   it('REGRESSION: no mx-ui screen ever carries the attribute — the filter is canvas-only', () => {

@@ -61,7 +61,7 @@ import { createInventoryView } from '../application/inventory-view'
 import { createSaveIndicator } from '../application/save-indicator'
 import { ICON_ROW_LABEL } from '../application/icon-element'
 import { PALETTE_SOURCE, PALETTE_VAR, type PaletteTokenName } from '../application/palette-css'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 /** `var(--mx-ui-ink)` back to `INK`'s three numbers. */
 const TOKEN_BY_VAR: ReadonlyMap<string, PaletteTokenName> = new Map(
@@ -251,7 +251,7 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     // raw array sends the reporter round that cycle and exhausts the heap
     // instead of naming the write. A test that kills the runner when it goes red
     // reports nothing at all.
-    expect(factory.since(before).map((mutation) => `${mutation.kind}:${mutation.name}`)).toStrictEqual(
+    expect(writeNames(factory.since(before))).toStrictEqual(
       [],
     )
   })

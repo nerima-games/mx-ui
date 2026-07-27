@@ -25,7 +25,7 @@ import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../domain/palet
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../application/hud-view'
 import { FOCUS_RING_SHADOW_WIDTH, FOCUS_RING_WIDTH } from '../application/slot-element'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../application/palette-css'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const mount = (motion: 'full' | 'reduced' = 'full') => {
   const factory = fakeDocument()
@@ -136,19 +136,27 @@ describe('the HUD renderer is idempotent', () => {
     // reassigns `textContent` to the string it already holds, which destroys and
     // recreates a text node — spends the frame path on work with no observable
     // effect. Counting mutations makes that a fact rather than a benchmark.
+    //
+    // Both assertions below project to strings before comparing, and that is not
+    // cosmetic. A `Mutation` holds its `target`, a `FakeElement` holds the shared
+    // log, and the log holds every `Mutation` — so `toStrictEqual([])` on the raw
+    // array sends the reporter round that cycle and exhausts the heap on the ONLY
+    // day it matters, which is the day a write appears. A green assertion never
+    // walks the objects, so the hazard is invisible until the regression it
+    // guards actually happens and the runner dies instead of naming the write.
     const { factory, view } = mount()
     const model = hudViewModel(damaged(13))
 
     view.render(model)
     const before = factory.mark()
     view.render(model)
-    expect(factory.since(before)).toStrictEqual([])
+    expect(writeNames(factory.since(before))).toStrictEqual([])
 
     // And with an equal-but-not-identical model, so the diff is on VALUES rather
     // than on object identity — a renderer that memoised the reference would
     // pass the assertion above and fail this one.
     view.render(hudViewModel(damaged(13)))
-    expect(factory.since(before)).toStrictEqual([])
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
   it('writes only what changed when one heart changes', () => {
@@ -198,7 +206,7 @@ describe('the HUD renderer is idempotent', () => {
 
     const before = factory.mark()
     view.render(hudViewModel(spawnSnapshot))
-    expect(factory.since(before)).toStrictEqual([])
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 })
 
@@ -315,7 +323,7 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     const before = factory.mark()
     view.setKeyboardFocus(0)
     // One attribute per slot that moved, and not a single style write.
-    expect(factory.since(before).map((mutation) => `${mutation.kind}:${mutation.name}`)).toStrictEqual([
+    expect(writeNames(factory.since(before))).toStrictEqual([
       'removeAttribute:hidden',
     ])
   })
@@ -341,7 +349,7 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     view.setKeyboardFocus(4)
     const before = factory.mark()
     view.setKeyboardFocus(4)
-    expect(factory.since(before)).toStrictEqual([])
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
   it('REGRESSION: making a slot focusable did not add a listener or a way to move focus', () => {
