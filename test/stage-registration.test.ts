@@ -24,6 +24,7 @@ import {
   UI_STAGE_IDS,
   UPSTREAM_STAGE_IDS,
 } from '../stages/stage-ids'
+import { FrameServicesLayer } from './frame-services'
 
 const allAfterEdges = (stages: ReadonlyArray<StageRegistration>): ReadonlyArray<string> =>
   stages.flatMap((stage) => [...(stage.after ?? [])])
@@ -103,6 +104,9 @@ describe('§2.3-3 the total order belongs to mc-compose', () => {
   )
 })
 
+// The tests below that RUN a stage provide `FrameServicesLayer` — see
+// `./frame-services.ts` for why a layer that is empty today is not a line worth
+// deleting.
 describe('stage behaviour', () => {
   it.effect('hud-sync rebuilds the view model from the snapshot it was given', () =>
     Effect.gen(function* () {
@@ -115,7 +119,7 @@ describe('stage behaviour', () => {
       const model = yield* Ref.get(state.hud)
       expect(model.hearts[0]).toBe('half')
       expect(model.dead).toBe(false)
-    }),
+    }).pipe(Effect.provide(FrameServicesLayer)),
   )
 
   it.effect('REGRESSION: caption ageing is driven by accumulated `dt`, never by a wall clock', () =>
@@ -140,7 +144,7 @@ describe('stage behaviour', () => {
 
       yield* overlaySync?.run(DeltaTimeSecs(CAPTION_LIFETIME_SECS / 2)) ?? Effect.void
       expect((yield* Ref.get(state.captions)).visible).toHaveLength(0)
-    }),
+    }).pipe(Effect.provide(FrameServicesLayer)),
   )
 
   it.effect('REGRESSION: the default caption settings have audio LOCKED, and captions still work', () =>
@@ -158,7 +162,7 @@ describe('stage behaviour', () => {
       yield* Effect.forEach(uiStages(state), (stage) => stage.run(DeltaTimeSecs(0)))
       expect(yield* Ref.get(state.elapsedSecs)).toBe(0)
       expect(yield* Ref.get(state.hud)).toStrictEqual(hudViewModel(spawnSnapshot))
-    }),
+    }).pipe(Effect.provide(FrameServicesLayer)),
   )
 
   it.effect('each call to makeUiFrameState yields independent state (re-entrant initialisation)', () =>

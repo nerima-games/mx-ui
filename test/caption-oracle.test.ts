@@ -48,6 +48,7 @@ import { DeltaTimeSecs } from '../domain/frame-contract'
 import { makeUiFrameState, uiStages } from '../stages/registration'
 import { UI_STAGE_IDS } from '../stages/stage-ids'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
+import { FrameServicesLayer } from './frame-services'
 
 const ON: CaptionSettings = { captionsEnabled: true, audioUnlocked: false }
 const OFF: CaptionSettings = { captionsEnabled: false, audioUnlocked: false }
@@ -128,7 +129,9 @@ describe('turning captions off takes down the captions that are already up', () 
       return yield* Ref.get(state.captions)
     })
 
-    return Effect.runPromise(program).then((queue) => {
+    // `FrameServicesLayer` is what `program` runs a stage AGAINST; see
+    // `./frame-services.ts`. Empty today, and not removable.
+    return Effect.runPromise(program.pipe(Effect.provide(FrameServicesLayer))).then((queue) => {
       expect(queue.visible).toHaveLength(0)
     })
   })
@@ -147,7 +150,7 @@ describe('turning captions off takes down the captions that are already up', () 
       return yield* Ref.get(state.captions)
     })
 
-    return Effect.runPromise(program).then((queue) => {
+    return Effect.runPromise(program.pipe(Effect.provide(FrameServicesLayer))).then((queue) => {
       expect(queue.visible).toHaveLength(3)
     })
   })
