@@ -12,8 +12,16 @@
     "application/**/*.ts",
     "stages/**/*.ts",
     "test/**/*.ts",
+    // The Playwright gate. It is typechecked by `pnpm verify` even though it is
+    // not RUN by it — the same split `apps/` already has (`docs/testing.md` §1:
+    // 「`pnpm verify` はプレビューを*実行*しないが、型検査・lint・依存ゲート・
+    // 壁時計禁止はすべて適用される」). Typechecking needs no browser, so there is
+    // no reason for the one suite that cannot run in CI to also be the one suite
+    // nothing checks.
+    "test-browser/**/*.ts",
     "scripts/**/*.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "playwright.config.ts"
   ],
   "exclude": ["node_modules", "coverage", "dist"]
 }

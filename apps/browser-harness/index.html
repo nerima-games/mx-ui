@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      `viewport-fit=cover` is what makes `env(safe-area-inset-*)` non-zero on a
+      device that has a notch. Without it the insets are zero everywhere and a
+      safe-area check would be asserting against a premise that never fires.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>mx-ui browser harness</title>
+    <style>
+      /*
+        ---------------------------------------------------------------------
+        EVERY RULE IN THIS FILE IS THE HOST'S, AND NOT ONE REACHES INSIDE mx-ui
+        ---------------------------------------------------------------------
+
+        The selectors below stop at `[data-harness-host]`. There is deliberately
+        no `[data-mx-ui="slot"] { width: 48px }` and no descendant selector of
+        any kind, because the browser checks exist to measure what mx-ui
+        produces. A host stylesheet that sized an mx-ui element would turn every
+        geometry reading into a reading about this file.
+
+        That restraint is also what makes a NEGATIVE result meaningful. If a
+        hotbar slot comes back four pixels tall, that is mx-ui declaring no size
+        — which is a fact about mx-ui and about the contract in
+        `docs/public-api.md` §4-1, and it is exactly the kind of thing a harness
+        is supposed to be able to find out.
+      */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        /*
+          A mid-grey page, and the value is not arbitrary. `SCRIM` is
+          translucent, so `domain/palette.ts` measures every guarded token
+          against the scrim composited over the WORST world pixel, bounding the
+          range with black and white. 128 is the middle of that range and is the
+          band `application/crosshair-view.ts` identifies as where the
+          reference's `mix-blend-mode: difference` reticle disappears. Sitting
+          the harness on it means a screenshot shows the hard case rather than a
+          convenient one.
+        */
+        background: rgb(128, 128, 128);
+        font-family: system-ui, sans-serif;
+      }
+
+      /*
+        The page container mx-ui's hosts live in.
+
+        `--harness-safe-inset` defaults to the real `env()` and is overridden by
+        `?safe=` so a desktop Chromium can be given a notch to respect. See
+        `main.ts` on why a check against an always-zero premise is worse than no
+        check.
+      */
+      [data-harness-page] {
+        --harness-safe-inset: env(safe-area-inset-top, 0px);
+        position: fixed;
+        inset: 0;
+      }
+
+      /*
+        One host per screen, each filling the viewport.
+
+        `padding` carries the safe-area inset, which means it insets NORMAL-FLOW
+        children and does NOT inset absolutely positioned ones — an abs-pos
+        containing block is the padding box, so `top: 50%` still resolves against
+        the full height. That asymmetry is correct rather than incidental: the
+        crosshair marks the camera's principal point, which is the centre of the
+        viewport and not the centre of whatever the phone's chrome left over, and
+        `test-browser/geometry.spec.ts` asserts the two different things
+        accordingly.
+      */
+      [data-harness-host] {
+        position: absolute;
+        inset: 0;
+        padding: var(--harness-safe-inset);
+        box-sizing: border-box;
+      }
+
+      [data-harness-host][hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -107,6 +107,65 @@ const SELECTED_BORDER_WEIGHT = '3px'
 export const FOCUS_RING_WIDTH = '3px'
 export const FOCUS_RING_SHADOW_WIDTH = '5px'
 
+/**
+ * THE SLOT'S FLOOR, and it was found by a browser rather than reasoned into.
+ *
+ * `apps/browser-harness/` mounted this file against a real `Document` and
+ * measured what a slot actually becomes. At 390px wide it is **43.3 x 4**, and
+ * at 320px it is 35.5 x 4. A slot's two spans are empty until mc-sim supplies an
+ * item, so the content box is zero tall and the whole four pixels are the border
+ * declared above.
+ *
+ * Three things this repository already claims stop being true at that size, and
+ * NONE of them is visible to `test/fake-dom.ts`, because the fake has no layout:
+ *
+ *   1. **The `weight` distinguisher degenerates.** `domain/palette.ts` declares
+ *      `slot selected / slot border` as `alsoDistinguishedBy: ['weight']`, and
+ *      G3 is explicit that the non-colour channel is 「belt AND braces」 rather
+ *      than decoration. At 4px tall the border IS the slot: 2px against 3px is
+ *      not a heavier frame around a square, it is a bar that got 50% thicker.
+ *   2. **The focus ring has no area.** It is an `inset: 0` overlay, and an
+ *      absolutely positioned box resolves against the PADDING box — which is
+ *      zero tall. Measured: `386 x 0`. `FOCUS_RING` is in `GUARDED_TOKENS` and
+ *      `test/accessibility-gate.test.ts` confirms it reaches an element, but
+ *      「reaches an element」 and 「is drawn as a ring」 are different sentences and
+ *      only the second one is what a player navigating by keyboard needs.
+ *   3. **The one tab stop in this repository is a 4px target.** WCAG 2.2 §2.5.8
+ *      (Target Size, Minimum) asks for 24 x 24 CSS pixels for anything operable
+ *      by pointer. A slot is not activatable (see this file's header) but it IS
+ *      reachable and it IS the thing a player aims at on a touch screen.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY 24 AND NOT THE 48 `docs/e2e-triage.md` #34 NAMES
+ * ---------------------------------------------------------------------------
+ *
+ * 48 is the reference's number for `[data-touch-control]` — the free-standing
+ * on-screen buttons in `mobile-touch-controls.e2e.ts`. It is Android's touch
+ * guidance for a button, and it is **arithmetically impossible for a hotbar**:
+ * nine slots at 48px need 432px and the narrowest viewport the triage names is
+ * 320. A floor nobody can satisfy is a floor that gets deleted.
+ *
+ * 24 is the number of the standard that actually governs this element, it is
+ * cited rather than chosen, and it leaves the hotbar fitting 320px with room
+ * (35.5 x 24). It is a FLOOR and not a size: a host is free to make slots
+ * larger, and `min-*` rather than `width`/`height` is what keeps that true.
+ *
+ * ---------------------------------------------------------------------------
+ * AND WHY THIS IS mx-ui's TO DECLARE AT ALL
+ * ---------------------------------------------------------------------------
+ *
+ * The tempting answer is 「layout is the host's; mx-ui hands over elements」. It
+ * is not this repository's answer, and the evidence is in this repository:
+ * `application/inventory-view.ts:104` declares `display: grid` and writes
+ * `grid-template-columns` per region, and `application/crosshair-view.ts`
+ * declares an explicit 20px box. mx-ui has already taken responsibility for the
+ * geometry that carries meaning. The hotbar's vertical extent was simply the
+ * axis nobody had a reason to write down, because nothing headless could ask.
+ *
+ * Every write is at MOUNT and none is on the frame path.
+ */
+export const SLOT_TARGET_MIN_SIZE = '24px'
+
 export type SlotElement = {
   readonly root: DomElement
   readonly hiddenFlag: AttributeCell
@@ -139,6 +198,11 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
   root.style.setProperty('position', 'relative')
   root.style.setProperty('background-color', PALETTE_VAR.slotFill)
   root.style.setProperty('border-style', 'solid')
+  // The floor, not a size. See `SLOT_TARGET_MIN_SIZE`: `min-*` leaves a host
+  // free to make slots bigger, and a slot whose content box is zero tall takes
+  // its focus ring and its `weight` distinguisher down with it.
+  root.style.setProperty('min-width', SLOT_TARGET_MIN_SIZE)
+  root.style.setProperty('min-height', SLOT_TARGET_MIN_SIZE)
 
   const item = factory.createElement('span')
   item.setAttribute('data-mx-ui', 'slot-item')

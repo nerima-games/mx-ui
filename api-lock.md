@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 260
+exported declarations: 261
 supporting declarations: 7
 
 ## Exported
@@ -1162,6 +1162,12 @@ const SLOT_FILL_ALPHA = 0.55;
 
 ```ts
 const SLOT_SELECTED: Rgb;
+```
+
+### SLOT_TARGET_MIN_SIZE  `const`
+
+```ts
+const SLOT_TARGET_MIN_SIZE = "24px";
 ```
 
 ### STATUS_ALERT  `const`

@@ -267,6 +267,14 @@ export const SCAN_ROOTS: ReadonlyArray<string> = [
   'stages',
   'scripts',
   'test',
+  // The Playwright gate. It does not run in `pnpm verify` (no browser in CI —
+  // `playwright.config.ts` explains itself), but it IS scanned, for exactly the
+  // reason `docs/testing.md` §1 gives about `apps/`: 「dev アプリだから検査しない」
+  // にすると、依存を 1 つ足すのに最も抵抗の少ない場所ができてしまう. A suite the
+  // dependency gate cannot see is the cheapest place in the repository to add an
+  // import, and the fact that it is also the suite CI does not run makes it the
+  // cheapest place for that import to go unnoticed.
+  'test-browser',
 ]
 
 const SKIPPED_DIRECTORIES: ReadonlySet<string> = new Set([

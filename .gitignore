@@ -30,6 +30,12 @@ coverage/
 test-results/
 vitest.workspace.*
 
+# Playwright (the browser gate — see docs/testing.md §8).
+# `test-results/` above already covers the default output directory; this is the
+# HTML reporter's, which the checked-in config does not enable but which anybody
+# debugging a failure will turn on with `--reporter=html`.
+playwright-report/
+
 # Environment files
 .env
 .env.local

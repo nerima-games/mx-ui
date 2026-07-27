@@ -307,6 +307,31 @@ export const createHudView = (
   // reachable at all. Static, so it costs nothing per frame.
   hotbarRow.setAttribute('role', 'group')
   hotbarRow.setAttribute('aria-label', 'Hotbar')
+  // NINE COLUMNS, and this line is here because a browser said so.
+  //
+  // `apps/browser-harness/` mounted this file against a real `Document` and the
+  // hotbar came back as nine FULL-WIDTH BARS STACKED VERTICALLY — 254px tall at
+  // both 320 and 390. Nothing headless can see that: `test/fake-dom.ts` has no
+  // layout, so `test/screen-mount.test.ts` correctly finds nine slots with
+  // exactly one selected and has no way to notice they are in a column.
+  //
+  // The reason it is a DEFECT rather than a host's business is that this
+  // repository had already answered the question elsewhere and answered it
+  // differently. `application/inventory-view.ts`'s `createRegion` gives every
+  // region a `display: grid` child and writes `grid-template-columns` from the
+  // model's own `columns` — INCLUDING the hotbar region, which the inventory
+  // screen therefore draws as a row of nine while the HUD drew the same nine as
+  // a column. One repository, two answers, and the browser is the only thing
+  // that could tell them apart.
+  //
+  // Static rather than a cell: `HOTBAR_SLOT_COUNT` is a constant, so unlike the
+  // inventory's regions there is nothing per-frame to diff. Written at mount and
+  // never again, like every other geometry declaration in this file.
+  hotbarRow.style.setProperty('display', 'grid')
+  hotbarRow.style.setProperty(
+    'grid-template-columns',
+    `repeat(${String(HOTBAR_SLOT_COUNT)}, 1fr)`,
+  )
   root.appendChild(hotbarRow)
 
   const hotbar: Array<SlotElement> = []
