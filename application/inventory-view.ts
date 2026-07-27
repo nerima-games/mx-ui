@@ -153,11 +153,11 @@ const renderRegion = (
     region.slots.push(slot)
   }
 
-  for (let index = 0; index < region.slots.length; index += 1) {
-    const slot = region.slots[index]
-    if (slot === undefined) {
-      continue
-    }
+  // Over the array; see `caption-view.ts`'s note. `model.slots` keeps its check
+  // because it is the other array and is routinely SHORTER — `region.slots` only
+  // ever grows, so a model with fewer slots than a previous one leaves surplus
+  // squares that have to be hidden rather than left showing stale items.
+  for (const [index, slot] of region.slots.entries()) {
     const view = model.slots[index]
     if (view === undefined) {
       setSlotHidden(slot, true)

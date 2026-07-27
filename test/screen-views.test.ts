@@ -27,6 +27,8 @@ import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../ap
 import { createCaptionView } from '../application/caption-view'
 import { createInventoryView } from '../application/inventory-view'
 import { createHudView } from '../application/hud-view'
+import { createSlotElement, updateSlotElement } from '../application/slot-element'
+import type { SlotView } from '../domain/hud-view-model'
 import { PALETTE_PROPERTY } from '../application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
@@ -101,6 +103,49 @@ describe('captions are rendered as TEXT', () => {
     view.render(lines)
     expect(writeNames(factory.since(before))).toStrictEqual([])
   })
+
+  it('setting the motion preference it already has mutates nothing', () => {
+    // The other half of the claim above, for the call the render loop does not
+    // make: the settings screen writes the preference on every change, and a
+    // `system` player whose OS reports the same answer twice gets
+    // `setMotion('reduced')` twice.
+    //
+    // WHAT THIS DOES AND DOES NOT PIN, because a mutation run made the
+    // difference visible and it is worth writing down rather than leaving as an
+    // implication. Deleting `setMotion`'s `if (wanted === fades) return` leaves
+    // this test — and the whole suite — GREEN. The property holds twice over:
+    // the guard skips the projection, and `attributeCell` / `styleCell` skip
+    // any write whose value has not changed, so the second projection produces
+    // no mutation either way. What the guard buys is the LOOP, which is CPU and
+    // is invisible to a fake DOM by construction.
+    //
+    // So this asserts the observable contract — an unchanged preference reaches
+    // the document as nothing at all — and it is the cells that currently
+    // uphold it. That is still the property worth having: it is the one a
+    // reader depends on, and it would break if either mechanism were removed
+    // WITHOUT the other, which is the realistic way to break it.
+    //
+    // Asserted through `writeNames` and not the raw mutations: `Mutation` holds
+    // its target and the target holds the log, so deep-equalling the array on a
+    // FAILURE — the only run that matters — walks a cycle and kills the runner.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createCaptionView(factory, parent, 'reduced')
+
+    // A caption that has AGED, so that fading and not fading are different
+    // opacities. A fresh line reads 1 either way, and against it this test would
+    // pass with the early return deleted.
+    view.render(captionLines(queueOf('Zombie groans'), 2))
+
+    const before = factory.mark()
+    view.setMotion('reduced')
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    // …and the change that does move the preference still lands, so what is
+    // being asserted above is the guard and not a renderer that stopped working.
+    view.setMotion('full')
+    expect(writeNames(factory.since(before))).toContain('style:opacity')
+  })
 })
 
 describe('the inventory renderer keeps `unknown` a different screen from `empty`', () => {
@@ -141,6 +186,163 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       'unknown',
     )
     expect(root.find('data-mx-ui', 'crafting-output')?.attributes.get('hidden')).toBe('')
+  })
+
+  it('a carried stack is drawn, and putting it down hides the square again', () => {
+    // `carried` is the stack on the cursor mid-drag. It is the one part of this
+    // screen that appears and disappears WITHIN a session rather than between
+    // builds, so both directions matter: a square left showing after the player
+    // drops a stack is an item that looks like it is still in hand.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+
+    view.render(
+      inventoryViewModel({
+        ...emptyInventorySnapshot,
+        carried: { item: 'stone', count: 12 },
+      }),
+    )
+
+    const carried = (view.root as FakeElement).find('data-mx-ui', 'carried')
+    expect(carried?.attributes.has('hidden')).toBe(false)
+    expect(carried?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stone')
+
+    view.render(inventoryViewModel(emptyInventorySnapshot))
+    expect(carried?.attributes.get('hidden')).toBe('')
+  })
+
+  it('a crafting MATCH is the one state that draws an output square', () => {
+    // The positive half of the `no-match` / `unknown` regression above, which
+    // asserts two states draw nothing and therefore passes against a renderer
+    // that draws nothing ever. mc-sim has no recipe model today, so this state
+    // does not occur in production — and that is exactly why it is worth a test
+    // rather than a comment: the day mc-sim answers `Match`, nobody will be
+    // reading this file.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+
+    view.render(
+      inventoryViewModel({
+        ...emptyInventorySnapshot,
+        crafting: {
+          gridWidth: 2,
+          grid: [undefined, undefined, undefined, undefined],
+          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+        },
+      }),
+    )
+
+    const root = view.root as FakeElement
+    expect(root.find('data-mx-ui', 'crafting-outcome')?.attributes.get('data-crafting-state')).toBe(
+      'match',
+    )
+    const output = root.find('data-mx-ui', 'crafting-output')
+    expect(output?.attributes.has('hidden')).toBe(false)
+    expect(output?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stick')
+  })
+
+  it('a region that SHRINKS hides its surplus squares rather than leaving stale items in them', () => {
+    // `renderRegion` only ever GROWS `region.slots` — there is no `pop`, because
+    // destroying and recreating elements is what makes a re-render cost more
+    // than the change did. The consequence is that the element count is the
+    // high-water mark of every model this view has seen, and a smaller model
+    // has to hide the difference.
+    //
+    // Left undone, the squares beyond the new end keep the items the LARGER
+    // model put in them: a crafting grid that shrinks from 3x3 to 2x2 would show
+    // the four corner ingredients of the recipe before it, which the player
+    // reads as ingredients they still have.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+
+    const grid = (size: number) =>
+      inventoryViewModel({
+        ...emptyInventorySnapshot,
+        crafting: {
+          gridWidth: size,
+          grid: Array.from({ length: size * size }, () => ({ item: 'stone', count: 1 })),
+          result: { _tag: 'NoMatch' },
+        },
+      })
+
+    view.render(grid(3))
+    const crafting = (view.root as FakeElement).find('data-region', 'crafting-grid')
+    expect(crafting?.findAll('data-mx-ui', 'slot')).toHaveLength(9)
+
+    view.render(grid(2))
+    // Still nine ELEMENTS — they are reused, not rebuilt…
+    const squares = crafting?.findAll('data-mx-ui', 'slot') ?? []
+    expect(squares).toHaveLength(9)
+    // …and the five past the end of the smaller grid are hidden.
+    expect(squares.filter((square) => square.attributes.has('hidden'))).toHaveLength(5)
+  })
+
+  it('a region that DISAPPEARS between renders is hidden, not left on screen', () => {
+    // The same claim one level up: `regions` is a cache keyed by id and nothing
+    // deletes from it, so a model that stops naming a region has to be answered
+    // by hiding the element rather than by forgetting about it.
+    //
+    // This is how the crafting screen and the inventory screen can be the same
+    // renderer. A view model with no crafting region must not leave the last
+    // one visible underneath the inventory.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+
+    const withCrafting = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      crafting: { gridWidth: 2, grid: [undefined, undefined, undefined, undefined], result: undefined },
+    })
+
+    view.render(withCrafting)
+    const crafting = (view.root as FakeElement).find('data-region', 'crafting-grid')
+    expect(crafting?.attributes.has('hidden')).toBe(false)
+
+    view.render({ ...withCrafting, regions: withCrafting.regions.filter((region) => region.id !== 'crafting-grid') })
+    expect(crafting?.attributes.get('hidden')).toBe('')
+  })
+
+  it('the merge highlight is a DOM capability that exists — nothing in mx-ui asks for it yet', () => {
+    // The renderer takes `mergeable` as a third argument and every call site in
+    // this repository passes `undefined`, for the reason the regression below
+    // states: the absolute-to-region index mapping is mc-sim's and mx-ui must
+    // not invent it. So the flag has never been written, and "the highlight is
+    // never drawn" and "the highlight cannot be drawn" look identical from the
+    // outside.
+    //
+    // They are not the same, and the difference is what the regression below is
+    // asserting is a DECISION rather than a gap. This is the other end of that
+    // claim: hand the renderer `true` directly and the attribute appears, so the
+    // day `domain/inventory-view-model.ts` publishes the offset there is a
+    // working highlight waiting for it and not a second thing to build.
+    //
+    // `mergeable === true` and not a truthiness test: `undefined` means MC-SIM
+    // HAS NOT ANSWERED, and an unanswered question must not paint the same
+    // square as a definite "no".
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view: SlotView = {
+      index: 0,
+      itemId: 'stone',
+      countLabel: '12',
+      empty: false,
+      selected: false,
+      durabilityPercent: undefined,
+    }
+
+    updateSlotElement(slot, view, true)
+    expect((slot.root as FakeElement).attributes.get('data-mergeable')).toBe('')
+
+    updateSlotElement(slot, view, false)
+    expect((slot.root as FakeElement).attributes.has('data-mergeable')).toBe(false)
+
+    // The unanswered case paints exactly what the definite "no" paints, which is
+    // nothing — the screen says nothing rather than saying "it does not merge".
+    updateSlotElement(slot, view, undefined)
+    expect((slot.root as FakeElement).attributes.has('data-mergeable')).toBe(false)
   })
 
   it('REGRESSION: highlights no merge target, because the index mapping is not published', () => {

@@ -226,11 +226,10 @@ const renderIconRow = (
     row.icons.push(icon)
   }
 
-  for (let index = 0; index < row.icons.length; index += 1) {
-    const icon = row.icons[index]
-    if (icon === undefined) {
-      continue
-    }
+  // Over the array; see `caption-view.ts`'s note on the same shape. `states` is
+  // the other array and keeps its check, because a row with fewer states than
+  // icons is what retires the surplus.
+  for (const [index, icon] of row.icons.entries()) {
     const state = states[index]
     if (state === undefined) {
       retireIconElement(icon)
@@ -358,11 +357,7 @@ export const createHudView = (
   const applyKeyboardFocus = (index: number | undefined): void => {
     const focusedIndex = index === undefined ? undefined : hotbarSlotIndex(index)
     const tabStopIndex = focusedIndex ?? DEFAULT_TAB_STOP_INDEX
-    for (let slotIndex = 0; slotIndex < hotbar.length; slotIndex += 1) {
-      const slot = hotbar[slotIndex]
-      if (slot === undefined) {
-        continue
-      }
+    for (const [slotIndex, slot] of hotbar.entries()) {
       setSlotTabStop(slot, slotIndex === tabStopIndex)
       setSlotKeyboardFocus(slot, slotIndex === focusedIndex)
     }
@@ -382,10 +377,23 @@ export const createHudView = (
       writeText(cells.levelText, model.experienceLevelLabel)
       writePercent(cells.experienceWidth, model.experiencePercent)
 
-      for (let index = 0; index < cells.hotbar.length; index += 1) {
-        const slot = cells.hotbar[index]
+      for (const [index, slot] of cells.hotbar.entries()) {
         const view = model.hotbar[index]
-        if (slot === undefined || view === undefined) {
+        // UNCOVERED ON PURPOSE, and it is the only such arm in this repository.
+        //
+        // `hudViewModel` builds `hotbar` with `Array.from({ length:
+        // HOTBAR_SLOT_COUNT })`, so its output is always exactly as long as
+        // `cells.hotbar` and this can never be `undefined`. It stays because
+        // `HudViewModel` is a PUBLISHED type and `render` a published function:
+        // the type says `ReadonlyArray<SlotView>` and nothing in it says nine,
+        // so a consumer that assembles one by hand — which is what a published
+        // view model is FOR — can hand over a shorter one.
+        //
+        // Covering it would mean building a model that bypasses the only
+        // producer, which teaches the next reader that the producer can be
+        // short. Leaving the surplus squares alone is the inert answer: a
+        // stale slot rather than a crash mid-frame. docs/testing.md §6-2.
+        if (view === undefined) {
           continue
         }
         // The hotbar has no merge highlighting — that is an inventory-drag

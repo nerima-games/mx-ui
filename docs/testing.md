@@ -15,7 +15,7 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 | `pnpm check:deps` | 依存ホワイトリスト / 循環 / 推移閉包 / kit の実行時混入 / **壁時計の直読み**（DN-UI-10） |
 | `pnpm api:check` | `api-lock.md` と公開 API の乖離（plan.md §6 Step 0-3） |
 | `pnpm test` | vitest |
-| `pnpm test:coverage` | カバレッジ計測。**閾値は未設定**（§5） |
+| `pnpm test:coverage` | カバレッジ計測 + **99% ゲート**（4 指標すべて）。**`verify` には含まれない**ので別に走らせる（§5） |
 
 **`apps/`（プレビュー）は `SCAN_ROOTS` にも lint 対象にも入っている。**
 `pnpm verify` はプレビューを*実行*しないが、型検査・lint・依存ゲート・壁時計禁止はすべて適用される。
@@ -50,8 +50,8 @@ vitest 3.2.7
  ✓ test/crosshair.test.ts                  (16 tests)
  ✓ test/caption-oracle.test.ts             (7 tests)
 
- Test Files  19 passed (19)
-      Tests  294 passed (294)
+ Test Files  20 passed (20)
+      Tests  314 passed (314)
 ```
 
 後半 11 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
@@ -89,6 +89,12 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 > 11 ではなく 12 だった。前回の欄外注が書いたとおりのことが、
 > その欄外注を書いた次の版で起きている。
 
+> **2026-07-27 追記 3。** 294 → 314 は 99% カバレッジゲートを入れたぶんである（§5）。
+> 新ファイルは `palette-survey.test.ts`（10 本）1 つで、残りは
+> `screen-views` +5 / `view-model` +4 / `caption-oracle` 系 0 の内訳になる。
+> **20 本のうち「数字のため」に書いたものは 1 本も無い** —— 未到達だった 27 分岐のうち
+> 12 本だけがテストを必要としており、残りは削除か、理由を書いて残すかだった。表は §5-0 にある。
+
 | ファイル | 守っているもの |
 | --- | --- |
 | `test/view-model.test.ts` | DN-UI-6（ハーフハート）/ DN-UI-7（クランプ）/ DN-UI-3（字幕）/ **DN-UI-11（パレットの保証）/ DN-UI-12（射影と unknown）** |
@@ -99,12 +105,13 @@ assertion として降ろしたぶんで、35 → 49 に増えたのは**その 
 | `test/public-api.test.ts` | 公開バレル / アクセシビリティ資産の存在保証 / **kernel 語彙を再公開していないこと** / **DN-UI-4（リスナ API を配らないこと）** |
 | `test/dom-surface.test.ts` | **DN-UI-13（構造型が実 DOM の部分集合であること、`domain/` が document に届かないこと）** |
 | `test/hud-view.test.ts` | **DN-UI-13（パレット適用 / 冪等性 / reduced-motion / リスナ皆無）/ DN-UI-13i（フォーカスリング）/ DN-UI-6 / DN-UI-7c** |
-| `test/screen-views.test.ts` | **DN-UI-13（字幕はテキスト / `unknown` は空ではない）/ DN-UI-1a（属性は canvas だけ）/ DN-UI-3** |
+| `test/screen-views.test.ts` | **DN-UI-13（字幕はテキスト / `unknown` は空ではない）/ DN-UI-1a（属性は canvas だけ）/ DN-UI-3。前のモデルの表示が残らないこと（余った枠・消えた領域・carried）もここ（§5-0）** |
 | `test/palette-css.test.ts` | **DN-UI-11 + DN-UI-13g（全トークンが DOM に届くこと。未参照集合は空になった）** |
 | `test/save-indicator.test.ts` | **DN-UI-13h（自動保存インジケータ、状態と表示時間、色以外での区別）/ DN-UI-10 / DN-UI-11b** |
 | `test/screen-mount.test.ts` | 親は**引数**であること（`docs/public-api.md` §4-1）/ ホットバー選択の ONLY 性 |
 | `test/modal-flows.test.ts` | DN-UI-4（Escape 単一ハンドラ）をフロー側から。キーは持たない |
 | `test/accessibility-gate.test.ts` | **全画面スイープ — フォーカス可能物の国勢調査と、書かれた色がトークンに解決すること** |
+| `test/palette-survey.test.ts` | **測定そのものが壊れを検出できること。わざと壊したパレットを `surveyPalette` に渡し、名指しすることと、他のリストは空のままであることを確かめる（§5-3）** |
 | `test/main-menu.test.ts` | **メニューの遷移は値であってリスナではない / 押せない control に `role="button"` を付けないこと / セーブ一覧は `unknown` であって空ではない** |
 | `test/loading-screen.test.ts` | **DN-UI-10（最低表示時間は引数で来る時刻の算術）/ 不定プログレスバーを描かないこと** |
 | `test/crosshair.test.ts` | **照準が自分用の scrim を連れて歩くこと（G1 の中に留まる唯一の方法）/ DN-UI-10（ヒットは継続時間でありタイマーではない）/ reduced-motion で信号を落とさないこと** |
@@ -211,7 +218,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ⚠️ **63 ファイル全部を triage 済み**（[dom-oracle-triage.md](./dom-oracle-triage.md)）。**移植すべきは 63 ファイルではない** — 25 ファイル / 203 本（45%）は所有者が別か、mx-ui が構造的に別の答えを出している。今日書けるのは 8 ファイル / 71 本で、うち 5 ファイル分は既存オラクルが持っている。**未着手は NEEDS-SCREEN の 29 ファイル / 176 本**で、これは画面の残作業そのものである |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
 | 4 | アクセシビリティ資産 4 つが目視で確認済み | ⚠️ **理由が狭まった**（**未参照トークンはゼロになった**——3 つとも消費者が付いた。残る 2 点は**どちらもブラウザにしか答えられない問い**である——下記） |
-| 5 | 99% カバレッジゲートが有効 | ❌（完成時に有効化、§5） |
+| 5 | 99% カバレッジゲートが有効 | ✅（`vitest.config.ts` の `thresholds` + CI の `Coverage (99% gate)` ステップ。実測 99.89 / 99.76 / 100 / 99.89、§5） |
 
 ### プレビューの条件（満たしている）
 
@@ -375,36 +382,104 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
 参照実装も同じ結論に達しており、`confirm-dialog.test.ts:96-97` が
 「Production behavior (click → resolve, Enter/Esc, focus) was manually verified via Playwright MCP」と記録している。
 
-## 5. カバレッジ — 99% ゲートは完成時に入れる、今ではない
+## 5. カバレッジ — 99% ゲートは有効である
 
-**現在、閾値は設定していない。これは意図的である。**
-
-- 参照実装（`takeokunn/ts-minecraft`）は branches / functions / lines / statements の全てに **99%** を強制している
-  （`vitest.config.ts:128-133`）。
-- **スケルトンに閾値を課しても意味がない。** 型定義と純粋関数だけのモジュールがいくつかあれば簡単に満たせてしまい、
-  実装の品質について何も語らない数字になる。現状の 5 ファイル 75 テストは
-  `domain/` の純粋関数をほぼ全部通っているので、閾値を入れれば**今日でも通る**。
-  それは「通した」ではなく「まだ何も無い」という意味である。
-- 計測とレポートは常に動かしている（`pnpm test:coverage`）ので、数字はいつでも見える。
-  CI にも `Coverage` ステップがあり、`coverage/` を artifact として 7 日間保存する。
-
-有効化する行は `vitest.config.ts` に**コメントとして既に置いてある**:
+**閾値は 4 指標すべてに設定してある。** 参照実装（`takeokunn/ts-minecraft`）と同じ 99% である。
 
 ```typescript
-// thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+// vitest.config.ts
+thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
 ```
 
-CI ワークフローにも注記がある:
+実測は **statements 99.89 / branch 99.76 / functions 100 / lines 99.89**（314 テスト、2026-07-27）。
 
-```yaml
-# Coverage is reported but not yet thresholded — see vitest.config.ts.
-# The 99% gate is added when this repository reaches its completion criteria.
+閾値を置かなかった理由は「スケルトンに課しても意味がない」であり、その前提はもう成り立たない。
+`domain/` はビューモデル、字幕キュー、モーダルスタック、そしてパレット自身のアクセシビリティ測定を持ち、
+`application/` はこのリポジトリが定義した DOM 界面の上に 7 つのレンダラを持つ。
+
+`vitest.config.ts` と CI ワークフロー（`Coverage (99% gate)` ステップ）の**両方**で有効にしてある。
+閾値は `vitest.config.ts` にしか書かない —— `vitest run --coverage` が自力で非ゼロ終了するので
+CI に追加のフラグは要らず、そうしておけば手元と CI が同じ判定をする。
+なお `pnpm verify` はカバレッジを含まない。
+
+計測対象は `index.ts` / `domain/**` / `application/**` / `stages/**`（`coverage.include`）で、
+テスト・設定ファイル・`.d.ts` は除外している。**除外リストにソースファイルは 1 つも無い。**
+
+### 5-0. 有効化のためにやったこと（テストは 20 本、しかし本題はコードの側にある）
+
+branch は **93.57%** で、未到達は 27 本だった。**そのうちテストを書くべきものは 12 本しか無かった。**
+
+| 分岐 | 判定 | 対応 |
+| --- | --- | --- |
+| `matrix[base + n] ?? 0` × 5（`accessibility.ts`） | 型が排除済み。`ColorVisionMatrix` は 20 要素のタプルで、添字は 0/1/2 しか来ない | タプルを分解代入して**削除**（行構造が読めるようにもなった） |
+| `line/icon/slot === undefined` × 5（各レンダラ） | 自分自身の長さで回すループの添字読み。到達不能 | `for (const [i, x] of xs.entries())` にして**削除**。別配列を引く側の検査は**残した**（そちらは本物） |
+| `panels.find(...) ?? root`（`main-menu-view.ts`） | コメント自身が「これは外れない」と書いていた | 閉じた union の `Record` にして**削除**。外れないことを**型が**言うようになった |
+| `left/right === undefined`（全ペア掃引） | 同上 | `entries()` + `slice()` で**削除** |
+| `surfaceOf` の `: SCRIM` | 呼び出し元が既に scrim を除外している | 引数を `Exclude<…, 'scrim'>` にして**削除** |
+| 字幕の `setMotion` 早期 return | 到達可能 | テスト（ただし下記 5-1） |
+| 余った枠を隠す／消えた領域を隠す／carried／crafting match | **本物の抜け**。どれも「前のモデルの表示が残る」失敗 | `test/screen-views.test.ts` |
+| 装備欄・オフハンドを mc-sim が**供給した**場合 | **本物の抜け**。全テストが `undefined` 側しか駆動していない | `test/view-model.test.ts` |
+| `hex` / `compositeOver` の NaN アーム | **本物の抜け**。CSS には失敗チャンネルが無い | `test/view-model.test.ts` |
+| `mergeable === true` | **本物の抜け**。「描かない」と「描けない」が区別できていなかった | `test/screen-views.test.ts` |
+| パレット測定の**報告経路**（7 本） | 到達可能だが、パレットが正しい限り走らない | `surveyPalette` に引数を足し、**壊したパレットを渡すテスト**を新設（5-2） |
+| `hud-view.ts` の短いホットバー | 到達不能（5-2） | 呼び出し地点に理由を書いて残す |
+
+**数字のためのテストは 1 本も書いていない。** `exclude` リストも広げていない。
+
+### 5-1. mutation で分かった 2 つのこと
+
+新規テストは対象コードを壊して赤を確認した（20 個中 17 個が即死）。生き残った 3 つが有益だった。
+
+**`setMotion` の早期 return を消しても全テストが緑のまま通る。** 同じ設定を 2 度書いても
+DOM に何も書かれないという性質は**二重に**成り立っている —— 早期 return がループを飛ばし、
+そのうえ `attributeCell` / `styleCell` が値の変わらない書き込みを弾く。
+早期 return が節約しているのは**ループそのもの**で、それは fake DOM には原理的に見えない。
+テストは残してあるが、コメントを「これは早期 return を固定している」から
+「観測できる契約を固定しており、現在それを支えているのはセルの側である」に書き直した。
+**テストが何を固定していないかは、固定していることと同じくらい書く価値がある。**
+
+**`applyColorVisionMatrix` の alpha 列と定数オフセット列を消しても全テストが緑のまま通る。**
+出荷している 4 つの行列はその 2 列が全部 0 なので、既存のアサーションはすべて 3x3 部分の話だった。
+`ColorVisionMatrix` は公開型で「SVG の `feColorMatrix` が要求する順の 4x5」と明記されており、
+5 列のうち 2 列を黙って無視する実装は**オフセットを使う最初の行列でブラウザと食い違う**。
+2 列を直接駆動するテストを足してある。
+
+### 5-2. 覆っていない 1 本と、その理由（0.24%）
+
+`application/hud-view.ts` の `view === undefined`。
+`hudViewModel` は `Array.from({ length: HOTBAR_SLOT_COUNT })` でホットバーを作るので、
+このリポジトリの中では常に 9 個であり到達しない。
+それでも消さないのは、**`HudViewModel` が公開型で `render` が公開関数**だからである ——
+型は `ReadonlyArray<SlotView>` としか言っておらず、9 とは言っていない。
+公開ビューモデルとは**消費側が自分で組み立てるためのもの**なので、短いものが来る経路は型の上に存在する。
+
+覆うには唯一の生成器を迂回してモデルを手で組むことになり、
+それは次の読み手に「生成器が短い配列を返しうる」と教える。理由は呼び出し地点に書いてある。
+
+### 5-3. `surveyPalette` に引数を足した理由（テストの都合ではない）
+
+`domain/palette.ts` はパレット自身のアクセシビリティ測定を持っており、
+`test/accessibility-gate.test.ts` と `test/view-model.test.ts` は
+**その 4 つのリストが空であること**を主張している。それは正しい主張で、穴がある ——
+
+```typescript
+const surveyPalette = () => ({ tokensBelowFloor: [], collapsedPairs: [], … })
 ```
 
-**完成条件（§4）に到達した時点で、`vitest.config.ts` と CI の両方で有効化する。**
+これでも**全テストが通る**。カバレッジがそれを見せた: 報告経路
+（`undeclared.push`、ペア名の整形、不透明パネル側の測定）は**一度も実行されていなかった**。
+**発火するところを誰も見たことがないガードは、繋がっているかどうか誰も知らないガードである。**
 
-計測対象は `index.ts` / `domain/**` / `stages/**`（`coverage.include`）で、
-テスト・設定ファイル・`.d.ts` は除外している。
+そこで `surveyPalette(palette = THIS_PALETTE)` にして、
+`test/palette-survey.test.ts` が**わざと壊したパレット**を渡し、
+測定が壊れを**名指しすること**と、**他のリストは空のままであること**の両方を確かめている。
+既定値があるので呼び出し側は 1 箇所も変わっておらず、本番の測定対象は今も THIS_PALETTE だけである。
+
+`GuardedToken.on` が 3 つの背景を持ちながらこのパレットの 14 トークンが全部 `scrim` なのは
+**死んだコードではなく、まだ使っていない選択肢**である —— 不透明パネルは scrim より易しい別の測定で、
+その上に描くトークンはそちらで測るべきものになる。
+「まだ誰も使っていない」と「コードが間違っている」はカバレッジレポートの上では見分けが付かないので、
+ここに書いてある。
 
 ## 6. テストの書き方
 

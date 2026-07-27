@@ -48,7 +48,6 @@
  * and the same one `application/inventory-view.ts` makes for a modal panel.
  */
 import {
-  MENU_PANELS,
   ROOT_ENTRIES,
   type GameMode,
   type MainMenuViewModel,
@@ -252,14 +251,29 @@ export const createMainMenuView = (
   title.textContent = MAIN_MENU_TITLE
   root.appendChild(title)
 
-  const panels = MENU_PANELS.map((panel) => createPanel(factory, root, panel))
-  const panelOf = (panel: MenuPanel): DomElement => {
-    const found = panels.find((candidate) => candidate.panel === panel)
-    // `MENU_PANELS` is the source of both loops, so this cannot miss. Returning
-    // the menu root rather than throwing keeps the failure mode 「the card is in
-    // the wrong place」 instead of 「the menu did not mount」.
-    return found?.root ?? root
+  // A RECORD KEYED BY THE PANEL, not a list searched by a predicate.
+  //
+  // This used to be `MENU_PANELS.map(...)` searched by `panels.find(...)` behind
+  // a `?? root`, with a comment saying the search could not miss because
+  // `MENU_PANELS` was the source of both loops. The comment was right, which is
+  // the problem: it was an arm no test could reach, kept because the shape it
+  // was written in demanded one — and the fallback it chose, mounting the card
+  // on the menu ROOT, would have put every entry on screen at once.
+  //
+  // A record over the closed `MenuPanel` union cannot miss for a reason the TYPE
+  // states, so there is nothing to fall back to and nothing to explain. Adding a
+  // fourth panel to the union is a compile error here rather than a card that
+  // silently mounts in the wrong place.
+  //
+  // `MENU_PANELS` is no longer read here, and the link between the list and this
+  // record is `test/main-menu.test.ts`, which walks the list and asserts a card
+  // for every member.
+  const panels: Record<MenuPanel, PanelElement> = {
+    root: createPanel(factory, root, 'root'),
+    'new-world': createPanel(factory, root, 'new-world'),
+    'load-world': createPanel(factory, root, 'load-world'),
   }
+  const panelOf = (panel: MenuPanel): DomElement => panels[panel].root
 
   const rootPanel = panelOf('root')
   for (const entry of ROOT_ENTRIES) {
@@ -310,7 +324,7 @@ export const createMainMenuView = (
     root,
     render: (model: MainMenuViewModel): void => {
       writeAttribute(cells.panelFlag, model.panel)
-      for (const panel of panels) {
+      for (const panel of Object.values(panels)) {
         writeHidden(panel.hidden, panel.panel !== model.panel)
       }
       writeText(cells.worldName, model.worldName)

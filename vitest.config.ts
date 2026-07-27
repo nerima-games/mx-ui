@@ -45,18 +45,41 @@ export default defineConfig({
       all: true,
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // NO THRESHOLD YET — deliberate.
+      // THE 99% GATE, ON. `docs/testing.md` §6.
       //
-      // The reference repository (takeokunn/ts-minecraft) enforces 99% on
-      // branches/functions/lines/statements. A threshold on a skeleton would be
-      // meaningless: it would be trivially satisfied by a handful of type-only
-      // modules and would say nothing about the real implementation.
+      // This block used to explain why there was NO threshold: a number imposed
+      // on a skeleton is trivially satisfied by type-only modules and says
+      // nothing about the implementation. That argument was about the skeleton
+      // and it has expired — `domain/` now carries the view models, the caption
+      // queue, the modal stack and the palette's own accessibility survey, and
+      // `application/` carries seven renderers over a DOM surface this
+      // repository defines.
       //
-      // Coverage is collected and reported (`pnpm test:coverage`) so the number
-      // is always visible. The 99% gate is turned on — here and in the CI
-      // workflow — when this repository reaches its completion criteria.
+      // It is 99 rather than the measured 99.76 because the gate exists to catch
+      // a REGRESSION. A threshold pinned to the current number turns every
+      // unrelated refactor into a red build, which teaches people to lower the
+      // number instead of writing the test.
       //
-      //   thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+      // THE `exclude` LIST HAS FOUR ENTRIES AND ALL FOUR ARE FILE PATTERNS, not
+      // source files. Nothing in `domain/`, `application/` or `stages/` is
+      // excluded and nothing was added here to reach this number — including
+      // `application/dom-surface.ts`, which reports 0/0/0/0 because it is
+      // declarations only. It does not need excluding: a file with no statements
+      // contributes 0/0 to the totals, so the row reads 0% and the headline is
+      // unaffected. (mc-kernel and mx-redstone DO exclude their equivalent, to
+      // keep the report free of a red row nobody should act on. Two defensible
+      // answers; this one keeps the exclude list empty of source files, which is
+      // the property that matters when somebody is tempted to add a fifth.)
+      //
+      // ONE BRANCH ARM IS UNCOVERED, in `application/hud-view.ts`: a
+      // `HudViewModel` whose `hotbar` is shorter than the nine cells the view
+      // built. `hudViewModel` always produces exactly nine, so nothing in this
+      // repository can reach it; the type is published and says only
+      // `ReadonlyArray<SlotView>`, so a consumer assembling one by hand can.
+      // Covering it would mean bypassing the only producer, which teaches the
+      // next reader that the producer can be short. The reason is written at the
+      // call site and in docs/testing.md §6-2, and it is 0.24% of the branches.
+      thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
     },
   },
   esbuild: {

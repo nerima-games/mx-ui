@@ -117,11 +117,13 @@ export const createCaptionView = (
   let latest: ReadonlyArray<CaptionLineView> = []
 
   const project = (): void => {
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index]
-      if (line === undefined) {
-        continue
-      }
+    // OVER THE ARRAY, not over its length with an indexed read. The two say the
+    // same thing, and the indexed spelling needed an `if (line === undefined)`
+    // arm that no iteration can reach — `noUncheckedIndexedAccess` types the
+    // read `| undefined` however the index was bounded. `latest` keeps its
+    // indexed read because it is a DIFFERENT array and may genuinely be short;
+    // that arm is the one below, and it does real work.
+    for (const [index, line] of lines.entries()) {
       const view = latest[index]
       if (view === undefined) {
         writeHidden(line.hidden, true)

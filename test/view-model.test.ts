@@ -46,6 +46,7 @@ import {
 } from '../domain/inventory-view-model'
 import {
   COLLAPSE_SEPARATION,
+  compositeOver,
   cssColor,
   hex,
   HEART,
@@ -539,6 +540,70 @@ describe('colour vision correction (the feColorMatrix matrices themselves)', () 
     }),
   )
 
+  it.effect('the ALPHA and OFFSET columns are applied, though no shipped matrix uses them', () =>
+    Effect.sync(() => {
+      // FOUND BY A MUTATION. Deleting `+ alpha` from the row sum, and deleting
+      // `+ offset`, both left the whole suite green — because all four shipped
+      // matrices carry `0, 0` in those two columns, so the terms contribute
+      // nothing and every existing assertion is about the 3x3 part.
+      //
+      // That is not a reason to drop them. `applyColorVisionMatrix` is
+      // published and takes an arbitrary `ColorVisionMatrix`, and the type's own
+      // header is explicit that this is a 4x5 `feColorMatrix` in the order the
+      // SVG attribute wants — 「the fifth column of each row is a constant offset
+      // in intensity units」. A version that quietly ignored two of the five
+      // columns would agree with the browser on today's matrices and disagree
+      // with it on the first one that uses an offset, which is exactly the class
+      // of divergence `test/fixtures/dom-surface.ts` exists to prevent elsewhere:
+      // a fake that is subtly not the real thing.
+      //
+      // So the columns are driven directly, one at a time, with a matrix that
+      // does nothing else. A grey input keeps the arithmetic readable: each row
+      // is `0 * channels + alpha + offset`.
+      const identityRow = [0, 0, 0] as const
+
+      const offsetOnly = applyColorVisionMatrix([0.5, 0.5, 0.5], [
+        ...identityRow, 0, 0.25,
+        ...identityRow, 0, 0,
+        ...identityRow, 0, 0,
+        ...identityRow, 0, 0,
+      ])
+      expect(offsetOnly[0]).toBeCloseTo(0.25, 10)
+      expect(offsetOnly[1]).toBeCloseTo(0, 10)
+
+      const alphaOnly = applyColorVisionMatrix([0.5, 0.5, 0.5], [
+        ...identityRow, 0, 0,
+        ...identityRow, 0.4, 0,
+        ...identityRow, 0, 0,
+        ...identityRow, 0, 0,
+      ])
+      expect(alphaOnly[0]).toBeCloseTo(0, 10)
+      expect(alphaOnly[1]).toBeCloseTo(0.4, 10)
+
+      // The two ADD rather than one winning, which is what `+ alpha + offset`
+      // says and what a spelling that picked one of them would not.
+      const both = applyColorVisionMatrix([0.5, 0.5, 0.5], [
+        ...identityRow, 0, 0,
+        ...identityRow, 0, 0,
+        ...identityRow, 0.3, 0.2,
+        ...identityRow, 0, 0,
+      ])
+      expect(both[2]).toBeCloseTo(0.5, 10)
+
+      // Still clamped into 0-1: `feColorMatrix` works in intensities and a
+      // channel above 1 is not a brighter colour, it is a number the browser
+      // will clamp anyway and a number this repository would then disagree with.
+      const overflowing = applyColorVisionMatrix([0.5, 0.5, 0.5], [
+        ...identityRow, 0, 3,
+        ...identityRow, 0, -3,
+        ...identityRow, 0, 0,
+        ...identityRow, 0, 0,
+      ])
+      expect(overflowing[0]).toBe(1)
+      expect(overflowing[1]).toBe(0)
+    }),
+  )
+
   it.effect('REGRESSION: the filter is declared in sRGB, not the SVG default', () =>
     Effect.sync(() => {
       // `index.html:448-450`: the matrices are derived in sRGB, and SVG's
@@ -563,6 +628,54 @@ describe('colour vision correction (the feColorMatrix matrices themselves)', () 
  * preview is how the report and the tests would eventually disagree.
  */
 describe('the palette keeps its guarantee', () => {
+  it.effect('a channel that is not a number becomes 0 rather than the string "NaN" in a CSS colour', () =>
+    Effect.sync(() => {
+      // `hex` and `cssColor` write straight into a `style` property, and CSS has
+      // no error channel: `#NaN0000` is not a parse failure the player sees, it
+      // is a declaration the browser DROPS, so the element keeps whatever colour
+      // it had before. A heart that silently stays the colour of the token
+      // above it is a worse failure than a heart that is black, because nothing
+      // anywhere reports it.
+      //
+      // The direction is 0 and not 255 for the reason `hud-view-model.ts` gives
+      // about clamping to `low`: 0 is the only replacement that does not INVENT
+      // a brightness the caller never asked for.
+      expect(hex([Number.NaN, 0, 0])).toBe('#000000')
+      expect(hex([0, Number.NaN, Number.NaN])).toBe('#000000')
+      // …and a finite channel is unaffected, so this is a guard and not a
+      // formatter that lost its arguments.
+      expect(hex([255, 128, 0])).toBe('#ff8000')
+      // Out-of-range finite values clamp to the ends rather than wrapping,
+      // which is the other half of the same function.
+      expect(hex([300, -20, 12.6])).toBe('#ff000d')
+    }),
+  )
+
+  it.effect('a scrim alpha that is not a number composites as FULLY OPAQUE, which is the safe direction', () =>
+    Effect.sync(() => {
+      // `compositeOver` is what turns `SCRIM` plus a world pixel into the
+      // backdrop every contrast floor in this file is measured against. A `NaN`
+      // alpha propagating through it would make every one of those ratios
+      // `NaN`, and `NaN >= floor` is false — so the survey would report the
+      // whole palette below floor and nobody would be able to tell a real
+      // regression from a broken number.
+      //
+      // 1 rather than 0 is chosen and is the OPPOSITE of `clampChannel`'s
+      // direction: an opaque scrim is the backdrop this repository controls, so
+      // the fallback is the case the palette was designed against. A fallback of
+      // 0 would be a fully transparent scrim, i.e. measuring HUD text directly
+      // against an arbitrary world pixel — which is the guarantee failing open.
+      expect(compositeOver([255, 255, 255], Number.NaN, [0, 0, 0])).toStrictEqual([255, 255, 255])
+      expect(compositeOver([255, 255, 255], 1, [0, 0, 0])).toStrictEqual([255, 255, 255])
+
+      // The ordinary path still blends, and out-of-range alphas clamp.
+      expect(compositeOver([255, 255, 255], 0, [0, 0, 0])).toStrictEqual([0, 0, 0])
+      expect(compositeOver([200, 100, 0], 0.5, [0, 0, 0])).toStrictEqual([100, 50, 0])
+      expect(compositeOver([255, 255, 255], -3, [0, 0, 0])).toStrictEqual([0, 0, 0])
+      expect(compositeOver([255, 255, 255], 9, [0, 0, 0])).toStrictEqual([255, 255, 255])
+    }),
+  )
+
   it.effect('REGRESSION: every guarded token clears its floor over ANY world pixel', () =>
     Effect.sync(() => {
       // G1. HUD text does not sit on a colour this repository controls — it
@@ -889,6 +1002,63 @@ describe('inventory and crafting project state without interpreting it', () => {
         throw new Error('armour should be unknown')
       }
       expect(armour.why.length).toBeGreaterThan(0)
+    }),
+  )
+
+  it.effect('an armour rack and an offhand mc-sim DOES supply are projected as slots, not as unknown', () =>
+    Effect.sync(() => {
+      // The other side of the `unknown` regression above, and the one nothing
+      // asked for: every existing test drives `armour: undefined` and
+      // `offhand: undefined`, because that is what mc-sim answers today. So the
+      // whole suite passes against a projection that answered `unknown`
+      // UNCONDITIONALLY — the `undefined` check would be doing nothing and
+      // nobody would know until mc-sim grew the fields and the screen kept
+      // saying "no armour rack" over a full set of armour.
+      //
+      // `| undefined` rather than optional is the shape that makes this a
+      // question a caller can answer (`domain/inventory-view-model.ts`:
+      // 「the frame has to SAY it does not know」), and a question nobody has
+      // ever answered YES is a question whose yes-branch has never run.
+      const model = inventoryViewModel(
+        inventoryWith({
+          armour: [
+            { item: 'IRON_HELMET', count: 1 },
+            undefined,
+            undefined,
+            { item: 'IRON_BOOTS', count: 1 },
+          ],
+          offhand: { item: 'SHIELD', count: 1 },
+        }),
+      )
+
+      const armour = regionOf(model, 'armour')
+      const offhand = regionOf(model, 'offhand')
+
+      expect(armour?.kind).toBe('slots')
+      expect(offhand?.kind).toBe('slots')
+
+      if (armour?.kind !== 'slots' || offhand?.kind !== 'slots') {
+        throw new Error('a supplied rack projects as slots')
+      }
+
+      // The rack keeps its own length — four squares for four pieces, not
+      // padded to the inventory's 36 — because the region's width is the thing
+      // mc-sim said and not a layout constant.
+      expect(armour.slots).toHaveLength(4)
+      expect(armour.slots[0]?.itemId).toBe('IRON_HELMET')
+      // An EMPTY armour square is empty, which is a different claim from the
+      // whole rack being unknown, and the distinction only exists once the rack
+      // is supplied at all.
+      expect(armour.slots[1]?.empty).toBe(true)
+      expect(armour.slots[3]?.itemId).toBe('IRON_BOOTS')
+
+      expect(offhand.slots).toHaveLength(1)
+      expect(offhand.slots[0]?.itemId).toBe('SHIELD')
+
+      // …and supplying them changed nothing about the regions that were already
+      // known, so the two projections are independent.
+      expect(regionOf(model, 'hotbar')?.kind).toBe('slots')
+      expect(regionOf(model, 'crafting-grid')?.kind).toBe('unknown')
     }),
   )
 

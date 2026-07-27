@@ -198,23 +198,39 @@ export const applyColorVisionMatrix = (
   channels: RgbChannels,
   matrix: ColorVisionMatrix,
 ): RgbChannels => {
-  const channel = (row: number): number => {
-    const base = row * 5
-    return Math.min(
-      1,
-      Math.max(
-        0,
-        (matrix[base] ?? 0) * channels[0] +
-          (matrix[base + 1] ?? 0) * channels[1] +
-          (matrix[base + 2] ?? 0) * channels[2] +
-          // The alpha column: opaque, and the constant offset that follows it.
-          (matrix[base + 3] ?? 0) +
-          (matrix[base + 4] ?? 0),
-      ),
-    )
-  }
+  // ROWS TAKEN APART BY LITERAL INDEX, not by `row * 5`.
+  //
+  // Both spellings read the same twenty numbers. The arithmetic one needed five
+  // `?? 0` arms, because `noUncheckedIndexedAccess` types `matrix[base + 2]`
+  // as `number | undefined` however `base` was computed — and none of those five
+  // arms can run, because `ColorVisionMatrix` is a twenty-element TUPLE and the
+  // only callers pass 0, 1 and 2. Five uncoverable branches in a nine-line
+  // function, all guarding against a shape the type forbids.
+  //
+  // A literal index into a tuple is `number`, so taking the rows apart deletes
+  // all five. It also makes the row structure visible: `feColorMatrix` is 4x5
+  // row-major and the fifth column is a constant offset, which the header says
+  // and which `base + 4` did not show.
+  const [r0, r1, r2, r3, r4, g0, g1, g2, g3, g4, b0, b1, b2, b3, b4] = matrix
 
-  return [channel(0), channel(1), channel(2)]
+  const channel = (
+    red: number,
+    green: number,
+    blue: number,
+    // The alpha column: opaque, and the constant offset that follows it.
+    alpha: number,
+    offset: number,
+  ): number =>
+    Math.min(
+      1,
+      Math.max(0, red * channels[0] + green * channels[1] + blue * channels[2] + alpha + offset),
+    )
+
+  return [
+    channel(r0, r1, r2, r3, r4),
+    channel(g0, g1, g2, g3, g4),
+    channel(b0, b1, b2, b3, b4),
+  ]
 }
 
 // ---------------------------------------------------------------------------

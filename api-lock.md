@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 257
+exported declarations: 260
 supporting declarations: 7
 
 ## Exported
@@ -642,11 +642,7 @@ type InventoryViewModel = {
 ### KNOWN_NEAR_COLLISIONS  `const`
 
 ```ts
-const KNOWN_NEAR_COLLISIONS: ReadonlyArray<{
-    readonly left: string;
-    readonly right: string;
-    readonly why: string;
-}>;
+const KNOWN_NEAR_COLLISIONS: ReadonlyArray<NearCollision>;
 ```
 
 ### KeyBindings  `type`
@@ -887,6 +883,16 @@ type MotionSetting = 'system' | 'full' | 'reduced';
 const NO_SAVE_LIST_NOTE = "mc-save has not been asked. This list is unknown, which is not the same as empty.";
 ```
 
+### NearCollision  `type`
+
+```ts
+type NearCollision = {
+    readonly left: string;
+    readonly right: string;
+    readonly why: string;
+};
+```
+
 ### NewWorldDraft  `type`
 
 ```ts
@@ -1002,6 +1008,16 @@ type PaletteSurvey = {
 
 ```ts
 type PaletteTokenName = keyof typeof PALETTE_PROPERTY;
+```
+
+### PaletteUnderSurvey  `type`
+
+```ts
+type PaletteUnderSurvey = {
+    readonly tokens: ReadonlyArray<GuardedToken>;
+    readonly pairs: ReadonlyArray<CriticalPair>;
+    readonly knownNearCollisions: ReadonlyArray<NearCollision>;
+};
 ```
 
 ### PercentCell  `type`
@@ -1277,6 +1293,12 @@ type StyleCell = {
 
 ```ts
 const TEXT_CONTRAST_MIN = 4.5;
+```
+
+### THIS_PALETTE  `const`
+
+```ts
+const THIS_PALETTE: PaletteUnderSurvey;
 ```
 
 ### TextCell  `type`
@@ -1807,7 +1829,7 @@ const styleCell: (element: DomElement, property: string) => StyleCell;
 ### surveyPalette  `const`
 
 ```ts
-const surveyPalette: () => PaletteSurvey;
+const surveyPalette: (palette?: PaletteUnderSurvey) => PaletteSurvey;
 ```
 
 ### textCell  `const`

@@ -630,11 +630,7 @@ export const CRITICAL_PAIRS: ReadonlyArray<CriticalPair> = [
  * and the words in the toast, which is honest, and it is written down here
  * rather than discovered later.
  */
-export const KNOWN_NEAR_COLLISIONS: ReadonlyArray<{
-  readonly left: string
-  readonly right: string
-  readonly why: string
-}> = [
+export const KNOWN_NEAR_COLLISIONS: ReadonlyArray<NearCollision> = [
   {
     left: 'SHANK',
     right: 'STATUS_ALERT',
@@ -691,15 +687,30 @@ export type PaletteSurvey = {
   }>
 }
 
-const surfaceOf = (token: GuardedToken): Rgb =>
-  token.on === 'surface' ? SURFACE : token.on === 'surfaceRaised' ? SURFACE_RAISED : SCRIM
+/**
+ * The opaque panel a token sits on.
+ *
+ * TAKES THE NARROWED TYPE, not the whole token. It used to end `: SCRIM`, which
+ * is an arm nothing can reach: the only caller is the ELSE of `token.on ===
+ * 'scrim'`, so the scrim case has already been answered by a different function
+ * — `worstCaseContrastOnScrim`, which does a different measurement, because the
+ * scrim is translucent and a panel is not. Saying `Exclude<…, 'scrim'>` deletes
+ * the arm and puts the reason in the signature: this function measures against
+ * something OPAQUE, and the scrim is not that.
+ */
+const surfaceOf = (on: Exclude<GuardedToken['on'], 'scrim'>): Rgb =>
+  on === 'surface' ? SURFACE : SURFACE_RAISED
 
 const readToken = (token: GuardedToken): TokenReading => {
   const floor = token.role === 'text' ? TEXT_CONTRAST_MIN : UI_CONTRAST_MIN
   const onScrim = token.on === 'scrim'
-  const worstContrast = onScrim
-    ? worstCaseContrastOnScrim(token.color)
-    : contrastRatio(token.color, surfaceOf(token))
+  // Narrowed on `token.on` rather than on `onScrim`, so that `surfaceOf` is
+  // handed a type that cannot be `'scrim'`. The two conditions are the same
+  // test; only this spelling tells the compiler so.
+  const worstContrast =
+    token.on === 'scrim'
+      ? worstCaseContrastOnScrim(token.color)
+      : contrastRatio(token.color, surfaceOf(token.on))
 
   return {
     name: token.name,
@@ -736,41 +747,101 @@ const readPair = (pair: CriticalPair): PairReading => {
   }
 }
 
-/** Every token whose colour carries meaning, for the all-pairs sweep. */
-const MEANINGFUL_TOKENS: ReadonlyArray<{ readonly name: string; readonly color: Rgb }> =
-  GUARDED_TOKENS.map((token) => ({ name: token.name, color: token.color }))
+/** A collision this palette has looked at and decided to live with. */
+export type NearCollision = {
+  readonly left: string
+  readonly right: string
+  readonly why: string
+}
 
-const isKnownCollision = (left: string, right: string): boolean =>
-  KNOWN_NEAR_COLLISIONS.some(
+/**
+ * Membership, in EITHER order.
+ *
+ * The declaration order and the sweep order have no reason to agree — the sweep
+ * walks `GUARDED_TOKENS` and a declaration names two tokens as they read in a
+ * sentence — so a one-directional test would silently stop excusing a collision
+ * the day somebody reordered the token list, and the sweep would report a
+ * "finding" that is written down two hundred lines above.
+ */
+const isKnownCollision = (
+  declared: ReadonlyArray<NearCollision>,
+  left: string,
+  right: string,
+): boolean =>
+  declared.some(
     (known) =>
       (known.left === left && known.right === right) || (known.left === right && known.right === left),
   )
 
+/** What `surveyPalette` measures. Defaulted to this repository's own palette. */
+export type PaletteUnderSurvey = {
+  readonly tokens: ReadonlyArray<GuardedToken>
+  readonly pairs: ReadonlyArray<CriticalPair>
+  readonly knownNearCollisions: ReadonlyArray<NearCollision>
+}
+
+/** This palette, which is what every caller but a test wants. */
+export const THIS_PALETTE: PaletteUnderSurvey = {
+  tokens: GUARDED_TOKENS,
+  pairs: CRITICAL_PAIRS,
+  knownNearCollisions: KNOWN_NEAR_COLLISIONS,
+}
+
 /**
- * Measure the whole palette.
+ * Measure a palette.
  *
- * The tests assert the four lists at the bottom are empty; `pnpm preview
- * --stats` prints the readings above them. ONE derivation, two readers — the
- * empty-slot durability bug (DN-UI-7c) is what a second copy costs.
+ * The tests assert the four lists at the bottom are empty for `THIS_PALETTE`;
+ * `pnpm preview --stats` prints the readings above them. ONE derivation, two
+ * readers — the empty-slot durability bug (DN-UI-7c) is what a second copy
+ * costs.
+ *
+ * ---------------------------------------------------------------------------
+ * Why it takes an argument at all
+ * ---------------------------------------------------------------------------
+ *
+ * It read `GUARDED_TOKENS` and friends directly, and every test asserted the
+ * four lists were EMPTY. That is a suite in which
+ *
+ *     const surveyPalette = () => ({ tokensBelowFloor: [], collapsedPairs: [], … })
+ *
+ * passes completely. Nothing established that this function can FAIL — the
+ * reporting paths had never run, which is what coverage said and what made it
+ * worth looking at: a guard nobody has watched fire is a guard nobody knows is
+ * connected.
+ *
+ * The parameter is defaulted, so no call site changed and the production
+ * measurement is still of this palette and only this palette. What it buys is
+ * that `test/palette-survey.test.ts` can hand it a deliberately broken palette
+ * and check the survey NAMES the breakage — the same reason the four lists carry
+ * names rather than counts.
+ *
+ * It also reaches the `surface` and `surfaceRaised` arms of `readToken`. Those
+ * are not dead code — `GuardedToken.on` offers three backdrops on purpose,
+ * because an opaque panel is an easier case than the scrim and a token drawn on
+ * one should be measured against it — but all fourteen of this palette's tokens
+ * are HUD tokens, so this palette alone can never exercise them. Recorded here
+ * because "no token uses it yet" and "the code is wrong" look identical in a
+ * coverage report.
  */
-export const surveyPalette = (): PaletteSurvey => {
-  const tokens = GUARDED_TOKENS.map(readToken)
-  const pairs = CRITICAL_PAIRS.map(readPair)
+export const surveyPalette = (palette: PaletteUnderSurvey = THIS_PALETTE): PaletteSurvey => {
+  const tokens = palette.tokens.map(readToken)
+  const pairs = palette.pairs.map(readPair)
+
+  const meaningful = palette.tokens.map((token) => ({ name: token.name, color: token.color }))
 
   const undeclared: Array<{ left: string; right: string; separation: number }> = []
-  for (let index = 0; index < MEANINGFUL_TOKENS.length; index += 1) {
-    for (let other = index + 1; other < MEANINGFUL_TOKENS.length; other += 1) {
-      const left = MEANINGFUL_TOKENS[index]
-      const right = MEANINGFUL_TOKENS[other]
-      if (left === undefined || right === undefined) {
-        continue
-      }
+  // Over the array and its own tail, not over two indices. The indexed spelling
+  // needed an `if (left === undefined || right === undefined)` arm that neither
+  // bound can reach, and an uncoverable branch in the sweep that is supposed to
+  // find things nobody declared is the wrong place to have one.
+  for (const [index, left] of meaningful.entries()) {
+    for (const right of meaningful.slice(index + 1)) {
       const worst = Math.min(
         ...COLOR_VISION_MODES.map((mode) =>
           separation(simulateColorVision(left.color, mode), simulateColorVision(right.color, mode)),
         ),
       )
-      if (worst < COLLAPSE_SEPARATION && !isKnownCollision(left.name, right.name)) {
+      if (worst < COLLAPSE_SEPARATION && !isKnownCollision(palette.knownNearCollisions, left.name, right.name)) {
         undeclared.push({ left: left.name, right: right.name, separation: worst })
       }
     }
