@@ -162,6 +162,13 @@ describe('turning captions off takes down the captions that are already up', () 
     const { view, root } = mount()
     view.render(captionLines(queueOf(3), 0))
     expect(visibleText(root)).toHaveLength(3)
+    // NAMED AND IN ORDER, not merely counted. `view-model.test.ts` pins that
+    // the QUEUE is newest-first; nothing pinned that `captionLines` carries
+    // that order through to the reader. A projection that reversed it would
+    // leave a correct queue and a screen listing the oldest caption first, and
+    // a length is blind to the whole of that. `queueOf` raises cue-0 first, so
+    // newest-first is the descending sequence.
+    expect(visibleText(root)).toStrictEqual(['cue-2', 'cue-1', 'cue-0'])
 
     view.render(captionLines(applyCaptionSettings(queueOf(3), OFF), 0))
     expect(visibleText(root)).toStrictEqual([])
