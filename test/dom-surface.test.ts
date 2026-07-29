@@ -92,18 +92,15 @@ describe('REGRESSION: the DOM surface is a real subset of the real DOM', () => {
     }),
   )
 
-  it('REGRESSION: the surface contains no way to attach an event listener', async () => {
-    // DN-UI-4. The runtime assertion in `test/hud-view.test.ts` says no renderer
-    // HAS attached one; this says none CAN. `domain/modal-stack.ts` is the
-    // single decision point, and it stays single only while the vocabulary
-    // available to a renderer excludes the verb.
-    //
-    // The word appears in prose in that file's header, explaining the absence;
-    // what must not appear is a declaration.
+  it('REGRESSION: events exist only on the explicit native-control boundary', async () => {
     const source = await readFile(path.join(repositoryRoot, 'application', 'dom-surface.ts'), 'utf8')
     const code = source.replace(/\/\*[\s\S]*?\*\//gu, '')
-    expect(code.includes('addEventListener')).toBe(false)
+    expect(code.includes('export type DomInteractiveElement')).toBe(true)
+    expect(code.match(/addEventListener/gu)?.length).toBe(1)
     expect(code.includes('removeEventListener')).toBe(false)
+    expect(code.includes("createElement(tagName: 'button'): DomInteractiveElement")).toBe(true)
+    expect(code.includes("createElement(tagName: 'input'): DomInputElement")).toBe(true)
+    expect(code.includes('keydown')).toBe(false)
   })
 })
 

@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 265
+exported declarations: 271
 supporting declarations: 7
 
 ## Exported
@@ -231,6 +231,15 @@ type CraftingSnapshot = {
 };
 ```
 
+### CreateWorldRequest  `type`
+
+```ts
+type CreateWorldRequest = {
+    readonly name: string;
+    readonly mode: GameMode;
+};
+```
+
 ### CriticalPair  `type`
 
 ```ts
@@ -348,7 +357,26 @@ type DomElement = DomNode & {
 
 ```ts
 type DomElementFactory = {
+    createElement(tagName: 'input'): DomInputElement;
+    createElement(tagName: 'button'): DomInteractiveElement;
     createElement(tagName: string): DomElement;
+};
+```
+
+### DomInputElement  `type`
+
+```ts
+type DomInputElement = DomInteractiveElement & {
+    value: string;
+};
+```
+
+### DomInteractiveElement  `type`
+
+```ts
+type DomInteractiveElement = DomElement & {
+    addEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void;
+    focus(): void;
 };
 ```
 
@@ -367,6 +395,12 @@ type DomStyle = {
     setProperty(property: string, value: string): void;
     removeProperty(property: string): void;
 };
+```
+
+### EMPTY_SAVE_LIST_NOTE  `const`
+
+```ts
+const EMPTY_SAVE_LIST_NOTE = "No saved worlds";
 ```
 
 ### EXPERIENCE_MODULE_STAGE_PREFIXES  `const`
@@ -794,6 +828,17 @@ const MENU_PANEL_LABEL: Readonly<Record<MenuPanel, string>>;
 const METER_TRACK: Rgb;
 ```
 
+### MainMenuCallbacks  `type`
+
+```ts
+type MainMenuCallbacks = {
+    readonly onStateChange: (state: MainMenuState) => void;
+    readonly onCreateWorld: (request: CreateWorldRequest) => void;
+    readonly onLoadWorld: (world: SavedWorld) => void;
+    readonly onOpenSettings: () => void;
+};
+```
+
 ### MainMenuState  `type`
 
 ```ts
@@ -817,8 +862,10 @@ type MainMenuView = {
 ```ts
 type MainMenuViewModel = {
     readonly panel: MenuPanel;
+    readonly worldNameInput: string;
     readonly worldName: string;
     readonly mode: GameMode;
+    readonly savedWorlds: ReadonlyArray<SavedWorld>;
 };
 ```
 
@@ -1251,6 +1298,15 @@ type SaveStatus = {
 };
 ```
 
+### SavedWorld  `type`
+
+```ts
+type SavedWorld = {
+    readonly sessionId: string;
+    readonly name: string;
+};
+```
+
 ### ScreenId  `type`
 
 ```ts
@@ -1571,7 +1627,7 @@ const createLoadingView: (factory: DomElementFactory, parent: DomElement) => Loa
 ### createMainMenuView  `const`
 
 ```ts
-const createMainMenuView: (factory: DomElementFactory, parent: DomElement) => MainMenuView;
+const createMainMenuView: (factory: DomElementFactory, parent: DomElement, callbacks?: MainMenuCallbacks) => MainMenuView;
 ```
 
 ### createSaveIndicator  `const`
@@ -1715,7 +1771,7 @@ const loadingStatus: (progress: LoadingProgress, atSecs: number) => LoadingStatu
 ### mainMenuViewModel  `const`
 
 ```ts
-const mainMenuViewModel: (state: MainMenuState) => MainMenuViewModel;
+const mainMenuViewModel: (state: MainMenuState, savedWorlds?: ReadonlyArray<SavedWorld>) => MainMenuViewModel;
 ```
 
 ### makeUiFrameState  `const`

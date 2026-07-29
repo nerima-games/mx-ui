@@ -137,6 +137,18 @@ export type MainMenuState = {
   readonly draft: NewWorldDraft
 }
 
+/** A saved session supplied by the host. mx-ui never opens storage itself. */
+export type SavedWorld = {
+  readonly sessionId: string
+  readonly name: string
+}
+
+/** The normalized request emitted when the player confirms a new world. */
+export type CreateWorldRequest = {
+  readonly name: string
+  readonly mode: GameMode
+}
+
 export const initialMainMenuState: MainMenuState = {
   panel: 'root',
   draft: emptyNewWorldDraft,
@@ -182,13 +194,21 @@ export const cycleWorldMode = (state: MainMenuState): MainMenuState => ({
  */
 export type MainMenuViewModel = {
   readonly panel: MenuPanel
-  /** Already trimmed and defaulted — see `worldNameLabel`. */
+  /** The input value, preserved exactly while the player edits it. */
+  readonly worldNameInput: string
+  /** Already trimmed and defaulted, used when confirming. */
   readonly worldName: string
   readonly mode: GameMode
+  readonly savedWorlds: ReadonlyArray<SavedWorld>
 }
 
-export const mainMenuViewModel = (state: MainMenuState): MainMenuViewModel => ({
+export const mainMenuViewModel = (
+  state: MainMenuState,
+  savedWorlds: ReadonlyArray<SavedWorld> = [],
+): MainMenuViewModel => ({
   panel: state.panel,
+  worldNameInput: state.draft.name,
   worldName: worldNameLabel(state.draft),
   mode: state.draft.mode,
+  savedWorlds,
 })
