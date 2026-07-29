@@ -172,8 +172,8 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
   })
 
   it('REGRESSION: `no-match` and `unknown` crafting are different states, and neither draws an output', () => {
-    // mc-sim has no recipe model (`api-lock.md` has no `Recipe`), so the real
-    // value today is `unknown`. An empty output square would mean 「no recipe」 in
+    // A frame may still carry `unknown` when no recipe answer is available. An
+    // empty output square would mean 「no recipe」 in
     // one case and 「mc-sim has not answered」 in the other, and the player cannot
     // tell those apart by looking at nothing.
     const factory = fakeDocument()
@@ -215,10 +215,8 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
   it('a crafting MATCH is the one state that draws an output square', () => {
     // The positive half of the `no-match` / `unknown` regression above, which
     // asserts two states draw nothing and therefore passes against a renderer
-    // that draws nothing ever. mc-sim has no recipe model today, so this state
-    // does not occur in production — and that is exactly why it is worth a test
-    // rather than a comment: the day mc-sim answers `Match`, nobody will be
-    // reading this file.
+    // that draws nothing ever. Pinning the positive case keeps those two
+    // negative states from becoming an excuse to hide every output.
     const factory = fakeDocument()
     const parent = factory.createElement('div') as FakeElement
     const view = createInventoryView(factory, parent)
@@ -241,6 +239,84 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const output = root.find('data-mx-ui', 'crafting-output')
     expect(output?.attributes.has('hidden')).toBe(false)
     expect(output?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stick')
+  })
+
+  it('projects host-owned inventory interaction as buttons with one roving tab stop', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+    view.render(
+      inventoryViewModel({
+        ...emptyInventorySnapshot,
+        crafting: {
+          gridWidth: 2,
+          grid: [undefined, undefined, undefined, undefined],
+          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+        },
+      }),
+    )
+    const model = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: { item: 'stone', count: 12 },
+      crafting: {
+        gridWidth: 2,
+        grid: [undefined, undefined, undefined, undefined],
+        result: { _tag: 'NoMatch' },
+      },
+    })
+
+    view.render(model, {
+      focused: { kind: 'crafting-output' },
+      status: 'No matching recipe',
+    })
+
+    const root = view.root as FakeElement
+    const buttons = root.findAll('role', 'button')
+    expect(buttons).toHaveLength(41)
+    expect(buttons.every((button) => button.attributes.has('aria-label'))).toBe(true)
+    expect(buttons.every((button) => button.attributes.has('aria-disabled'))).toBe(true)
+    expect(root.findAll('tabindex', '0')).toHaveLength(1)
+
+    const output = root.find('data-mx-ui', 'crafting-output')
+    expect(output?.attributes.has('hidden')).toBe(false)
+    expect(output?.attributes.get('aria-disabled')).toBe('true')
+    expect(output?.attributes.get('tabindex')).toBe('0')
+    expect(output?.find('data-mx-ui', 'slot-item')?.textContent).toBe('')
+
+    const carried = root.find('data-mx-ui', 'carried')
+    expect(carried?.attributes.get('role')).toBe('status')
+    expect(carried?.attributes.get('aria-live')).toBe('polite')
+    expect(carried?.attributes.get('aria-label')).toContain('stone')
+
+    const status = root.find('data-mx-ui', 'inventory-status')
+    expect(status?.attributes.get('role')).toBe('status')
+    expect(status?.attributes.get('aria-live')).toBe('polite')
+    expect(status?.textContent).toBe('No matching recipe')
+    expect(root.listenersInTree()).toStrictEqual([])
+  })
+
+  it('normalizes an unavailable focus target and restores the read-only DOM contract', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+    const model = inventoryViewModel(emptyInventorySnapshot)
+
+    view.render(model, {
+      focused: { kind: 'crafting-output' },
+      status: 'Inventory open',
+    })
+
+    const root = view.root as FakeElement
+    expect(root.findAll('tabindex', '0')).toHaveLength(1)
+    expect(root.findAll('role', 'button')).toHaveLength(36)
+
+    view.render(model)
+    expect(root.findAll('role', 'button')).toHaveLength(0)
+    expect(root.findAll('tabindex', '0')).toHaveLength(0)
+    expect(root.findAll('tabindex', '-1')).toHaveLength(0)
+    expect(root.find('data-mx-ui', 'crafting-output')?.attributes.get('hidden')).toBe('')
+    expect(root.find('data-mx-ui', 'inventory-status')?.textContent).toBe('')
+    expect(root.listenersInTree()).toStrictEqual([])
   })
 
   it('a region that SHRINKS hides its surplus squares rather than leaving stale items in them', () => {

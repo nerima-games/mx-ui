@@ -37,8 +37,8 @@
  * What the deferral got RIGHT is preserved: nothing below is a guess dressed as
  * a fact. The mirror is marked provisional, carries its replacement instructions,
  * and is pinned by `test/inventory-mirror.test.ts`. Where mc-sim genuinely has
- * not decided — there is no recipe model in mc-sim at all — this module projects
- * `unknown` rather than inventing an answer. See `CraftingOutcomeView`.
+ * not answered for a particular frame, this module projects `unknown` rather
+ * than inventing an answer. See `CraftingOutcomeView`.
  *
  * ---------------------------------------------------------------------------
  * The boundary, stated once
@@ -163,10 +163,10 @@ export type CraftingSnapshot = {
    *
    * `undefined` means MC-SIM HAS NOT ANSWERED. It does not mean "no recipe
    * matches" — that is `{ _tag: 'NoMatch' }` — and the difference is the whole
-   * reason this field is three-valued. mc-sim has no recipe model today
-   * (there is no `Recipe` in its `api-lock.md`), so `undefined` is what this
-   * field actually is right now, and the screen has to be able to say "I do not
-   * know" without drawing an empty output square, which is a claim.
+   * reason this field is three-valued. mc-sim can preview recipes now, but a
+   * host may still omit that answer for a frame or container. The screen has to
+   * be able to say "I do not know" without drawing an empty output square,
+   * which would claim that a preview definitely found no match.
    */
   readonly result: CraftingResultSnapshot | undefined
 }

@@ -40,9 +40,9 @@
  * this file move focus or observe it. Both are input, and input is mc-render's
  * (plan.md §2.3-2) with the decision at frame level (DN-UI-4).
  *
- * Pressing is still not here. A slot has no activation, no `role="button"` and no
- * click; making it pressable is the half that needs a key or a pointer event, and
- * that half has not moved.
+ * Pressing is still not here. An interactive host may ask this projection to
+ * expose button semantics, but activation still needs a key or pointer event and
+ * that half has not moved into mx-ui.
  */
 import type { SlotView } from '../domain/hud-view-model'
 import type { DomElement, DomElementFactory } from './dom-surface'
@@ -182,6 +182,17 @@ export type SlotElement = {
   /** `'0'` for the group's single tab stop, `'-1'` for every other member. */
   readonly tabStop: AttributeCell
   readonly focusRingHidden: AttributeCell
+  readonly role: AttributeCell
+  readonly ariaLabel: AttributeCell
+  readonly ariaDisabled: AttributeCell
+  readonly ariaLive: AttributeCell
+}
+
+export type SlotButtonView = {
+  readonly label: string
+  readonly disabled: boolean
+  readonly tabStop: boolean
+  readonly focused: boolean
 }
 
 /**
@@ -268,6 +279,10 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
     durabilityColor: styleCell(durabilityFill, 'background-color'),
     tabStop: attributeCell(root, 'tabindex'),
     focusRingHidden: attributeCell(focusRing, 'hidden'),
+    role: attributeCell(root, 'role'),
+    ariaLabel: attributeCell(root, 'aria-label'),
+    ariaDisabled: attributeCell(root, 'aria-disabled'),
+    ariaLive: attributeCell(root, 'aria-live'),
   }
   // The ring was hidden directly above; tell its cell so, or the first call
   // issues a redundant write from the construction side, where the 「unchanged
@@ -333,6 +348,23 @@ export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
  */
 export const setSlotKeyboardFocus = (slot: SlotElement, focused: boolean): void => {
   writeHidden(slot.focusRingHidden, !focused)
+}
+
+/** Project optional button semantics without taking ownership of activation. */
+export const setSlotButtonView = (
+  slot: SlotElement,
+  view: SlotButtonView | undefined,
+): void => {
+  writeAttribute(slot.role, view === undefined ? undefined : 'button')
+  writeAttribute(slot.ariaLabel, view?.label)
+  writeAttribute(slot.ariaDisabled, view === undefined ? undefined : String(view.disabled))
+  if (view === undefined) {
+    writeAttribute(slot.tabStop, undefined)
+    setSlotKeyboardFocus(slot, false)
+    return
+  }
+  setSlotTabStop(slot, view.tabStop)
+  setSlotKeyboardFocus(slot, view.focused)
 }
 
 /**

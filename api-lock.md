@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 261
+exported declarations: 265
 supporting declarations: 7
 
 ## Exported
@@ -604,6 +604,27 @@ type IconState = 'full' | 'half' | 'empty';
 type InputAction = 'moveForward' | 'moveBack' | 'moveLeft' | 'moveRight' | 'jump' | 'sneak' | 'sprint' | 'inventory' | 'drop' | 'chat';
 ```
 
+### InventoryInteractionTarget  `type`
+
+```ts
+type InventoryInteractionTarget = {
+    readonly kind: 'slot';
+    readonly region: RegionId;
+    readonly index: number;
+} | {
+    readonly kind: 'crafting-output';
+};
+```
+
+### InventoryInteractionView  `type`
+
+```ts
+type InventoryInteractionView = {
+    readonly focused: InventoryInteractionTarget;
+    readonly status: string;
+};
+```
+
 ### InventorySnapshot  `type`
 
 ```ts
@@ -624,7 +645,7 @@ type InventorySnapshot = {
 ```ts
 type InventoryView = {
     readonly root: DomElement;
-    readonly render: (model: InventoryViewModel) => void;
+    readonly render: (model: InventoryViewModel, interaction?: InventoryInteractionView) => void;
 };
 ```
 
@@ -1236,6 +1257,17 @@ type SaveStatus = {
 type ScreenId = 'pause' | 'settings' | 'inventory' | 'crafting' | 'chat' | 'achievements' | 'statistics';
 ```
 
+### SlotButtonView  `type`
+
+```ts
+type SlotButtonView = {
+    readonly label: string;
+    readonly disabled: boolean;
+    readonly tabStop: boolean;
+    readonly focused: boolean;
+};
+```
+
 ### SlotElement  `type`
 
 ```ts
@@ -1254,6 +1286,10 @@ type SlotElement = {
     readonly durabilityColor: StyleCell;
     readonly tabStop: AttributeCell;
     readonly focusRingHidden: AttributeCell;
+    readonly role: AttributeCell;
+    readonly ariaLabel: AttributeCell;
+    readonly ariaDisabled: AttributeCell;
+    readonly ariaLive: AttributeCell;
 };
 ```
 
@@ -1776,6 +1812,12 @@ const saveStatusMessage: (status: SaveStatus, nowSecs: number, savedVisibleSecs?
 
 ```ts
 const separation: (left: Rgb, right: Rgb) => number;
+```
+
+### setSlotButtonView  `const`
+
+```ts
+const setSlotButtonView: (slot: SlotElement, view: SlotButtonView | undefined) => void;
 ```
 
 ### setSlotHidden  `const`
