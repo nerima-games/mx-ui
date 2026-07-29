@@ -345,6 +345,11 @@ export const createHudView = (
   death.setAttribute('data-mx-ui', 'death')
   death.style.setProperty('color', PALETTE_VAR.statusAlert)
   death.textContent = 'You died'
+  const respawn = factory.createElement('button')
+  respawn.setAttribute('data-mx-ui', 'respawn')
+  respawn.setAttribute('type', 'button')
+  respawn.textContent = 'Respawn'
+  death.appendChild(respawn)
   death.setAttribute('hidden', '')
   root.appendChild(death)
 

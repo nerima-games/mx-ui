@@ -386,17 +386,42 @@ describe('the HUD renderer owns no keys', () => {
     expect(parent.listenersInTree()).toStrictEqual([])
   })
 
-  it('marks death as state rather than acting on it', () => {
-    // The HUD says 「dead」; it does not open a screen. Opening is
-    // `openScreen`'s, and what to do about Escape afterwards is
-    // `escapePressed`'s.
-    const { view, root } = mount()
+  it('exposes respawn as a named native button without owning its activation', () => {
+    const { root, parent } = mount()
+    const respawn = root.find('data-mx-ui', 'respawn')
+
+    expect(respawn?.tagName).toBe('button')
+    expect(respawn?.attributes.get('type')).toBe('button')
+    expect(respawn?.textContent).toBe('Respawn')
+    expect(respawn?.listeners).toStrictEqual([])
+    expect(root.listenersInTree()).toStrictEqual([])
+    expect(parent.listenersInTree()).toStrictEqual([])
+  })
+
+  it('projects death visibility onto one stable respawn control', () => {
+    // The HUD says 「dead」 and exposes a host subscription point; it neither
+    // opens a screen nor handles activation. The overlay owns visibility, so the
+    // native button enters and leaves the keyboard order with its parent.
+    const { view, root, factory } = mount()
+    const death = root.find('data-mx-ui', 'death')
+    const respawn = root.find('data-mx-ui', 'respawn')
+
+    expect(death?.attributes.has('hidden')).toBe(true)
+    expect(respawn?.attributes.has('hidden')).toBe(false)
+
     view.render(hudViewModel(damaged(0)))
     expect(root.attributes.get('data-dead')).toBe('')
-    expect(root.find('data-mx-ui', 'death')?.attributes.has('hidden')).toBe(false)
+    expect(death?.attributes.has('hidden')).toBe(false)
+    expect(root.find('data-mx-ui', 'respawn')).toBe(respawn)
+
+    const before = factory.mark()
+    view.render(hudViewModel(damaged(0)))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
 
     view.render(hudViewModel(damaged(20)))
     expect(root.attributes.has('data-dead')).toBe(false)
+    expect(death?.attributes.has('hidden')).toBe(true)
+    expect(root.findAll('data-mx-ui', 'respawn')).toHaveLength(1)
   })
 })
 

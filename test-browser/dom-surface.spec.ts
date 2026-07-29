@@ -135,6 +135,44 @@ test.describe('mx-ui mounts against a real Document', () => {
     expect(result.sawTheControl).toBe(true)
     expect(result.inlineHandlers).toStrictEqual([])
   })
+
+  test('respawn is a native keyboard control subscribed to at the host boundary', async ({
+    page,
+  }) => {
+    await openHarness(page, { screen: 'hud' })
+
+    const respawn = page.locator('[data-mx-ui="respawn"]')
+    await expect(respawn).toBeHidden()
+    await expect(respawn).toHaveAttribute('type', 'button')
+
+    await page.evaluate(() => {
+      const death = document.querySelector('[data-mx-ui="death"]')
+      const shell = document.querySelector('[data-harness-page]')
+      if (death === null || shell === null) {
+        throw new Error('respawn browser test: missing death overlay or page shell')
+      }
+
+      // The harness ends alive. Reveal the already-mounted overlay, then bind at
+      // the host boundary exactly as a composing application would.
+      death.removeAttribute('hidden')
+      shell.addEventListener(
+        'click',
+        (event) => {
+          if (event.target instanceof Element && event.target.matches('[data-mx-ui="respawn"]')) {
+            shell.setAttribute('data-harness-respawned', '')
+          }
+        },
+        { once: true },
+      )
+    })
+
+    await page.keyboard.press('Tab')
+    await expect(page.locator('[data-mx-ui="slot"][tabindex="0"]')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('button', { name: 'Respawn' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('[data-harness-page]')).toHaveAttribute('data-harness-respawned', '')
+  })
 })
 
 test.describe('the palette reaches the document as VALUES', () => {
