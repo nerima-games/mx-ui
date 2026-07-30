@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 272
+exported declarations: 282
 supporting declarations: 7
 
 ## Exported
@@ -455,6 +455,75 @@ const FOCUS_RING_SHADOW_WIDTH = "5px";
 
 ```ts
 const FOCUS_RING_WIDTH = "3px";
+```
+
+### FURNACE_SLOT_IDS  `const`
+
+```ts
+const FURNACE_SLOT_IDS: readonly ["input", "fuel", "output"];
+```
+
+### FurnaceInteractionView  `type`
+
+```ts
+type FurnaceInteractionView = {
+    readonly focusedSlot: FurnaceSlotId;
+    readonly status: string;
+};
+```
+
+### FurnaceSlotId  `type`
+
+```ts
+type FurnaceSlotId = (typeof FURNACE_SLOT_IDS)[number];
+```
+
+### FurnaceSlotSnapshot  `type`
+
+```ts
+type FurnaceSlotSnapshot = {
+    readonly itemId: string;
+    readonly count: number;
+};
+```
+
+### FurnaceSlotView  `type`
+
+```ts
+type FurnaceSlotView = SlotView & {
+    readonly id: FurnaceSlotId;
+};
+```
+
+### FurnaceSnapshot  `type`
+
+```ts
+type FurnaceSnapshot = {
+    readonly input: FurnaceSlotSnapshot | undefined;
+    readonly fuel: FurnaceSlotSnapshot | undefined;
+    readonly output: FurnaceSlotSnapshot | undefined;
+    readonly cookProgress: number;
+    readonly burnProgress: number;
+};
+```
+
+### FurnaceView  `type`
+
+```ts
+type FurnaceView = {
+    readonly root: DomElement;
+    readonly render: (model: FurnaceViewModel, interaction?: FurnaceInteractionView) => void;
+};
+```
+
+### FurnaceViewModel  `type`
+
+```ts
+type FurnaceViewModel = {
+    readonly slots: ReadonlyArray<FurnaceSlotView>;
+    readonly cookProgressPercent: number;
+    readonly burnProgressPercent: number;
+};
 ```
 
 ### GAME_MODES  `const`
@@ -1608,6 +1677,12 @@ const createCaptionView: (factory: DomElementFactory, parent: DomElement, motion
 const createCrosshairView: (factory: DomElementFactory, parent: DomElement, motion: MotionPreference) => CrosshairView;
 ```
 
+### createFurnaceView  `const`
+
+```ts
+const createFurnaceView: (factory: DomElementFactory, parent: DomElement) => FurnaceView;
+```
+
 ### createHudView  `const`
 
 ```ts
@@ -1714,6 +1789,12 @@ const escapePressed: (stack: ModalStack) => EscapeOutcome;
 
 ```ts
 const expireCaptions: (queue: CaptionQueue, nowSecs: number, lifetimeSecs?: number) => CaptionQueue;
+```
+
+### furnaceViewModel  `const`
+
+```ts
+const furnaceViewModel: (snapshot: FurnaceSnapshot) => FurnaceViewModel;
 ```
 
 ### gameplayInputSuppressed  `const`
