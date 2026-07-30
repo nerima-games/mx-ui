@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 271
+exported declarations: 272
 supporting declarations: 7
 
 ## Exported
@@ -80,6 +80,12 @@ const CROSSHAIR_ARM_HIT_WEIGHT = "4px";
 
 ```ts
 const CROSSHAIR_ARM_WEIGHT = "2px";
+```
+
+### CROSSHAIR_BREAK_PROGRESS_LABEL  `const`
+
+```ts
+const CROSSHAIR_BREAK_PROGRESS_LABEL = "Block breaking progress";
 ```
 
 ### CROSSHAIR_HALO_WIDTH  `const`
@@ -263,7 +269,7 @@ type CriticalPair = {
 type CrosshairStatus = {
     readonly modals: ModalStack;
     readonly lastHitAtSecs: number | undefined;
-    readonly breakProgress?: number;
+    readonly breakProgress?: number | undefined;
 };
 ```
 
@@ -282,7 +288,7 @@ type CrosshairView = {
 ```ts
 type CrosshairViewModel = {
     readonly hit: boolean;
-    readonly breakProgress: number | undefined;
+    readonly breakProgress?: number | undefined;
 };
 ```
 

@@ -142,6 +142,9 @@ export const CROSSHAIR_HALO_WIDTH = '1px'
 /** How far the reticle grows on a hit, when motion is allowed. `crosshair.ts:26`. */
 export const CROSSHAIR_PULSE_SCALE = 1.45
 
+/** Accessible name for the active block-breaking progress indicator. */
+export const CROSSHAIR_BREAK_PROGRESS_LABEL = 'Block breaking progress'
+
 export type CrosshairView = {
   /** The element the host appended us to a parent as. Exposed for tests and previews. */
   readonly root: DomElement
@@ -216,20 +219,6 @@ export const createCrosshairView = (
   // carried over: a mark sitting exactly where every click lands would otherwise
   // eat the clicks that are the whole point of aiming.
   root.style.setProperty('pointer-events', 'none')
-  /**
-   * `aria-hidden`, deliberately, and this is the one place in this repository
-   * where hiding something from a screen reader is the accessible answer.
-   *
-   * Everything else mx-ui draws has a text equivalent, so naming it carries the
-   * information across (`ICON_ROW_LABEL`, `SAVE_STATUS_LABEL`). A reticle's
-   * entire content is 「the centre of the viewport」, which is a fact about the
-   * screen and not about the game; announcing it on every read is noise with no
-   * answer behind it. The thing a player who cannot see the reticle actually
-   * needs is WHAT IS UNDER IT, and that is mc-sim's and mx-gameplay's to say —
-   * this repository has no targeting information to project. **That is a real
-   * gap and it is named here rather than papered over with a label.**
-   */
-  root.setAttribute('aria-hidden', 'true')
   // The centring translate is STATIC, on the root, and the pulse scale lives on
   // an inner element. One `transform` carrying both would mean the pulse's
   // `clearStyle` also removed the centring, so 「reduced motion」 would move the
@@ -240,6 +229,9 @@ export const createCrosshairView = (
 
   const mark = factory.createElement('div')
   mark.setAttribute('data-mx-ui', 'crosshair-mark')
+  // The reticle is decorative: its whole content is 「the viewport centre」.
+  // Keep only the mark hidden so the sibling progressbar remains perceivable.
+  mark.setAttribute('aria-hidden', 'true')
   mark.style.setProperty('position', 'relative')
   mark.style.setProperty('width', '100%')
   mark.style.setProperty('height', '100%')
@@ -250,6 +242,10 @@ export const createCrosshairView = (
 
   const progress = factory.createElement('div')
   progress.setAttribute('data-mx-ui', 'crosshair-progress')
+  progress.setAttribute('role', 'progressbar')
+  progress.setAttribute('aria-label', CROSSHAIR_BREAK_PROGRESS_LABEL)
+  progress.setAttribute('aria-valuemin', '0')
+  progress.setAttribute('aria-valuemax', '100')
   progress.setAttribute('hidden', '')
   progress.style.setProperty('position', 'absolute')
   progress.style.setProperty('left', '50%')
@@ -271,12 +267,14 @@ export const createCrosshairView = (
     readonly hitFlag: AttributeCell
     readonly pulse: StyleCell
     readonly progressHidden: AttributeCell
+    readonly progressValue: AttributeCell
     readonly progressWidth: PercentCell
   } = {
     hidden: attributeCell(root, 'hidden'),
     hitFlag: attributeCell(root, 'data-crosshair-hit'),
     pulse: styleCell(mark, 'transform'),
     progressHidden: attributeCell(progress, 'hidden'),
+    progressValue: attributeCell(progress, 'aria-valuenow'),
     progressWidth: percentCell(progressFill, 'width'),
   }
   // Hidden directly above so no frame flashes a reticle before anybody has said
@@ -293,8 +291,10 @@ export const createCrosshairView = (
     writeAttribute(cells.hitFlag, hit ? '' : undefined)
     const breakProgress = latest?.breakProgress
     writeHidden(cells.progressHidden, breakProgress === undefined)
-    if (breakProgress !== undefined) {
-      writePercent(cells.progressWidth, breakProgress * 100)
+    const breakPercent = breakProgress === undefined ? undefined : breakProgress * 100
+    writeAttribute(cells.progressValue, breakPercent === undefined ? undefined : String(breakPercent))
+    if (breakPercent !== undefined) {
+      writePercent(cells.progressWidth, breakPercent)
     }
     // WEIGHT first, and unconditionally: the hit is legible without the
     // animation, which is what makes the animation optional rather than the

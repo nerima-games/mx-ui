@@ -105,6 +105,15 @@ const selectedScreen = (search: string): ScreenName | undefined => {
 const selectedMotion = (search: string): MotionPreference =>
   new URLSearchParams(search).get('motion') === 'reduced' ? 'reduced' : 'full'
 
+const selectedBreakProgress = (search: string): number | undefined => {
+  const requested = new URLSearchParams(search).get('breakProgress')
+  if (requested === null) {
+    return undefined
+  }
+  const progress = Number(requested)
+  return Number.isFinite(progress) && progress >= 0 && progress <= 1 ? progress : undefined
+}
+
 /**
  * The emulated safe-area inset, in CSS pixels.
  *
@@ -187,7 +196,12 @@ const start = (): void => {
     page.style.setProperty('--harness-safe-inset', inset)
   }
 
-  const screens = mountScreens(factory, page, selectedMotion(window.location.search))
+  const screens = mountScreens(
+    factory,
+    page,
+    selectedMotion(window.location.search),
+    selectedBreakProgress(window.location.search),
+  )
 
   const only = selectedScreen(window.location.search)
   if (only !== undefined) {

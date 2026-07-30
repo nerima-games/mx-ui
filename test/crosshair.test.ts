@@ -32,6 +32,7 @@ import {
   crosshairViewModel,
   IDLE_CROSSHAIR_STATUS,
   type CrosshairStatus,
+  type CrosshairViewModel,
 } from '../domain/crosshair'
 import { openScreen, type ScreenId } from '../domain/modal-stack'
 import {
@@ -45,6 +46,7 @@ import {
 import {
   CROSSHAIR_ARM_HIT_WEIGHT,
   CROSSHAIR_ARM_WEIGHT,
+  CROSSHAIR_BREAK_PROGRESS_LABEL,
   CROSSHAIR_HALO_WIDTH,
   CROSSHAIR_PULSE_SCALE,
   createCrosshairView,
@@ -148,6 +150,12 @@ describe('when the crosshair is drawn, and when it is not', () => {
 })
 
 describe('block-breaking progress', () => {
+  it('keeps the progress field optional for existing object literals', () => {
+    const legacyModel: CrosshairViewModel = { hit: false }
+
+    expect(legacyModel.breakProgress).toBeUndefined()
+  })
+
   it('normalises finite progress and rejects non-finite values', () => {
     const model = (breakProgress: number): number | undefined =>
       crosshairViewModel({ ...aiming, breakProgress }, 0)?.breakProgress
@@ -167,13 +175,21 @@ describe('block-breaking progress', () => {
     const fill = progressFill(root)
 
     expect(track?.attributes.has('hidden')).toBe(true)
+    expect(track?.attributes.get('role')).toBe('progressbar')
+    expect(track?.attributes.get('aria-label')).toBe(CROSSHAIR_BREAK_PROGRESS_LABEL)
+    expect(track?.attributes.get('aria-valuemin')).toBe('0')
+    expect(track?.attributes.get('aria-valuemax')).toBe('100')
+    expect(track?.attributes.has('aria-valuenow')).toBe(false)
+    expect(track?.attributes.has('aria-live')).toBe(false)
 
     view.render(crosshairViewModel({ ...aiming, breakProgress: 0 }, 0))
     expect(track?.attributes.has('hidden')).toBe(false)
+    expect(track?.attributes.get('aria-valuenow')).toBe('0')
     expect(fill?.style.properties.get('width')).toBe('0%')
 
     view.render(crosshairViewModel(aiming, 0))
     expect(track?.attributes.has('hidden')).toBe(true)
+    expect(track?.attributes.has('aria-valuenow')).toBe(false)
   })
 
   it('projects partial and complete progress without moving with the hit pulse', () => {
@@ -402,23 +418,16 @@ describe('the crosshair keeps the palette’s guarantee instead of leaving it', 
     expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
-  it('REGRESSION: is aria-hidden, and the gap that leaves is named rather than papered over', () => {
-    // The one place in this repository where hiding something from a screen
-    // reader is the accessible answer. A reticle's whole content is 「the centre
-    // of the viewport」, which is a fact about the screen, not about the game.
-    // What a player who cannot see it needs is what is UNDER it, and mx-ui has
-    // no targeting information to project — that is mc-sim's and mx-gameplay's.
-    //
-    // Pinned so that 「add an aria-label」 is a deliberate change rather than a
-    // tidy-up: a label reading 「crosshair」 would announce on every screen read
-    // and answer nothing.
+  it('keeps the decorative mark hidden without hiding progress semantics', () => {
     const { root, view } = mount()
-    view.render(crosshairViewModel(aiming, 0))
+    view.render(crosshairViewModel({ ...aiming, breakProgress: 0.5 }, 0))
 
-    expect(root.attributes.get('aria-hidden')).toBe('true')
+    expect(root.attributes.has('aria-hidden')).toBe(false)
+    expect(root.find('data-mx-ui', 'crosshair-mark')?.attributes.get('aria-hidden')).toBe('true')
+    expect(progress(root)?.attributes.get('aria-label')).toBe(CROSSHAIR_BREAK_PROGRESS_LABEL)
     for (const element of root.walk()) {
       expect(element.attributes.has('tabindex')).toBe(false)
-      expect(element.attributes.has('aria-label')).toBe(false)
+      expect(element.attributes.has('aria-live')).toBe(false)
     }
     // And it never eats a click, which is the property the reference carries in
     // the same breath (`crosshair.ts:17`): a mark sitting exactly where every

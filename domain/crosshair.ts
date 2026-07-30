@@ -79,7 +79,7 @@ export type CrosshairStatus = {
    * Active block-breaking progress, where zero is a started but empty bar.
    * `undefined` means no block is currently being broken.
    */
-  readonly breakProgress?: number
+  readonly breakProgress?: number | undefined
 }
 
 export const IDLE_CROSSHAIR_STATUS: CrosshairStatus = {
@@ -103,7 +103,7 @@ export const IDLE_CROSSHAIR_STATUS: CrosshairStatus = {
 export type CrosshairViewModel = {
   readonly hit: boolean
   /** Normalised block-breaking progress, or `undefined` when no bar is drawn. */
-  readonly breakProgress: number | undefined
+  readonly breakProgress?: number | undefined
 }
 
 export const crosshairViewModel = (

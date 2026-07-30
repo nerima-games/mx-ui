@@ -96,6 +96,7 @@ export const mountScreens = (
   factory: DomElementFactory,
   page: DomElement,
   motion: MotionPreference,
+  breakProgress?: number,
 ): ReadonlyArray<MountedScreen> => {
   const hosts = new Map<ScreenName, DomElement>()
   for (const name of SCREEN_NAMES) {
@@ -159,7 +160,9 @@ export const mountScreens = (
   loading.render({ kind: 'preparing', held: true })
 
   const crosshair = createCrosshairView(factory, hostFor('crosshair'), motion)
-  crosshair.render(crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }, 0))
+  crosshair.render(
+    crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress }, 0),
+  )
 
   return [
     { name: 'main-menu', host: hostFor('main-menu'), root: menu.root },
