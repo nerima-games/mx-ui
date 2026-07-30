@@ -37,6 +37,7 @@ import {
 import { createHudView } from '../application/hud-view'
 import { createInventoryView } from '../application/inventory-view'
 import { createCaptionView } from '../application/caption-view'
+import { createChestStorageView } from '../application/chest-storage-view'
 import { createSaveIndicator } from '../application/save-indicator'
 import { PALETTE_VAR } from '../application/palette-css'
 import { fakeDocument, type FakeElement } from './fake-dom'
@@ -64,6 +65,7 @@ describe('a screen is built into the parent it was handed', () => {
     createHudView(factory, first, 'full')
     createInventoryView(factory, second)
     createCaptionView(factory, second, 'full')
+    createChestStorageView(factory, second)
     createSaveIndicator(factory, first)
 
     // Compared as names rather than as elements. A `FakeElement` reaches the
@@ -71,7 +73,7 @@ describe('a screen is built into the parent it was handed', () => {
     // serialises the entire document and dies — the test would stop reporting at
     // exactly the moment it had something to report.
     expect(mounted(first)).toStrictEqual(['hud', 'save-indicator'])
-    expect(mounted(second)).toStrictEqual(['inventory', 'captions'])
+    expect(mounted(second)).toStrictEqual(['inventory', 'captions', 'chest-storage'])
   })
 
   it('two instances of the same screen share no element', () => {

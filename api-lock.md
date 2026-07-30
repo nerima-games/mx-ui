@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 282
+exported declarations: 300
 supporting declarations: 7
 
 ## Exported
@@ -32,6 +32,24 @@ type AttributeCell = {
 
 ```ts
 const CAPTION_LIFETIME_SECS = 3;
+```
+
+### CHEST_STORAGE_COLUMNS  `const`
+
+```ts
+const CHEST_STORAGE_COLUMNS = 9;
+```
+
+### CHEST_STORAGE_ROWS  `const`
+
+```ts
+const CHEST_STORAGE_ROWS = 3;
+```
+
+### CHEST_STORAGE_SLOT_COUNT  `const`
+
+```ts
+const CHEST_STORAGE_SLOT_COUNT: number;
 ```
 
 ### COLLAPSE_SEPARATION  `const`
@@ -157,6 +175,104 @@ type CaptionView = {
     readonly root: DomElement;
     readonly render: (lines: ReadonlyArray<CaptionLineView>) => void;
     readonly setMotion: (motion: MotionPreference) => void;
+};
+```
+
+### ChestStorageCursorView  `type`
+
+```ts
+type ChestStorageCursorView = SlotView & {
+    readonly stack: ChestStorageStackSnapshot;
+};
+```
+
+### ChestStorageIntent  `type`
+
+```ts
+type ChestStorageIntent = {
+    readonly _tag: 'SlotClicked';
+    readonly target: ChestStorageSlotTarget;
+} | {
+    readonly _tag: 'CloseRequested';
+};
+```
+
+### ChestStorageInteractionView  `type`
+
+```ts
+type ChestStorageInteractionView = {
+    readonly focusedSlot: ChestStorageSlotTarget;
+    readonly status: string;
+};
+```
+
+### ChestStorageRegion  `type`
+
+```ts
+type ChestStorageRegion = 'chest' | 'player';
+```
+
+### ChestStorageSlotSnapshot  `type`
+
+```ts
+type ChestStorageSlotSnapshot = ChestStorageStackSnapshot | undefined;
+```
+
+### ChestStorageSlotTarget  `type`
+
+```ts
+type ChestStorageSlotTarget = {
+    readonly region: ChestStorageRegion;
+    readonly slot: number;
+};
+```
+
+### ChestStorageSlotView  `type`
+
+```ts
+type ChestStorageSlotView = SlotView & {
+    readonly target: ChestStorageSlotTarget;
+};
+```
+
+### ChestStorageSnapshot  `type`
+
+```ts
+type ChestStorageSnapshot = {
+    readonly chest: ReadonlyArray<ChestStorageSlotSnapshot>;
+    readonly playerInventory: ReadonlyArray<ChestStorageSlotSnapshot>;
+    readonly cursor: ChestStorageSlotSnapshot;
+    readonly selectedSlot: ChestStorageSlotTarget | undefined;
+};
+```
+
+### ChestStorageStackSnapshot  `type`
+
+```ts
+type ChestStorageStackSnapshot = {
+    readonly item: MirroredItemId;
+    readonly count: number;
+    readonly durability: number | undefined;
+};
+```
+
+### ChestStorageView  `type`
+
+```ts
+type ChestStorageView = {
+    readonly root: DomElement;
+    readonly render: (model: ChestStorageViewModel, interaction?: ChestStorageInteractionView) => void;
+};
+```
+
+### ChestStorageViewModel  `type`
+
+```ts
+type ChestStorageViewModel = {
+    readonly chest: ReadonlyArray<ChestStorageSlotView>;
+    readonly playerMain: ReadonlyArray<ChestStorageSlotView>;
+    readonly playerHotbar: ReadonlyArray<ChestStorageSlotView>;
+    readonly cursor: ChestStorageCursorView | undefined;
 };
 ```
 
@@ -1617,6 +1733,24 @@ const backToRoot: (state: MainMenuState) => MainMenuState;
 const captionLines: (queue: CaptionQueue, nowSecs: number, lifetimeSecs?: number) => ReadonlyArray<CaptionLineView>;
 ```
 
+### chestStorageCloseIntent  `const`
+
+```ts
+const chestStorageCloseIntent: () => ChestStorageIntent;
+```
+
+### chestStorageSlotClickIntent  `const`
+
+```ts
+const chestStorageSlotClickIntent: (target: ChestStorageSlotTarget) => ChestStorageIntent | undefined;
+```
+
+### chestStorageViewModel  `const`
+
+```ts
+const chestStorageViewModel: (snapshot: ChestStorageSnapshot) => ChestStorageViewModel;
+```
+
 ### clearStyle  `const`
 
 ```ts
@@ -1669,6 +1803,12 @@ const contrastRatio: (left: Rgb, right: Rgb) => number;
 
 ```ts
 const createCaptionView: (factory: DomElementFactory, parent: DomElement, motion: MotionPreference) => CaptionView;
+```
+
+### createChestStorageView  `const`
+
+```ts
+const createChestStorageView: (factory: DomElementFactory, parent: DomElement) => ChestStorageView;
 ```
 
 ### createCrosshairView  `const`
