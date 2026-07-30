@@ -75,6 +75,11 @@ export type CrosshairStatus = {
    * supplied by the caller, never read from a global (DN-UI-10).
    */
   readonly lastHitAtSecs: number | undefined
+  /**
+   * Active block-breaking progress, where zero is a started but empty bar.
+   * `undefined` means no block is currently being broken.
+   */
+  readonly breakProgress?: number
 }
 
 export const IDLE_CROSSHAIR_STATUS: CrosshairStatus = {
@@ -89,14 +94,16 @@ export const IDLE_CROSSHAIR_STATUS: CrosshairStatus = {
  * to `application/crosshair-view.ts`, exactly as `HudViewModel` and
  * `InventoryViewModel` do. The two used to collide, and the barrel said so.
  *
- * `hit` is the only thing that varies, and it is a BOOLEAN rather than a
- * remaining duration on purpose. A renderer handed 「43 ms left」 would have to
+ * `hit` is a BOOLEAN rather than a remaining duration on purpose. A renderer
+ * handed 「43 ms left」 would have to
  * decide what that looks like, which is the arithmetic this module exists to keep
  * out of `application/` (`domain/hud-view-model.ts`: 「a rendering bug and a
  * derivation bug are never the same bug」).
  */
 export type CrosshairViewModel = {
   readonly hit: boolean
+  /** Normalised block-breaking progress, or `undefined` when no bar is drawn. */
+  readonly breakProgress: number | undefined
 }
 
 export const crosshairViewModel = (
@@ -107,9 +114,14 @@ export const crosshairViewModel = (
   if (pointerLockReleased(status.modals)) {
     return undefined
   }
+  const suppliedProgress = status.breakProgress
+  const breakProgress =
+    suppliedProgress !== undefined && Number.isFinite(suppliedProgress)
+      ? Math.min(1, Math.max(0, suppliedProgress))
+      : undefined
   const at = status.lastHitAtSecs
   if (at === undefined) {
-    return { hit: false }
+    return { hit: false, breakProgress }
   }
   const since = nowSecs - at
   // A NaN or a backwards clock shows NO hit, which is the opposite call from
@@ -118,5 +130,8 @@ export const crosshairViewModel = (
   // message up claims nothing new. Here, a hit marker IS the claim — 「you struck
   // something」 — and one that stuck because of a bad subtraction would tell the
   // player they connected when they missed.
-  return { hit: Number.isFinite(since) && since >= 0 && since < pulseSecs }
+  return {
+    hit: Number.isFinite(since) && since >= 0 && since < pulseSecs,
+    breakProgress,
+  }
 }

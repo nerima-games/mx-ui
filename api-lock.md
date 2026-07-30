@@ -263,6 +263,7 @@ type CriticalPair = {
 type CrosshairStatus = {
     readonly modals: ModalStack;
     readonly lastHitAtSecs: number | undefined;
+    readonly breakProgress?: number;
 };
 ```
 
@@ -281,6 +282,7 @@ type CrosshairView = {
 ```ts
 type CrosshairViewModel = {
     readonly hit: boolean;
+    readonly breakProgress: number | undefined;
 };
 ```
 

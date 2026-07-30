@@ -103,11 +103,14 @@ import type { DomElement, DomElementFactory } from './dom-surface'
 import {
   attributeCell,
   clearStyle,
+  percentCell,
   styleCell,
   writeAttribute,
   writeHidden,
+  writePercent,
   writeStyle,
   type AttributeCell,
+  type PercentCell,
   type StyleCell,
 } from './dom-write'
 import { declarePalette, PALETTE_VAR } from './palette-css'
@@ -245,18 +248,41 @@ export const createCrosshairView = (
   const vertical = createArm(factory, mark, true)
   const horizontal = createArm(factory, mark, false)
 
+  const progress = factory.createElement('div')
+  progress.setAttribute('data-mx-ui', 'crosshair-progress')
+  progress.setAttribute('hidden', '')
+  progress.style.setProperty('position', 'absolute')
+  progress.style.setProperty('left', '50%')
+  progress.style.setProperty('top', 'calc(100% + 6px)')
+  progress.style.setProperty('width', '28px')
+  progress.style.setProperty('height', '3px')
+  progress.style.setProperty('transform', 'translateX(-50%)')
+  progress.style.setProperty('background-color', PALETTE_VAR.scrim)
+  root.appendChild(progress)
+
+  const progressFill = factory.createElement('div')
+  progressFill.setAttribute('data-mx-ui', 'crosshair-progress-fill')
+  progressFill.style.setProperty('height', '100%')
+  progressFill.style.setProperty('background-color', PALETTE_VAR.ink)
+  progress.appendChild(progressFill)
+
   const cells: {
     readonly hidden: AttributeCell
     readonly hitFlag: AttributeCell
     readonly pulse: StyleCell
+    readonly progressHidden: AttributeCell
+    readonly progressWidth: PercentCell
   } = {
     hidden: attributeCell(root, 'hidden'),
     hitFlag: attributeCell(root, 'data-crosshair-hit'),
     pulse: styleCell(mark, 'transform'),
+    progressHidden: attributeCell(progress, 'hidden'),
+    progressWidth: percentCell(progressFill, 'width'),
   }
   // Hidden directly above so no frame flashes a reticle before anybody has said
   // the player is aiming; tell the cell what the element already says.
   cells.hidden.previous = ''
+  cells.progressHidden.previous = ''
 
   let animates = shouldAnimate(motion)
   let latest: CrosshairViewModel | undefined
@@ -265,6 +291,11 @@ export const createCrosshairView = (
     writeHidden(cells.hidden, latest === undefined)
     const hit = latest?.hit === true
     writeAttribute(cells.hitFlag, hit ? '' : undefined)
+    const breakProgress = latest?.breakProgress
+    writeHidden(cells.progressHidden, breakProgress === undefined)
+    if (breakProgress !== undefined) {
+      writePercent(cells.progressWidth, breakProgress * 100)
+    }
     // WEIGHT first, and unconditionally: the hit is legible without the
     // animation, which is what makes the animation optional rather than the
     // signal.

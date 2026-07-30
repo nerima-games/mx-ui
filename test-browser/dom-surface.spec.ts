@@ -81,6 +81,11 @@ test.describe('mx-ui mounts against a real Document', () => {
         hearts: inHost('hud', '[data-icon="heart"]'),
         shanks: inHost('hud', '[data-icon="shank"]'),
         crosshairArms: inHost('crosshair', '[data-mx-ui="crosshair-arm"]'),
+        crosshairProgress: inHost('crosshair', '[data-mx-ui="crosshair-progress"]'),
+        crosshairProgressFill: inHost(
+          'crosshair',
+          '[data-mx-ui="crosshair-progress-fill"]',
+        ),
       }
     })
 
@@ -89,6 +94,8 @@ test.describe('mx-ui mounts against a real Document', () => {
     expect(counts.hearts).toBe(10)
     expect(counts.shanks).toBe(10)
     expect(counts.crosshairArms).toBe(2)
+    expect(counts.crosshairProgress).toBe(1)
+    expect(counts.crosshairProgressFill).toBe(1)
   })
 
   test('REGRESSION: DN-UI-4 holds in a real document — not one listener anywhere', async ({

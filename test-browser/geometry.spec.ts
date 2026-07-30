@@ -259,12 +259,15 @@ test.describe('reduced motion removes the animation and keeps the signal', () =>
       readonly declared: ReadonlyArray<number>
       readonly rendered: ReadonlyArray<number>
       readonly transform: string
+      readonly progressHidden: boolean
+      readonly progressTransform: string
     }> => {
       await openHarness(page, { screen: 'crosshair', motion })
       return await page.evaluate(() => {
         const host = document.querySelector('[data-harness-host="crosshair"]')
         const arms = Array.from(host?.querySelectorAll('[data-mx-ui="crosshair-arm"]') ?? [])
         const mark = host?.querySelector('[data-mx-ui="crosshair-mark"]') ?? null
+        const progress = host?.querySelector('[data-mx-ui="crosshair-progress"]') ?? null
         // The thickness axis: the vertical arm is thin in width, the horizontal
         // one in height, so the smaller of the two is the weight either way.
         const thinner = (width: string, height: string): number =>
@@ -279,6 +282,8 @@ test.describe('reduced motion removes the animation and keeps the signal', () =>
             return Math.min(rect.width, rect.height)
           }),
           transform: mark === null ? '' : getComputedStyle(mark).transform,
+          progressHidden: progress?.hasAttribute('hidden') ?? false,
+          progressTransform: progress === null ? '' : getComputedStyle(progress).transform,
         }
       })
     }
@@ -289,6 +294,9 @@ test.describe('reduced motion removes the animation and keeps the signal', () =>
     const reduced = await reticle('reduced')
 
     expect(full.declared).toHaveLength(2)
+    expect(full.progressHidden).toBe(true)
+    expect(reduced.progressHidden).toBe(true)
+    expect(reduced.progressTransform).toBe(full.progressTransform)
 
     // THE SIGNAL SURVIVES. Both arms carry the hit weight under both
     // preferences, and it is the constant the renderer declares.
