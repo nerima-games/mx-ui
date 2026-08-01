@@ -20,11 +20,11 @@ import {
   hudViewModel,
   spawnSnapshot,
   type VitalsSnapshot,
-} from '../domain/hud-view-model'
-import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../domain/palette'
-import { createHudView, EXPERIENCE_TRANSITION_MS } from '../application/hud-view'
-import { FOCUS_RING_SHADOW_WIDTH, FOCUS_RING_WIDTH } from '../application/slot-element'
-import { PALETTE_PROPERTY, PALETTE_VAR } from '../application/palette-css'
+} from '../src/domain/hud-view-model'
+import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../src/domain/palette'
+import { createHudView, EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
+import { FOCUS_RING_SHADOW_WIDTH, FOCUS_RING_WIDTH } from '../src/application/slot-element'
+import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const mount = (motion: 'full' | 'reduced' = 'full') => {

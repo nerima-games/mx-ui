@@ -54,8 +54,8 @@ import {
   TEXT_CONTRAST_MIN,
   UI_CONTRAST_MIN,
   type Rgb,
-} from '../domain/palette'
-import { PALETTE_SOURCE, PALETTE_TOKEN_NAMES, PALETTE_VAR } from '../application/palette-css'
+} from '../src/domain/palette'
+import { PALETTE_SOURCE, PALETTE_TOKEN_NAMES, PALETTE_VAR } from '../src/application/palette-css'
 import {
   HARNESS_WORLD_PIXEL,
   openHarness,

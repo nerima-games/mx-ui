@@ -4,26 +4,26 @@
  * mx-ui is where §2.3-1 is hardest to hold, because almost every UI element
  * displays the result of some rule that lives in another experience module. The
  * discipline is that mx-ui reads mc-sim and nothing else — see the note in
- * `../stages/stage-ids.ts`.
+ * `../src/stages/stage-ids.ts`.
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Ref } from 'effect'
-import { DeltaTimeSecs, StageId, type GameModule, type StageRegistration } from '../domain/frame-contract'
-import { CAPTION_LIFETIME_SECS, receiveCaption } from '../domain/caption'
-import { hudViewModel, spawnSnapshot } from '../domain/hud-view-model'
+import { DeltaTimeSecs, StageId, type GameModule, type StageRegistration } from '../src/domain/frame-contract'
+import { CAPTION_LIFETIME_SECS, receiveCaption } from '../src/domain/caption'
+import { hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
 import {
   DEFAULT_CAPTION_SETTINGS,
   makeUiFrameState,
   makeUiStages,
   uiModule,
   uiStages,
-} from '../stages/registration'
+} from '../src/stages/registration'
 import {
   EXPERIENCE_MODULE_STAGE_PREFIXES,
   OWN_STAGE_PREFIX,
   UI_STAGE_IDS,
   UPSTREAM_STAGE_IDS,
-} from '../stages/stage-ids'
+} from '../src/stages/stage-ids'
 import { FrameServicesLayer } from './frame-services'
 
 const allAfterEdges = (stages: ReadonlyArray<StageRegistration>): ReadonlyArray<string> =>

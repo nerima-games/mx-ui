@@ -44,7 +44,7 @@ import {
   pointerLockReleased,
   topOf,
   type ModalStack,
-} from '../domain/modal-stack'
+} from '../src/domain/modal-stack'
 
 /** Everything a frame-level handler can ask about "is a screen up". */
 const isOpen = (stack: ModalStack, screen: Parameters<typeof openScreen>[1]): boolean =>

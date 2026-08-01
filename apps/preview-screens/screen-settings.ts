@@ -44,8 +44,8 @@ import {
   type InputAction,
   type KeyBindings,
   type MotionSetting,
-} from '../../domain/accessibility'
-import { CRITICAL_PAIRS, COLLAPSE_SEPARATION, UI_CONTRAST_MIN } from '../../domain/palette'
+} from '../../src/domain/accessibility'
+import { CRITICAL_PAIRS, COLLAPSE_SEPARATION, UI_CONTRAST_MIN } from '../../src/domain/palette'
 import { contrastRatio, distance, hex, padEnd, simulate, type Style } from './ansi'
 import { BAD, GOOD, INK, MUTED, WARN } from './palette'
 

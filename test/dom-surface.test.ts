@@ -25,7 +25,7 @@ import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import ts from 'typescript'
 import { fakeDocument, FakeElement } from './fake-dom'
-import type { DomAttributeTarget, DomElement, DomElementFactory } from '../application/dom-surface'
+import type { DomAttributeTarget, DomElement, DomElementFactory } from '../src/application/dom-surface'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -93,7 +93,7 @@ describe('REGRESSION: the DOM surface is a real subset of the real DOM', () => {
   )
 
   it('REGRESSION: events exist only on the explicit native-control boundary', async () => {
-    const source = await readFile(path.join(repositoryRoot, 'application', 'dom-surface.ts'), 'utf8')
+    const source = await readFile(path.join(repositoryRoot, 'src', 'application', 'dom-surface.ts'), 'utf8')
     const code = source.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(code.includes('export type DomInteractiveElement')).toBe(true)
     expect(code.match(/addEventListener/gu)?.length).toBe(1)
@@ -113,7 +113,7 @@ describe('REGRESSION: domain/ still cannot reach a document', () => {
     // The direction is the whole reason `environment: 'node'` is affordable and
     // the reason the palette's guarantee is arithmetic. `lib.DOM` is on for
     // every project here, so nothing but this test enforces it.
-    const domainDir = path.join(repositoryRoot, 'domain')
+    const domainDir = path.join(repositoryRoot, 'src', 'domain')
     const files = (await readdir(domainDir)).filter((name) => name.endsWith('.ts'))
     expect(files.length).toBeGreaterThan(0)
 

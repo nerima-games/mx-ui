@@ -14,11 +14,11 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
-import * as ui from '../index'
-import { rebind } from '../domain/accessibility'
-import { hudViewModel } from '../domain/hud-view-model'
-import { escapePressed } from '../domain/modal-stack'
-import { UI_STAGE_IDS } from '../stages/stage-ids'
+import * as ui from '../src/index'
+import { rebind } from '../src/domain/accessibility'
+import { hudViewModel } from '../src/domain/hud-view-model'
+import { escapePressed } from '../src/domain/modal-stack'
+import { UI_STAGE_IDS } from '../src/stages/stage-ids'
 
 describe('public API surface', () => {
   it.effect('re-exports the stage registration contract — the part mc-compose actually consumes', () =>

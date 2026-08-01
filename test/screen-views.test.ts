@@ -20,16 +20,16 @@
  * a settings screen is the second.
  */
 import { describe, expect, it } from 'vitest'
-import { COLOR_VISION_FILTER_TARGET } from '../domain/accessibility'
-import { captionLines, emptyCaptionQueue, receiveCaption, MAX_VISIBLE_CAPTIONS } from '../domain/caption'
-import { emptyInventorySnapshot, inventoryViewModel } from '../domain/inventory-view-model'
-import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../application/accessibility-dom'
-import { createCaptionView } from '../application/caption-view'
-import { createInventoryView } from '../application/inventory-view'
-import { createHudView } from '../application/hud-view'
-import { createSlotElement, updateSlotElement } from '../application/slot-element'
-import type { SlotView } from '../domain/hud-view-model'
-import { PALETTE_PROPERTY } from '../application/palette-css'
+import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
+import { captionLines, emptyCaptionQueue, receiveCaption, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
+import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
+import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
+import { createCaptionView } from '../src/application/caption-view'
+import { createInventoryView } from '../src/application/inventory-view'
+import { createHudView } from '../src/application/hud-view'
+import { createSlotElement, updateSlotElement } from '../src/application/slot-element'
+import type { SlotView } from '../src/domain/hud-view-model'
+import { PALETTE_PROPERTY } from '../src/application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const enabled = { captionsEnabled: true, audioUnlocked: false }

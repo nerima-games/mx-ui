@@ -7,10 +7,7 @@
     "types": ["node"]
   },
   "include": [
-    "index.ts",
-    "domain/**/*.ts",
-    "application/**/*.ts",
-    "stages/**/*.ts",
+    "src/**/*.ts",
     "test/**/*.ts",
     // The Playwright gate. It is typechecked by `pnpm verify` even though it is
     // not RUN by it — the same split `apps/` already has (`docs/testing.md` §1:

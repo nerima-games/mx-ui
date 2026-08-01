@@ -3,10 +3,10 @@ import { fileURLToPath } from 'node:url'
 import { openHarness } from './harness'
 
 const furnaceViewModule = `/@fs${fileURLToPath(
-  new URL('../application/furnace-view.ts', import.meta.url),
+  new URL('../src/application/furnace-view.ts', import.meta.url),
 )}`
 const furnaceViewModelModule = `/@fs${fileURLToPath(
-  new URL('../domain/furnace-view-model.ts', import.meta.url),
+  new URL('../src/domain/furnace-view-model.ts', import.meta.url),
 )}`
 
 test('furnace controls preserve their host boundary in a real document', async ({ page }) => {
@@ -15,8 +15,8 @@ test('furnace controls preserve their host boundary in a real document', async (
   await page.evaluate(
     async ({ viewPath, modelPath }) => {
       const [{ createFurnaceView }, { furnaceViewModel }] = await Promise.all([
-        import(viewPath) as Promise<typeof import('../application/furnace-view')>,
-        import(modelPath) as Promise<typeof import('../domain/furnace-view-model')>,
+        import(viewPath) as Promise<typeof import('../src/application/furnace-view')>,
+        import(modelPath) as Promise<typeof import('../src/domain/furnace-view-model')>,
       ])
       const host = document.createElement('main')
       host.setAttribute('data-furnace-browser-host', '')

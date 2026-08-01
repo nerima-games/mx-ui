@@ -8,10 +8,7 @@
     "types": ["node"]
   },
   "include": [
-    "index.ts",
-    "domain/**/*.ts",
-    "application/**/*.ts",
-    "stages/**/*.ts",
+    "src/**/*.ts",
     "test/**/*.ts",
     "test-browser/**/*.ts",
     "apps/**/*.ts",

@@ -40,7 +40,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       enabled: false,
-      include: ['index.ts', 'domain/**/*.ts', 'application/**/*.ts', 'stages/**/*.ts'],
+      include: ['src/index.ts', 'src/domain/**/*.ts', 'src/application/**/*.ts', 'src/stages/**/*.ts'],
       exclude: ['**/*.d.ts', '**/*.config.ts', '**/*.test.ts', '**/*.spec.ts'],
       all: true,
       reporter: ['text', 'json', 'html', 'lcov'],

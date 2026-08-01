@@ -5,9 +5,9 @@ import {
   chestStorageSlotClickIntent,
   chestStorageViewModel,
   type ChestStorageSnapshot,
-} from '../domain/chest-storage-view-model'
-import { INVENTORY_MAIN_SLOT_COUNT, INVENTORY_SLOT_COUNT } from '../domain/inventory-view-model'
-import { HOTBAR_SLOT_COUNT } from '../domain/hud-view-model'
+} from '../src/domain/chest-storage-view-model'
+import { INVENTORY_MAIN_SLOT_COUNT, INVENTORY_SLOT_COUNT } from '../src/domain/inventory-view-model'
+import { HOTBAR_SLOT_COUNT } from '../src/domain/hud-view-model'
 
 const EMPTY: ChestStorageSnapshot = {
   chest: [],

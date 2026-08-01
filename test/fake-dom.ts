@@ -26,7 +26,7 @@ import type {
   DomInteractiveElement,
   DomNode,
   DomStyle,
-} from '../application/dom-surface'
+} from '../src/application/dom-surface'
 
 /** Every write the renderer performed, in order. */
 export type Mutation = {

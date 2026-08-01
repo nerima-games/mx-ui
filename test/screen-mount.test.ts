@@ -27,19 +27,19 @@ import {
   HOTBAR_SLOT_COUNT,
   hudViewModel,
   spawnSnapshot,
-} from '../domain/hud-view-model'
+} from '../src/domain/hud-view-model'
 import {
   emptyInventorySnapshot,
   INVENTORY_MAIN_SLOT_COUNT,
   INVENTORY_SLOT_COUNT,
   inventoryViewModel,
-} from '../domain/inventory-view-model'
-import { createHudView } from '../application/hud-view'
-import { createInventoryView } from '../application/inventory-view'
-import { createCaptionView } from '../application/caption-view'
-import { createChestStorageView } from '../application/chest-storage-view'
-import { createSaveIndicator } from '../application/save-indicator'
-import { PALETTE_VAR } from '../application/palette-css'
+} from '../src/domain/inventory-view-model'
+import { createHudView } from '../src/application/hud-view'
+import { createInventoryView } from '../src/application/inventory-view'
+import { createCaptionView } from '../src/application/caption-view'
+import { createChestStorageView } from '../src/application/chest-storage-view'
+import { createSaveIndicator } from '../src/application/save-indicator'
+import { PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
 /** What a host has had mounted into it, by name and in order. */

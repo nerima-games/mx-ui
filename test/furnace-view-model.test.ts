@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { furnaceViewModel, type FurnaceSnapshot } from '../domain/furnace-view-model'
+import { furnaceViewModel, type FurnaceSnapshot } from '../src/domain/furnace-view-model'
 
 const SNAPSHOT: FurnaceSnapshot = {
   input: { itemId: 'minecraft:iron_ore', count: 2 },
