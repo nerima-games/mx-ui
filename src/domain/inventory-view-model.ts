@@ -197,8 +197,8 @@ export type InventorySnapshot = {
   readonly carried: MirroredSlot
   /** `undefined` — mc-sim has no armour slots. Projected as unknown, not as empty. */
   readonly armour: ReadonlyArray<MirroredSlot> | undefined
-  /** `undefined` — mc-sim has no offhand. Projected as unknown, not as empty. */
-  readonly offhand: MirroredSlot | undefined
+  /** `undefined` is unknown, `null` is a known-empty offhand, and a stack is occupied. */
+  readonly offhand: MirroredSlot | null
   readonly crafting: CraftingSnapshot | undefined
   /**
    * Slot indices the carried stack may be dropped into, as MC-SIM ANSWERED.
@@ -400,7 +400,14 @@ export const inventoryViewModel = (snapshot: InventorySnapshot): InventoryViewMo
           id: 'offhand',
           why: "mc-sim has no offhand slot; an empty square would claim the player's offhand is empty",
         }
-      : projectRegion('offhand', 1, [snapshot.offhand], INVENTORY_SLOT_COUNT, undefined, NO_SELECTION),
+      : projectRegion(
+          'offhand',
+          1,
+          [snapshot.offhand ?? undefined],
+          INVENTORY_SLOT_COUNT,
+          undefined,
+          NO_SELECTION,
+        ),
     craftingRegion(snapshot.crafting),
   ]
 

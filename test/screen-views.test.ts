@@ -171,6 +171,22 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     expect(main?.findAll('data-mx-ui', 'slot')).toHaveLength(27)
   })
 
+  it('renders a known-empty offhand as a focusable slot', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+    view.render(inventoryViewModel({ ...emptyInventorySnapshot, offhand: null }), {
+      focused: { kind: 'slot', region: 'offhand', index: 0 },
+      status: 'Offhand empty',
+    })
+
+    const offhand = (view.root as FakeElement).find('data-region', 'offhand')
+    expect(offhand?.attributes.get('data-region-state')).toBe('slots')
+    expect(offhand?.findAll('data-mx-ui', 'slot')).toHaveLength(1)
+    expect(offhand?.find('data-mx-ui', 'slot')?.attributes.get('role')).toBe('button')
+    expect(offhand?.find('data-mx-ui', 'slot')?.attributes.get('tabindex')).toBe('0')
+  })
+
   it('REGRESSION: `no-match` and `unknown` crafting are different states, and neither draws an output', () => {
     // A frame may still carry `unknown` when no recipe answer is available. An
     // empty output square would mean 「no recipe」 in

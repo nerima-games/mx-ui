@@ -1062,6 +1062,21 @@ describe('inventory and crafting project state without interpreting it', () => {
     }),
   )
 
+  it.effect('projects a known-empty offhand as an actionable empty slot', () =>
+    Effect.sync(() => {
+      const model = inventoryViewModel(inventoryWith({ offhand: null }))
+      const offhand = regionOf(model, 'offhand')
+
+      expect(offhand?.kind).toBe('slots')
+      if (offhand?.kind !== 'slots') {
+        throw new Error('known-empty offhand should project as slots')
+      }
+      expect(offhand.slots).toHaveLength(1)
+      expect(offhand.slots[0]?.empty).toBe(true)
+      expect(offhand.slots[0]?.index).toBe(0)
+    }),
+  )
+
   it.effect('“no recipe matches” and “mc-sim has not answered” are DIFFERENT screens', () =>
     Effect.sync(() => {
       // Three-valued on purpose. Collapsing the middle value is the bug: a
