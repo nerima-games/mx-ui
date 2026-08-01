@@ -130,6 +130,10 @@ export type UiMount = {
   readonly start: Effect.Effect<typeof uiModule, unknown>
   readonly stop: Effect.Effect<void, unknown>
   readonly current: () => UiMountedViews | undefined
+  readonly updateDebug: (snapshot: DebugHudSnapshot) => void
+  readonly updateSettings: (settings: UiSettings) => void
+  readonly openSettings: () => void
+  readonly closeSettings: () => void
 }
 ```
 
@@ -138,8 +142,12 @@ export type UiMount = {
 1. **`HTMLElement` を要求する。** global `document` は参照せず、渡された root の `ownerDocument` だけを使う。
 2. **`start` は再入可能。** 既存 mount を解体してから作り直し、途中失敗時は作成済み DOM と listener をロールバックする。
 3. **`stop` は冪等。** mx-ui が作った子コンテナだけを外し、ホストに元からある子要素は保持する。
-4. **画面更新口は view handle。** `current()` が返す HUD / inventory / main menu の `render` をホストが駆動する。
-   Escape を捕捉して閉じる責務は引き続き入力側の 1 か所にあり、mount adapter は global listener を持たない。
+4. **画面更新口は view handle と typed snapshot。** HUD / inventory / main menu は `current()` の view handle、
+   F1 デバッグ HUD と設定値は `updateDebug` / `updateSettings` をホストが駆動する。
+5. **セッションキーは mount adapter が所有する。** F1 はデバッグ HUD、F10 は設定画面を切り替え、Escape は設定画面を閉じる。
+   listener は常に root の `ownerDocument` に登録し、再 mount / stop / 初期化失敗で解除する。
+6. **設定変更は typed callback でホストへ返す。** mouse sensitivity、render distance、field of view、master volume の
+   所有権はホスト側にあり、mx-ui は入力と通知だけを担う。
 
 ## 5. `index.ts` の全 export
 

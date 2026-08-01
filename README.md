@@ -75,6 +75,12 @@ UI の要素はほぼ全て「どこか他のモジュールのルールが出�
 
 ## 開発
 
+### Browser mount shortcuts
+
+`makeUiMount` の browser session では F1 でデバッグ HUD、F10 で設定画面を切り替える。
+設定画面は Escape でも閉じられる。デバッグ値は `updateDebug`、設定の外部同期は
+`updateSettings`、ユーザー操作の反映は `settingsCallbacks` を使う。
+
 ### セットアップ
 
 ```console
