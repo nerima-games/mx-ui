@@ -233,6 +233,63 @@ describe('UiMount', () => {
     expect(document.activeElement).toBe(focused)
   })
 
+  describe('equipment actions', () => {
+    it('emits typed click and shift-click inventory actions', async () => {
+      const host = document.createElement('main')
+      document.body.appendChild(host)
+      const onInventoryAction = vi.fn()
+      const runtime = makeUiMount({ onInventoryAction, root: host })
+      await Effect.runPromise(runtime.start)
+      runtime.openInventory()
+
+      expect(runtime.activateInventoryFocus()).toBe(true)
+      expect(runtime.activateInventoryFocus('shift-click')).toBe(true)
+      expect(onInventoryAction.mock.calls).toStrictEqual([
+        [{ kind: 'click', target: { index: 0, kind: 'slot', region: 'hotbar' } }],
+        [{ kind: 'shift-click', target: { index: 0, kind: 'slot', region: 'hotbar' } }],
+      ])
+    })
+
+    it('emits equipment drag actions in equip and unequip directions', async () => {
+      const host = document.createElement('main')
+      document.body.appendChild(host)
+      const onInventoryAction = vi.fn()
+      const runtime = makeUiMount({ onInventoryAction, root: host })
+      await Effect.runPromise(runtime.start)
+      runtime.openInventory()
+
+      const storageSlot = { index: 2, kind: 'slot', region: 'main' } as const
+      const headSlot = { kind: 'equipment-slot', slot: 'head' } as const
+      expect([
+        runtime.dragInventorySlot(storageSlot, headSlot),
+        runtime.dragInventorySlot(headSlot, storageSlot),
+      ]).toStrictEqual([true, true])
+      expect(onInventoryAction.mock.calls).toStrictEqual([
+        [{ kind: 'drag', source: storageSlot, target: headSlot }],
+        [{ kind: 'drag', source: headSlot, target: storageSlot }],
+      ])
+    })
+
+    it('projects an equipment rejection supplied by the host', async () => {
+      const host = document.createElement('main')
+      document.body.appendChild(host)
+      const runtime = makeUiMount({ root: host })
+      await Effect.runPromise(runtime.start)
+      runtime.openInventory()
+
+      const storageSlot = { index: 2, kind: 'slot', region: 'main' } as const
+      const headSlot = { kind: 'equipment-slot', slot: 'head' } as const
+      runtime.updateInventoryActionState({
+        action: { kind: 'drag', source: storageSlot, target: headSlot },
+        kind: 'rejected',
+        reason: 'The selected item cannot be worn on the head',
+      })
+      expect(host.querySelector('[data-mx-ui="inventory-status"]')?.textContent).toBe(
+        'The selected item cannot be worn on the head',
+      )
+    })
+  })
+
   it('does not open inventory behind settings', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)

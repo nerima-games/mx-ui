@@ -10,6 +10,13 @@ import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu'
 import { uiModule } from '../stages/registration'
 import { type HudView, createHudView } from './hud-view'
 import {
+  type InventoryAction,
+  type InventoryActionState,
+  type InventoryDragTarget,
+  inventoryActionStatus,
+  inventoryActionTarget,
+} from './inventory-actions'
+import {
   type InventoryNavigationDirection,
   inventoryTargets,
   moveInventoryTarget,
@@ -51,6 +58,7 @@ export type UiMountOptions = {
   readonly settingsCallbacks?: UiSettingsCallbacks
   readonly initialDebugSnapshot?: DebugHudSnapshot
   readonly onInventoryActivate?: (target: InventoryInteractionTarget) => void
+  readonly onInventoryAction?: (action: InventoryAction) => void
 }
 
 /** The browser-session shape consumed by mc-compose, without a package cycle. */
@@ -67,7 +75,12 @@ export type UiMount = {
   readonly closeInventory: () => void
   readonly updateInventory: (model: InventoryViewModel) => void
   readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
-  readonly activateInventoryFocus: () => boolean
+  readonly activateInventoryFocus: (kind?: 'click' | 'shift-click') => boolean
+  readonly dragInventorySlot: (
+    source: InventoryDragTarget,
+    target: InventoryDragTarget,
+  ) => boolean
+  readonly updateInventoryActionState: (state: InventoryActionState) => void
 }
 
 export class UiMountError extends Error {
@@ -101,13 +114,17 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
   let inventoryModel = inventoryViewModel(emptyInventorySnapshot)
   let inventoryOpen = false
   let inventoryFocus: InventoryInteractionTarget = { kind: 'slot', region: 'hotbar', index: 0 }
+  let inventoryActionState: InventoryActionState = { kind: 'idle' }
   let inventoryRestoreFocus: HTMLElement | undefined
 
   const renderInventory = (view: InventoryView, focus = false): void => {
     const targets = inventoryTargets(inventoryModel)
     inventoryFocus = targets.find((target) => sameInventoryTarget(target, inventoryFocus)) ??
       targets[0] ?? { kind: 'crafting-output' }
-    view.render(inventoryModel, { focused: inventoryFocus, status: '' })
+    view.render(inventoryModel, {
+      focused: inventoryFocus,
+      status: inventoryActionStatus(inventoryActionState),
+    })
     if (focus && targets.length > 0) {
       const root = options.root.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
       const target =
@@ -130,11 +147,27 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     return true
   }
 
-  const activateInventoryFocus = (): boolean => {
+  const activateInventoryFocus = (kind: 'click' | 'shift-click' = 'click'): boolean => {
     if (!inventoryOpen) {
       return false
     }
+    const target = inventoryActionTarget(inventoryFocus)
+    if (target === null) {
+      return false
+    }
+    options.onInventoryAction?.({ kind, target })
     options.onInventoryActivate?.(inventoryFocus)
+    return true
+  }
+
+  const dragInventorySlot = (
+    source: InventoryDragTarget,
+    target: InventoryDragTarget,
+  ): boolean => {
+    if (!inventoryOpen) {
+      return false
+    }
+    options.onInventoryAction?.({ kind: 'drag', source, target })
     return true
   }
 
@@ -233,7 +266,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
           }
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
-            return activateInventoryFocus()
+            return activateInventoryFocus(event.shiftKey ? 'shift-click' : 'click')
           }
           return false
         }
@@ -290,6 +323,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     },
     closeSettings: () => mounted?.overlays.closeSettings(),
     current: () => mounted,
+    dragInventorySlot,
     name: '@nerima-games/mx-ui',
     moveInventoryFocus,
     openSettings: () => mounted?.overlays.openSettings(),
@@ -321,6 +355,13 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       inventoryModel = model
       const view = mounted?.inventory
       if (view !== undefined) renderInventory(view, inventoryOpen)
+    },
+    updateInventoryActionState: (state) => {
+      inventoryActionState = state
+      const view = mounted?.inventory
+      if (view) {
+        renderInventory(view)
+      }
     },
   }
 }
