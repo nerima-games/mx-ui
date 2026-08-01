@@ -13,8 +13,8 @@ mx-ui にはもう 1 つ要る。**UI は mount されなければならない�
 2. mc-compose が画面を開けなければならない。セッションライフサイクル（タイトル⇄ゲーム）は mc-compose の資産であり
    （plan.md §3.15）、「今はタイトル画面を出す」は mc-compose の判断である。
 
-**この mount 面は first cut にはまだ存在しない。** `index.ts` にも `stages/registration.ts` にも無い。
-意図している形は §4 に書く。
+この mount 面は `makeUiMount` として実装済みである。`mc-compose` の browser session が要求する
+`name` / `start` / `stop` と構造互換であり、循環依存を作らずにそのまま runtime module として渡せる。
 
 ## 2. `StageRegistration` 契約（plan.md §4.1 逐語）
 
@@ -119,33 +119,32 @@ mc-audio に autoplay ゲートの状態を尋ねるようになったとき、�
 つまり `RRegister` パラメータで — 取得される。本リポジトリはそれらが供給しなければならないものを
 何も構築しないからである。
 
-### 4-1. mount 面の想定形（未実装）
+### 4-1. mount 面
 
-現状 `mc-compose` が mx-ui に画面を出させる手段は無い。想定している形:
+`makeUiMount` はホストが所有する DOM ルートを受け取り、mx-ui が所有する子コンテナに HUD、inventory、
+main menu を初期描画する:
 
 ```typescript
-// 未実装。形だけの想定であり、mc-compose が実際に消費するまで確定しない。
 export type UiMount = {
-  /** DOM ルートを受け取り、解体は Scope に任せる。 */
-  readonly mount: (root: HTMLElement) => Effect.Effect<void, never, Scope.Scope>
-  /** mc-compose がセッション遷移で画面を開く。閉じるのは Escape ハンドラ側（DN-UI-4）。 */
-  readonly open: (screen: ScreenId) => Effect.Effect<void>
+  readonly name: string
+  readonly start: Effect.Effect<typeof uiModule, unknown>
+  readonly stop: Effect.Effect<void, unknown>
+  readonly current: () => UiMountedViews | undefined
 }
 ```
 
-設計上の制約が 3 つある:
+設計上の制約は次の通り:
 
-1. **`HTMLElement` を要求する。** `document` を自分で探しに行かない。
-   探しに行くと、各画面プレビューが同一ページで複数の mx-ui を立てられなくなる。
-2. **解体は `Scope`。** plan.md §3.8 が「アプリスコープのシングルトンは再入可能な初期化を最初から」と要求しており、
-   `makeUiFrameState` が Effect である理由（DN-UI-9）と同じである。
-3. **`open` はあるが `close` は無い。** 閉じる決定は 1 か所（DN-UI-4）。
-   mc-compose が任意に閉じられると、その 1 か所が 2 か所になる。
+1. **`HTMLElement` を要求する。** global `document` は参照せず、渡された root の `ownerDocument` だけを使う。
+2. **`start` は再入可能。** 既存 mount を解体してから作り直し、途中失敗時は作成済み DOM と listener をロールバックする。
+3. **`stop` は冪等。** mx-ui が作った子コンテナだけを外し、ホストに元からある子要素は保持する。
+4. **画面更新口は view handle。** `current()` が返す HUD / inventory / main menu の `render` をホストが駆動する。
+   Escape を捕捉して閉じる責務は引き続き入力側の 1 か所にあり、mount adapter は global listener を持たない。
 
 ## 5. `index.ts` の全 export
 
-`index.ts` は 19 モジュールを `export *` している——`domain/` の 7、`stages/` の 2、
-そして **`application/` の 10**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
+`index.ts` は 20 モジュールを `export *` している——`domain/` の 7、`stages/` の 2、
+そして **`application/` の 11**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。

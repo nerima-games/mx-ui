@@ -33,8 +33,8 @@
  * `HTMLElement` directly — not because the DOM lib is missing (mx-ui is the one
  * repository of the sixteen that has it) but because a fake document under
  * `environment: 'node'` must satisfy the renderer WITHOUT A CAST, and because a
- * surface with no `addEventListener` in it cannot grow a second owner for
- * Escape (DN-UI-4).
+* generic surface with no event methods cannot grow a second owner for Escape;
+* only the menu's button/input surface exposes click and input events (DN-UI-4).
  *
  * Tests that drive DOM flows must be written with plain `it` +
  * `Effect.runPromise`, NOT `it.effect`. See docs/testing.md.
@@ -55,6 +55,7 @@ export * from './application/main-menu-view'
 export * from './application/palette-css'
 export * from './application/save-indicator'
 export * from './application/slot-element'
+export * from './application/ui-mount'
 export * from './domain/accessibility'
 export * from './domain/caption'
 export * from './domain/chest-storage-view-model'

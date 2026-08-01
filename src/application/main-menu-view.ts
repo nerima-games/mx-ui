@@ -104,6 +104,7 @@ type SavedWorldRow = {
 export type MainMenuView = {
   readonly root: DomElement
   readonly render: (model: MainMenuViewModel) => void
+  readonly destroy: () => void
 }
 
 const createPanel = (
@@ -130,6 +131,7 @@ const createButton = (
   role: string,
   label: string,
   onClick: () => void,
+  cleanups: Array<() => void>,
 ): DomInteractiveElement => {
   const button = factory.createElement('button')
   button.setAttribute('type', 'button')
@@ -138,6 +140,7 @@ const createButton = (
   button.textContent = label
   button.setAttribute('aria-label', label)
   button.addEventListener('click', onClick)
+  cleanups.push(() => button.removeEventListener?.('click', onClick))
   parent.appendChild(button)
   return button
 }
@@ -153,6 +156,7 @@ export const createMainMenuView = (
   parent: DomElement,
   callbacks: MainMenuCallbacks = NOOP_CALLBACKS,
 ): MainMenuView => {
+  const cleanups: Array<() => void> = []
   const root = factory.createElement('div')
   root.setAttribute('data-mx-ui', 'main-menu')
   declarePalette(root)
@@ -186,7 +190,7 @@ export const createMainMenuView = (
       }
       const target = entry === 'new-world' ? worldNameInput : firstSavedWorldButton()
       transition(openPanel(state, entry), target)
-    })
+    }, cleanups)
     button.setAttribute('data-menu-entry', entry)
     rootButtons.set(entry, button)
   }
@@ -203,10 +207,12 @@ export const createMainMenuView = (
   worldNameInput.setAttribute('data-mx-ui', 'menu-world-name')
   worldNameInput.setAttribute('aria-label', MENU_FIELD_LABEL['world-name'])
   worldNameInput.setAttribute('placeholder', 'New World')
-  worldNameInput.addEventListener('input', () => {
+  const onWorldNameInput = () => {
     state = nameWorld(state, worldNameInput.value)
     callbacks.onStateChange(state)
-  })
+  }
+  worldNameInput.addEventListener('input', onWorldNameInput)
+  cleanups.push(() => worldNameInput.removeEventListener?.('input', onWorldNameInput))
   newWorldPanel.appendChild(worldNameInput)
 
   const modeButton = createButton(
@@ -215,6 +221,7 @@ export const createMainMenuView = (
     'menu-game-mode',
     GAME_MODE_LABEL.survival,
     () => transition(cycleWorldMode(state), modeButton),
+    cleanups,
   )
   modeButton.setAttribute('aria-label', `${MENU_FIELD_LABEL['game-mode']}: ${GAME_MODE_LABEL.survival}`)
   const modeText = textCell(modeButton)
@@ -224,12 +231,12 @@ export const createMainMenuView = (
 
   const cancelButton = createButton(factory, newWorldPanel, 'menu-action', MENU_ACTION_LABEL.cancel, () => {
     transition(backToRoot(state), rootButtons.get('new-world') ?? cancelButton)
-  })
+  }, cleanups)
   cancelButton.setAttribute('data-menu-action', 'cancel')
 
   const confirmButton = createButton(factory, newWorldPanel, 'menu-action', MENU_ACTION_LABEL.confirm, () => {
     callbacks.onCreateWorld({ name: worldNameLabel(state.draft), mode: state.draft.mode })
-  })
+  }, cleanups)
   confirmButton.setAttribute('data-menu-action', 'confirm')
 
   const loadWorldPanel = panels['load-world'].root
@@ -261,7 +268,7 @@ export const createMainMenuView = (
 
     const button = createButton(factory, savedWorldList, 'menu-world-row', '', () => {
       callbacks.onLoadWorld(row.current)
-    })
+    }, cleanups)
     button.setAttribute('data-session-id', world.sessionId)
 
     const name = factory.createElement('span')
@@ -285,7 +292,7 @@ export const createMainMenuView = (
 
   backButton = createButton(factory, loadWorldPanel, 'menu-action', MENU_ACTION_LABEL.back, () => {
     transition(backToRoot(state), rootButtons.get('load-world') ?? backButton)
-  })
+  }, cleanups)
   backButton.setAttribute('data-menu-action', 'back')
 
   const panelFlag = attributeCell(root, 'data-menu-showing')
@@ -329,5 +336,11 @@ export const createMainMenuView = (
     callbacks.onStateChange(next)
   }
 
-  return { root, render: renderModel }
+  return {
+    root,
+    render: renderModel,
+    destroy: () => {
+      for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+    },
+  }
 }

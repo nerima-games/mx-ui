@@ -167,6 +167,7 @@ describe('public API surface', () => {
         // that depends on it would go on reading 「移植済み」.
         'createMainMenuView',
         'createLoadingView',
+        'makeUiMount',
         // The reticle. Pinned because its destination was doubted twice and
         // settled twice (`docs/e2e-triage.md` #15): dropping it from the barrel
         // would make it look unbuilt again.

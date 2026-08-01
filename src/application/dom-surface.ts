@@ -151,6 +151,7 @@ export type DomElement = DomNode & {
 /** The event and focus verbs available only on native interactive controls. */
 export type DomInteractiveElement = DomElement & {
   addEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void
+  removeEventListener?(type: string, callback: EventListenerOrEventListenerObject | null): void
   focus(): void
 }
 
