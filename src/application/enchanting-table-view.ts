@@ -9,7 +9,7 @@ import {
   type EnchantingSlotView,
   type EnchantingTableViewModel,
 } from '../domain/enchanting-table-view-model'
-import type { DomElement, DomElementFactory } from './dom-surface'
+import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface'
 import {
   type AttributeCell,
   type TextCell,
@@ -40,8 +40,12 @@ export type EnchantingTableView = {
   ) => void
 }
 
+export type EnchantingTableViewActions = {
+  readonly onActivate: (target: EnchantingOperationTarget) => void
+}
+
 type OfferElement = {
-  readonly root: DomElement
+  readonly root: DomInteractiveElement
   readonly label: TextCell
   readonly rejection: TextCell
   readonly rejectionHidden: AttributeCell
@@ -121,10 +125,11 @@ const updateOfferElement = (
   writeAttribute(element.ariaLabel, label)
 }
 
-/** Creates a listener-free enchanting table projection. The host owns interaction. */
+/** Projects enchanting state; optional actions connect its native offer buttons. */
 export const createEnchantingTableView = (
   factory: DomElementFactory,
   parent: DomElement,
+  actions?: EnchantingTableViewActions,
 ): EnchantingTableView => {
   const root = factory.createElement('section')
   root.setAttribute('data-mx-ui', 'enchanting-table')
@@ -153,6 +158,9 @@ export const createEnchantingTableView = (
   root.appendChild(offerList)
   const offers = ENCHANTING_OFFER_IDS.map((id) => {
     const offer = createOfferElement(factory, id)
+    if (actions !== undefined) {
+      offer.root.addEventListener('click', () => actions.onActivate(id))
+    }
     offerList.appendChild(offer.root)
     return offer
   })
