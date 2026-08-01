@@ -48,7 +48,7 @@ import {
   type GuardedToken,
   type PaletteUnderSurvey,
   type Rgb,
-} from '../domain/palette'
+} from '../src/domain/palette'
 
 const NEAR_BLACK: Rgb = [12, 12, 12]
 const WHITE: Rgb = [255, 255, 255]

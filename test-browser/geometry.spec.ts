@@ -52,13 +52,13 @@
  * Both are pinned below.
  */
 import { expect, test } from '@playwright/test'
-import { HOTBAR_SLOT_COUNT } from '../domain/hud-view-model'
-import { SLOT_TARGET_MIN_SIZE } from '../application/slot-element'
+import { HOTBAR_SLOT_COUNT } from '../src/domain/hud-view-model'
+import { SLOT_TARGET_MIN_SIZE } from '../src/application/slot-element'
 import {
   CROSSHAIR_ARM_HIT_WEIGHT,
   CROSSHAIR_BREAK_PROGRESS_LABEL,
   CROSSHAIR_SIZE,
-} from '../application/crosshair-view'
+} from '../src/application/crosshair-view'
 import { NARROW_VIEWPORTS, openHarness } from './harness'
 
 /**

@@ -50,27 +50,27 @@
  * attribute is exactly what a fake document records.
  */
 import { describe, expect, it } from 'vitest'
-import { emptyCaptionQueue, captionLines, receiveCaption } from '../domain/caption'
-import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../domain/hud-view-model'
-import { emptyInventorySnapshot, inventoryViewModel } from '../domain/inventory-view-model'
-import { GUARDED_TOKENS, surveyPalette, type Rgb } from '../domain/palette'
-import { saveStatus, saveStatusMessage } from '../domain/save-status'
-import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../domain/crosshair'
-import { initialMainMenuState, mainMenuViewModel, openPanel } from '../domain/main-menu'
-import { createCaptionView } from '../application/caption-view'
-import { createHudView } from '../application/hud-view'
-import { createInventoryView } from '../application/inventory-view'
-import { createCrosshairView } from '../application/crosshair-view'
-import { createLoadingView } from '../application/loading-view'
-import { createMainMenuView } from '../application/main-menu-view'
-import { createSaveIndicator } from '../application/save-indicator'
-import { ICON_ROW_LABEL } from '../application/icon-element'
+import { emptyCaptionQueue, captionLines, receiveCaption } from '../src/domain/caption'
+import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
+import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
+import { GUARDED_TOKENS, surveyPalette, type Rgb } from '../src/domain/palette'
+import { saveStatus, saveStatusMessage } from '../src/domain/save-status'
+import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../src/domain/crosshair'
+import { initialMainMenuState, mainMenuViewModel, openPanel } from '../src/domain/main-menu'
+import { createCaptionView } from '../src/application/caption-view'
+import { createHudView } from '../src/application/hud-view'
+import { createInventoryView } from '../src/application/inventory-view'
+import { createCrosshairView } from '../src/application/crosshair-view'
+import { createLoadingView } from '../src/application/loading-view'
+import { createMainMenuView } from '../src/application/main-menu-view'
+import { createSaveIndicator } from '../src/application/save-indicator'
+import { ICON_ROW_LABEL } from '../src/application/icon-element'
 import {
   PALETTE_PROPERTY_PREFIX,
   PALETTE_SOURCE,
   PALETTE_VAR,
   type PaletteTokenName,
-} from '../application/palette-css'
+} from '../src/application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 /** `var(--mx-ui-ink)` back to `INK`'s three numbers. */

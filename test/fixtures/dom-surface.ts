@@ -43,7 +43,7 @@ import {
   type DomElementFactory,
   type DomNode,
   type DomStyle,
-} from '../../application/dom-surface'
+} from '../../src/application/dom-surface'
 
 declare const browserDocument: Document
 declare const browserElement: HTMLElement

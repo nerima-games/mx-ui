@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createFurnaceView } from '../application/furnace-view'
-import { furnaceViewModel } from '../domain/furnace-view-model'
+import { createFurnaceView } from '../src/application/furnace-view'
+import { furnaceViewModel } from '../src/domain/furnace-view-model'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
 describe('createFurnaceView', () => {

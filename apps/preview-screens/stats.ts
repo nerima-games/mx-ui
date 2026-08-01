@@ -35,7 +35,7 @@ import {
   unboundActions,
   colorVisionMatrix,
   type MotionSetting,
-} from '../../domain/accessibility'
+} from '../../src/domain/accessibility'
 import {
   captionLines,
   CAPTION_LIFETIME_SECS,
@@ -44,7 +44,7 @@ import {
   MAX_VISIBLE_CAPTIONS,
   receiveCaption,
   type CaptionQueue,
-} from '../../domain/caption'
+} from '../../src/domain/caption'
 import {
   hudViewModel,
   iconRow,
@@ -52,16 +52,16 @@ import {
   DEFAULT_MAX_HEALTH_POINTS,
   HOTBAR_SLOT_COUNT,
   type VitalsSnapshot,
-} from '../../domain/hud-view-model'
+} from '../../src/domain/hud-view-model'
 import {
   emptyInventorySnapshot,
   INVENTORY_MAIN_SLOT_COUNT,
   INVENTORY_SLOT_COUNT,
   inventoryViewModel,
   regionOf,
-} from '../../domain/inventory-view-model'
-import { escapePressed, openScreen, type ModalStack } from '../../domain/modal-stack'
-import { COLLAPSE_SEPARATION, hex, surveyPalette } from '../../domain/palette'
+} from '../../src/domain/inventory-view-model'
+import { escapePressed, openScreen, type ModalStack } from '../../src/domain/modal-stack'
+import { COLLAPSE_SEPARATION, hex, surveyPalette } from '../../src/domain/palette'
 import { DEFAULT_BINDINGS, PREVIEW_ACTIONS, SAMPLE_CAPTIONS, SAMPLE_HOTBAR } from './state'
 
 const pad = (text: string, width: number): string =>

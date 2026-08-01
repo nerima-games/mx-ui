@@ -24,9 +24,9 @@
  * observed from the host's side rather than a defect.
  */
 import { expect, test } from '@playwright/test'
-import { HOTBAR_SLOT_COUNT } from '../domain/hud-view-model'
-import { INVENTORY_SLOT_COUNT } from '../domain/inventory-view-model'
-import { PALETTE_PROPERTY, PALETTE_TOKEN_NAMES, PALETTE_VALUE } from '../application/palette-css'
+import { HOTBAR_SLOT_COUNT } from '../src/domain/hud-view-model'
+import { INVENTORY_SLOT_COUNT } from '../src/domain/inventory-view-model'
+import { PALETTE_PROPERTY, PALETTE_TOKEN_NAMES, PALETTE_VALUE } from '../src/application/palette-css'
 import { openHarness } from './harness'
 
 test.describe('mx-ui mounts against a real Document', () => {

@@ -31,14 +31,14 @@ import {
   type InventoryViewModel,
   type RegionId,
   type SlotRegion,
-} from '../../domain/inventory-view-model'
+} from '../../src/domain/inventory-view-model'
 import {
   gameplayInputSuppressed,
   pointerLockReleased,
   topOf,
   type ModalStack,
   type ScreenId,
-} from '../../domain/modal-stack'
+} from '../../src/domain/modal-stack'
 import { padEnd, type Style } from './ansi'
 import { BAD, FAINT, GOOD, INK, MUTED, SLOT_SELECTED, WARN } from './palette'
 

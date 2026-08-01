@@ -1,0 +1,154 @@
+{
+  "$schema": "https://oxc-project.github.io/oxc/schema/linter.json",
+  // oxlint is the ONLY lint/format configuration in this repository.
+  // There is deliberately no prettier, no biome and no .editorconfig.
+  //
+  // NOTE on the `Date.now()` ban:
+  // oxlint 0.12 does not implement `no-restricted-syntax` or `no-restricted-properties`,
+  // and while `no-restricted-globals` is listed by `oxlint --rules` it is not implemented
+  // either (no checkmark). Verified empirically against oxlint 0.12.0: a file containing
+  // `Date.now()` produces 0 diagnostics under all three rules.
+  // `scripts/check-dependency-whitelist.ts` used to enforce this ban in addition to the
+  // dependency-graph check; it was removed org-wide (PACKAGE_STANDARD.md
+  // "`scripts/check-dependency-whitelist.ts` の廃止", DEPENDENCY_POLICY.md §5) in favour of
+  // `no-restricted-imports` below. The raw-wall-clock ban has NO replacement enforcement as
+  // of this migration — oxlint still cannot express it, and org standard does not require an
+  // individual repository to keep a bespoke script for it. Tracked as a follow-up rather than
+  // silently dropped: revisit once oxlint implements `no-restricted-syntax`.
+  //
+  // Dependency-graph enforcement (which repository this may import from) is now entirely the
+  // job of `no-restricted-imports` below, per DEPENDENCY_POLICY.md's Tier3 rules for mx-ui.
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "settings": {
+    "typescript": {
+      "version": "5.9"
+    }
+  },
+  "plugins": [],
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "warn",
+    "restriction": "warn"
+  },
+  "rules": {
+    // TypeScript-specific rules
+    // Prefer `type` over `interface` for pure data types (Schema.Struct pattern).
+    // Exception in this repo: the plan.md §4.1 contracts (StageRegistration, GameModule)
+    // are reproduced verbatim as `interface` so the spec and the code read identically.
+    "@typescript-eslint/consistent-type-definitions": ["warn", "type"],
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/no-floating-promises": "warn",
+    "@typescript-eslint/no-misused-new": "warn",
+    "@typescript-eslint/no-unnecessary-type-assertion": "warn",
+    "@typescript-eslint/no-var-requires": "warn",
+    "@typescript-eslint/prefer-enum-initializers": "warn",
+    "@typescript-eslint/prefer-for-of": "warn",
+    "@typescript-eslint/prefer-literal-enum-member": "warn",
+
+    // Correctness
+    "no-array-constructor": "warn",
+    "no-empty": "warn",
+    "no-eq-null": "warn",
+    "no-extra-boolean-cast": "warn",
+    "no-fallthrough": "warn",
+    "no-irregular-whitespace": "warn",
+    "no-self-compare": "warn",
+    "no-throw-literal": "warn",
+    "no-unreachable": "warn",
+    "use-isnan": "warn",
+    "valid-typeof": "warn",
+
+    // Suspicious
+    "no-console": "warn",
+    "no-debugger": "warn",
+    "no-empty-function": "warn",
+    "no-empty-pattern": "warn",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-redeclare": "warn",
+    "no-shadow": "warn",
+    "no-unreachable-loop": "warn",
+    "no-unused-private-class-members": "warn",
+
+    // Performance
+    "no-await-in-loop": "warn",
+    "no-loop-func": "warn",
+    "no-promise-executor-return": "warn",
+    "no-sync": "warn",
+
+    // Style
+    // NOTE: this repo's oxlint.json/.oxlintrc.json was, until this migration, saved under the
+    // filename `oxlint.json` (no leading dot), which oxlint never auto-discovers — so NONE of
+    // this file's custom rules, including the ones below, were ever actually applied; oxlint
+    // silently ran with defaults. That masked the fact that the following 30 rule names
+    // (written against oxlint 0.12, per this file's other historical notes) are no longer
+    // implemented under the `eslint` plugin namespace in oxlint 1.76.0 and make
+    // `--print-config`/`pnpm lint` fail outright with "Rule '<name>' not found in plugin
+    // 'eslint'": array-bracket-spacing, block-spacing, brace-style, camelcase, comma-dangle,
+    // comma-spacing, comma-style, computed-property-spacing, eol-last, func-call-spacing,
+    // indent, key-spacing, keyword-spacing, linebreak-style, lines-between-class-members,
+    // no-mixed-spaces-and-tabs, no-new-object, no-tabs, no-trailing-spaces,
+    // no-whitespace-before-property, object-curly-spacing, one-var, operator-linebreak,
+    // padded-blocks, quote-props, semi-spacing, space-before-blocks, space-infix-ops,
+    // space-unary-ops, spaced-comment. Removed here so the config actually parses; this repo
+    // has no prettier/biome/.editorconfig, so these entries had never enforced anything and
+    // still don't — restoring equivalent formatting enforcement (e.g. via a `@stylistic`
+    // plugin or a formatter) is tracked as a separate follow-up, not part of this fix.
+    "no-array-method-this-argument": "warn",
+    "no-bitwise": "warn",
+
+    // Restriction
+    "default-case": "warn",
+    "default-case-last": "warn",
+    "no-empty-character-class": "warn",
+    // Declared for intent and for the day oxlint implements it; inert in 0.12.
+    // The script that used to back this (scripts/check-dependency-whitelist.ts) was removed
+    // org-wide; there is currently no replacement enforcement (see the note above this rules
+    // block).
+    "no-restricted-globals": ["warn", "name", "open", "close", "event"],
+    // Tier3 (DEPENDENCY_POLICY.md §1, §5): mx-ui's only declared parents are
+    // @nerima-games/mc-sim and @nerima-games/mc-audio (plus @nerima-games/mc-kernel, which
+    // every repository may import and which therefore must NOT appear in either pattern below —
+    // DEPENDENCY_POLICY.md §2 rule 5, `checkPolicyConfiguration` treats an explicit mc-kernel
+    // entry as a configuration error).
+    "no-restricted-imports": [
+      "warn",
+      {
+        "paths": [
+          {
+            "name": "effect",
+            "message": "Please use named imports from 'effect' package",
+            "importNames": ["default"]
+          }
+        ],
+        "patterns": [
+          {
+            "regex": "^@nerima-games/(mx-gameplay|mx-redstone|mx-multiplayer)(/.*)?$",
+            "message": "Tier3 experience modules do not depend on each other laterally (DEPENDENCY_POLICY.md §2). Talk through mc-sim or mc-worldgen instead."
+          },
+          {
+            "regex": "^@nerima-games/(mc-worldgen|mc-render|mc-meshing|mc-noise|mc-physics|mc-save|mc-playground-kit|mc-compose)(/.*)?$",
+            "message": "mx-ui (Tier3, DEPENDENCY_POLICY.md) may depend only on mc-sim, mc-audio, and mc-kernel."
+          }
+        ]
+      }
+    ],
+    "prefer-template": "warn",
+
+    // Disabled rules (conflict with project style)
+    "@typescript-eslint/explicit-function-return-type": "off",
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "@typescript-eslint/no-non-null-assertion": "off",
+    "no-case-declarations": "off",
+    "no-constant-condition": "off",
+    "no-param-reassign": "off",
+    "no-plusplus": "off"
+  },
+  "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
+}

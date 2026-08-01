@@ -28,14 +28,14 @@
  * `shouldAnimate` before letting freshness affect anything, and shows both
  * values so you can see the ask happening.
  */
-import { animationDurationMs, shouldAnimate, type MotionPreference } from '../../domain/accessibility'
+import { animationDurationMs, shouldAnimate, type MotionPreference } from '../../src/domain/accessibility'
 import {
   captionLines,
   CAPTION_LIFETIME_SECS,
   MAX_VISIBLE_CAPTIONS,
   type CaptionQueue,
   type CaptionSettings,
-} from '../../domain/caption'
+} from '../../src/domain/caption'
 import { mix, padEnd, type Style } from './ansi'
 import { FAINT, GOOD, INK, MUTED, WARN } from './palette'
 

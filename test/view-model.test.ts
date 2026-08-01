@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
-import * as ui from '../index'
+import * as ui from '../src/index'
 import {
   applyColorVisionMatrix,
   COLOR_VISION_FILTER_COLOR_SPACE,
@@ -15,7 +15,7 @@ import {
   colorVisionAttribute,
   colorVisionMatrix,
   colorVisionMatrixValues,
-} from '../domain/accessibility'
+} from '../src/domain/accessibility'
 import {
   CAPTION_LIFETIME_SECS,
   captionLines,
@@ -25,7 +25,7 @@ import {
   receiveCaption,
   type CaptionEvent,
   type CaptionSettings,
-} from '../domain/caption'
+} from '../src/domain/caption'
 import {
   DEFAULT_MAX_HEALTH_POINTS,
   HOTBAR_SLOT_COUNT,
@@ -33,7 +33,7 @@ import {
   iconRow,
   spawnSnapshot,
   type VitalsSnapshot,
-} from '../domain/hud-view-model'
+} from '../src/domain/hud-view-model'
 import {
   emptyInventorySnapshot,
   INVENTORY_MAIN_COLUMNS,
@@ -43,7 +43,7 @@ import {
   regionOf,
   type InventorySnapshot,
   type MirroredInventory,
-} from '../domain/inventory-view-model'
+} from '../src/domain/inventory-view-model'
 import {
   COLLAPSE_SEPARATION,
   compositeOver,
@@ -63,7 +63,7 @@ import {
   TEXT_CONTRAST_MIN,
   UI_CONTRAST_MIN,
   type Rgb,
-} from '../domain/palette'
+} from '../src/domain/palette'
 
 const withVitals = (overrides: Partial<VitalsSnapshot>): VitalsSnapshot => ({
   ...spawnSnapshot,

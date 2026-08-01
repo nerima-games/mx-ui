@@ -26,7 +26,7 @@
  * for the next one.
  */
 import { expect, type Page } from '@playwright/test'
-import type { Rgb } from '../domain/palette'
+import type { Rgb } from '../src/domain/palette'
 
 /** The two viewports `docs/e2e-triage.md` §3.6 names for `usable at ${width}px`. */
 export const NARROW_VIEWPORTS = [

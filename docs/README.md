@@ -42,4 +42,4 @@ UI 全部を含むリポジトリは、import を 1 本足すだけでゲーム�
   他と性質が違う。実装と食い違ったら実測が正しく、実装を直す。
 - [porting.md](./porting.md) の LOC は 2026-07-26 に `wc -l` で取った実測値であり、
   **plan.md §3.13 の数字は概算である**。両者は一致しないので、区別して読むこと。
-- 本ドキュメント群自体は oxlint の `ignore` に入っている（`oxlint.json` の `"docs/**"`）。
+- 本ドキュメント群自体は oxlint の `ignorePatterns` に入っている（`.oxlintrc.json` の `"docs/**"`）。

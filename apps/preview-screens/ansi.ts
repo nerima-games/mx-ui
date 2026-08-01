@@ -48,7 +48,7 @@
  * a full truecolour terrain map with none; this one needs a 3x3 matrix multiply
  * and a luminance formula, and both now ship.
  */
-import type { ColorVisionMode } from '../../domain/accessibility'
+import type { ColorVisionMode } from '../../src/domain/accessibility'
 import {
   COLLAPSE_SEPARATION,
   contrastRatio,
@@ -57,7 +57,7 @@ import {
   separation,
   simulateColorVision,
   type Rgb,
-} from '../../domain/palette'
+} from '../../src/domain/palette'
 
 export type { Rgb }
 

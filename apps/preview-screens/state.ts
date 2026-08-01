@@ -28,20 +28,20 @@
  * clock here would mean previewing a different module than the one that ships,
  * and `pnpm check:deps` bans it besides.
  */
-import type { ColorVisionMode, InputAction, KeyBindings, MotionSetting } from '../../domain/accessibility'
-import { COLOR_VISION_MODES, rebind } from '../../domain/accessibility'
-import type { CaptionEvent, CaptionQueue, CaptionSettings } from '../../domain/caption'
-import { emptyCaptionQueue, expireCaptions, receiveCaption } from '../../domain/caption'
-import type { HotbarSlotSnapshot, VitalsSnapshot } from '../../domain/hud-view-model'
+import type { ColorVisionMode, InputAction, KeyBindings, MotionSetting } from '../../src/domain/accessibility'
+import { COLOR_VISION_MODES, rebind } from '../../src/domain/accessibility'
+import type { CaptionEvent, CaptionQueue, CaptionSettings } from '../../src/domain/caption'
+import { emptyCaptionQueue, expireCaptions, receiveCaption } from '../../src/domain/caption'
+import type { HotbarSlotSnapshot, VitalsSnapshot } from '../../src/domain/hud-view-model'
 import {
   DEFAULT_MAX_HEALTH_POINTS,
   DEFAULT_MAX_HUNGER_POINTS,
   HOTBAR_SLOT_COUNT,
   spawnSnapshot,
-} from '../../domain/hud-view-model'
-import type { ModalStack, ScreenId } from '../../domain/modal-stack'
-import { closeScreen, emptyModalStack, escapePressed, openScreen } from '../../domain/modal-stack'
-import { DEFAULT_CAPTION_SETTINGS } from '../../stages/registration'
+} from '../../src/domain/hud-view-model'
+import type { ModalStack, ScreenId } from '../../src/domain/modal-stack'
+import { closeScreen, emptyModalStack, escapePressed, openScreen } from '../../src/domain/modal-stack'
+import { DEFAULT_CAPTION_SETTINGS } from '../../src/stages/registration'
 
 export type ScreenName = 'hud' | 'inventory' | 'settings' | 'captions'
 

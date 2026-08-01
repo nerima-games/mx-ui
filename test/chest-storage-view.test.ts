@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createChestStorageView } from '../application/chest-storage-view'
+import { createChestStorageView } from '../src/application/chest-storage-view'
 import {
   CHEST_STORAGE_SLOT_COUNT,
   chestStorageViewModel,
   type ChestStorageSlotSnapshot,
-} from '../domain/chest-storage-view-model'
+} from '../src/domain/chest-storage-view-model'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
 describe('createChestStorageView', () => {

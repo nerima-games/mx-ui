@@ -33,8 +33,8 @@ import {
   IDLE_CROSSHAIR_STATUS,
   type CrosshairStatus,
   type CrosshairViewModel,
-} from '../domain/crosshair'
-import { openScreen, type ScreenId } from '../domain/modal-stack'
+} from '../src/domain/crosshair'
+import { openScreen, type ScreenId } from '../src/domain/modal-stack'
 import {
   contrastRatio,
   GUARDED_TOKENS,
@@ -42,7 +42,7 @@ import {
   surveyPalette,
   UI_CONTRAST_MIN,
   type Rgb,
-} from '../domain/palette'
+} from '../src/domain/palette'
 import {
   CROSSHAIR_ARM_HIT_WEIGHT,
   CROSSHAIR_ARM_WEIGHT,
@@ -50,8 +50,8 @@ import {
   CROSSHAIR_HALO_WIDTH,
   CROSSHAIR_PULSE_SCALE,
   createCrosshairView,
-} from '../application/crosshair-view'
-import { PALETTE_PROPERTY, PALETTE_VAR } from '../application/palette-css'
+} from '../src/application/crosshair-view'
+import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const mount = (motion: 'full' | 'reduced' = 'full') => {

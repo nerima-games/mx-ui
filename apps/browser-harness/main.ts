@@ -70,8 +70,8 @@
  * If a future check genuinely needs an event, it attaches OUTSIDE any mx-ui root
  * — on the page shell — and says so at the call site.
  */
-import type { MotionPreference } from '../../domain/accessibility'
-import type { DomElementFactory } from '../../application/dom-surface'
+import type { MotionPreference } from '../../src/domain/accessibility'
+import type { DomElementFactory } from '../../src/application/dom-surface'
 import { mountScreens, SCREEN_NAMES, type ScreenName } from './screens'
 
 /**

@@ -11,7 +11,7 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 | ゲート | 何を捕まえるか |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）、`tsconfig.test.json`（テスト + ツール）、`tsconfig.preview.json`（`apps/` の dev アプリ）の 3 プロジェクト。**出荷ソースには Node 型が無い** — `types: []` を継承しているので、画面の中で `process.env` を読むと落ちる。プレビューが Node の stdio を使えるのは**別プロジェクト**だからであって、build 側を緩めたからではない（§4） |
-| `pnpm lint` | oxlint。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
+| `pnpm lint` | oxlint。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm check:deps` | 依存ホワイトリスト / 循環 / 推移閉包 / kit の実行時混入 / **壁時計の直読み**（DN-UI-10） |
 | `pnpm api:check` | `api-lock.md` と公開 API の乖離（plan.md §6 Step 0-3） |
 | `pnpm test` | vitest |
@@ -25,7 +25,7 @@ $ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内
 `pnpm` は `corepack` 経由で 9.15.0（`package.json` の `packageManager` でピン留め）。
 
 `check:deps` が壁時計禁止まで見ているのは oxlint 0.12 が該当ルールを実装していないためで、
-経緯は `oxlint.json` の冒頭と DN-UI-10 にある。
+経緯は `.oxlintrc.json` の冒頭と DN-UI-10 にある。
 
 ## 2. 現状の suite（2026-07-27 実測）
 

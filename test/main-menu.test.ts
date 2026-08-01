@@ -10,7 +10,7 @@ import {
   worldNameLabel,
   type MainMenuState,
   type SavedWorld,
-} from '../domain/main-menu'
+} from '../src/domain/main-menu'
 import {
   EMPTY_SAVE_LIST_NOTE,
   GAME_MODE_LABEL,
@@ -18,7 +18,7 @@ import {
   ROOT_ENTRY_LABEL,
   createMainMenuView,
   type MainMenuCallbacks,
-} from '../application/main-menu-view'
+} from '../src/application/main-menu-view'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [

@@ -71,7 +71,7 @@
  *  - `pnpm verify` does not run this app. `tsconfig.preview.json` typechecks it
  *    and `pnpm lint` lints it; `pnpm preview` is not a gate.
  */
-import { resolveMotionPreference } from '../../domain/accessibility'
+import { resolveMotionPreference } from '../../src/domain/accessibility'
 import { makeStyle, padEnd, type Style } from './ansi'
 import { parseArguments, USAGE, type PreviewOptions } from './options'
 import { ASCII_ICONS, BLOCK_ICONS, INK, MUTED, WARN } from './palette'
