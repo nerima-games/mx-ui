@@ -151,6 +151,8 @@ describe('public API surface', () => {
         'chestStorageViewModel',
         'chestStorageSlotClickIntent',
         'chestStorageCloseIntent',
+        'ANVIL_OPERATION_TARGETS',
+        'anvilViewModel',
       ]
 
       for (const name of internal) {
@@ -167,6 +169,7 @@ describe('public API surface', () => {
         'createCaptionView',
         'createInventoryView',
         'createChestStorageView',
+        'createAnvilView',
         // The two screens `docs/e2e-triage.md` §2.1 recorded as 「その画面が mx-ui に
         // まだ無い」. They are pinned for the same reason the accessibility assets
         // are: a screen that was built and then quietly dropped from the barrel

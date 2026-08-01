@@ -41,6 +41,7 @@
  */
 
 export * from './application/accessibility-dom'
+export * from './application/anvil-view'
 export * from './application/caption-view'
 export * from './application/chest-storage-view'
 export * from './application/crosshair-view'
@@ -59,6 +60,7 @@ export * from './application/session-overlays'
 export * from './application/slot-element'
 export * from './application/ui-mount'
 export * from './domain/accessibility'
+export * from './domain/anvil-view-model'
 export * from './domain/caption'
 export * from './domain/chest-storage-view-model'
 export * from './domain/crosshair'
