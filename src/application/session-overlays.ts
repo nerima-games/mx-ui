@@ -110,7 +110,7 @@ export const createSessionOverlays = (
 
   const debugHud = document.createElement('output')
   debugHud.setAttribute('data-mx-ui', 'debug-hud')
-  debugHud.setAttribute('role', 'status')
+  debugHud.setAttribute('role', 'region')
   debugHud.setAttribute('aria-label', 'Debug information')
   debugHud.hidden = true
   debugHud.style.whiteSpace = 'pre'

@@ -33,6 +33,11 @@ import {
 } from '../domain/caption'
 import type { DeltaTimeSecs, GameModule, StageRegistration } from '../domain/frame-contract'
 import {
+  type FpsCounter,
+  advanceFpsCounter,
+  emptyFpsCounter,
+} from '../domain/fps-counter'
+import {
   hudViewModel,
   spawnSnapshot,
   type HudViewModel,
@@ -74,6 +79,8 @@ export type UiFrameState = {
   readonly modals: Ref.Ref<ModalStack>
   /** Monotonic seconds, accumulated from `dt`. Never read from a global. */
   readonly elapsedSecs: Ref.Ref<number>
+  /** Average frame rate measured from the frame-supplied `dt`. */
+  readonly fpsCounter: Ref.Ref<FpsCounter>
 }
 
 /**
@@ -88,8 +95,9 @@ export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function
   const captionSettings = yield* Ref.make<CaptionSettings>(DEFAULT_CAPTION_SETTINGS)
   const modals = yield* Ref.make<ModalStack>(emptyModalStack)
   const elapsedSecs = yield* Ref.make(0)
+  const fpsCounter = yield* Ref.make<FpsCounter>(emptyFpsCounter)
 
-  return { snapshot, hud, captions, captionSettings, modals, elapsedSecs }
+  return { captionSettings, captions, elapsedSecs, fpsCounter, hud, modals, snapshot }
 })
 
 /**
@@ -121,6 +129,7 @@ export const uiStages = (state: UiFrameState): ReadonlyArray<StageRegistration> 
         // reading a global clock, and `pnpm check:deps` enforces it — so a
         // caption's age is an accumulation, not a reading.
         const nowSecs = yield* Ref.updateAndGet(state.elapsedSecs, (elapsed) => elapsed + dt)
+        yield* Ref.update(state.fpsCounter, (counter) => advanceFpsCounter(counter, dt))
         // SETTINGS FIRST, then age. `receiveCaption` gates admission and cannot
         // reach a caption that is already up, so turning captions off would
         // otherwise leave the visible ones to drain through `expireCaptions` —
