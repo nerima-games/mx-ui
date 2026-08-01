@@ -207,6 +207,32 @@ describe('UiMount', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
+  // eslint-disable-next-line max-statements -- Covers the complete focus and activation flow.
+  it('shares spatial inventory navigation between arrow keys and controller commands', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const onInventoryActivate = vi.fn()
+    const runtime = makeUiMount({ onInventoryActivate, root: host })
+    await Effect.runPromise(runtime.start)
+
+    expect(runtime.moveInventoryFocus('right')).toBe(false)
+    expect(runtime.activateInventoryFocus()).toBe(false)
+    runtime.openInventory()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'ArrowRight' }))
+    expect(runtime.moveInventoryFocus('down')).toBe(true)
+    expect(runtime.activateInventoryFocus()).toBe(true)
+    expect(onInventoryActivate).toHaveBeenLastCalledWith({
+      index: 1,
+      kind: 'slot',
+      region: 'main',
+    })
+
+    const focused = host.querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')
+    expect(focused?.getAttribute('aria-label')).toContain('main slot 2')
+    expect(document.activeElement).toBe(focused)
+  })
+
   it('does not open inventory behind settings', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)

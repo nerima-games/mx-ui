@@ -2,13 +2,19 @@ import { Effect } from 'effect'
 import type { MotionPreference } from '../domain/accessibility'
 import { hudViewModel, spawnSnapshot } from '../domain/hud-view-model'
 import {
+  type InventoryViewModel,
   emptyInventorySnapshot,
   inventoryViewModel,
-  type InventoryViewModel,
 } from '../domain/inventory-view-model'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu'
 import { uiModule } from '../stages/registration'
 import { type HudView, createHudView } from './hud-view'
+import {
+  type InventoryNavigationDirection,
+  inventoryTargets,
+  moveInventoryTarget,
+  sameInventoryTarget,
+} from './inventory-navigation'
 import {
   type InventoryInteractionTarget,
   type InventoryView,
@@ -60,6 +66,8 @@ export type UiMount = {
   readonly openInventory: (model?: InventoryViewModel) => void
   readonly closeInventory: () => void
   readonly updateInventory: (model: InventoryViewModel) => void
+  readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
+  readonly activateInventoryFocus: () => boolean
 }
 
 export class UiMountError extends Error {
@@ -68,6 +76,21 @@ export class UiMountError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
     this.name = 'UiMountError'
+  }
+}
+
+const inventoryDirectionForKey = (key: string): InventoryNavigationDirection | null => {
+  switch (key) {
+    case 'ArrowDown':
+      return 'down'
+    case 'ArrowLeft':
+      return 'left'
+    case 'ArrowRight':
+      return 'right'
+    case 'ArrowUp':
+      return 'up'
+    default:
+      return null
   }
 }
 
@@ -80,32 +103,9 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
   let inventoryFocus: InventoryInteractionTarget = { kind: 'slot', region: 'hotbar', index: 0 }
   let inventoryRestoreFocus: HTMLElement | undefined
 
-  const inventoryTargets = (model: InventoryViewModel): ReadonlyArray<InventoryInteractionTarget> => {
-    const targets: Array<InventoryInteractionTarget> = []
-    for (const region of model.regions) {
-      if (region.kind === 'slots') {
-        for (const index of region.slots.keys()) {
-          targets.push({ index, kind: 'slot', region: region.id })
-        }
-      }
-    }
-    if (model.crafting.kind === 'match') {
-      targets.push({ kind: 'crafting-output' })
-    }
-    return targets
-  }
-
-  const sameTarget = (
-    left: InventoryInteractionTarget,
-    right: InventoryInteractionTarget,
-  ): boolean =>
-    left.kind === right.kind &&
-    (left.kind === 'crafting-output' ||
-      (right.kind === 'slot' && left.region === right.region && left.index === right.index))
-
   const renderInventory = (view: InventoryView, focus = false): void => {
     const targets = inventoryTargets(inventoryModel)
-    inventoryFocus = targets.find((target) => sameTarget(target, inventoryFocus)) ??
+    inventoryFocus = targets.find((target) => sameInventoryTarget(target, inventoryFocus)) ??
       targets[0] ?? { kind: 'crafting-output' }
     view.render(inventoryModel, { focused: inventoryFocus, status: '' })
     if (focus && targets.length > 0) {
@@ -118,6 +118,24 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
               ?.querySelectorAll<HTMLElement>('[data-mx-ui="slot"]')[inventoryFocus.index]
       target?.focus()
     }
+  }
+
+  const moveInventoryFocus = (direction: InventoryNavigationDirection): boolean => {
+    const view = mounted?.inventory
+    if (!inventoryOpen || view === undefined) {
+      return false
+    }
+    inventoryFocus = moveInventoryTarget(inventoryModel, inventoryFocus, direction)
+    renderInventory(view, true)
+    return true
+  }
+
+  const activateInventoryFocus = (): boolean => {
+    if (!inventoryOpen) {
+      return false
+    }
+    options.onInventoryActivate?.(inventoryFocus)
+    return true
   }
 
   const unmount = (): void => {
@@ -200,16 +218,22 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
               return false
             }
             event.preventDefault()
-            const currentIndex = targets.findIndex((target) => sameTarget(target, inventoryFocus))
+            const currentIndex = targets.findIndex((target) =>
+              sameInventoryTarget(target, inventoryFocus),
+            )
             const direction = event.shiftKey ? -1 : 1
             inventoryFocus = targets[(currentIndex + direction + targets.length) % targets.length] ?? targets[0]!
             renderInventory(inventory, true)
             return true
           }
+          const direction = inventoryDirectionForKey(event.key)
+          if (direction !== null) {
+            event.preventDefault()
+            return moveInventoryFocus(direction)
+          }
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
-            options.onInventoryActivate?.(inventoryFocus)
-            return true
+            return activateInventoryFocus()
           }
           return false
         }
@@ -251,6 +275,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
   })
 
   return {
+    activateInventoryFocus,
     closeInventory: () => {
       if (!inventoryOpen) {
         return
@@ -266,6 +291,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     closeSettings: () => mounted?.overlays.closeSettings(),
     current: () => mounted,
     name: '@nerima-games/mx-ui',
+    moveInventoryFocus,
     openSettings: () => mounted?.overlays.openSettings(),
     openInventory: (model) => {
       if (model !== undefined) {

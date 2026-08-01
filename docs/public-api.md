@@ -134,6 +134,11 @@ export type UiMount = {
   readonly updateSettings: (settings: UiSettings) => void
   readonly openSettings: () => void
   readonly closeSettings: () => void
+  readonly openInventory: (model?: InventoryViewModel) => void
+  readonly closeInventory: () => void
+  readonly updateInventory: (model: InventoryViewModel) => void
+  readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
+  readonly activateInventoryFocus: () => boolean
 }
 ```
 
@@ -148,11 +153,14 @@ export type UiMount = {
    listener は常に root の `ownerDocument` に登録し、再 mount / stop / 初期化失敗で解除する。
 6. **設定変更は typed callback でホストへ返す。** mouse sensitivity、render distance、field of view、master volume の
    所有権はホスト側にあり、mx-ui は入力と通知だけを担う。
+7. **ゲームパッドはホストがポーリングする。** mx-ui は Gamepad API やボタン割り当てを所有せず、ホストが
+   `moveInventoryFocus` / `activateInventoryFocus` に意味上のコマンドを渡す。矢印キーも同じ移動関数を使い、
+   region の列数、未知 region のスキップ、crafting output への遷移を一貫させる。
 
 ## 5. `index.ts` の全 export
 
-`index.ts` は 20 モジュールを `export *` している——`domain/` の 7、`stages/` の 2、
-そして **`application/` の 11**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
+`index.ts` は 21 モジュールを `export *` している——`domain/` の 7、`stages/` の 2、
+そして **`application/` の 12**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。
