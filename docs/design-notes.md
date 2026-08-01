@@ -657,7 +657,7 @@ oxlint 0.12 は `no-restricted-syntax` も `no-restricted-properties` も**実�
 
 したがって禁止は `scripts/check-dependency-whitelist.ts` の rule 7 にある。
 コメント・文字列リテラル・正規表現リテラルの中身は `maskSource` でマスクされるので誤検知しない。
-`oxlint.json` の冒頭にこの実測メモがあり、oxlint が該当ルールを実装したら移す、と書いてある。
+`.oxlintrc.json` の冒頭にこの実測メモがあり、oxlint が該当ルールを実装したら移す、と書いてある。
 
 禁止対象は 3 つ: `Date.now()` / `new Date()` / `performance.now()`。
 クロック Port の実装アダプタだけは実クロックを読む必要があるので、
