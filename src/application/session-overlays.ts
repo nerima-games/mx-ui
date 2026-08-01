@@ -19,6 +19,8 @@ export type UiSettingsCallbacks = {
   readonly onMasterVolumeChange?: (value: number) => void
 }
 
+export type SessionKeyDelegate = (event: KeyboardEvent) => boolean
+
 export const DEFAULT_UI_SETTINGS: UiSettings = {
   fieldOfView: 70,
   masterVolume: 1,
@@ -100,6 +102,7 @@ export const createSessionOverlays = (
   initialSettings: UiSettings = DEFAULT_UI_SETTINGS,
   callbacks: UiSettingsCallbacks = {},
   initialDebug: DebugHudSnapshot = DEFAULT_DEBUG_HUD_SNAPSHOT,
+  delegateKeyDown?: SessionKeyDelegate,
 ): SessionOverlays => {
   const root = document.createElement('div')
   root.setAttribute('data-mx-ui', 'session-overlays')
@@ -208,6 +211,8 @@ export const createSessionOverlays = (
     } else if (event.key === 'Escape' && !settingsDialog.hidden) {
       event.preventDefault()
       closeSettings()
+    } else if (settingsDialog.hidden) {
+      delegateKeyDown?.(event)
     }
   }
   document.addEventListener('keydown', onKeyDown)

@@ -162,6 +162,61 @@ describe('UiMount', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
+  it('traps inventory focus, activates the focused slot, and restores focus', async () => {
+    const host = document.createElement('main')
+    const trigger = document.createElement('button')
+    host.appendChild(trigger)
+    document.body.appendChild(host)
+    const onInventoryActivate = vi.fn()
+    const runtime = makeUiMount({ onInventoryActivate, root: host })
+    await Effect.runPromise(runtime.start)
+
+    trigger.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'e' }))
+
+    const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
+    expect(inventory?.hasAttribute('hidden')).toBe(false)
+    const first = inventory?.querySelector<HTMLElement>('[tabindex="0"]')
+    expect(document.activeElement).toBe(first)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+    const second = inventory?.querySelector<HTMLElement>('[tabindex="0"]')
+    expect(second).not.toBe(first)
+    expect(document.activeElement).toBe(second)
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
+    )
+    expect(inventory?.querySelector<HTMLElement>('[tabindex="0"]')).toBe(first)
+    expect(document.activeElement).toBe(first)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Enter' }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: ' ' }))
+    expect(onInventoryActivate).toHaveBeenCalledTimes(2)
+    expect(onInventoryActivate).toHaveBeenLastCalledWith({
+      index: 0,
+      kind: 'slot',
+      region: 'hotbar',
+    })
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Escape' }))
+    expect(inventory?.hasAttribute('hidden')).toBe(true)
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('does not open inventory behind settings', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    runtime.openSettings()
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'e' }))
+
+    const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
+    expect(inventory?.hasAttribute('hidden')).toBe(true)
+  })
+
   it('detaches session keyboard listeners across remount and stop', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
