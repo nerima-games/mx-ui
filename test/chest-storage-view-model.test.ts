@@ -11,6 +11,7 @@ import { HOTBAR_SLOT_COUNT } from '../src/domain/hud-view-model'
 
 const EMPTY: ChestStorageSnapshot = {
   chest: [],
+  chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
   playerInventory: [],
   cursor: undefined,
   selectedSlot: undefined,
@@ -93,5 +94,16 @@ describe('chestStorageViewModel', () => {
     expect(chestStorageSlotClickIntent({ region: 'player', slot: -1 })).toBeUndefined()
     expect(chestStorageSlotClickIntent({ region: 'player', slot: 1.5 })).toBeUndefined()
     expect(chestStorageCloseIntent()).toStrictEqual({ _tag: 'CloseRequested' })
+  })
+
+  it('uses the active container capacity for chest slots', () => {
+    const model = chestStorageViewModel({ ...EMPTY, chestSlotCount: 5 })
+
+    expect(model.chest).toHaveLength(5)
+    expect(chestStorageSlotClickIntent({ region: 'chest', slot: 4 }, 5)).toStrictEqual({
+      _tag: 'SlotClicked',
+      target: { region: 'chest', slot: 4 },
+    })
+    expect(chestStorageSlotClickIntent({ region: 'chest', slot: 5 }, 5)).toBeUndefined()
   })
 })
