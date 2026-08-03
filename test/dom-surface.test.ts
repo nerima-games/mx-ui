@@ -97,7 +97,7 @@ describe('REGRESSION: the DOM surface is a real subset of the real DOM', () => {
     const code = source.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(code.includes('export type DomInteractiveElement')).toBe(true)
     expect(code.match(/addEventListener/gu)?.length).toBe(1)
-    expect(code.includes('removeEventListener')).toBe(false)
+    expect(code.match(/removeEventListener/gu)?.length).toBe(1)
     expect(code.includes("createElement(tagName: 'button'): DomInteractiveElement")).toBe(true)
     expect(code.includes("createElement(tagName: 'input'): DomInputElement")).toBe(true)
     expect(code.includes('keydown')).toBe(false)

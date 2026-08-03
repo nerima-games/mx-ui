@@ -74,8 +74,8 @@
  * Escape, keys and animation: what is NOT here
  * ---------------------------------------------------------------------------
  *
- * No listener — `application/dom-surface.ts` has no `addEventListener` and must
- * never grow one (DN-UI-4/DN-UI-13c).
+ * No listener — this renderer uses only generic `DomElement`s, whose surface
+ * deliberately has no `addEventListener` (DN-UI-4/DN-UI-13c).
  *
  * No spinner, and that is a decision. A rotating `⟳` would be a decorative
  * animation, which `domain/accessibility.ts` requires to be suppressed under

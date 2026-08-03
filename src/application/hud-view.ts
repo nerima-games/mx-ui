@@ -44,9 +44,9 @@
  * Escape, and what is NOT here
  * ---------------------------------------------------------------------------
  *
- * No `addEventListener`. Not "none today" — `application/dom-surface.ts` does
- * not contain the verb, so this file could not attach one without widening a
- * file whose header says why it must not be widened. DN-UI-4: 「モーダルの Escape は
+ * No `addEventListener`. Not "none today" — the generic element surface does
+ * not contain the verb, so this file could not attach one without opting into
+ * the menu-only interactive surface. DN-UI-4: 「モーダルの Escape は
  * stopPropagation、閉じる責務はフレーム側単一ハンドラ(mc-render の入力設計と対)」.
  * `domain/modal-stack.ts` holds the decision; mc-render delivers the key; this
  * file draws the result.
@@ -57,8 +57,8 @@
  * browser honours natively with no listener anywhere — and mx-ui draws the ring
  * out of `FOCUS_RING` / `FOCUS_RING_SHADOW`. What it does not do is take the
  * keystroke that moves focus, or watch for the focus event that would tell it the
- * player pressed Tab: neither `addEventListener` nor `focus()` is in
- * `application/dom-surface.ts`. A focus RING is a rendering concern; a focus
+ * player pressed Tab: neither operation is available on a generic `DomElement`.
+ * A focus RING is a rendering concern; a focus
  * MOVE is an input one, and they were only ever the same thing because nobody
  * had separated them.
  */

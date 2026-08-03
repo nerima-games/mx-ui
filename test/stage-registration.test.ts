@@ -161,7 +161,33 @@ describe('stage behaviour', () => {
       const state = yield* makeUiFrameState
       yield* Effect.forEach(uiStages(state), (stage) => stage.run(DeltaTimeSecs(0)))
       expect(yield* Ref.get(state.elapsedSecs)).toBe(0)
+      expect(yield* Ref.get(state.fpsCounter)).toStrictEqual({
+        elapsedSecs: 0,
+        fps: 0,
+        frameCount: 0,
+      })
       expect(yield* Ref.get(state.hud)).toStrictEqual(hudViewModel(spawnSnapshot))
+    }).pipe(Effect.provide(FrameServicesLayer)),
+  )
+
+  it.effect('overlay-sync derives FPS from accumulated frame delta', () =>
+    Effect.gen(function* () {
+      const state = yield* makeUiFrameState
+      const overlaySync = uiStages(state).find((stage) => stage.id === UI_STAGE_IDS.overlaySync)
+
+      yield* overlaySync?.run(DeltaTimeSecs(0.5)) ?? Effect.void
+      expect(yield* Ref.get(state.fpsCounter)).toStrictEqual({
+        elapsedSecs: 0.5,
+        fps: 0,
+        frameCount: 1,
+      })
+
+      yield* overlaySync?.run(DeltaTimeSecs(0.5)) ?? Effect.void
+      expect(yield* Ref.get(state.fpsCounter)).toStrictEqual({
+        elapsedSecs: 0,
+        fps: 2,
+        frameCount: 0,
+      })
     }).pipe(Effect.provide(FrameServicesLayer)),
   )
 

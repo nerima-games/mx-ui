@@ -33,33 +33,45 @@
  * `HTMLElement` directly — not because the DOM lib is missing (mx-ui is the one
  * repository of the sixteen that has it) but because a fake document under
  * `environment: 'node'` must satisfy the renderer WITHOUT A CAST, and because a
- * surface with no `addEventListener` in it cannot grow a second owner for
- * Escape (DN-UI-4).
+* generic surface with no event methods cannot grow a second owner for Escape;
+* only the menu's button/input surface exposes click and input events (DN-UI-4).
  *
  * Tests that drive DOM flows must be written with plain `it` +
  * `Effect.runPromise`, NOT `it.effect`. See docs/testing.md.
  */
 
 export * from './application/accessibility-dom'
+export * from './application/anvil-view'
 export * from './application/caption-view'
 export * from './application/chest-storage-view'
 export * from './application/crosshair-view'
 export * from './application/dom-surface'
 export * from './application/dom-write'
+export * from './application/enchanting-table-view'
 export * from './application/furnace-view'
 export * from './application/hud-view'
 export * from './application/icon-element'
 export * from './application/inventory-view'
+export * from './application/inventory-actions'
+export * from './application/inventory-navigation'
 export * from './application/loading-view'
 export * from './application/main-menu-view'
 export * from './application/palette-css'
 export * from './application/save-indicator'
+export * from './application/session-overlays'
 export * from './application/slot-element'
+export * from './application/ui-mount'
 export * from './domain/accessibility'
+export * from './domain/anvil-view-model'
 export * from './domain/caption'
 export * from './domain/chest-storage-view-model'
 export * from './domain/crosshair'
+export * from './domain/enchanting-table-view-model'
+export * from './domain/enchanting-table-controller'
+export * from './domain/end-hud'
 export * from './domain/furnace-view-model'
+export * from './domain/furnace-controller'
+export * from './domain/fps-counter'
 export * from './domain/hud-view-model'
 export * from './domain/inventory-view-model'
 export * from './domain/loading-screen'

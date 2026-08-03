@@ -140,10 +140,21 @@ describe('public API surface', () => {
         'loadingScreenView',
         'CROSSHAIR_PULSE_SECS',
         'crosshairViewModel',
+        'ENDER_DRAGON_DEFAULT_NAME',
+        'bossHealthBarViewModel',
+        'strongholdLocatorViewModel',
+        'PORTAL_EYE_SLOT_COUNT',
+        'portalEyeProgressViewModel',
+        'dragonDefeatPresentationKey',
+        'dragonDefeatRewardNotification',
         'CHEST_STORAGE_SLOT_COUNT',
         'chestStorageViewModel',
         'chestStorageSlotClickIntent',
         'chestStorageCloseIntent',
+        'ANVIL_OPERATION_TARGETS',
+        'anvilViewModel',
+        'ENCHANTING_OPERATION_TARGETS',
+        'enchantingTableViewModel',
       ]
 
       for (const name of internal) {
@@ -160,6 +171,8 @@ describe('public API surface', () => {
         'createCaptionView',
         'createInventoryView',
         'createChestStorageView',
+        'createAnvilView',
+        'createEnchantingTableView',
         // The two screens `docs/e2e-triage.md` §2.1 recorded as 「その画面が mx-ui に
         // まだ無い」. They are pinned for the same reason the accessibility assets
         // are: a screen that was built and then quietly dropped from the barrel
@@ -167,6 +180,7 @@ describe('public API surface', () => {
         // that depends on it would go on reading 「移植済み」.
         'createMainMenuView',
         'createLoadingView',
+        'makeUiMount',
         // The reticle. Pinned because its destination was doubted twice and
         // settled twice (`docs/e2e-triage.md` #15): dropping it from the barrel
         // would make it look unbuilt again.
