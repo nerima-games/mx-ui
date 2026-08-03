@@ -32,8 +32,9 @@ import {
   crosshairViewModel,
   IDLE_CROSSHAIR_STATUS,
   type CrosshairStatus,
-} from '../domain/crosshair'
-import { openScreen, type ScreenId } from '../domain/modal-stack'
+  type CrosshairViewModel,
+} from '../src/domain/crosshair'
+import { openScreen, type ScreenId } from '../src/domain/modal-stack'
 import {
   contrastRatio,
   GUARDED_TOKENS,
@@ -41,15 +42,16 @@ import {
   surveyPalette,
   UI_CONTRAST_MIN,
   type Rgb,
-} from '../domain/palette'
+} from '../src/domain/palette'
 import {
   CROSSHAIR_ARM_HIT_WEIGHT,
   CROSSHAIR_ARM_WEIGHT,
+  CROSSHAIR_BREAK_PROGRESS_LABEL,
   CROSSHAIR_HALO_WIDTH,
   CROSSHAIR_PULSE_SCALE,
   createCrosshairView,
-} from '../application/crosshair-view'
-import { PALETTE_PROPERTY, PALETTE_VAR } from '../application/palette-css'
+} from '../src/application/crosshair-view'
+import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const mount = (motion: 'full' | 'reduced' = 'full') => {
@@ -64,6 +66,12 @@ const hitAt = (secs: number): CrosshairStatus => ({ modals: [], lastHitAtSecs: s
 
 const arms = (root: FakeElement): ReadonlyArray<FakeElement> =>
   root.findAll('data-mx-ui', 'crosshair-arm')
+
+const progress = (root: FakeElement): FakeElement | undefined =>
+  root.find('data-mx-ui', 'crosshair-progress')
+
+const progressFill = (root: FakeElement): FakeElement | undefined =>
+  root.find('data-mx-ui', 'crosshair-progress-fill')
 
 /**
  * An arm's THICKNESS, which is a different axis per arm.
@@ -122,7 +130,10 @@ describe('when the crosshair is drawn, and when it is not', () => {
       const covered = { modals: openScreen([], screen), lastHitAtSecs: undefined }
       expect(crosshairViewModel(covered, 0), screen).toBeUndefined()
     }
-    expect(crosshairViewModel(aiming, 0)).toStrictEqual({ hit: false })
+    expect(crosshairViewModel(aiming, 0)).toStrictEqual({
+      hit: false,
+      breakProgress: undefined,
+    })
   })
 
   it('hides the element rather than removing it, because the surface has no removeChild', () => {
@@ -135,6 +146,77 @@ describe('when the crosshair is drawn, and when it is not', () => {
     // built at mount is the tree that exists forever, which is what lets every
     // cell hold a permanent element reference.
     expect(arms(root)).toHaveLength(2)
+  })
+})
+
+describe('block-breaking progress', () => {
+  it('keeps the progress field optional for existing object literals', () => {
+    const legacyModel: CrosshairViewModel = { hit: false }
+
+    expect(legacyModel.breakProgress).toBeUndefined()
+  })
+
+  it('normalises finite progress and rejects non-finite values', () => {
+    const model = (breakProgress: number): number | undefined =>
+      crosshairViewModel({ ...aiming, breakProgress }, 0)?.breakProgress
+
+    expect(model(-0.25)).toBe(0)
+    expect(model(0)).toBe(0)
+    expect(model(0.375)).toBe(0.375)
+    expect(model(1)).toBe(1)
+    expect(model(1.25)).toBe(1)
+    expect(model(Number.NaN)).toBeUndefined()
+    expect(model(Number.POSITIVE_INFINITY)).toBeUndefined()
+  })
+
+  it('distinguishes an active empty bar from no active break', () => {
+    const { root, view } = mount()
+    const track = progress(root)
+    const fill = progressFill(root)
+
+    expect(track?.attributes.has('hidden')).toBe(true)
+    expect(track?.attributes.get('role')).toBe('progressbar')
+    expect(track?.attributes.get('aria-label')).toBe(CROSSHAIR_BREAK_PROGRESS_LABEL)
+    expect(track?.attributes.get('aria-valuemin')).toBe('0')
+    expect(track?.attributes.get('aria-valuemax')).toBe('100')
+    expect(track?.attributes.has('aria-valuenow')).toBe(false)
+    expect(track?.attributes.has('aria-live')).toBe(false)
+
+    view.render(crosshairViewModel({ ...aiming, breakProgress: 0 }, 0))
+    expect(track?.attributes.has('hidden')).toBe(false)
+    expect(track?.attributes.get('aria-valuenow')).toBe('0')
+    expect(fill?.style.properties.get('width')).toBe('0%')
+
+    view.render(crosshairViewModel(aiming, 0))
+    expect(track?.attributes.has('hidden')).toBe(true)
+    expect(track?.attributes.has('aria-valuenow')).toBe(false)
+  })
+
+  it('projects partial and complete progress without moving with the hit pulse', () => {
+    const { root, view } = mount('full')
+
+    view.render(
+      crosshairViewModel({ modals: [], lastHitAtSecs: 0, breakProgress: 0.375 }, 0),
+    )
+    expect(progressFill(root)?.style.properties.get('width')).toBe('37.5%')
+    expect(progress(root)?.style.properties.get('transform')).toBe('translateX(-50%)')
+    expect(root.children.map((child) => child.attributes.get('data-mx-ui'))).toStrictEqual([
+      'crosshair-mark',
+      'crosshair-progress',
+    ])
+
+    view.render(crosshairViewModel({ ...aiming, breakProgress: 1 }, 0))
+    expect(progressFill(root)?.style.properties.get('width')).toBe('100%')
+  })
+
+  it('does not mutate the DOM when progress is unchanged', () => {
+    const { factory, view } = mount()
+    const model = crosshairViewModel({ ...aiming, breakProgress: 0.5 }, 0)
+
+    view.render(model)
+    const before = factory.mark()
+    view.render(model)
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 })
 
@@ -239,7 +321,7 @@ describe('the hit marker is a duration, not a timer (DN-UI-10)', () => {
 })
 
 describe('the crosshair keeps the palette’s guarantee instead of leaving it', () => {
-  it('REGRESSION: the arms are INK and they carry their own SCRIM halo', () => {
+  it('REGRESSION: the mark and progress bar stay within the INK-on-SCRIM palette', () => {
     // `domain/palette.ts`: 「content that leaves it leaves the guarantee with
     // it」. A reticle cannot sit on a scrim panel — that is a grey box in the
     // middle of the screen — so it takes a scrim-sized piece of scrim with it.
@@ -253,6 +335,8 @@ describe('the crosshair keeps the palette’s guarantee instead of leaving it', 
         `0 0 0 ${CROSSHAIR_HALO_WIDTH} ${PALETTE_VAR.scrim}`,
       )
     }
+    expect(progress(root)?.style.properties.get('background-color')).toBe(PALETTE_VAR.scrim)
+    expect(progressFill(root)?.style.properties.get('background-color')).toBe(PALETTE_VAR.ink)
   })
 
   it('REGRESSION: its floor is a number the survey ALREADY measures — no new token', () => {
@@ -334,23 +418,16 @@ describe('the crosshair keeps the palette’s guarantee instead of leaving it', 
     expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
-  it('REGRESSION: is aria-hidden, and the gap that leaves is named rather than papered over', () => {
-    // The one place in this repository where hiding something from a screen
-    // reader is the accessible answer. A reticle's whole content is 「the centre
-    // of the viewport」, which is a fact about the screen, not about the game.
-    // What a player who cannot see it needs is what is UNDER it, and mx-ui has
-    // no targeting information to project — that is mc-sim's and mx-gameplay's.
-    //
-    // Pinned so that 「add an aria-label」 is a deliberate change rather than a
-    // tidy-up: a label reading 「crosshair」 would announce on every screen read
-    // and answer nothing.
+  it('keeps the decorative mark hidden without hiding progress semantics', () => {
     const { root, view } = mount()
-    view.render(crosshairViewModel(aiming, 0))
+    view.render(crosshairViewModel({ ...aiming, breakProgress: 0.5 }, 0))
 
-    expect(root.attributes.get('aria-hidden')).toBe('true')
+    expect(root.attributes.has('aria-hidden')).toBe(false)
+    expect(root.find('data-mx-ui', 'crosshair-mark')?.attributes.get('aria-hidden')).toBe('true')
+    expect(progress(root)?.attributes.get('aria-label')).toBe(CROSSHAIR_BREAK_PROGRESS_LABEL)
     for (const element of root.walk()) {
       expect(element.attributes.has('tabindex')).toBe(false)
-      expect(element.attributes.has('aria-label')).toBe(false)
+      expect(element.attributes.has('aria-live')).toBe(false)
     }
     // And it never eats a click, which is the property the reference carries in
     // the same breath (`crosshair.ts:17`): a mark sitting exactly where every

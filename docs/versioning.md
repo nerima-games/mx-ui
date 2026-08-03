@@ -22,7 +22,9 @@ mount 面（[public-api.md](./public-api.md) §4-1）でルート要素を渡し
 
 現状 mount 面は存在すらしていないので、机上で 1.0.0 を切る根拠が無い。
 
-plan.md §6 Step 3:
+plan.md §6 Step 3(歴史的な記録。当時の「APIロック4週間無変更」ゲートは
+その後 API_STANDARD.md §4 / RELEASE_STANDARD.md §4 により廃止され、
+maintainer の裁量判断に置き換えられている):
 
 > 界面が安定した(APIロック4週間無変更)リポジトリから GitHub Packages 等へ npm 公開 + changesets 運用に切り替え。
 > それまでは dev-meta workspace 統合で開発。
@@ -72,7 +74,11 @@ mx-ui が着手する頃には mc-render と mx-gameplay / mx-redstone が先に
 mx-ui は最初の消費者ではない。
 
 それまでは `mc-dev-meta` の `workspace:*` 解決で開発する（plan.md §6 Step 0）。
-npm 公開は **API ロック 4 週間無変更**を満たしてから開始する（Step 3）。
+**旧来の「API ロック 4 週間無変更で凍結」という日数計測ベースの自動ゲートは廃止された。**
+`1.0.0` への昇格は自動化された指標や計測期間による代替ゲートを設けず、maintainer(take)による
+裁量判断のみで行う(RELEASE_STANDARD.md §4.2)。判断材料は「上位階層である mc-compose が
+実際にこの契約を消費し、動作確認を終えたか」であり、それを踏まえて maintainer が 1.0.0 昇格の
+changeset(`major` bump)を書く運びになる。
 
 ## 4. build / publish パイプラインは完成時に追加する
 

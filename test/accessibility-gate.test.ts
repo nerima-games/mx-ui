@@ -50,27 +50,27 @@
  * attribute is exactly what a fake document records.
  */
 import { describe, expect, it } from 'vitest'
-import { emptyCaptionQueue, captionLines, receiveCaption } from '../domain/caption'
-import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../domain/hud-view-model'
-import { emptyInventorySnapshot, inventoryViewModel } from '../domain/inventory-view-model'
-import { GUARDED_TOKENS, surveyPalette, type Rgb } from '../domain/palette'
-import { saveStatus, saveStatusMessage } from '../domain/save-status'
-import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../domain/crosshair'
-import { initialMainMenuState, mainMenuViewModel, openPanel } from '../domain/main-menu'
-import { createCaptionView } from '../application/caption-view'
-import { createHudView } from '../application/hud-view'
-import { createInventoryView } from '../application/inventory-view'
-import { createCrosshairView } from '../application/crosshair-view'
-import { createLoadingView } from '../application/loading-view'
-import { createMainMenuView } from '../application/main-menu-view'
-import { createSaveIndicator } from '../application/save-indicator'
-import { ICON_ROW_LABEL } from '../application/icon-element'
+import { emptyCaptionQueue, captionLines, receiveCaption } from '../src/domain/caption'
+import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
+import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
+import { GUARDED_TOKENS, surveyPalette, type Rgb } from '../src/domain/palette'
+import { saveStatus, saveStatusMessage } from '../src/domain/save-status'
+import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../src/domain/crosshair'
+import { initialMainMenuState, mainMenuViewModel, openPanel } from '../src/domain/main-menu'
+import { createCaptionView } from '../src/application/caption-view'
+import { createHudView } from '../src/application/hud-view'
+import { createInventoryView } from '../src/application/inventory-view'
+import { createCrosshairView } from '../src/application/crosshair-view'
+import { createLoadingView } from '../src/application/loading-view'
+import { createMainMenuView } from '../src/application/main-menu-view'
+import { createSaveIndicator } from '../src/application/save-indicator'
+import { ICON_ROW_LABEL } from '../src/application/icon-element'
 import {
   PALETTE_PROPERTY_PREFIX,
   PALETTE_SOURCE,
   PALETTE_VAR,
   type PaletteTokenName,
-} from '../application/palette-css'
+} from '../src/application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 /** `var(--mx-ui-ink)` back to `INK`'s three numbers. */
@@ -191,11 +191,34 @@ const parentMap = (root: FakeElement): ReadonlyMap<FakeElement, FakeElement> => 
   return parents
 }
 
-/** A tab stop, which is what "interactive" reduces to in a document with no events. */
-const isTabStop = (element: FakeElement): boolean => {
-  const tabindex = element.attributes.get('tabindex')
-  return tabindex !== undefined && tabindex !== '-1'
+const isHidden = (
+  element: FakeElement,
+  parents: ReadonlyMap<FakeElement, FakeElement>,
+): boolean => {
+  let current: FakeElement | undefined = element
+  while (current !== undefined) {
+    if (current.attributes.has('hidden')) return true
+    current = parents.get(current)
+  }
+  return false
 }
+
+const isNativeFocusable = (element: FakeElement): boolean =>
+  element.tagName === 'button' || element.tagName === 'input'
+
+const isFocusable = (
+  element: FakeElement,
+  parents: ReadonlyMap<FakeElement, FakeElement>,
+): boolean =>
+  !isHidden(element, parents) &&
+  (isNativeFocusable(element) || element.attributes.has('tabindex'))
+
+const isTabStop = (
+  element: FakeElement,
+  parents: ReadonlyMap<FakeElement, FakeElement>,
+): boolean =>
+  isFocusable(element, parents) &&
+  (isNativeFocusable(element) || element.attributes.get('tabindex') !== '-1')
 
 describe('WCAG 4.1.2: every tab stop on every screen announces something', () => {
   it('no focusable element on any screen is anonymous', () => {
@@ -206,7 +229,7 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     const anonymous = screens().flatMap(({ name, root }) => {
       const parents = parentMap(root)
       return [...root.walk()]
-        .filter(isTabStop)
+        .filter((element) => isTabStop(element, parents))
         .filter((element) => accessibleName(element, parents) === undefined)
         .map((element) => `${name}: ${element.attributes.get('data-mx-ui') ?? element.tagName}`)
     })
@@ -214,7 +237,7 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     expect(anonymous).toStrictEqual([])
   })
 
-  it('REGRESSION: and the hotbar is the ONLY thing in this repository that takes focus', () => {
+  it('REGRESSION: only the main menu and hotbar take focus', () => {
     // Without this the sweep above is four assertions over three empty sets: a
     // screen with no tab stops passes it for free, and the day somebody adds a
     // pressable inventory slot the sweep is the test that was supposed to
@@ -226,11 +249,14 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     // `application/dom-surface.ts` has neither verb. So a focusable inventory
     // slot would be a control the player can reach and cannot use, which is
     // worse than one they cannot reach.
-    const census = screens().map(({ name, root }) => ({
-      name,
-      focusable: [...root.walk()].filter((element) => element.attributes.has('tabindex')).length,
-      tabStops: [...root.walk()].filter(isTabStop).length,
-    }))
+    const census = screens().map(({ name, root }) => {
+      const parents = parentMap(root)
+      return {
+        name,
+        focusable: [...root.walk()].filter((element) => isFocusable(element, parents)).length,
+        tabStops: [...root.walk()].filter((element) => isTabStop(element, parents)).length,
+      }
+    })
 
     expect(census).toStrictEqual([
       // The MENU is the row this census was always going to be tested by, and it
@@ -241,7 +267,7 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
       // 作ることである」. A line that announces as a button and does nothing is worse
       // for a screen-reader player than a line of text, because text does not
       // promise. The day the entries become operable, this row is what changes.
-      { name: 'main menu', focusable: 0, tabStops: 0 },
+      { name: 'main menu', focusable: 3, tabStops: 3 },
       // Nine slots are programmatically focusable; exactly ONE of them is in the
       // document's tab order. That is the roving tabindex, and the difference
       // between the two numbers is the whole pattern: Tab reaches the hotbar

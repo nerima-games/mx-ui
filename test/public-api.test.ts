@@ -14,11 +14,11 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
-import * as ui from '../index'
-import { rebind } from '../domain/accessibility'
-import { hudViewModel } from '../domain/hud-view-model'
-import { escapePressed } from '../domain/modal-stack'
-import { UI_STAGE_IDS } from '../stages/stage-ids'
+import * as ui from '../src/index'
+import { rebind } from '../src/domain/accessibility'
+import { hudViewModel } from '../src/domain/hud-view-model'
+import { escapePressed } from '../src/domain/modal-stack'
+import { UI_STAGE_IDS } from '../src/stages/stage-ids'
 
 describe('public API surface', () => {
   it.effect('re-exports the stage registration contract — the part mc-compose actually consumes', () =>
@@ -140,6 +140,10 @@ describe('public API surface', () => {
         'loadingScreenView',
         'CROSSHAIR_PULSE_SECS',
         'crosshairViewModel',
+        'CHEST_STORAGE_SLOT_COUNT',
+        'chestStorageViewModel',
+        'chestStorageSlotClickIntent',
+        'chestStorageCloseIntent',
       ]
 
       for (const name of internal) {
@@ -155,6 +159,7 @@ describe('public API surface', () => {
         'createHudView',
         'createCaptionView',
         'createInventoryView',
+        'createChestStorageView',
         // The two screens `docs/e2e-triage.md` §2.1 recorded as 「その画面が mx-ui に
         // まだ無い」. They are pinned for the same reason the accessibility assets
         // are: a screen that was built and then quietly dropped from the barrel

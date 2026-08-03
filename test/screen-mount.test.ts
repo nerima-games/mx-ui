@@ -27,18 +27,19 @@ import {
   HOTBAR_SLOT_COUNT,
   hudViewModel,
   spawnSnapshot,
-} from '../domain/hud-view-model'
+} from '../src/domain/hud-view-model'
 import {
   emptyInventorySnapshot,
   INVENTORY_MAIN_SLOT_COUNT,
   INVENTORY_SLOT_COUNT,
   inventoryViewModel,
-} from '../domain/inventory-view-model'
-import { createHudView } from '../application/hud-view'
-import { createInventoryView } from '../application/inventory-view'
-import { createCaptionView } from '../application/caption-view'
-import { createSaveIndicator } from '../application/save-indicator'
-import { PALETTE_VAR } from '../application/palette-css'
+} from '../src/domain/inventory-view-model'
+import { createHudView } from '../src/application/hud-view'
+import { createInventoryView } from '../src/application/inventory-view'
+import { createCaptionView } from '../src/application/caption-view'
+import { createChestStorageView } from '../src/application/chest-storage-view'
+import { createSaveIndicator } from '../src/application/save-indicator'
+import { PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
 /** What a host has had mounted into it, by name and in order. */
@@ -64,6 +65,7 @@ describe('a screen is built into the parent it was handed', () => {
     createHudView(factory, first, 'full')
     createInventoryView(factory, second)
     createCaptionView(factory, second, 'full')
+    createChestStorageView(factory, second)
     createSaveIndicator(factory, first)
 
     // Compared as names rather than as elements. A `FakeElement` reaches the
@@ -71,7 +73,7 @@ describe('a screen is built into the parent it was handed', () => {
     // serialises the entire document and dies — the test would stop reporting at
     // exactly the moment it had something to report.
     expect(mounted(first)).toStrictEqual(['hud', 'save-indicator'])
-    expect(mounted(second)).toStrictEqual(['inventory', 'captions'])
+    expect(mounted(second)).toStrictEqual(['inventory', 'captions', 'chest-storage'])
   })
 
   it('two instances of the same screen share no element', () => {

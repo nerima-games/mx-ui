@@ -20,7 +20,7 @@
  * copying one of these.
  */
 import { describe, expect, it } from 'vitest'
-import { COLOR_VISION_MODES } from '../domain/accessibility'
+import { COLOR_VISION_MODES } from '../src/domain/accessibility'
 import {
   COLLAPSE_SEPARATION,
   CRITICAL_PAIRS,
@@ -32,20 +32,20 @@ import {
   simulateColorVision,
   surveyPalette,
   type Rgb,
-} from '../domain/palette'
+} from '../src/domain/palette'
 import {
   IDLE_SAVE_STATUS,
   SAVED_VISIBLE_SECS,
   saveStatus,
   saveStatusMessage,
-} from '../domain/save-status'
+} from '../src/domain/save-status'
 import {
   createSaveIndicator,
   SAVE_MESSAGES,
   SAVE_STATUS_GLYPH,
   SAVE_STATUS_LABEL,
-} from '../application/save-indicator'
-import { PALETTE_PROPERTY, PALETTE_VAR } from '../application/palette-css'
+} from '../src/application/save-indicator'
+import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
 const mount = () => {

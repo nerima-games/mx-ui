@@ -24,9 +24,9 @@
  * observed from the host's side rather than a defect.
  */
 import { expect, test } from '@playwright/test'
-import { HOTBAR_SLOT_COUNT } from '../domain/hud-view-model'
-import { INVENTORY_SLOT_COUNT } from '../domain/inventory-view-model'
-import { PALETTE_PROPERTY, PALETTE_TOKEN_NAMES, PALETTE_VALUE } from '../application/palette-css'
+import { HOTBAR_SLOT_COUNT } from '../src/domain/hud-view-model'
+import { INVENTORY_SLOT_COUNT } from '../src/domain/inventory-view-model'
+import { PALETTE_PROPERTY, PALETTE_TOKEN_NAMES, PALETTE_VALUE } from '../src/application/palette-css'
 import { openHarness } from './harness'
 
 test.describe('mx-ui mounts against a real Document', () => {
@@ -81,6 +81,11 @@ test.describe('mx-ui mounts against a real Document', () => {
         hearts: inHost('hud', '[data-icon="heart"]'),
         shanks: inHost('hud', '[data-icon="shank"]'),
         crosshairArms: inHost('crosshair', '[data-mx-ui="crosshair-arm"]'),
+        crosshairProgress: inHost('crosshair', '[data-mx-ui="crosshair-progress"]'),
+        crosshairProgressFill: inHost(
+          'crosshair',
+          '[data-mx-ui="crosshair-progress-fill"]',
+        ),
       }
     })
 
@@ -89,6 +94,8 @@ test.describe('mx-ui mounts against a real Document', () => {
     expect(counts.hearts).toBe(10)
     expect(counts.shanks).toBe(10)
     expect(counts.crosshairArms).toBe(2)
+    expect(counts.crosshairProgress).toBe(1)
+    expect(counts.crosshairProgressFill).toBe(1)
   })
 
   test('REGRESSION: DN-UI-4 holds in a real document — not one listener anywhere', async ({
@@ -134,6 +141,44 @@ test.describe('mx-ui mounts against a real Document', () => {
     // The control fired, so 「no handler」 below is a finding and not a blind spot.
     expect(result.sawTheControl).toBe(true)
     expect(result.inlineHandlers).toStrictEqual([])
+  })
+
+  test('respawn is a native keyboard control subscribed to at the host boundary', async ({
+    page,
+  }) => {
+    await openHarness(page, { screen: 'hud' })
+
+    const respawn = page.locator('[data-mx-ui="respawn"]')
+    await expect(respawn).toBeHidden()
+    await expect(respawn).toHaveAttribute('type', 'button')
+
+    await page.evaluate(() => {
+      const death = document.querySelector('[data-mx-ui="death"]')
+      const shell = document.querySelector('[data-harness-page]')
+      if (death === null || shell === null) {
+        throw new Error('respawn browser test: missing death overlay or page shell')
+      }
+
+      // The harness ends alive. Reveal the already-mounted overlay, then bind at
+      // the host boundary exactly as a composing application would.
+      death.removeAttribute('hidden')
+      shell.addEventListener(
+        'click',
+        (event) => {
+          if (event.target instanceof Element && event.target.matches('[data-mx-ui="respawn"]')) {
+            shell.setAttribute('data-harness-respawned', '')
+          }
+        },
+        { once: true },
+      )
+    })
+
+    await page.keyboard.press('Tab')
+    await expect(page.locator('[data-mx-ui="slot"][tabindex="0"]')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('button', { name: 'Respawn' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('[data-harness-page]')).toHaveAttribute('data-harness-respawned', '')
   })
 })
 

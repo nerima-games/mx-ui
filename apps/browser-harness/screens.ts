@@ -44,21 +44,21 @@
  * ARGUMENT. A harness that needed a real clock to show a hit marker would be
  * evidence against that design; this one needs `0`.
  */
-import { captionLines, emptyCaptionQueue, receiveCaption } from '../../domain/caption'
-import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../domain/crosshair'
-import { hudViewModel, spawnSnapshot } from '../../domain/hud-view-model'
-import { emptyInventorySnapshot, inventoryViewModel } from '../../domain/inventory-view-model'
-import { initialMainMenuState, mainMenuViewModel, openPanel } from '../../domain/main-menu'
-import { saveStatus, saveStatusMessage } from '../../domain/save-status'
-import type { MotionPreference } from '../../domain/accessibility'
-import { createCaptionView } from '../../application/caption-view'
-import { createCrosshairView } from '../../application/crosshair-view'
-import { createHudView } from '../../application/hud-view'
-import { createInventoryView } from '../../application/inventory-view'
-import { createLoadingView } from '../../application/loading-view'
-import { createMainMenuView } from '../../application/main-menu-view'
-import { createSaveIndicator } from '../../application/save-indicator'
-import type { DomElement, DomElementFactory } from '../../application/dom-surface'
+import { captionLines, emptyCaptionQueue, receiveCaption } from '../../src/domain/caption'
+import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
+import { hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
+import { emptyInventorySnapshot, inventoryViewModel } from '../../src/domain/inventory-view-model'
+import { initialMainMenuState, mainMenuViewModel, openPanel } from '../../src/domain/main-menu'
+import { saveStatus, saveStatusMessage } from '../../src/domain/save-status'
+import type { MotionPreference } from '../../src/domain/accessibility'
+import { createCaptionView } from '../../src/application/caption-view'
+import { createCrosshairView } from '../../src/application/crosshair-view'
+import { createHudView } from '../../src/application/hud-view'
+import { createInventoryView } from '../../src/application/inventory-view'
+import { createLoadingView } from '../../src/application/loading-view'
+import { createMainMenuView } from '../../src/application/main-menu-view'
+import { createSaveIndicator } from '../../src/application/save-indicator'
+import type { DomElement, DomElementFactory } from '../../src/application/dom-surface'
 
 /** The `?screen=` values, and the order the hosts are created in. */
 export const SCREEN_NAMES = [
@@ -96,6 +96,7 @@ export const mountScreens = (
   factory: DomElementFactory,
   page: DomElement,
   motion: MotionPreference,
+  breakProgress?: number,
 ): ReadonlyArray<MountedScreen> => {
   const hosts = new Map<ScreenName, DomElement>()
   for (const name of SCREEN_NAMES) {
@@ -159,7 +160,9 @@ export const mountScreens = (
   loading.render({ kind: 'preparing', held: true })
 
   const crosshair = createCrosshairView(factory, hostFor('crosshair'), motion)
-  crosshair.render(crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }, 0))
+  crosshair.render(
+    crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress }, 0),
+  )
 
   return [
     { name: 'main-menu', host: hostFor('main-menu'), root: menu.root },

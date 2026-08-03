@@ -86,15 +86,15 @@
  * WHAT IS DELIBERATELY ABSENT
  * ---------------------------------------------------------------------------
  *
- * **There is no `addEventListener` here, and there must never be one.**
+ * **Generic elements cannot register events or receive focus.**
  *
  * plan.md §3.13 and DN-UI-4: 「モーダルの Escape は stopPropagation、閉じる責務は
  * フレーム側単一ハンドラ(mc-render の入力設計と対)」. `domain/modal-stack.ts` is that
  * single decision, and a renderer that attaches its own key handler makes it two.
- * `test/hud-view.test.ts` asserts at runtime that no listener is registered, but
- * the stronger guarantee is this one: a renderer written against this file
- * CANNOT register one, because the verb is not in the vocabulary. mc-render owns
- * input (plan.md §2.3-2) and hands the decision to the frame-level handler.
+ * `test/hud-view.test.ts` asserts at runtime that no listener is registered. The
+ * menu uses native buttons and inputs, so only those factory overloads expose
+ * click/input registration and focus. No keyboard event is exposed: browser
+ * button semantics turn Enter and Space into click without a second key handler.
  *
  * Also absent: `removeChild`, `remove`, `innerHTML`, `classList`, `querySelector`
  * and `document.body`. Removal is done by toggling `hidden`, so the element tree
@@ -148,6 +148,17 @@ export type DomElement = DomNode & {
   appendChild(child: DomNode): unknown
 }
 
+/** The event and focus verbs available only on native interactive controls. */
+export type DomInteractiveElement = DomElement & {
+  addEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void
+  focus(): void
+}
+
+/** The extra writable state exposed by a native text input. */
+export type DomInputElement = DomInteractiveElement & {
+  value: string
+}
+
 /**
  * `document`, reduced to the one method that makes an element.
  *
@@ -160,6 +171,8 @@ export type DomElement = DomNode & {
  * markup belonging to whoever owns the canvas, which is mc-render (plan.md §3.9).
  */
 export type DomElementFactory = {
+  createElement(tagName: 'input'): DomInputElement
+  createElement(tagName: 'button'): DomInteractiveElement
   createElement(tagName: string): DomElement
 }
 

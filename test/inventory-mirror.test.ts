@@ -51,8 +51,8 @@ import {
   type MirroredInventory,
   type MirroredItemStack,
   type MirroredSlot,
-} from '../domain/inventory-view-model'
-import { slotView, type HotbarSlotSnapshot } from '../domain/hud-view-model'
+} from '../src/domain/inventory-view-model'
+import { slotView, type HotbarSlotSnapshot } from '../src/domain/hud-view-model'
 
 /**
  * mc-sim's inventory value, restated from `mc-sim/domain/inventory.ts:31-46`
@@ -198,7 +198,7 @@ describe('the mc-sim inventory mirror', () => {
       // breaking. This mirror is the argument of a function mc-compose does not
       // call, exactly like `VitalsSnapshot`, so it goes IN — and the two live
       // in the same barrel to make the distinction visible.
-      const barrel = yield* Effect.promise(() => import('../index'))
+      const barrel = yield* Effect.promise(() => import('../src/index'))
 
       expect(Object.keys(barrel)).toContain('inventoryViewModel')
       expect(Object.keys(barrel)).toContain('INVENTORY_SLOT_COUNT')

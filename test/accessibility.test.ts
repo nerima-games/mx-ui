@@ -16,7 +16,7 @@ import {
   unboundActions,
   type InputAction,
   type KeyBindings,
-} from '../domain/accessibility'
+} from '../src/domain/accessibility'
 import {
   closeScreen,
   emptyModalStack,
@@ -25,7 +25,7 @@ import {
   openScreen,
   pointerLockReleased,
   topOf,
-} from '../domain/modal-stack'
+} from '../src/domain/modal-stack'
 
 const bindings = (entries: ReadonlyArray<readonly [InputAction, string]>): KeyBindings =>
   new Map(entries)

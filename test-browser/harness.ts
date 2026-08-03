@@ -26,7 +26,7 @@
  * for the next one.
  */
 import { expect, type Page } from '@playwright/test'
-import type { Rgb } from '../domain/palette'
+import type { Rgb } from '../src/domain/palette'
 
 /** The two viewports `docs/e2e-triage.md` §3.6 names for `usable at ${width}px`. */
 export const NARROW_VIEWPORTS = [
@@ -42,6 +42,7 @@ const READY_ATTRIBUTE = 'data-harness-ready'
 export type HarnessOptions = {
   readonly screen?: string
   readonly motion?: 'full' | 'reduced'
+  readonly breakProgress?: number
   /** Emulated `safe-area-inset`, in CSS pixels. See `main.ts` on why it is emulated. */
   readonly safe?: number
 }
@@ -65,6 +66,9 @@ export const openHarness = async (page: Page, options: HarnessOptions = {}): Pro
   }
   if (options.motion !== undefined) {
     params.set('motion', options.motion)
+  }
+  if (options.breakProgress !== undefined) {
+    params.set('breakProgress', String(options.breakProgress))
   }
   if (options.safe !== undefined) {
     params.set('safe', String(options.safe))

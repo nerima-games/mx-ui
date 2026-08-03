@@ -17,16 +17,20 @@
  * fake that needed `as unknown as HTMLElement` would prove nothing about a
  * browser — it would prove things about the cast.
  *
- * `addEventListener` is here and is NOT part of the surface. That is
- * deliberate: the fake is deliberately MORE capable than the surface, so that
- * "the renderer attached no listener" is an observation about the renderer
- * rather than about what the fake was able to record.
+ * Interactive verbs live on `FakeInteractiveElement`, matching the surface's
+ * native button/input overloads. Generic elements remain incapable of focus.
  */
-import type { DomElement, DomElementFactory, DomNode, DomStyle } from '../application/dom-surface'
+import type {
+  DomElement,
+  DomElementFactory,
+  DomInteractiveElement,
+  DomNode,
+  DomStyle,
+} from '../src/application/dom-surface'
 
 /** Every write the renderer performed, in order. */
 export type Mutation = {
-  readonly kind: 'text' | 'attribute' | 'removeAttribute' | 'style' | 'removeStyle' | 'append' | 'listener'
+  readonly kind: 'text' | 'attribute' | 'removeAttribute' | 'style' | 'removeStyle' | 'append' | 'listener' | 'focus'
   readonly target: FakeElement
   readonly name: string
   readonly value: string | undefined
@@ -86,7 +90,9 @@ export class FakeElement implements DomElement {
   readonly children: Array<FakeElement> = []
   readonly attributes = new Map<string, string>()
   readonly listeners: Array<string> = []
+  readonly eventListeners = new Map<string, Array<EventListenerOrEventListenerObject>>()
   readonly style: FakeStyle
+  value = ''
   private text = ''
 
   constructor(tagName: string, private readonly log: Array<Mutation>) {
@@ -128,9 +134,25 @@ export class FakeElement implements DomElement {
   }
 
   /** NOT in `application/dom-surface.ts`. Present so its absence is observable. */
-  addEventListener(type: string): void {
+  addEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
     this.listeners.push(type)
+    if (callback !== null) {
+      const callbacks = this.eventListeners.get(type) ?? []
+      callbacks.push(callback)
+      this.eventListeners.set(type, callbacks)
+    }
     this.record('listener', type, undefined)
+  }
+
+  dispatch(type: string): void {
+    const event = new Event(type)
+    for (const callback of this.eventListeners.get(type) ?? []) {
+      if (typeof callback === 'function') {
+        callback(event)
+      } else {
+        callback.handleEvent(event)
+      }
+    }
   }
 
   /** Depth-first, self included. */
@@ -169,18 +191,32 @@ export class FakeElement implements DomElement {
   }
 }
 
+export class FakeInteractiveElement extends FakeElement implements DomInteractiveElement {
+  focus(): void {
+    this.record('focus', 'focus', undefined)
+  }
+}
+
 export const fakeDocument = (): FakeDocument => {
   const mutations: Array<Mutation> = []
   const created: Array<FakeElement> = []
 
+  function createElement(tagName: 'input'): FakeInteractiveElement
+  function createElement(tagName: 'button'): FakeInteractiveElement
+  function createElement(tagName: string): FakeElement
+  function createElement(tagName: string): FakeElement {
+    const element =
+      tagName === 'button' || tagName === 'input'
+        ? new FakeInteractiveElement(tagName, mutations)
+        : new FakeElement(tagName, mutations)
+    created.push(element)
+    return element
+  }
+
   return {
     mutations,
     created,
-    createElement: (tagName: string): DomElement => {
-      const element = new FakeElement(tagName, mutations)
-      created.push(element)
-      return element
-    },
+    createElement,
     mark: (): number => mutations.length,
     since: (from: number): ReadonlyArray<Mutation> => mutations.slice(from),
   }

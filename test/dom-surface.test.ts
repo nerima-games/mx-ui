@@ -25,7 +25,7 @@ import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import ts from 'typescript'
 import { fakeDocument, FakeElement } from './fake-dom'
-import type { DomAttributeTarget, DomElement, DomElementFactory } from '../application/dom-surface'
+import type { DomAttributeTarget, DomElement, DomElementFactory } from '../src/application/dom-surface'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -92,18 +92,15 @@ describe('REGRESSION: the DOM surface is a real subset of the real DOM', () => {
     }),
   )
 
-  it('REGRESSION: the surface contains no way to attach an event listener', async () => {
-    // DN-UI-4. The runtime assertion in `test/hud-view.test.ts` says no renderer
-    // HAS attached one; this says none CAN. `domain/modal-stack.ts` is the
-    // single decision point, and it stays single only while the vocabulary
-    // available to a renderer excludes the verb.
-    //
-    // The word appears in prose in that file's header, explaining the absence;
-    // what must not appear is a declaration.
-    const source = await readFile(path.join(repositoryRoot, 'application', 'dom-surface.ts'), 'utf8')
+  it('REGRESSION: events exist only on the explicit native-control boundary', async () => {
+    const source = await readFile(path.join(repositoryRoot, 'src', 'application', 'dom-surface.ts'), 'utf8')
     const code = source.replace(/\/\*[\s\S]*?\*\//gu, '')
-    expect(code.includes('addEventListener')).toBe(false)
+    expect(code.includes('export type DomInteractiveElement')).toBe(true)
+    expect(code.match(/addEventListener/gu)?.length).toBe(1)
     expect(code.includes('removeEventListener')).toBe(false)
+    expect(code.includes("createElement(tagName: 'button'): DomInteractiveElement")).toBe(true)
+    expect(code.includes("createElement(tagName: 'input'): DomInputElement")).toBe(true)
+    expect(code.includes('keydown')).toBe(false)
   })
 })
 
@@ -116,7 +113,7 @@ describe('REGRESSION: domain/ still cannot reach a document', () => {
     // The direction is the whole reason `environment: 'node'` is affordable and
     // the reason the palette's guarantee is arithmetic. `lib.DOM` is on for
     // every project here, so nothing but this test enforces it.
-    const domainDir = path.join(repositoryRoot, 'domain')
+    const domainDir = path.join(repositoryRoot, 'src', 'domain')
     const files = (await readdir(domainDir)).filter((name) => name.endsWith('.ts'))
     expect(files.length).toBeGreaterThan(0)
 

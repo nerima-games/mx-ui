@@ -31,15 +31,15 @@ import {
   LOADING_MINIMUM_VISIBLE_SECS,
   loadingScreenView,
   loadingStatus,
-} from '../domain/loading-screen'
+} from '../src/domain/loading-screen'
 import {
   createLoadingView,
   LOADING_DETAIL,
   LOADING_KICKER,
   LOADING_LABEL,
   LOADING_STATES,
-} from '../application/loading-view'
-import { PALETTE_PROPERTY, PALETTE_VAR } from '../application/palette-css'
+} from '../src/application/loading-view'
+import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
 
 const mount = () => {

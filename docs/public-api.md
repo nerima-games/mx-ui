@@ -32,7 +32,7 @@ interface GameModule<ROut, E, RIn, RRegister = never> {
 ```
 
 `domain/frame-contract.ts` はこれを**逐語で**再掲している。`type` ではなく `interface` のままなのも意図的で、
-そのために `oxlint.json` は `@typescript-eslint/consistent-type-definitions` の例外を明記している
+そのために `.oxlintrc.json` は `@typescript-eslint/consistent-type-definitions` の例外を明記している
 （「Keeping the spec and the code character-identical is worth more than local style consistency」）。
 
 このファイルは mc-kernel が publish された時点で削除される（[versioning.md](./versioning.md) §6）。

@@ -28,10 +28,7 @@
   },
   "include": [
     "apps/**/*.ts",
-    "index.ts",
-    "domain/**/*.ts",
-    "application/**/*.ts",
-    "stages/**/*.ts"
+    "src/**/*.ts"
   ],
   "exclude": ["node_modules", "coverage", "dist"]
 }

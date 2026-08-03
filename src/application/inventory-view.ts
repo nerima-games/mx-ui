@@ -19,7 +19,7 @@
  *
  * Same for crafting: `no-match` and `unknown` are separate states with separate
  * attribute values, because 「mc-sim has not answered」 is not 「this grid makes
- * nothing」, and mc-sim has no recipe model at all today.
+ * nothing」.
  *
  * ---------------------------------------------------------------------------
  * A gap this file found, and did not paper over
@@ -44,6 +44,7 @@ import type {
   RegionId,
   SlotRegion,
 } from '../domain/inventory-view-model'
+import type { SlotView } from '../domain/hud-view-model'
 import type { DomElement, DomElementFactory } from './dom-surface'
 import {
   attributeCell,
@@ -61,6 +62,7 @@ import { declarePalette, PALETTE_VAR } from './palette-css'
 import {
   createSlotElement,
   hideSlotElementAtMount,
+  setSlotButtonView,
   setSlotHidden,
   updateSlotElement,
   type SlotElement,
@@ -80,13 +82,35 @@ type RegionElement = {
 
 export type InventoryView = {
   readonly root: DomElement
-  readonly render: (model: InventoryViewModel) => void
+  readonly render: (
+    model: InventoryViewModel,
+    interaction?: InventoryInteractionView,
+  ) => void
+}
+
+export type InventoryInteractionTarget =
+  | { readonly kind: 'slot'; readonly region: RegionId; readonly index: number }
+  | { readonly kind: 'crafting-output' }
+
+/** Host-owned input state that mx-ui projects without attaching listeners. */
+export type InventoryInteractionView = {
+  readonly focused: InventoryInteractionTarget
+  readonly status: string
 }
 
 const CRAFTING_STATE: Readonly<Record<CraftingOutcomeView['kind'], string>> = {
   match: 'match',
   'no-match': 'no-match',
   unknown: 'unknown',
+}
+
+const EMPTY_OUTPUT: SlotView = {
+  index: 0,
+  itemId: undefined,
+  countLabel: undefined,
+  empty: true,
+  selected: false,
+  durabilityPercent: undefined,
 }
 
 const createRegion = (
@@ -132,6 +156,7 @@ const renderRegion = (
   factory: DomElementFactory,
   region: RegionElement,
   model: SlotRegion,
+  focused: InventoryInteractionTarget | undefined,
 ): void => {
   writeHidden(region.hidden, false)
   writeAttribute(region.stateFlag, model.kind)
@@ -140,6 +165,9 @@ const renderRegion = (
     writeHidden(region.gridHidden, true)
     writeHidden(region.noteHidden, false)
     writeText(region.noteText, model.why)
+    for (const slot of region.slots) {
+      setSlotButtonView(slot, undefined)
+    }
     return
   }
 
@@ -161,6 +189,7 @@ const renderRegion = (
     const view = model.slots[index]
     if (view === undefined) {
       setSlotHidden(slot, true)
+      setSlotButtonView(slot, undefined)
       continue
     }
     setSlotHidden(slot, false)
@@ -168,7 +197,64 @@ const renderRegion = (
     // indices to these region-local ones is not published, and inventing it here
     // is the one thing this repository must not do.
     updateSlotElement(slot, view, undefined)
+    const isFocused =
+      focused?.kind === 'slot' && focused.region === model.id && focused.index === index
+    setSlotButtonView(
+      slot,
+      focused === undefined
+        ? undefined
+        : {
+            label: slotLabel(model.id, index, view.itemId, view.countLabel),
+            disabled: false,
+            tabStop: isFocused,
+            focused: isFocused,
+          },
+    )
   }
+}
+
+const slotLabel = (
+  region: RegionId,
+  index: number,
+  itemId: string | undefined,
+  count: string | undefined,
+): string =>
+  itemId === undefined
+    ? `${region} slot ${String(index + 1)}, empty`
+    : `${region} slot ${String(index + 1)}, ${itemId}, ${count ?? '1'}`
+
+const outputLabel = (crafting: CraftingOutcomeView): string =>
+  crafting.kind === 'match'
+    ? `Crafting output, ${crafting.output.itemId ?? 'empty'}, ${crafting.output.countLabel ?? '1'}`
+    : 'Crafting output, no matching recipe'
+
+const validFocusTarget = (
+  model: InventoryViewModel,
+  requested: InventoryInteractionTarget,
+): InventoryInteractionTarget => {
+  if (requested.kind === 'crafting-output') {
+    if (model.crafting.kind !== 'unknown') {
+      return requested
+    }
+  } else {
+    const region = model.regions.find((candidate) => candidate.id === requested.region)
+    if (
+      region?.kind === 'slots' &&
+      Number.isInteger(requested.index) &&
+      requested.index >= 0 &&
+      requested.index < region.slots.length
+    ) {
+      return requested
+    }
+  }
+
+  const firstRegion = model.regions.find(
+    (region): region is Extract<SlotRegion, { readonly kind: 'slots' }> =>
+      region.kind === 'slots' && region.slots.length > 0,
+  )
+  return firstRegion === undefined
+    ? { kind: 'crafting-output' }
+    : { kind: 'slot', region: firstRegion.id, index: 0 }
 }
 
 export const createInventoryView = (
@@ -204,9 +290,19 @@ export const createInventoryView = (
   crafting.appendChild(output.root)
   hideSlotElementAtMount(output)
 
+  const status = factory.createElement('div')
+  status.setAttribute('data-mx-ui', 'inventory-status')
+  status.setAttribute('role', 'status')
+  status.setAttribute('aria-live', 'polite')
+  status.setAttribute('aria-atomic', 'true')
+  root.appendChild(status)
+  const statusText = textCell(status)
+
   return {
     root,
-    render: (model: InventoryViewModel): void => {
+    render: (model: InventoryViewModel, interaction?: InventoryInteractionView): void => {
+      const focused =
+        interaction === undefined ? undefined : validFocusTarget(model, interaction.focused)
       const seen = new Set<RegionId>()
       for (const regionModel of model.regions) {
         seen.add(regionModel.id)
@@ -215,11 +311,14 @@ export const createInventoryView = (
         if (existing === undefined) {
           regions.set(regionModel.id, element)
         }
-        renderRegion(factory, element, regionModel)
+        renderRegion(factory, element, regionModel, focused)
       }
       for (const [id, element] of regions) {
         if (!seen.has(id)) {
           writeHidden(element.hidden, true)
+          for (const slot of element.slots) {
+            setSlotButtonView(slot, undefined)
+          }
         }
       }
 
@@ -228,16 +327,43 @@ export const createInventoryView = (
       if (carriedView !== undefined) {
         updateSlotElement(carried, carriedView, undefined)
       }
+      writeAttribute(carried.role, interaction === undefined ? undefined : 'status')
+      writeAttribute(carried.ariaLive, interaction === undefined ? undefined : 'polite')
+      writeAttribute(
+        carried.ariaLabel,
+        interaction === undefined
+          ? undefined
+          : carriedView === undefined
+            ? 'Carried item, empty'
+            : `Carried item, ${carriedView.itemId ?? 'empty'}, ${carriedView.countLabel ?? '1'}`,
+      )
+      writeText(statusText, interaction?.status ?? '')
 
       writeAttribute(craftingState, CRAFTING_STATE[model.crafting.kind])
-      // An output square is drawn ONLY for `match`. `no-match` and `unknown`
-      // both draw nothing, and they are told apart by the attribute above rather
-      // than by an empty square that would mean "no recipe" in one case and
-      // "mc-sim has not answered" in the other.
-      setSlotHidden(output, model.crafting.kind !== 'match')
+      // Read-only projection draws an output square only for `match`. Interactive
+      // projection also exposes `no-match` as a disabled target; `unknown` stays
+      // absent because an empty square would incorrectly claim a definitive answer.
+      const showOutput =
+        model.crafting.kind === 'match' ||
+        (interaction !== undefined && model.crafting.kind === 'no-match')
+      setSlotHidden(output, !showOutput)
       if (model.crafting.kind === 'match') {
         updateSlotElement(output, model.crafting.output, undefined)
+      } else if (model.crafting.kind === 'no-match') {
+        updateSlotElement(output, EMPTY_OUTPUT, undefined)
       }
+      const outputFocused = focused?.kind === 'crafting-output'
+      setSlotButtonView(
+        output,
+        interaction === undefined || model.crafting.kind === 'unknown'
+          ? undefined
+          : {
+              label: outputLabel(model.crafting),
+              disabled: model.crafting.kind === 'no-match',
+              tabStop: outputFocused,
+              focused: outputFocused,
+            },
+      )
     },
   }
 }

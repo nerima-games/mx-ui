@@ -70,8 +70,8 @@
  * If a future check genuinely needs an event, it attaches OUTSIDE any mx-ui root
  * — on the page shell — and says so at the call site.
  */
-import type { MotionPreference } from '../../domain/accessibility'
-import type { DomElementFactory } from '../../application/dom-surface'
+import type { MotionPreference } from '../../src/domain/accessibility'
+import type { DomElementFactory } from '../../src/application/dom-surface'
 import { mountScreens, SCREEN_NAMES, type ScreenName } from './screens'
 
 /**
@@ -104,6 +104,15 @@ const selectedScreen = (search: string): ScreenName | undefined => {
 
 const selectedMotion = (search: string): MotionPreference =>
   new URLSearchParams(search).get('motion') === 'reduced' ? 'reduced' : 'full'
+
+const selectedBreakProgress = (search: string): number | undefined => {
+  const requested = new URLSearchParams(search).get('breakProgress')
+  if (requested === null) {
+    return undefined
+  }
+  const progress = Number(requested)
+  return Number.isFinite(progress) && progress >= 0 && progress <= 1 ? progress : undefined
+}
 
 /**
  * The emulated safe-area inset, in CSS pixels.
@@ -187,7 +196,12 @@ const start = (): void => {
     page.style.setProperty('--harness-safe-inset', inset)
   }
 
-  const screens = mountScreens(factory, page, selectedMotion(window.location.search))
+  const screens = mountScreens(
+    factory,
+    page,
+    selectedMotion(window.location.search),
+    selectedBreakProgress(window.location.search),
+  )
 
   const only = selectedScreen(window.location.search)
   if (only !== undefined) {

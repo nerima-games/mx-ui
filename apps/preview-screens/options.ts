@@ -16,7 +16,7 @@
  * one when somebody writes `pnpm preview -- --stats` out of npm habit), and an
  * unknown flag is an ERROR rather than a silent no-op.
  */
-import { COLOR_VISION_MODES, type ColorVisionMode } from '../../domain/accessibility'
+import { COLOR_VISION_MODES, type ColorVisionMode } from '../../src/domain/accessibility'
 import { isScreenName, SCREEN_NAMES, type ScreenName } from './state'
 
 export type PreviewOptions = {

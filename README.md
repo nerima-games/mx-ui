@@ -70,7 +70,7 @@ UI の要素はほぼ全て「どこか他のモジュールのルールが出�
 
 壁時計直読み禁止が oxlint ではなくスクリプト側にあるのは、oxlint 0.12 が `no-restricted-syntax` も
 `no-restricted-properties` も実装しておらず、`no-restricted-globals` も一覧に出るだけで実装されていないため
-（`oxlint.json` の冒頭に実測メモがある）。このルールは mx-ui で最も効く
+（`.oxlintrc.json` の冒頭に実測メモがある）。このルールは mx-ui で最も効く
 — 字幕の失効、トーストのフェード、自動保存インジケータ、FPS カウンタの全部が時刻を欲しがる。
 
 ## 開発
@@ -93,7 +93,7 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json` / `tsconfig.test.json` / `tsconfig.preview.json` を型検査 |
-| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
+| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm lint:fix` | oxlint の自動修正 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm test:watch` | vitest watch |

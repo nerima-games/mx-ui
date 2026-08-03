@@ -23,7 +23,7 @@
  * unfalsifiable on its own, and "19 health is nine full hearts and one half" is
  * a claim you can only check against a number.
  */
-import { hudViewModel, type HudViewModel, type IconState, type VitalsSnapshot } from '../../domain/hud-view-model'
+import { hudViewModel, type HudViewModel, type IconState, type VitalsSnapshot } from '../../src/domain/hud-view-model'
 import { mix, padEnd, padStart, type Rgb, type Style } from './ansi'
 import {
   BAD,

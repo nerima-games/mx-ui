@@ -11,7 +11,7 @@
  * sweep stays, because closing it once is not the same as keeping it closed.
  */
 import { describe, expect, it } from 'vitest'
-import * as palette from '../domain/palette'
+import * as palette from '../src/domain/palette'
 import {
   PALETTE_PROPERTY,
   PALETTE_PROPERTY_PREFIX,
@@ -20,15 +20,15 @@ import {
   PALETTE_VALUE,
   PALETTE_VAR,
   declarePalette,
-} from '../application/palette-css'
-import { captionLines, emptyCaptionQueue } from '../domain/caption'
-import { hudViewModel, spawnSnapshot } from '../domain/hud-view-model'
-import { emptyInventorySnapshot, inventoryViewModel } from '../domain/inventory-view-model'
-import { saveStatus, saveStatusMessage } from '../domain/save-status'
-import { createCaptionView } from '../application/caption-view'
-import { createHudView } from '../application/hud-view'
-import { createInventoryView } from '../application/inventory-view'
-import { createSaveIndicator } from '../application/save-indicator'
+} from '../src/application/palette-css'
+import { captionLines, emptyCaptionQueue } from '../src/domain/caption'
+import { hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
+import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
+import { saveStatus, saveStatusMessage } from '../src/domain/save-status'
+import { createCaptionView } from '../src/application/caption-view'
+import { createHudView } from '../src/application/hud-view'
+import { createInventoryView } from '../src/application/inventory-view'
+import { createSaveIndicator } from '../src/application/save-indicator'
 import { fakeDocument, type FakeElement } from './fake-dom'
 
 const isRgb = (value: unknown): value is palette.Rgb =>

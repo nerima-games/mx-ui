@@ -52,9 +52,13 @@
  * Both are pinned below.
  */
 import { expect, test } from '@playwright/test'
-import { HOTBAR_SLOT_COUNT } from '../domain/hud-view-model'
-import { SLOT_TARGET_MIN_SIZE } from '../application/slot-element'
-import { CROSSHAIR_ARM_HIT_WEIGHT, CROSSHAIR_SIZE } from '../application/crosshair-view'
+import { HOTBAR_SLOT_COUNT } from '../src/domain/hud-view-model'
+import { SLOT_TARGET_MIN_SIZE } from '../src/application/slot-element'
+import {
+  CROSSHAIR_ARM_HIT_WEIGHT,
+  CROSSHAIR_BREAK_PROGRESS_LABEL,
+  CROSSHAIR_SIZE,
+} from '../src/application/crosshair-view'
 import { NARROW_VIEWPORTS, openHarness } from './harness'
 
 /**
@@ -227,6 +231,57 @@ test.describe('the keyboard focus ring is a ring, and not merely an element', ()
   })
 })
 
+test.describe('block-breaking progress stays visible and perceivable', () => {
+  test('active progress has centred geometry and native progress semantics', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openHarness(page, { screen: 'crosshair', breakProgress: 0.375 })
+
+    const indicator = page.getByRole('progressbar', { name: CROSSHAIR_BREAK_PROGRESS_LABEL })
+    await expect(indicator).toBeVisible()
+    await expect(indicator).toHaveAttribute('aria-valuemin', '0')
+    await expect(indicator).toHaveAttribute('aria-valuemax', '100')
+    await expect(indicator).toHaveAttribute('aria-valuenow', '37.5')
+    expect(await indicator.getAttribute('aria-live')).toBeNull()
+
+    const measured = await page.evaluate(() => {
+      const root = document.querySelector('[data-mx-ui="crosshair"]')
+      const mark = root?.querySelector('[data-mx-ui="crosshair-mark"]') ?? null
+      const track = root?.querySelector('[data-mx-ui="crosshair-progress"]') ?? null
+      const fill = track?.querySelector('[data-mx-ui="crosshair-progress-fill"]') ?? null
+      const box = (element: Element | null): Box => {
+        const rect = element?.getBoundingClientRect()
+        return rect === undefined
+          ? { x: 0, y: 0, width: 0, height: 0 }
+          : { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      }
+      return {
+        root: box(root),
+        track: box(track),
+        fill: box(fill),
+        markHidden: mark?.getAttribute('aria-hidden'),
+        progressInsideMark: mark?.contains(track) ?? true,
+      }
+    })
+
+    expect(measured.track.x + measured.track.width / 2).toBeCloseTo(
+      measured.root.x + measured.root.width / 2,
+      1,
+    )
+    expect(measured.track.y).toBeGreaterThan(measured.root.y + measured.root.height)
+    expect(measured.fill.width).toBeCloseTo(measured.track.width * 0.375, 1)
+    expect(measured.markHidden).toBe('true')
+    expect(measured.progressInsideMark).toBe(false)
+
+    await openHarness(page, { screen: 'crosshair' })
+    await expect(page.getByRole('progressbar', { name: CROSSHAIR_BREAK_PROGRESS_LABEL })).toHaveCount(
+      0,
+    )
+    const hiddenIndicator = page.locator('[data-mx-ui="crosshair-progress"]')
+    await expect(hiddenIndicator).toBeHidden()
+    await expect(hiddenIndicator).not.toHaveAttribute('aria-valuenow')
+  })
+})
+
 test.describe('reduced motion removes the animation and keeps the signal', () => {
   test('REGRESSION: a hit is still a heavier reticle when the scale is suppressed', async ({
     page,
@@ -259,12 +314,16 @@ test.describe('reduced motion removes the animation and keeps the signal', () =>
       readonly declared: ReadonlyArray<number>
       readonly rendered: ReadonlyArray<number>
       readonly transform: string
+      readonly progressHidden: boolean
+      readonly progressTransform: string
+      readonly progressNow: string | null
     }> => {
-      await openHarness(page, { screen: 'crosshair', motion })
+      await openHarness(page, { screen: 'crosshair', motion, breakProgress: 0.375 })
       return await page.evaluate(() => {
         const host = document.querySelector('[data-harness-host="crosshair"]')
         const arms = Array.from(host?.querySelectorAll('[data-mx-ui="crosshair-arm"]') ?? [])
         const mark = host?.querySelector('[data-mx-ui="crosshair-mark"]') ?? null
+        const progress = host?.querySelector('[data-mx-ui="crosshair-progress"]') ?? null
         // The thickness axis: the vertical arm is thin in width, the horizontal
         // one in height, so the smaller of the two is the weight either way.
         const thinner = (width: string, height: string): number =>
@@ -279,6 +338,9 @@ test.describe('reduced motion removes the animation and keeps the signal', () =>
             return Math.min(rect.width, rect.height)
           }),
           transform: mark === null ? '' : getComputedStyle(mark).transform,
+          progressHidden: progress?.hasAttribute('hidden') ?? false,
+          progressTransform: progress === null ? '' : getComputedStyle(progress).transform,
+          progressNow: progress?.getAttribute('aria-valuenow') ?? null,
         }
       })
     }
@@ -289,6 +351,11 @@ test.describe('reduced motion removes the animation and keeps the signal', () =>
     const reduced = await reticle('reduced')
 
     expect(full.declared).toHaveLength(2)
+    expect(full.progressHidden).toBe(false)
+    expect(reduced.progressHidden).toBe(false)
+    expect(full.progressNow).toBe('37.5')
+    expect(reduced.progressNow).toBe('37.5')
+    expect(reduced.progressTransform).toBe(full.progressTransform)
 
     // THE SIGNAL SURVIVES. Both arms carry the hit weight under both
     // preferences, and it is the constant the renderer declares.

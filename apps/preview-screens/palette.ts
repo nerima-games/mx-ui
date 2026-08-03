@@ -45,7 +45,7 @@ import {
   XP_FILL,
   XP_LEVEL as DOMAIN_XP_LEVEL,
   type Rgb,
-} from '../../domain/palette'
+} from '../../src/domain/palette'
 
 export const INK: Rgb = DOMAIN_INK
 export const MUTED: Rgb = INK_MUTED
