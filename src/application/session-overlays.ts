@@ -1,3 +1,5 @@
+import { textCell, writeText } from './dom-write'
+
 export type DebugHudSnapshot = {
   readonly fps: number
   readonly coordinates: Readonly<{ x: number; y: number; z: number }>
@@ -115,6 +117,7 @@ export const createSessionOverlays = (
   debugHud.hidden = true
   debugHud.style.whiteSpace = 'pre'
   root.appendChild(debugHud)
+  const debugText = textCell(debugHud)
 
   const settingsDialog = document.createElement('section')
   settingsDialog.setAttribute('data-mx-ui', 'settings')
@@ -159,7 +162,10 @@ export const createSessionOverlays = (
     const fps = finite(snapshot.fps, 0)
     const { coordinates, chunk } = snapshot
     const facing = snapshot.facing === undefined ? '' : `\nFacing: ${snapshot.facing}`
-    debugHud.textContent = `FPS: ${fps.toFixed(1)}\nXYZ: ${finite(coordinates.x, 0).toFixed(1)} / ${finite(coordinates.y, 0).toFixed(1)} / ${finite(coordinates.z, 0).toFixed(1)}\nChunk: ${finite(chunk.x, 0)} / ${finite(chunk.z, 0)}${facing}`
+    writeText(
+      debugText,
+      `FPS: ${fps.toFixed(1)}\nXYZ: ${finite(coordinates.x, 0).toFixed(1)} / ${finite(coordinates.y, 0).toFixed(1)} / ${finite(coordinates.z, 0).toFixed(1)}\nChunk: ${finite(chunk.x, 0)} / ${finite(chunk.z, 0)}${facing}`,
+    )
   }
   const updateSettings = (settings: UiSettings): void => {
     for (const definition of SETTING_DEFINITIONS) {
