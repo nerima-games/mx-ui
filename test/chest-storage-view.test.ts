@@ -23,6 +23,7 @@ describe('createChestStorageView', () => {
     view.render(
       chestStorageViewModel({
         chest,
+        chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
         playerInventory: [{ item: 'minecraft:bow', count: 1, durability: 0.75 }],
         cursor: { item: 'minecraft:iron_pickaxe', count: 1, durability: 0.375 },
         selectedSlot: { region: 'chest', slot: 4 },
@@ -70,13 +71,20 @@ describe('createChestStorageView', () => {
     view.render(
       chestStorageViewModel({
         chest: [],
+        chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
         playerInventory: [],
         cursor: { item: 'minecraft:arrow', count: 8, durability: undefined },
         selectedSlot: undefined,
       }),
     )
     view.render(
-      chestStorageViewModel({ chest: [], playerInventory: [], cursor: undefined, selectedSlot: undefined }),
+      chestStorageViewModel({
+        chest: [],
+        chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+        playerInventory: [],
+        cursor: undefined,
+        selectedSlot: undefined,
+      }),
     )
 
     expect(root.findAll('data-interaction-target', 'chest-storage-slot').every((slot) => slot.attributes.has('data-empty'))).toBe(true)

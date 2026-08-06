@@ -17,6 +17,7 @@ import { declarePalette, PALETTE_VAR } from './palette-css'
 import {
   createSlotElement,
   setSlotButtonView,
+  setSlotHidden,
   updateSlotElement,
   type SlotElement,
 } from './slot-element'
@@ -79,8 +80,11 @@ const updateGrid = (
   for (const [index, element] of elements.entries()) {
     const view = views[index]
     if (view === undefined) {
+      setSlotHidden(element.slot, true)
+      setSlotButtonView(element.slot, undefined)
       continue
     }
+    setSlotHidden(element.slot, false)
     updateSlotElement(element.slot, view, undefined)
     const hasFocus = sameTarget(element.target, focused)
     setSlotButtonView(element.slot, {

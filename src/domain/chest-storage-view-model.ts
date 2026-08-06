@@ -8,6 +8,7 @@ import {
 export const CHEST_STORAGE_COLUMNS = 9
 export const CHEST_STORAGE_ROWS = 3
 export const CHEST_STORAGE_SLOT_COUNT = CHEST_STORAGE_COLUMNS * CHEST_STORAGE_ROWS
+export type ChestStorageSlotCount = 5 | 9 | typeof CHEST_STORAGE_SLOT_COUNT
 
 /** The item state a storage screen must preserve, including durable tools. */
 export type ChestStorageStackSnapshot = {
@@ -27,6 +28,7 @@ export type ChestStorageSlotTarget = {
 
 export type ChestStorageSnapshot = {
   readonly chest: ReadonlyArray<ChestStorageSlotSnapshot>
+  readonly chestSlotCount: ChestStorageSlotCount
   /** mc-sim inventory order: hotbar 0–8 followed by main inventory 9–35. */
   readonly playerInventory: ReadonlyArray<ChestStorageSlotSnapshot>
   readonly cursor: ChestStorageSlotSnapshot
@@ -53,8 +55,12 @@ export type ChestStorageIntent =
   | { readonly _tag: 'SlotClicked'; readonly target: ChestStorageSlotTarget }
   | { readonly _tag: 'CloseRequested' }
 
-const validSlot = (region: ChestStorageRegion, slot: number): boolean =>
-  Number.isInteger(slot) && slot >= 0 && slot < (region === 'chest' ? CHEST_STORAGE_SLOT_COUNT : INVENTORY_SLOT_COUNT)
+const validSlot = (
+  region: ChestStorageRegion,
+  slot: number,
+  chestSlotCount = CHEST_STORAGE_SLOT_COUNT,
+): boolean =>
+  Number.isInteger(slot) && slot >= 0 && slot < (region === 'chest' ? chestSlotCount : INVENTORY_SLOT_COUNT)
 
 const sameTarget = (
   left: ChestStorageSlotTarget | undefined,
@@ -83,10 +89,10 @@ const slotAt = (
   index: number,
 ): ChestStorageSlotSnapshot => slots[index]
 
-/** Purely derives the immutable 27-slot chest and 36-slot player presentation. */
+/** Purely derives the immutable active container and 36-slot player presentation. */
 export const chestStorageViewModel = (snapshot: ChestStorageSnapshot): ChestStorageViewModel => {
   const chest = Object.freeze(
-    Array.from({ length: CHEST_STORAGE_SLOT_COUNT }, (_, slot) =>
+    Array.from({ length: snapshot.chestSlotCount }, (_, slot) =>
       projectSlot('chest', slot, slotAt(snapshot.chest, slot), snapshot.selectedSlot),
     ),
   )
@@ -123,8 +129,9 @@ export const chestStorageViewModel = (snapshot: ChestStorageSnapshot): ChestStor
 /** Typed result for a host-owned pointer or keyboard activation of a slot. */
 export const chestStorageSlotClickIntent = (
   target: ChestStorageSlotTarget,
+  chestSlotCount = CHEST_STORAGE_SLOT_COUNT,
 ): ChestStorageIntent | undefined =>
-  validSlot(target.region, target.slot)
+  validSlot(target.region, target.slot, chestSlotCount)
     ? Object.freeze({ _tag: 'SlotClicked', target: Object.freeze({ ...target }) })
     : undefined
 
