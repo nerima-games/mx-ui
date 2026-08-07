@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Ref } from 'effect'
-import { DeltaTimeSecs, StageId, type GameModule, type StageRegistration } from '../src/domain/frame-contract'
+import { DeltaTimeSecs, StageId, type GameModule, type StageRegistration } from '@nerima-games/mc-kernel'
 import { CAPTION_LIFETIME_SECS, receiveCaption } from '../src/domain/caption'
 import { hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
 import {
@@ -105,8 +105,7 @@ describe('§2.3-3 the total order belongs to mc-compose', () => {
 })
 
 // The tests below that RUN a stage provide `FrameServicesLayer` — see
-// `./frame-services.ts` for why a layer that is empty today is not a line worth
-// deleting.
+// `./frame-services.ts` for the deterministic clock layer used by these tests.
 describe('stage behaviour', () => {
   it.effect('hud-sync rebuilds the view model from the snapshot it was given', () =>
     Effect.gen(function* () {
@@ -207,17 +206,12 @@ describe('stage behaviour', () => {
   )
 })
 
-describe('the mirrored DeltaTimeSecs brand is kernel’s', () => {
+describe('the kernel DeltaTimeSecs brand', () => {
   /*
-   * REGRESSION. `domain/frame-contract.ts` restates kernel's `DeltaTimeSecs`
-   * (`mc-kernel/domain/quantities.ts:37-42`), and a brand is keyed by its
-   * STRING: `Brand.Brand<'DeltaTimeSecs'>` here and in kernel are ONE TYPE to
-   * TypeScript, however differently the two constructors validate. So a mirror
-   * that refined differently would be a false guarantee the compiler could
-   * never contradict — which is exactly what mc-physics had, refining to the
-   * frame-loop clamp [0.001, 0.05] while kernel refines to "finite and
-   * non-negative". A kernel-built `DeltaTimeSecs(30)` satisfied its parameter
-   * types while breaking the invariant its comments claimed.
+   * REGRESSION. `DeltaTimeSecs` is imported from the kernel, so every stage
+   * consumes the one repository-wide quantity and its one validation rule.
+   * The frame-loop clamp [0.001, 0.05] remains a producer concern, while the
+   * kernel quantity remains finite and non-negative.
    *
    * Kernel's is the agreed refinement and it is deliberately LOOSE: a zero
    * delta is legal, because a frame may be scheduled twice inside one clock

@@ -4,11 +4,11 @@
 
 ## 1. 現状
 
-- **バージョン: `0.1.0`。**
+- **バージョン: `0.3.8`。**
 - **publish パイプラインは無い。** `package.json` の `exports` は TypeScript ソースを直接指しており、
   `tsconfig.base.json` は `noEmit: true`。したがって `dist/` は存在しない。
-- **実行時依存は `effect` だけ。** mc-sim も mc-audio も mc-kernel も `dependencies` に無い。
-  組織のどのパッケージもまだ publish されていないためである（§3）。
+- **実行時依存は `effect` と `@nerima-games/mc-kernel@0.2.18`。** mc-sim と mc-audio はまだ
+  `dependencies` に無く、未publish パッケージを依存に追加しない方針は維持する（§3）。
 - 開発中は `mc-dev-meta` workspace による `workspace:*` 解決でモノレポ同等の DX を得る（plan.md §6 Step 0-2）。
 
 ## 2. 0.x に留める方針
@@ -142,34 +142,17 @@ mc-compose はこれらを使わない。使わないものを変えても mc-co
 
 ## 6. 型が置き換わる 2 か所
 
-### 6-1. `domain/frame-contract.ts` は mc-kernel の publish で削除する
+### 6-1. mc-kernel の frame 契約は直接 pin する
 
-このファイルは mc-kernel の `domain/frame.ts` / `domain/identifiers.ts` / `domain/quantities.ts` の
-ローカル再掲であり、**削除日が決まっている**。
+mc-kernel の frame 契約のローカル再掲は削除済みであり、mx-ui の実装とテストは
+`@nerima-games/mc-kernel@0.2.18` の `StageId`、`DeltaTimeSecs`、`StageRegistration`、
+`GameModule`、`FrameServices` を直接参照する。
 
-```typescript
-// mc-kernel が publish された時点で、これに置き換える
-import type { StageRegistration } from '@nerima-games/mc-kernel'
-```
+`FrameServices` は kernel の `ClockPort` である。テストでは kernel の `FixedClockLayer` に
+`MonotonicTimeSecs(0)` と `EpochMillis(0)` を渡し、空の環境で契約を隠すことなく決定的な時計を提供する。
+kernel の語彙は mx-ui の barrel から再公開しないため、所有していない型の削除を mx-ui の破壊的変更にしない。
 
-`StageRegistration` とブランドの述語・エラーメッセージは**意図的に文字単位で同一**にしてあるので、
-置き換えは import 文の差し替えで済む。
-
-**この削除が MINOR で済むのは、`index.ts` がこのファイルを re-export していないからである。**
-`export *` していた時期があり、その形のままだと `StageId` / `DeltaTimeSecs` / `StageRegistration` が
-「所有していないパッケージの公開 API」になり、**約束済みの削除がそのまま MAJOR**に化けていた。
-今は `index.ts` の末尾コメントがファイルの存在と削除予定だけを記し、名前は 1 つも出していない
-（`test/public-api.test.ts` の
-`REGRESSION: does not republish mc-kernel’s vocabulary as its own` が固定している）。
-mc-sim / mc-render / mc-playground-kit のバレル、および mx-gameplay / mx-redstone も同じ形である。
-
-唯一の意図的な乖離は `FrameServices` で、kernel は `ClockPort` の別名にしているが
-ここでは `never` である。`ClockPort` を再掲すると kernel と同じ文字列 ID を持つ**別の**
-`Context.Tag` ができてしまい、見分けがつかない 2 つのタグは狭すぎる型よりはるかに悪い。
-`Effect<void, never, never>` は `Effect<void, never, ClockPort>` が欲しい場所に代入できるので、
-**このファイルに対して書かれた stage は差し替え後も型検査を通り続ける**。
-
-**このファイル以外が kernel 型を再掲することは禁止**である。
+**ローカルファイルで kernel 型を再掲することは禁止**である。
 例えば `BlockType` の 2 つ目のローカルコピーは代替ではなく語彙のフォークであり、
 kernel の存在意義（語彙の home は 1 つ、plan.md §3.1）が消える。
 

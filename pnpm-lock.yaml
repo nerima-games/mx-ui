@@ -12,8 +12,8 @@ importers:
         specifier: 0.2.6
         version: 0.2.6
       '@nerima-games/mc-kernel':
-        specifier: 0.2.17
-        version: 0.2.17
+        specifier: 0.2.18
+        version: 0.2.18
       '@nerima-games/mc-sim':
         specifier: 0.1.39
         version: 0.1.39
@@ -585,6 +585,10 @@ packages:
 
   '@nerima-games/mc-kernel@0.2.17':
     resolution: {integrity: sha512-AXHZzXvLWYrnVFwgNy4iWIUJRRvbNnkAsMngjACcPAHBInAdUHcEDlRZPEEON+ofCqfsvG3FOglXkr+RANpy6Q==, tarball: https://npm.pkg.github.com/download/@nerima-games/mc-kernel/0.2.17/8a2900e6fb1add68699490181f4772c3ccab7832}
+    engines: {node: '>=24.0.0', pnpm: '>=11.0.0'}
+
+  '@nerima-games/mc-kernel@0.2.18':
+    resolution: {integrity: sha512-met19FYG9wXcQUzmHFgf8vMkdSwzrhluESpLGE1bFcJNjtMVbo4LNXd7+JhmEqfFqnLf+1ezSUu5sBfnKBrDaw==, tarball: https://npm.pkg.github.com/download/@nerima-games/mc-kernel/0.2.18/abed4f919ea2a9ca4f70911050aaf842f9677ec6}
     engines: {node: '>=24.0.0', pnpm: '>=11.0.0'}
 
   '@nerima-games/mc-noise@0.2.0':
@@ -2467,6 +2471,10 @@ snapshots:
       effect: 3.22.0
 
   '@nerima-games/mc-kernel@0.2.17':
+    dependencies:
+      effect: 3.22.0
+
+  '@nerima-games/mc-kernel@0.2.18':
     dependencies:
       effect: 3.22.0
 
