@@ -14,8 +14,8 @@
  * The argument is sound and it is not unique to this case — which is what
  * settles it. It is the argument for every mirror in the organisation:
  *
- *   - `domain/frame-contract.ts` here restates mc-kernel's contract because
- *     kernel is not published, and carries a deletion date.
+ *   - mc-kernel's frame contract is now imported from its published package;
+ *     this repository no longer maintains a local frame mirror.
  *   - `mx-gameplay/domain/chunk-store-port.ts` restates mc-worldgen's entire
  *     `ChunkStore` for the same reason, with `test/chunk-store-mirror.test.ts`
  *     pinning the shape and the tag key.
@@ -71,10 +71,10 @@ import {
  * This section is scheduled for deletion. Do not build on it.
  *
  * mc-sim is a legitimate `dependencies` edge for this repository (plan.md
- * §3.13: mx-ui's parents are sim and audio), so this mirror stands in for an
- * UNPUBLISHED import rather than a forbidden one. plan.md §6 Step 3 publishes
- * bottom-up and nothing is published yet, so `pnpm check:deps` would reject an
- * import of a package absent from `package.json#dependencies`.
+ * §3.13: mx-ui's parents are sim and audio), so this mirror stands in for the
+ * still-unpublished mc-sim import rather than a forbidden one. mc-kernel is
+ * already a declared dependency and owns the frame vocabulary directly, while
+ * `pnpm check:deps` continues to reject imports absent from dependencies.
  *
  * WHEN mc-sim IS PUBLISHED:
  *   1. add `@nerima-games/mc-sim` to `package.json#dependencies`;
@@ -94,8 +94,8 @@ import {
  *      in [0, 64] owned by mc-kernel. Branding it here would mint a SECOND
  *      brand of the same name for the same concept, and a downstream reader
  *      would end up converting between two brands of one number — the failure
- *      `domain/frame-contract.ts` refuses for `ClockPort` and for the same
- *      reason. A branded value from kernel is assignable to this alias, which
+ *      the kernel contract refuses for `ClockPort` and for the same reason. A
+ *      branded value from kernel is assignable to this alias, which
  *      is the direction a consumer needs, so step 3 narrows rather than widens.
  *
  *   2. `durability` does not exist in mc-sim at all. Its `ItemStack` is

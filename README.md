@@ -118,18 +118,13 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）
 
 **実装前の叩き台である。** 何が無いかを正直に書く。
 
-- **`effect` だけが実行時依存。** mc-sim も mc-audio も mc-kernel も `package.json` に入っていない。
-  組織のどのパッケージもまだ publish されておらず（ボトムアップの publish-then-pin、plan.md §6 Step 2）、
-  install できない依存を宣言すればビルドの通らないスケルトンが残るだけだからである。
-  `REPOSITORY_POLICY` と `test/check-dependency-whitelist.test.ts` は、依存が**存在するようになったとき**の
-  規則を先に固定してある。
-- **`domain/frame-contract.ts` は mc-kernel の型のローカル再掲であり、削除日が決まっている。**
-  mc-kernel が publish された時点で消し、`import type { StageRegistration } from '@nerima-games/mc-kernel'` に置き換える。
-  ここに再掲してよいのは frame 契約だけで、他の kernel 型を 2 つ目のコピーとして持つことは禁止
-  （語彙の home は 1 つ、plan.md §3.1）。
-  **このファイルは `index.ts` から re-export していない。** 所有していない語彙（`StageId` /
-  `DeltaTimeSecs` / `StageRegistration`）を公開 API に載せると、上記の削除が
-  すべての消費者にとっての破壊的変更になるためである。
+- **`effect` と `@nerima-games/mc-kernel@0.2.18` が実行時依存。** mc-sim と mc-audio はまだ
+  `package.json` に入っていない。publish 済みの kernel は直接 pin し、未publish の親パッケージは
+  ローカルミラーで代替するという、ボトムアップの publish-then-pin 方針を継続する。
+  `REPOSITORY_POLICY` と `test/check-dependency-whitelist.test.ts` は依存境界を固定している。
+- **frame 契約は `@nerima-games/mc-kernel` が所有する。** `StageId`、`DeltaTimeSecs`、
+  `StageRegistration`、`FrameServices` は kernel から直接 import し、mx-ui の barrel では再公開しない。
+  以前の `domain/frame-contract.ts` ローカル再掲は削除済みである（語彙の home は 1 つ、plan.md §3.1）。
 - **`application/` が DOM 層である**（HUD / 字幕 / インベントリ / 自動保存インジケータ）。`domain/` の射影を要素にし、
   `domain/` を import する——**逆は無い**（`test/dom-surface.test.ts` が固定）。
   `domain/` は今も全て純粋な導出なので、テストは vitest の `environment: 'node'` のままである。
