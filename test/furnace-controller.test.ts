@@ -80,4 +80,82 @@ describe('furnace controller', () => {
     expect(taken.state.storedExperience).toBe(0)
     expect(takeFurnaceOutput(taken.state).state).toBe(taken.state)
   })
+
+  it('clamps a non-finite elapsed time to zero rather than propagating it into progress', () => {
+    const loaded = putFurnaceFuel(
+      putFurnaceInput(emptyFurnaceState(), { count: 2, itemId: 'minecraft:iron_ore' }),
+      { count: 2, itemId: 'minecraft:coal' },
+    )
+    expect(advanceFurnace(loaded, Number.NaN, RULES)).toStrictEqual(loaded)
+    expect(advanceFurnace(loaded, Number.POSITIVE_INFINITY, RULES)).toStrictEqual(loaded)
+  })
+
+  it('clears the input slot when given undefined or a zero-count stack, rather than leaving a phantom stack', () => {
+    const withInput = putFurnaceInput(emptyFurnaceState(), { count: 2, itemId: 'minecraft:iron_ore' })
+    expect(putFurnaceInput(withInput, undefined).input).toBeUndefined()
+    expect(putFurnaceInput(withInput, { count: 0, itemId: 'minecraft:iron_ore' }).input).toBeUndefined()
+  })
+
+  it('consumes the last fuel item down to an empty slot rather than a zero-count stack', () => {
+    const loaded = {
+      ...emptyFurnaceState(),
+      fuel: { count: 1, itemId: 'minecraft:coal' },
+      input: { count: 2, itemId: 'minecraft:iron_ore' },
+    }
+    const result = advanceFurnace(loaded, 1, RULES)
+    expect(result.fuel).toBeUndefined()
+    expect(result.burnRemainingSecs).toBe(14)
+  })
+
+  it('preserves cook progress instead of resetting it when fuel runs out mid-cook and none is loaded', () => {
+    const outOfFuel = {
+      ...emptyFurnaceState(),
+      burnTotalSecs: 15,
+      cookProgressSecs: 6,
+      input: { count: 2, itemId: 'minecraft:iron_ore' },
+    }
+    expect(advanceFurnace(outOfFuel, 100, RULES)).toStrictEqual(outOfFuel)
+  })
+
+  it('consumes the last input item down to an empty slot rather than a zero-count stack', () => {
+    const state = {
+      ...emptyFurnaceState(),
+      fuel: { count: 2, itemId: 'minecraft:coal' },
+      input: { count: 1, itemId: 'minecraft:iron_ore' },
+    }
+    const result = advanceFurnace(state, 10, RULES)
+    expect(result.input).toBeUndefined()
+    expect(result.output).toStrictEqual({ count: 1, itemId: 'minecraft:iron_ingot' })
+  })
+
+  it('stalls without cooking when a mid-cook input swap leaves progress past the new recipe cook time', () => {
+    const rulesWithShortRecipe: FurnaceRules = {
+      fuels: RULES.fuels,
+      recipes: [
+        ...RULES.recipes,
+        {
+          cookTimeSecs: 2,
+          experience: 0,
+          inputItemId: 'minecraft:sand',
+          outputCount: 1,
+          outputItemId: 'minecraft:glass',
+        },
+      ],
+    }
+    const midCook = {
+      ...emptyFurnaceState(),
+      burnRemainingSecs: 9,
+      burnTotalSecs: 15,
+      cookProgressSecs: 6,
+      input: { count: 3, itemId: 'minecraft:sand' },
+    }
+    expect(advanceFurnace(midCook, 1, rulesWithShortRecipe)).toStrictEqual(midCook)
+  })
+
+  it('reports zero burn and cook progress for a furnace that has never been lit', () => {
+    expect(furnaceSnapshotOf(emptyFurnaceState(), RULES)).toMatchObject({
+      burnProgress: 0,
+      cookProgress: 0,
+    })
+  })
 })

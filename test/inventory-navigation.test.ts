@@ -97,4 +97,75 @@ describe('inventory controller navigation', () => {
       region: 'main',
     })
   })
+
+  it('returns the requested target unchanged when the model has nothing to navigate to', () => {
+    const nothingToNavigate: InventoryViewModel = {
+      carried: undefined,
+      crafting: { kind: 'unknown' },
+      mergeTargets: { kind: 'unknown' },
+      regions: [{ id: 'armour', kind: 'unknown', why: 'not supplied' }],
+    }
+    const requested = { index: 0, kind: 'slot', region: 'main' } as const
+    expect(moveInventoryTarget(nothingToNavigate, requested, 'right')).toStrictEqual(requested)
+  })
+
+  it('moves up within a region without leaving it', () => {
+    expect(moveInventoryTarget(model, { index: 4, kind: 'slot', region: 'main' }, 'up')).toStrictEqual({
+      index: 1,
+      kind: 'slot',
+      region: 'main',
+    })
+  })
+
+  it('does not move past the first region when there is nothing above it', () => {
+    const topLeft = { index: 0, kind: 'slot', region: 'main' } as const
+    expect(moveInventoryTarget(model, topLeft, 'up')).toStrictEqual(topLeft)
+  })
+
+  it('does not wrap the left edge, and moves left within a row otherwise', () => {
+    const leftEdge = { index: 0, kind: 'slot', region: 'main' } as const
+    expect(moveInventoryTarget(model, leftEdge, 'left')).toStrictEqual(leftEdge)
+    expect(moveInventoryTarget(model, { index: 1, kind: 'slot', region: 'main' }, 'left')).toStrictEqual({
+      index: 0,
+      kind: 'slot',
+      region: 'main',
+    })
+  })
+
+  it('treats a non-positive column count as a single column instead of dividing by it', () => {
+    const brokenColumns: InventoryViewModel = {
+      carried: undefined,
+      crafting: { kind: 'unknown' },
+      mergeTargets: { kind: 'unknown' },
+      regions: [
+        {
+          columns: 0,
+          id: 'main',
+          kind: 'slots',
+          slots: [emptySlot(0), emptySlot(1), emptySlot(2)],
+        },
+      ],
+    }
+    // A single-column layout has no rightward move: every slot is its own row.
+    const start = { index: 0, kind: 'slot', region: 'main' } as const
+    expect(moveInventoryTarget(brokenColumns, start, 'right')).toStrictEqual(start)
+  })
+
+  it('the crafting output does not move for directions with no meaning from it', () => {
+    const output = { kind: 'crafting-output' } as const
+    expect(moveInventoryTarget(model, output, 'right')).toStrictEqual(output)
+    expect(moveInventoryTarget(model, output, 'down')).toStrictEqual(output)
+  })
+
+  it('the crafting output stays focused when there is no slot region to move into', () => {
+    const outputOnly: InventoryViewModel = {
+      carried: undefined,
+      crafting: { kind: 'match', output: emptySlot(FIRST_INDEX) },
+      mergeTargets: { kind: 'unknown' },
+      regions: [],
+    }
+    const output = { kind: 'crafting-output' } as const
+    expect(moveInventoryTarget(outputOnly, output, 'up')).toStrictEqual(output)
+    expect(moveInventoryTarget(outputOnly, output, 'left')).toStrictEqual(output)
+  })
 })

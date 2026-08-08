@@ -74,11 +74,11 @@ describe('the HUD renderer applies the palette', () => {
         if (property.startsWith('--mx-ui-')) {
           // The declaration itself, on the root. Checked above.
           expect(element).toBe(root)
-          continue
+        } else {
+          // Everything else that mentions a colour mentions it as `var(...)`.
+          expect(value.includes('#')).toBe(false)
+          expect(value.includes('rgba(')).toBe(false)
         }
-        // Everything else that mentions a colour mentions it as `var(...)`.
-        expect(value.includes('#')).toBe(false)
-        expect(value.includes('rgba(')).toBe(false)
       }
     }
 
@@ -439,7 +439,7 @@ describe('the HUD renderer is a dumb projection', () => {
       }),
     )
 
-    const slot = root.findAll('data-mx-ui', 'slot')[0]
+    const [slot] = root.findAll('data-mx-ui', 'slot')
     expect(slot?.attributes.get('data-empty')).toBe('')
     expect(slot?.find('data-mx-ui', 'slot-durability')?.attributes.get('hidden')).toBe('')
   })

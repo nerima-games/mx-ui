@@ -53,10 +53,9 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
     const declared = new Set(Object.values(PALETTE_SOURCE))
 
     for (const [name, value] of Object.entries(palette)) {
-      if (!isRgb(value) || NON_TOKEN_RGB_EXPORTS.has(name)) {
-        continue
+      if (isRgb(value) && !NON_TOKEN_RGB_EXPORTS.has(name)) {
+        expect(declared.has(value), `${name} has no custom property`).toBe(true)
       }
-      expect(declared.has(value), `${name} has no custom property`).toBe(true)
     }
   })
 
@@ -133,12 +132,11 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
     for (const root of [hud.root, captions.root, inventory.root, saveIndicator.root]) {
       for (const element of (root as FakeElement).walk()) {
         for (const [property, value] of element.style.properties) {
-          if (property.startsWith(PALETTE_PROPERTY_PREFIX)) {
-            continue
-          }
-          for (const name of PALETTE_TOKEN_NAMES) {
-            if (value.includes(PALETTE_VAR[name])) {
-              referenced.add(name)
+          if (!property.startsWith(PALETTE_PROPERTY_PREFIX)) {
+            for (const name of PALETTE_TOKEN_NAMES) {
+              if (value.includes(PALETTE_VAR[name])) {
+                referenced.add(name)
+              }
             }
           }
         }
@@ -169,5 +167,22 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
     expect(new Set(written.map((mutation) => mutation.name)).size).toBe(PALETTE_TOKEN_NAMES.length)
     expect(written.every((mutation) => mutation.kind === 'style')).toBe(true)
     expect(written.every((mutation) => mutation.target === root)).toBe(true)
+  })
+})
+
+describe('palette math clamps a NaN channel instead of propagating it', () => {
+  it('a NaN channel is treated as 0 in relative luminance and colour-vision simulation, not carried through as NaN', () => {
+    // `domain/palette-math.ts`'s own `clampChannel` (distinct from the one in
+    // `palette-tokens.ts` that backs `hex`/`cssColor`, already covered
+    // elsewhere) feeds `channelLuminance` and `simulateColorVision`. Without
+    // its NaN guard, `NaN / 255` propagates through the luminance formula and
+    // the matrix multiplication, and `worstCaseContrastOnScrim` would compare
+    // NaN against a floor — every such comparison is false, so a broken token
+    // would silently pass the accessibility survey instead of failing it.
+    expect(palette.relativeLuminance([Number.NaN, 0, 0])).toBe(palette.relativeLuminance([0, 0, 0]))
+    expect(Number.isNaN(palette.relativeLuminance([Number.NaN, 200, 200]))).toBe(false)
+
+    const simulated = palette.simulateColorVision([Number.NaN, 120, 40], 'protanopia')
+    expect(simulated.every((channel) => Number.isFinite(channel))).toBe(true)
   })
 })

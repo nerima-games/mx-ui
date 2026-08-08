@@ -171,6 +171,41 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     expect(main?.findAll('data-mx-ui', 'slot')).toHaveLength(27)
   })
 
+  it('REGRESSION: a region that BECOMES unknown clears the interactive squares its earlier `slots` render built', () => {
+    // The counterpart to the SHRINK and DISAPPEAR regressions below: those cover
+    // `renderKnownRegion` reusing elements across two `slots` models, this one
+    // covers `renderUnknownRegion` reusing elements built by an EARLIER `slots`
+    // render. mc-sim answering armour on one frame and going silent the next is
+    // exactly the case `armourRegion` accepts (`| undefined`, not optional) — so
+    // a slot that was a real interactive button has to lose that affordance
+    // rather than keep showing a stale role/label/tab-stop underneath a region
+    // now flagged `unknown`.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+
+    view.render(
+      inventoryViewModel({
+        ...emptyInventorySnapshot,
+        armour: [{ item: 'IRON_HELMET', count: 1 }],
+      }),
+      { focused: { index: 0, kind: 'slot', region: 'armour' }, status: 'Helmet equipped' },
+    )
+    const armourSlotsWhileKnown = (view.root as FakeElement)
+      .find('data-region', 'armour')
+      ?.findAll('data-mx-ui', 'slot')
+    expect(armourSlotsWhileKnown).toHaveLength(1)
+    expect(armourSlotsWhileKnown?.[0]?.attributes.get('role')).toBe('button')
+
+    view.render(inventoryViewModel(emptyInventorySnapshot))
+    const armour = (view.root as FakeElement).find('data-region', 'armour')
+    expect(armour?.attributes.get('data-region-state')).toBe('unknown')
+    const armourSlotsWhileUnknown = armour?.findAll('data-mx-ui', 'slot')
+    expect(armourSlotsWhileUnknown).toHaveLength(1)
+    expect(armourSlotsWhileUnknown?.[0]?.attributes.has('role')).toBe(false)
+    expect(armourSlotsWhileUnknown?.[0]?.attributes.has('tabindex')).toBe(false)
+  })
+
   it('renders a known-empty offhand as a focusable slot', () => {
     const factory = fakeDocument()
     const parent = factory.createElement('div') as FakeElement
@@ -228,6 +263,24 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     expect(carried?.attributes.get('hidden')).toBe('')
   })
 
+  it('REGRESSION: a carried stack of ONE carries no count label in its aria-label either', () => {
+    // `carriedItemLabel` only runs when `render` is given an interaction (`writeCarriedAttributes`
+    // skips it otherwise), and the interaction test elsewhere in this file always carries a stack
+    // of 12 — so `carriedView.countLabel ?? '1'`'s fallback arm, taken only for a stack of exactly
+    // one, has nothing exercising it.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+
+    view.render(
+      inventoryViewModel({ ...emptyInventorySnapshot, carried: { item: 'stone', count: 1 } }),
+      { focused: { kind: 'crafting-output' }, status: 'Carrying stone' },
+    )
+
+    const carried = (view.root as FakeElement).find('data-mx-ui', 'carried')
+    expect(carried?.attributes.get('aria-label')).toBe('Carried item, stone, 1')
+  })
+
   it('a crafting MATCH is the one state that draws an output square', () => {
     // The positive half of the `no-match` / `unknown` regression above, which
     // asserts two states draw nothing and therefore passes against a renderer
@@ -255,6 +308,39 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const output = root.find('data-mx-ui', 'crafting-output')
     expect(output?.attributes.has('hidden')).toBe(false)
     expect(output?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stick')
+
+    // The read-only render above never builds an interactive button (`applyCraftingOutputButtonView`
+    // skips `outputLabel` whenever `interaction` is absent), so it can pass even if the MATCH label
+    // text were wrong. Re-rendering the SAME match WITH interaction is what actually asks for the
+    // label text a screen reader gets when the output square is a real, focusable button.
+    view.render(
+      inventoryViewModel({
+        ...emptyInventorySnapshot,
+        crafting: {
+          gridWidth: 2,
+          grid: [undefined, undefined, undefined, undefined],
+          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+        },
+      }),
+      { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
+    )
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 4')
+
+    // A single output item carries no count label (`slotView`'s "a stack of one shows no count
+    // label" convention), which is the only way `outputLabel`'s own `countLabel ?? '1'` fallback
+    // ever runs — every other assertion in this file uses a count that already has a label.
+    view.render(
+      inventoryViewModel({
+        ...emptyInventorySnapshot,
+        crafting: {
+          gridWidth: 2,
+          grid: [undefined, undefined, undefined, undefined],
+          result: { _tag: 'Match', output: { item: 'stick', count: 1 } },
+        },
+      }),
+      { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
+    )
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 1')
   })
 
   it('projects host-owned inventory interaction as buttons with one roving tab stop', () => {
@@ -478,6 +564,67 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const before = factory.mark()
     view.render(model)
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('REGRESSION: a hand-built model whose match output disagrees with its own empty flag still gets a label', () => {
+    // `InventoryViewModel` is a published type with no canonical constructor — `inventoryViewModel`
+    // is the only real producer, and it never emits a `SlotView` where `itemId` is `undefined` but
+    // `empty` is `false`. A host assembling the model by hand (or replaying one from persistence)
+    // can still do that, and `outputLabel`/`carriedItemLabel` fall back to `'empty'` rather than
+    // interpolating `undefined` into the string a screen reader gets.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel(emptyInventorySnapshot)
+    const mismatchedSlot: SlotView = {
+      countLabel: undefined,
+      durabilityPercent: undefined,
+      empty: false,
+      index: 0,
+      itemId: undefined,
+      selected: false,
+    }
+
+    view.render(
+      { ...base, carried: mismatchedSlot, crafting: { kind: 'match', output: mismatchedSlot } },
+      { focused: { kind: 'crafting-output' }, status: 'Hand-built model' },
+    )
+
+    const root = view.root as FakeElement
+    expect(root.find('data-mx-ui', 'crafting-output')?.attributes.get('aria-label')).toBe(
+      'Crafting output, empty, 1',
+    )
+    expect(root.find('data-mx-ui', 'carried')?.attributes.get('aria-label')).toBe(
+      'Carried item, empty, 1',
+    )
+  })
+
+  it('REGRESSION: a hand-built model with no navigable region falls the focus back to the crafting output', () => {
+    // `validFocusTarget`'s `firstRegion === undefined` fallback needs a model whose `regions` has
+    // no non-empty `slots` entry — `inventoryViewModel` can never produce that (`hotbar` and `main`
+    // are always present), but `InventoryViewModel` is host-suppliable directly, so a hand-built or
+    // persisted one can. Requesting a `slot` target (rather than `crafting-output`) is what forces
+    // `validFocusTarget` all the way through to the `firstRegion` search instead of returning early.
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel(emptyInventorySnapshot)
+
+    const matchOutput: SlotView = {
+      countLabel: '4',
+      durabilityPercent: undefined,
+      empty: false,
+      index: 0,
+      itemId: 'stick',
+      selected: false,
+    }
+    view.render(
+      { ...base, crafting: { kind: 'match', output: matchOutput }, regions: [] },
+      { focused: { index: 0, kind: 'slot', region: 'main' }, status: 'No regions at all' },
+    )
+
+    const output = (view.root as FakeElement).find('data-mx-ui', 'crafting-output')
+    expect(output?.attributes.get('tabindex')).toBe('0')
   })
 })
 

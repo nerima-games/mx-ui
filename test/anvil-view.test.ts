@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createAnvilView } from '../src/application/anvil-view'
-import { anvilViewModel } from '../src/domain/anvil-view-model'
+import { createAnvilView, type AnvilInteractionView } from '../src/application/anvil-view'
+import { anvilViewModel, type AnvilOperationTarget } from '../src/domain/anvil-view-model'
 import { type FakeElement, fakeDocument } from './fake-dom'
 
 describe('createAnvilView', () => {
@@ -66,5 +66,36 @@ describe('createAnvilView', () => {
     ).toStrictEqual(['0', '-1', '-1', '-1'])
     expect(root.find('data-mx-ui', 'anvil-level-cost')?.textContent).toBe('Level cost: 0')
     expect(root.find('data-mx-ui', 'anvil-rejection')?.attributes.has('hidden')).toBe(true)
+  })
+
+  it('REGRESSION: an unrecognized focused target falls back to the primary input instead of throwing', () => {
+    // `AnvilInteractionView` is a published type with no canonical constructor — a host assembles
+    // `focusedTarget` itself, so a stale index or a value round-tripped through persistence can
+    // disagree with the `AnvilOperationTarget` union it claims to satisfy at compile time.
+    const factory = fakeDocument()
+    const host = factory.createElement('main')
+    const view = createAnvilView(factory, host)
+    const root = view.root as FakeElement
+    const interaction: AnvilInteractionView = {
+      focusedTarget: 'stale-target' as AnvilOperationTarget,
+      status: 'Recovered focus',
+    }
+    view.render(
+      anvilViewModel({
+        levelCost: 1,
+        name: '',
+        output: undefined,
+        primaryInput: undefined,
+        rejectionReason: undefined,
+        secondaryInput: undefined,
+      }),
+      interaction,
+    )
+
+    expect(
+      root
+        .findAll('data-interaction-target', 'anvil-operation')
+        .map((target) => target.attributes.get('tabindex')),
+    ).toStrictEqual(['0', '-1', '-1', '-1'])
   })
 })

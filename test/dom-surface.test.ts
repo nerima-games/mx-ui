@@ -117,9 +117,17 @@ describe('REGRESSION: domain/ still cannot reach a document', () => {
     const files = (await readdir(domainDir)).filter((name) => name.endsWith('.ts'))
     expect(files.length).toBeGreaterThan(0)
 
-    for (const name of files) {
-      const source = await readFile(path.join(domainDir, name), 'utf8')
-      const imports = [...source.matchAll(/from\s+'([^']+)'/gu)].map((match) => match[1])
+    // Every file is read independently — nothing in one iteration depends on
+    // another's result — so the reads run concurrently rather than one at a
+    // time.
+    const sources = await Promise.all(
+      files.map((name) => readFile(path.join(domainDir, name), 'utf8')),
+    )
+
+    for (const source of sources) {
+      const imports = [...source.matchAll(/from\s+'(?<specifier>[^']+)'/gu)].map(
+        (match) => match.groups?.['specifier'],
+      )
       expect(imports.filter((specifier) => specifier?.includes('application'))).toStrictEqual([])
       // Comments in `domain/palette.ts` and `domain/accessibility.ts` discuss
       // stylesheets at length, so this looks for CODE: a bare global read.

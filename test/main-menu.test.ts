@@ -80,6 +80,23 @@ describe('main menu domain', () => {
       savedWorlds: SAVED_WORLDS,
     })
   })
+
+  it('cycles game mode back to survival on a second press, and leaves an already-open panel as the identical object', () => {
+    // The existing test above only ever cycles survival -> creative once; a
+    // second cycle is what exercises the OTHER arm of `cycleGameMode`'s closed
+    // swap. Asserted on the mode a player would actually see after clicking the
+    // mode button twice, not on the internal branch.
+    const clickedTwice = cycleWorldMode(cycleWorldMode(initialMainMenuState))
+    expect(clickedTwice.draft.mode).toBe('survival')
+
+    // `openPanel` short-circuits when the requested panel is the one already
+    // showing. The observable part of that is not just "same panel name" (a new
+    // object with an equal panel would look the same to `toStrictEqual`) but
+    // that no new state object is allocated at all — the no-op returns the
+    // very state it was given.
+    const unchanged = openPanel(initialMainMenuState, 'root')
+    expect(unchanged).toBe(initialMainMenuState)
+  })
 })
 
 describe('operable main menu', () => {
@@ -119,7 +136,9 @@ describe('operable main menu', () => {
     const input = mounted.root.find('data-mx-ui', 'menu-world-name')
     expect(input?.tagName).toBe('input')
     expect(input?.attributes.get('aria-label')).toBe('World name')
-    if (input === undefined) throw new Error('world name input was not mounted')
+    if (input === undefined) {
+      throw new Error('world name input was not mounted')
+    }
     input.value = '  Ravine  '
     input.dispatch('input')
 
@@ -159,6 +178,69 @@ describe('operable main menu', () => {
 
     mounted.root.find('data-menu-action', 'back')?.dispatch('click')
     expect(visiblePanels(mounted.root)).toStrictEqual(['root'])
+  })
+
+  it('focuses the back button when Select World opens with no saved worlds yet', () => {
+    const mounted = mount()
+    mounted.view.render(mainMenuViewModel(initialMainMenuState))
+
+    const backButton = mounted.root.find('data-menu-action', 'back')
+    if (backButton === undefined) {
+      throw new Error('back button was not mounted')
+    }
+    const before = mounted.factory.mark()
+    mounted.root.find('data-menu-entry', 'load-world')?.dispatch('click')
+
+    expect(visiblePanels(mounted.root)).toStrictEqual(['load-world'])
+    expect(
+      mounted.factory.since(before).some((mutation) => mutation.kind === 'focus' && mutation.target === backButton),
+    ).toBe(true)
+  })
+
+  it('writes a world name pushed onto state without a driving input event into the input element', () => {
+    const mounted = mount()
+    mounted.view.render(mainMenuViewModel(initialMainMenuState))
+
+    const restoredState = nameWorld(openPanel(initialMainMenuState, 'new-world'), 'Restored Draft')
+    mounted.view.render(mainMenuViewModel(restoredState))
+
+    const input = mounted.root.find('data-mx-ui', 'menu-world-name')
+    expect(input?.value).toBe('Restored Draft')
+  })
+
+  it('hides a saved world row once the host stops reporting that session', () => {
+    const mounted = mount()
+    mounted.view.render(mainMenuViewModel(initialMainMenuState, SAVED_WORLDS))
+    mounted.root.find('data-menu-entry', 'load-world')?.dispatch('click')
+
+    const remaining: ReadonlyArray<SavedWorld> = SAVED_WORLDS.slice(0, 1)
+    mounted.view.render(mainMenuViewModel(openPanel(initialMainMenuState, 'load-world'), remaining))
+
+    const rows = mounted.root.findAll('data-mx-ui', 'menu-world-row')
+    const droppedRow = rows.find((row) => row.attributes.get('data-session-id') === 'session-2')
+    const keptRow = rows.find((row) => row.attributes.get('data-session-id') === 'session-1')
+    expect(droppedRow?.attributes.has('hidden')).toBe(true)
+    expect(keptRow?.attributes.has('hidden')).toBe(false)
+  })
+
+  it('lets a caller omit callbacks entirely and still navigate every panel', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('div') as FakeElement
+    const view = createMainMenuView(factory, parent)
+    view.render(mainMenuViewModel(initialMainMenuState))
+    const root = view.root as FakeElement
+
+    root.find('data-menu-entry', 'settings')?.dispatch('click')
+    expect(visiblePanels(root)).toStrictEqual(['root'])
+
+    root.find('data-menu-entry', 'new-world')?.dispatch('click')
+    expect(visiblePanels(root)).toStrictEqual(['new-world'])
+
+    root.find('data-menu-action', 'confirm')?.dispatch('click')
+    expect(visiblePanels(root)).toStrictEqual(['new-world'])
+
+    root.find('data-menu-action', 'cancel')?.dispatch('click')
+    expect(visiblePanels(root)).toStrictEqual(['root'])
   })
 
   it('renders a known empty save state and relies only on native control events', () => {

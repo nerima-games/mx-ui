@@ -498,21 +498,20 @@ describe('colour vision correction (the feColorMatrix matrices themselves)', () 
       // catches.
       for (const mode of COLOR_VISION_MODES) {
         const matrix = colorVisionMatrix(mode)
-        if (matrix === undefined) {
-          continue
-        }
-        for (const row of [0, 1, 2]) {
-          const sum = matrix
-            .slice(row * 5, row * 5 + 3)
-            .reduce((total, coefficient) => total + coefficient, 0)
-          expect(sum).toBeCloseTo(1, 10)
-        }
+        if (matrix !== undefined) {
+          for (const row of [0, 1, 2]) {
+            const sum = matrix
+              .slice(row * 5, row * 5 + 3)
+              .reduce((total, coefficient) => total + coefficient, 0)
+            expect(sum).toBeCloseTo(1, 10)
+          }
 
-        for (const grey of [0, 0.25, 0.5, 0.75, 1]) {
-          const [r, g, b] = applyColorVisionMatrix([grey, grey, grey], matrix)
-          expect(r).toBeCloseTo(grey, 10)
-          expect(g).toBeCloseTo(grey, 10)
-          expect(b).toBeCloseTo(grey, 10)
+          for (const grey of [0, 0.25, 0.5, 0.75, 1]) {
+            const [r, g, b] = applyColorVisionMatrix([grey, grey, grey], matrix)
+            expect(r).toBeCloseTo(grey, 10)
+            expect(g).toBeCloseTo(grey, 10)
+            expect(b).toBeCloseTo(grey, 10)
+          }
         }
       }
     }),

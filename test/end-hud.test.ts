@@ -49,6 +49,31 @@ describe('End HUD primitives', () => {
     ).toEqual({ accessibleLabel: 'Stronghold location unknown.', status: 'unknown' })
   })
 
+  it('reports a bearing of exactly ahead as 0 and exactly behind as +180 rather than -180', () => {
+    // `normalizeRelativeBearing`'s modulo formula lands the "behind" case on
+    // -180, not +180, before the explicit swap. That raw -180 is not just an
+    // internal detail: `relativeBearingDegrees` is a field of the public
+    // `StrongholdLocatorViewModel`, so a caller reading it (a compass needle
+    // angle, say) would see the wrong sign without the swap even though the
+    // text label ("behind") would look identical either way.
+    expect(
+      strongholdLocatorViewModel({ distanceBlocks: 5, relativeBearingDegrees: 0, status: 'tracking' }),
+    ).toEqual({
+      accessibleLabel: 'Stronghold: 5 blocks away, ahead.',
+      distanceBlocks: 5,
+      relativeBearingDegrees: 0,
+      status: 'tracking',
+    })
+    expect(
+      strongholdLocatorViewModel({ distanceBlocks: 5, relativeBearingDegrees: 180, status: 'tracking' }),
+    ).toEqual({
+      accessibleLabel: 'Stronghold: 5 blocks away, behind.',
+      distanceBlocks: 5,
+      relativeBearingDegrees: 180,
+      status: 'tracking',
+    })
+  })
+
   it('clamps portal insertion progress to whole eyes from 0 through 12', () => {
     expect(portalEyeProgressViewModel(BELOW_MIN_PORTAL_EYES)).toMatchObject({
       complete: false,
