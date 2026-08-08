@@ -97,10 +97,10 @@
  * layout, and layout needs a browser. `docs/e2e-triage.md` keeps that half in
  * mc-compose, with the rest of `HUD remains usable at ${width}px`.
  */
-import { shouldAnimate, type MotionPreference } from '../domain/accessibility'
-import type { CrosshairViewModel } from '../domain/crosshair'
-import type { DomElement, DomElementFactory } from './dom-surface'
 import {
+  type AttributeCell,
+  type PercentCell,
+  type StyleCell,
   attributeCell,
   clearStyle,
   percentCell,
@@ -109,11 +109,11 @@ import {
   writeHidden,
   writePercent,
   writeStyle,
-  type AttributeCell,
-  type PercentCell,
-  type StyleCell,
 } from './dom-write'
-import { declarePalette, PALETTE_VAR } from './palette-css'
+import type { DomElement, DomElementFactory } from './dom-surface'
+import { type MotionPreference, shouldAnimate } from '../domain/accessibility'
+import { PALETTE_VAR, declarePalette } from './palette-css'
+import type { CrosshairViewModel } from '../domain/crosshair'
 
 /** The reticle's box, in CSS pixels. `crosshair.ts:15-16` (`width/height: 20px`). */
 export const CROSSHAIR_SIZE = '20px'
@@ -165,6 +165,48 @@ type ArmCells = {
   readonly thickness: StyleCell
 }
 
+/** The properties that differ between the two arms, resolved once per arm. */
+type ArmAxis = {
+  readonly axisLabel: 'vertical' | 'horizontal'
+  readonly thicknessDimension: 'width' | 'height'
+  readonly fullDimension: 'height' | 'width'
+  readonly offsetSide: 'left' | 'top'
+  readonly translate: string
+}
+
+const VERTICAL_ARM_AXIS: ArmAxis = {
+  axisLabel: 'vertical',
+  fullDimension: 'height',
+  offsetSide: 'left',
+  thicknessDimension: 'width',
+  translate: 'translateX(-50%)',
+}
+
+const HORIZONTAL_ARM_AXIS: ArmAxis = {
+  axisLabel: 'horizontal',
+  fullDimension: 'width',
+  offsetSide: 'top',
+  thicknessDimension: 'height',
+  translate: 'translateY(-50%)',
+}
+
+const armAxis = (vertical: boolean): ArmAxis => {
+  if (vertical) {
+    return VERTICAL_ARM_AXIS
+  }
+  return HORIZONTAL_ARM_AXIS
+}
+
+const applyArmGeometry = (arm: DomElement, axis: ArmAxis): void => {
+  arm.style.setProperty('position', 'absolute')
+  // INK, and its floor over any world pixel is the halo's doing — see the header.
+  arm.style.setProperty('background-color', PALETTE_VAR.ink)
+  arm.style.setProperty('box-shadow', `0 0 0 ${CROSSHAIR_HALO_WIDTH} ${PALETTE_VAR.scrim}`)
+  arm.style.setProperty(axis.fullDimension, '100%')
+  arm.style.setProperty(axis.offsetSide, '50%')
+  arm.style.setProperty('transform', axis.translate)
+}
+
 /**
  * One arm — a bar with its own halo.
  *
@@ -177,22 +219,211 @@ const createArm = (
   parent: DomElement,
   vertical: boolean,
 ): ArmCells => {
+  const axis = armAxis(vertical)
   const arm = factory.createElement('div')
   arm.setAttribute('data-mx-ui', 'crosshair-arm')
-  arm.setAttribute('data-crosshair-arm', vertical ? 'vertical' : 'horizontal')
-  arm.style.setProperty('position', 'absolute')
-  // INK, and its floor over any world pixel is the halo's doing — see the header.
-  arm.style.setProperty('background-color', PALETTE_VAR.ink)
-  arm.style.setProperty(
-    'box-shadow',
-    `0 0 0 ${CROSSHAIR_HALO_WIDTH} ${PALETTE_VAR.scrim}`,
-  )
-  arm.style.setProperty(vertical ? 'height' : 'width', '100%')
-  arm.style.setProperty(vertical ? 'left' : 'top', '50%')
-  arm.style.setProperty('transform', vertical ? 'translateX(-50%)' : 'translateY(-50%)')
+  arm.setAttribute('data-crosshair-arm', axis.axisLabel)
+  applyArmGeometry(arm, axis)
   parent.appendChild(arm)
 
-  return { thickness: styleCell(arm, vertical ? 'width' : 'height') }
+  return { thickness: styleCell(arm, axis.thicknessDimension) }
+}
+
+const applyCrosshairRootStyle = (root: DomElement): void => {
+  root.style.setProperty('position', 'absolute')
+  root.style.setProperty('left', '50%')
+  root.style.setProperty('top', '50%')
+  root.style.setProperty('width', CROSSHAIR_SIZE)
+  root.style.setProperty('height', CROSSHAIR_SIZE)
+  // The reference sets `pointer-events: none` (`crosshair.ts:17`) and it is
+  // Carried over: a mark sitting exactly where every click lands would otherwise
+  // Eat the clicks that are the whole point of aiming.
+  root.style.setProperty('pointer-events', 'none')
+  // The centring translate is STATIC, on the root, and the pulse scale lives on
+  // An inner element. One `transform` carrying both would mean the pulse's
+  // `clearStyle` also removed the centring, so 「reduced motion」 would move the
+  // Reticle off the point it is meant to mark.
+  root.style.setProperty('transform', 'translate(-50%, -50%)')
+}
+
+const buildCrosshairRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
+  const root = factory.createElement('div')
+  root.setAttribute('data-mx-ui', 'crosshair')
+  declarePalette(root)
+  applyCrosshairRootStyle(root)
+  root.setAttribute('hidden', '')
+  parent.appendChild(root)
+  return root
+}
+
+const buildCrosshairMark = (factory: DomElementFactory, root: DomElement): DomElement => {
+  const mark = factory.createElement('div')
+  mark.setAttribute('data-mx-ui', 'crosshair-mark')
+  // The reticle is decorative: its whole content is 「the viewport centre」.
+  // Keep only the mark hidden so the sibling progressbar remains perceivable.
+  mark.setAttribute('aria-hidden', 'true')
+  mark.style.setProperty('position', 'relative')
+  mark.style.setProperty('width', '100%')
+  mark.style.setProperty('height', '100%')
+  root.appendChild(mark)
+  return mark
+}
+
+type ReticleElements = {
+  readonly mark: DomElement
+  readonly vertical: ArmCells
+  readonly horizontal: ArmCells
+}
+
+const buildReticle = (factory: DomElementFactory, root: DomElement): ReticleElements => {
+  const mark = buildCrosshairMark(factory, root)
+  const vertical = createArm(factory, mark, true)
+  const horizontal = createArm(factory, mark, false)
+  return { horizontal, mark, vertical }
+}
+
+const applyProgressBarAttributes = (progress: DomElement): void => {
+  progress.setAttribute('data-mx-ui', 'crosshair-progress')
+  progress.setAttribute('role', 'progressbar')
+  progress.setAttribute('aria-label', CROSSHAIR_BREAK_PROGRESS_LABEL)
+  progress.setAttribute('aria-valuemin', '0')
+  progress.setAttribute('aria-valuemax', '100')
+  progress.setAttribute('hidden', '')
+}
+
+const applyProgressBarStyle = (progress: DomElement): void => {
+  progress.style.setProperty('position', 'absolute')
+  progress.style.setProperty('left', '50%')
+  progress.style.setProperty('top', 'calc(100% + 6px)')
+  progress.style.setProperty('width', '28px')
+  progress.style.setProperty('height', '3px')
+  progress.style.setProperty('transform', 'translateX(-50%)')
+  progress.style.setProperty('background-color', PALETTE_VAR.scrim)
+}
+
+const buildProgressFill = (factory: DomElementFactory, progress: DomElement): DomElement => {
+  const progressFill = factory.createElement('div')
+  progressFill.setAttribute('data-mx-ui', 'crosshair-progress-fill')
+  progressFill.style.setProperty('height', '100%')
+  progressFill.style.setProperty('background-color', PALETTE_VAR.ink)
+  progress.appendChild(progressFill)
+  return progressFill
+}
+
+type ProgressElements = {
+  readonly progress: DomElement
+  readonly progressFill: DomElement
+}
+
+const buildProgressBar = (factory: DomElementFactory, root: DomElement): ProgressElements => {
+  const progress = factory.createElement('div')
+  applyProgressBarAttributes(progress)
+  applyProgressBarStyle(progress)
+  root.appendChild(progress)
+  const progressFill = buildProgressFill(factory, progress)
+  return { progress, progressFill }
+}
+
+type CrosshairCells = {
+  readonly hidden: AttributeCell
+  readonly hitFlag: AttributeCell
+  readonly pulse: StyleCell
+  readonly progressHidden: AttributeCell
+  readonly progressValue: AttributeCell
+  readonly progressWidth: PercentCell
+}
+
+type CellSources = {
+  readonly root: DomElement
+  readonly mark: DomElement
+  readonly progress: DomElement
+  readonly progressFill: DomElement
+}
+
+const buildCells = ({ root, mark, progress, progressFill }: CellSources): CrosshairCells => {
+  const cells: CrosshairCells = {
+    hidden: attributeCell(root, 'hidden'),
+    hitFlag: attributeCell(root, 'data-crosshair-hit'),
+    progressHidden: attributeCell(progress, 'hidden'),
+    progressValue: attributeCell(progress, 'aria-valuenow'),
+    progressWidth: percentCell(progressFill, 'width'),
+    pulse: styleCell(mark, 'transform'),
+  }
+  // Hidden directly above so no frame flashes a reticle before anybody has said
+  // The player is aiming; tell the cell what the element already says.
+  cells.hidden.previous = ''
+  cells.progressHidden.previous = ''
+  return cells
+}
+
+const isHit = (model: CrosshairViewModel | null): boolean => model?.hit === true
+
+const hitAttributeValue = (hit: boolean): string | undefined => {
+  if (hit) {
+    return ''
+  }
+  return
+}
+
+const BREAK_PROGRESS_PERCENT_SCALE = 100
+
+const breakPercentValue = (model: CrosshairViewModel | null): number | undefined => {
+  const breakProgress = model?.breakProgress
+  if (typeof breakProgress === 'undefined') {
+    return
+  }
+  return breakProgress * BREAK_PROGRESS_PERCENT_SCALE
+}
+
+const progressValueAttribute = (breakPercent: number | undefined): string | undefined => {
+  if (typeof breakPercent === 'undefined') {
+    return
+  }
+  return String(breakPercent)
+}
+
+const armWeight = (hit: boolean): string => {
+  if (hit) {
+    return CROSSHAIR_ARM_HIT_WEIGHT
+  }
+  return CROSSHAIR_ARM_WEIGHT
+}
+
+const applyVisibility = (cells: CrosshairCells, latest: CrosshairViewModel | null): void => {
+  writeHidden(cells.hidden, latest === null)
+}
+
+const applyHitFlag = (cells: CrosshairCells, hit: boolean): void => {
+  writeAttribute(cells.hitFlag, hitAttributeValue(hit))
+}
+
+const applyBreakProgress = (cells: CrosshairCells, latest: CrosshairViewModel | null): void => {
+  const breakPercent = breakPercentValue(latest)
+  writeHidden(cells.progressHidden, typeof breakPercent === 'undefined')
+  writeAttribute(cells.progressValue, progressValueAttribute(breakPercent))
+  if (typeof breakPercent !== 'undefined') {
+    writePercent(cells.progressWidth, breakPercent)
+  }
+}
+
+// WEIGHT first, and unconditionally: the hit is legible without the animation,
+// Which is what makes the animation optional rather than the signal.
+const applyArmWeight = (vertical: ArmCells, horizontal: ArmCells, hit: boolean): void => {
+  const weight = armWeight(hit)
+  writeStyle(vertical.thickness, weight)
+  writeStyle(horizontal.thickness, weight)
+}
+
+const applyPulse = (cells: CrosshairCells, hit: boolean, animates: boolean): void => {
+  if (hit && animates) {
+    writeStyle(cells.pulse, `scale(${String(CROSSHAIR_PULSE_SCALE)})`)
+    return
+  }
+  // REMOVED rather than set to `scale(1)`, the same call `application/hud-view.ts`
+  // Makes for its transition: a transform that is always present is a
+  // Compositing layer that is always present, and 「no animation」 should be
+  // Expressible as the absence of one.
+  clearStyle(cells.pulse)
 }
 
 /**
@@ -207,121 +438,31 @@ export const createCrosshairView = (
   parent: DomElement,
   motion: MotionPreference,
 ): CrosshairView => {
-  const root = factory.createElement('div')
-  root.setAttribute('data-mx-ui', 'crosshair')
-  declarePalette(root)
-  root.style.setProperty('position', 'absolute')
-  root.style.setProperty('left', '50%')
-  root.style.setProperty('top', '50%')
-  root.style.setProperty('width', CROSSHAIR_SIZE)
-  root.style.setProperty('height', CROSSHAIR_SIZE)
-  // The reference sets `pointer-events: none` (`crosshair.ts:17`) and it is
-  // carried over: a mark sitting exactly where every click lands would otherwise
-  // eat the clicks that are the whole point of aiming.
-  root.style.setProperty('pointer-events', 'none')
-  // The centring translate is STATIC, on the root, and the pulse scale lives on
-  // an inner element. One `transform` carrying both would mean the pulse's
-  // `clearStyle` also removed the centring, so 「reduced motion」 would move the
-  // reticle off the point it is meant to mark.
-  root.style.setProperty('transform', 'translate(-50%, -50%)')
-  root.setAttribute('hidden', '')
-  parent.appendChild(root)
-
-  const mark = factory.createElement('div')
-  mark.setAttribute('data-mx-ui', 'crosshair-mark')
-  // The reticle is decorative: its whole content is 「the viewport centre」.
-  // Keep only the mark hidden so the sibling progressbar remains perceivable.
-  mark.setAttribute('aria-hidden', 'true')
-  mark.style.setProperty('position', 'relative')
-  mark.style.setProperty('width', '100%')
-  mark.style.setProperty('height', '100%')
-  root.appendChild(mark)
-
-  const vertical = createArm(factory, mark, true)
-  const horizontal = createArm(factory, mark, false)
-
-  const progress = factory.createElement('div')
-  progress.setAttribute('data-mx-ui', 'crosshair-progress')
-  progress.setAttribute('role', 'progressbar')
-  progress.setAttribute('aria-label', CROSSHAIR_BREAK_PROGRESS_LABEL)
-  progress.setAttribute('aria-valuemin', '0')
-  progress.setAttribute('aria-valuemax', '100')
-  progress.setAttribute('hidden', '')
-  progress.style.setProperty('position', 'absolute')
-  progress.style.setProperty('left', '50%')
-  progress.style.setProperty('top', 'calc(100% + 6px)')
-  progress.style.setProperty('width', '28px')
-  progress.style.setProperty('height', '3px')
-  progress.style.setProperty('transform', 'translateX(-50%)')
-  progress.style.setProperty('background-color', PALETTE_VAR.scrim)
-  root.appendChild(progress)
-
-  const progressFill = factory.createElement('div')
-  progressFill.setAttribute('data-mx-ui', 'crosshair-progress-fill')
-  progressFill.style.setProperty('height', '100%')
-  progressFill.style.setProperty('background-color', PALETTE_VAR.ink)
-  progress.appendChild(progressFill)
-
-  const cells: {
-    readonly hidden: AttributeCell
-    readonly hitFlag: AttributeCell
-    readonly pulse: StyleCell
-    readonly progressHidden: AttributeCell
-    readonly progressValue: AttributeCell
-    readonly progressWidth: PercentCell
-  } = {
-    hidden: attributeCell(root, 'hidden'),
-    hitFlag: attributeCell(root, 'data-crosshair-hit'),
-    pulse: styleCell(mark, 'transform'),
-    progressHidden: attributeCell(progress, 'hidden'),
-    progressValue: attributeCell(progress, 'aria-valuenow'),
-    progressWidth: percentCell(progressFill, 'width'),
-  }
-  // Hidden directly above so no frame flashes a reticle before anybody has said
-  // the player is aiming; tell the cell what the element already says.
-  cells.hidden.previous = ''
-  cells.progressHidden.previous = ''
+  const root = buildCrosshairRoot(factory, parent)
+  const { horizontal, mark, vertical } = buildReticle(factory, root)
+  const { progress, progressFill } = buildProgressBar(factory, root)
+  const cells = buildCells({ mark, progress, progressFill, root })
 
   let animates = shouldAnimate(motion)
-  let latest: CrosshairViewModel | undefined
+  let latest: CrosshairViewModel | null = null
 
   const project = (): void => {
-    writeHidden(cells.hidden, latest === undefined)
-    const hit = latest?.hit === true
-    writeAttribute(cells.hitFlag, hit ? '' : undefined)
-    const breakProgress = latest?.breakProgress
-    writeHidden(cells.progressHidden, breakProgress === undefined)
-    const breakPercent = breakProgress === undefined ? undefined : breakProgress * 100
-    writeAttribute(cells.progressValue, breakPercent === undefined ? undefined : String(breakPercent))
-    if (breakPercent !== undefined) {
-      writePercent(cells.progressWidth, breakPercent)
-    }
-    // WEIGHT first, and unconditionally: the hit is legible without the
-    // animation, which is what makes the animation optional rather than the
-    // signal.
-    const weight = hit ? CROSSHAIR_ARM_HIT_WEIGHT : CROSSHAIR_ARM_WEIGHT
-    writeStyle(vertical.thickness, weight)
-    writeStyle(horizontal.thickness, weight)
-
-    if (hit && animates) {
-      writeStyle(cells.pulse, `scale(${String(CROSSHAIR_PULSE_SCALE)})`)
-      return
-    }
-    // REMOVED rather than set to `scale(1)`, the same call `application/hud-view.ts`
-    // makes for its transition: a transform that is always present is a
-    // compositing layer that is always present, and 「no animation」 should be
-    // expressible as the absence of one.
-    clearStyle(cells.pulse)
+    applyVisibility(cells, latest)
+    const hit = isHit(latest)
+    applyHitFlag(cells, hit)
+    applyBreakProgress(cells, latest)
+    applyArmWeight(vertical, horizontal, hit)
+    applyPulse(cells, hit, animates)
   }
 
   project()
 
   return {
-    root,
     render: (model: CrosshairViewModel | undefined): void => {
-      latest = model
+      latest = model ?? null
       project()
     },
+    root,
     setMotion: (next: MotionPreference): void => {
       const wanted = shouldAnimate(next)
       if (wanted === animates) {

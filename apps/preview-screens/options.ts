@@ -83,6 +83,96 @@ const readNumber = (
 const isColorVisionMode = (value: string): value is ColorVisionMode =>
   (COLOR_VISION_MODES as ReadonlyArray<string>).includes(value)
 
+/** The flags that take no value and just flip a switch. Returns whether `flag` was one of them. */
+const applyBooleanFlag = (accumulator: Accumulator, flag: string): boolean => {
+  switch (flag) {
+    case '--help':
+    case '-h':
+      accumulator.help = true
+      return true
+    case '--stats':
+      accumulator.stats = true
+      return true
+    case '--once':
+      accumulator.once = true
+      return true
+    case '--ascii':
+      accumulator.ascii = true
+      return true
+    case '--simulate':
+      accumulator.simulate = true
+      return true
+    case '--reduced-motion':
+      accumulator.reducedMotion = true
+      return true
+    default:
+      return false
+  }
+}
+
+/** `--screen` and `--color-vision`, each validated against a fixed set of names. */
+const applyEnumFlag = (
+  accumulator: Accumulator,
+  flag: string,
+  takeValue: () => string | undefined,
+): boolean => {
+  if (flag === '--screen') {
+    const value = takeValue()
+    if (value !== undefined && isScreenName(value)) {
+      accumulator.screen = value
+    } else {
+      accumulator.errors = [
+        ...accumulator.errors,
+        `--screen: "${String(value)}" is not one of ${SCREEN_NAMES.join(', ')}`,
+      ]
+    }
+    return true
+  }
+  if (flag === '--color-vision') {
+    const value = takeValue()
+    if (value !== undefined && isColorVisionMode(value)) {
+      accumulator.colorVision = value
+    } else {
+      accumulator.errors = [
+        ...accumulator.errors,
+        `--color-vision: "${String(value)}" is not one of ${COLOR_VISION_MODES.join(', ')}`,
+      ]
+    }
+    return true
+  }
+  return false
+}
+
+/** The numeric flags, two of which (`--at`, `--captions`) are additionally clamped to non-negative. */
+const applyNumericFlag = (
+  accumulator: Accumulator,
+  flag: string,
+  takeValue: () => string | undefined,
+): boolean => {
+  switch (flag) {
+    case '--health':
+      accumulator.health = readNumber(accumulator, flag, takeValue()) ?? accumulator.health
+      return true
+    case '--hunger':
+      accumulator.hunger = readNumber(accumulator, flag, takeValue()) ?? accumulator.hunger
+      return true
+    case '--at':
+      accumulator.atSecs = Math.max(0, readNumber(accumulator, flag, takeValue()) ?? accumulator.atSecs)
+      return true
+    case '--captions':
+      accumulator.captions = Math.max(0, readNumber(accumulator, flag, takeValue()) ?? accumulator.captions)
+      return true
+    case '--width':
+      accumulator.width = readNumber(accumulator, flag, takeValue()) ?? accumulator.width
+      return true
+    case '--height':
+      accumulator.height = readNumber(accumulator, flag, takeValue()) ?? accumulator.height
+      return true
+    default:
+      return false
+  }
+}
+
 export const parseArguments = (argv: ReadonlyArray<string>): PreviewOptions => {
   const accumulator: Accumulator = { ...DEFAULTS }
   const queue = [...argv]
@@ -98,73 +188,16 @@ export const parseArguments = (argv: ReadonlyArray<string>): PreviewOptions => {
     const inlineValue = equalsAt === -1 ? undefined : token.slice(equalsAt + 1)
     const takeValue = (): string | undefined => inlineValue ?? queue.shift()
 
-    switch (flag) {
-      case '--':
-        break
-      case '--help':
-      case '-h':
-        accumulator.help = true
-        break
-      case '--stats':
-        accumulator.stats = true
-        break
-      case '--once':
-        accumulator.once = true
-        break
-      case '--ascii':
-        accumulator.ascii = true
-        break
-      case '--simulate':
-        accumulator.simulate = true
-        break
-      case '--reduced-motion':
-        accumulator.reducedMotion = true
-        break
-      case '--screen': {
-        const value = takeValue()
-        if (value !== undefined && isScreenName(value)) {
-          accumulator.screen = value
-        } else {
-          accumulator.errors = [
-            ...accumulator.errors,
-            `--screen: "${String(value)}" is not one of ${SCREEN_NAMES.join(', ')}`,
-          ]
-        }
-        break
-      }
-      case '--color-vision': {
-        const value = takeValue()
-        if (value !== undefined && isColorVisionMode(value)) {
-          accumulator.colorVision = value
-        } else {
-          accumulator.errors = [
-            ...accumulator.errors,
-            `--color-vision: "${String(value)}" is not one of ${COLOR_VISION_MODES.join(', ')}`,
-          ]
-        }
-        break
-      }
-      case '--health':
-        accumulator.health = readNumber(accumulator, flag, takeValue()) ?? accumulator.health
-        break
-      case '--hunger':
-        accumulator.hunger = readNumber(accumulator, flag, takeValue()) ?? accumulator.hunger
-        break
-      case '--at':
-        accumulator.atSecs = Math.max(0, readNumber(accumulator, flag, takeValue()) ?? accumulator.atSecs)
-        break
-      case '--captions':
-        accumulator.captions = Math.max(0, readNumber(accumulator, flag, takeValue()) ?? accumulator.captions)
-        break
-      case '--width':
-        accumulator.width = readNumber(accumulator, flag, takeValue()) ?? accumulator.width
-        break
-      case '--height':
-        accumulator.height = readNumber(accumulator, flag, takeValue()) ?? accumulator.height
-        break
-      default:
-        accumulator.errors = [...accumulator.errors, `unknown option: ${flag}`]
-        break
+    if (flag === '--') {
+      // A literal `--`, forwarded by pnpm and otherwise meaningless: accepted and ignored.
+    } else if (applyBooleanFlag(accumulator, flag)) {
+      // handled
+    } else if (applyEnumFlag(accumulator, flag, takeValue)) {
+      // handled
+    } else if (applyNumericFlag(accumulator, flag, takeValue)) {
+      // handled
+    } else {
+      accumulator.errors = [...accumulator.errors, `unknown option: ${flag}`]
     }
   }
 

@@ -1,10 +1,10 @@
-import { slotView, type SlotView } from './hud-view-model'
+import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model'
 
 export const FURNACE_SLOT_IDS = ['input', 'fuel', 'output'] as const
 
 export type FurnaceSlotId = (typeof FURNACE_SLOT_IDS)[number]
 
-/** mc-sim-independent inventory data needed to draw one furnace slot. */
+/** Mc-sim-independent inventory data needed to draw one furnace slot. */
 export type FurnaceSlotSnapshot = {
   readonly itemId: string
   readonly count: number
@@ -29,11 +29,38 @@ export type FurnaceViewModel = {
   readonly burnProgressPercent: number
 }
 
+const ZERO = 0
+const ONE = 1
+const FULL_PERCENT = 100
+/** Passed as `slotView`'s `selectedIndex` for a region with no cursor of its own. */
+const NO_SELECTION = -1
+const INPUT_INDEX = 0
+const FUEL_INDEX = 1
+const OUTPUT_INDEX = 2
+
 const normalizedPercent = (progress: number): number => {
   if (!Number.isFinite(progress)) {
-    return 0
+    return ZERO
   }
-  return Math.round(Math.min(Math.max(progress, 0), 1) * 100)
+  return Math.round(Math.min(Math.max(progress, ZERO), ONE) * FULL_PERCENT)
+}
+
+/** Furnace slots never carry durability; `durability` stays absent by omission. */
+const withHotbarShape = (
+  snapshot: FurnaceSlotSnapshot,
+  durability?: number,
+): HotbarSlotSnapshot => ({
+  ...snapshot,
+  durability,
+})
+
+const toHotbarSlot = (
+  snapshot: FurnaceSlotSnapshot | undefined,
+): HotbarSlotSnapshot | undefined => {
+  if (typeof snapshot === 'undefined') {
+    return snapshot
+  }
+  return withHotbarShape(snapshot)
 }
 
 const projectSlot = (
@@ -43,24 +70,20 @@ const projectSlot = (
 ): FurnaceSlotView =>
   Object.freeze({
     id,
-    ...slotView(
-      snapshot === undefined ? undefined : { ...snapshot, durability: undefined },
-      index,
-      -1,
-    ),
+    ...slotView(toHotbarSlot(snapshot), index, NO_SELECTION),
   })
 
 /** Purely derives the immutable presentation state for a furnace screen. */
 export const furnaceViewModel = (snapshot: FurnaceSnapshot): FurnaceViewModel => {
   const slots = Object.freeze([
-    projectSlot('input', 0, snapshot.input),
-    projectSlot('fuel', 1, snapshot.fuel),
-    projectSlot('output', 2, snapshot.output),
+    projectSlot('input', INPUT_INDEX, snapshot.input),
+    projectSlot('fuel', FUEL_INDEX, snapshot.fuel),
+    projectSlot('output', OUTPUT_INDEX, snapshot.output),
   ])
 
   return Object.freeze({
-    slots,
-    cookProgressPercent: normalizedPercent(snapshot.cookProgress),
     burnProgressPercent: normalizedPercent(snapshot.burnProgress),
+    cookProgressPercent: normalizedPercent(snapshot.cookProgress),
+    slots,
   })
 }

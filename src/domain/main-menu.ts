@@ -94,8 +94,12 @@ export const GAME_MODES: ReadonlyArray<GameMode> = ['survival', 'creative']
  * `GAME_MODES`, so that adding a third mode is a type error here rather than a
  * silent wrap that skips it.
  */
-export const cycleGameMode = (mode: GameMode): GameMode =>
-  mode === 'survival' ? 'creative' : 'survival'
+export const cycleGameMode = (mode: GameMode): GameMode => {
+  if (mode === 'survival') {
+    return 'creative'
+  }
+  return 'survival'
+}
 
 /**
  * What an unnamed world is called.
@@ -115,7 +119,7 @@ export type NewWorldDraft = {
   readonly mode: GameMode
 }
 
-export const emptyNewWorldDraft: NewWorldDraft = { name: '', mode: 'survival' }
+export const emptyNewWorldDraft: NewWorldDraft = { mode: 'survival', name: '' }
 
 /**
  * The name this world would actually be created under.
@@ -127,9 +131,14 @@ export const emptyNewWorldDraft: NewWorldDraft = { name: '', mode: 'survival' }
  * another, and no test could see it because the substitution happened after the
  * last thing the test could read.
  */
+const EMPTY_NAME_LENGTH = 0
+
 export const worldNameLabel = (draft: NewWorldDraft): string => {
   const trimmed = draft.name.trim()
-  return trimmed.length > 0 ? trimmed : DEFAULT_WORLD_NAME
+  if (trimmed.length > EMPTY_NAME_LENGTH) {
+    return trimmed
+  }
+  return DEFAULT_WORLD_NAME
 }
 
 export type MainMenuState = {
@@ -150,12 +159,16 @@ export type CreateWorldRequest = {
 }
 
 export const initialMainMenuState: MainMenuState = {
-  panel: 'root',
   draft: emptyNewWorldDraft,
+  panel: 'root',
 }
 
-export const openPanel = (state: MainMenuState, panel: MenuPanel): MainMenuState =>
-  state.panel === panel ? state : { ...state, panel }
+export const openPanel = (state: MainMenuState, panel: MenuPanel): MainMenuState => {
+  if (state.panel === panel) {
+    return state
+  }
+  return { ...state, panel }
+}
 
 /**
  * Leave whichever card is up, KEEPING the draft.
@@ -206,9 +219,9 @@ export const mainMenuViewModel = (
   state: MainMenuState,
   savedWorlds: ReadonlyArray<SavedWorld> = [],
 ): MainMenuViewModel => ({
-  panel: state.panel,
-  worldNameInput: state.draft.name,
-  worldName: worldNameLabel(state.draft),
   mode: state.draft.mode,
+  panel: state.panel,
   savedWorlds,
+  worldName: worldNameLabel(state.draft),
+  worldNameInput: state.draft.name,
 })

@@ -1,5 +1,5 @@
 /**
- * mx-ui's contribution to the frame (plan.md §4.1).
+ * Mx-ui's contribution to the frame (plan.md §4.1).
  *
  * ---------------------------------------------------------------------------
  * What mx-ui's public API is, and why it is bigger than the other two
@@ -23,34 +23,37 @@
  * see vitest.config.ts, and docs/testing.md for the `it.effect` + `Deferred`
  * deadlock the DOM suite has to avoid when it arrives.
  */
-import { Effect, Layer, Ref } from 'effect'
 import {
+  type CaptionQueue,
+  type CaptionSettings,
   applyCaptionSettings,
   emptyCaptionQueue,
   expireCaptions,
-  type CaptionQueue,
-  type CaptionSettings,
 } from '../domain/caption'
 import type { DeltaTimeSecs, GameModule, StageRegistration } from '../domain/frame-contract'
+import { Effect, Layer, Ref } from 'effect'
 import {
   type FpsCounter,
   advanceFpsCounter,
   emptyFpsCounter,
 } from '../domain/fps-counter'
 import {
-  hudViewModel,
-  spawnSnapshot,
   type HudViewModel,
   type VitalsSnapshot,
+  hudViewModel,
+  spawnSnapshot,
 } from '../domain/hud-view-model'
-import { emptyModalStack, type ModalStack } from '../domain/modal-stack'
+import { type ModalStack, emptyModalStack } from '../domain/modal-stack'
 import { UI_STAGE_IDS, UPSTREAM_STAGE_IDS } from './stage-ids'
 
+/** `elapsedSecs` starts at zero and only ever accumulates `dt`. */
+const INITIAL_ELAPSED_SECS = 0
+
 export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
-  captionsEnabled: true,
   // Starts false because the browser's autoplay gate has not been satisfied on
-  // the first frame. Captions appear anyway — see domain/caption.ts.
+  // The first frame. Captions appear anyway — see domain/caption.ts.
   audioUnlocked: false,
+  captionsEnabled: true,
 }
 
 export type UiFrameState = {
@@ -88,13 +91,13 @@ export type UiFrameState = {
  * game can hold their own. plan.md §3.8 records app-scope singletons as among
  * the reference's worst bug sources.
  */
-export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function* () {
+export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function*  makeUiFrameState() {
   const snapshot = yield* Ref.make<VitalsSnapshot>(spawnSnapshot)
   const hud = yield* Ref.make<HudViewModel>(hudViewModel(spawnSnapshot))
   const captions = yield* Ref.make<CaptionQueue>(emptyCaptionQueue)
   const captionSettings = yield* Ref.make<CaptionSettings>(DEFAULT_CAPTION_SETTINGS)
   const modals = yield* Ref.make<ModalStack>(emptyModalStack)
-  const elapsedSecs = yield* Ref.make(0)
+  const elapsedSecs = yield* Ref.make(INITIAL_ELAPSED_SECS)
   const fpsCounter = yield* Ref.make<FpsCounter>(emptyFpsCounter)
 
   return { captionSettings, captions, elapsedSecs, fpsCounter, hud, modals, snapshot }
@@ -108,32 +111,32 @@ export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function
  */
 export const uiStages = (state: UiFrameState): ReadonlyArray<StageRegistration> => [
   {
-    id: UI_STAGE_IDS.hudSync,
     after: [UPSTREAM_STAGE_IDS.simPhysics],
+    id: UI_STAGE_IDS.hudSync,
     run: () =>
-      Effect.gen(function* () {
+      Effect.gen(function*  run() {
         // FIRST CUT: the snapshot is written into `state.snapshot` by whoever
-        // drives the frame. When mc-sim is published this stage reads its
-        // services directly and the Ref becomes an implementation detail of the
-        // previews.
+        // Drives the frame. When mc-sim is published this stage reads its
+        // Services directly and the Ref becomes an implementation detail of the
+        // Previews.
         const snapshot = yield* Ref.get(state.snapshot)
         yield* Ref.set(state.hud, hudViewModel(snapshot))
       }),
   },
   {
-    id: UI_STAGE_IDS.overlaySync,
     after: [UI_STAGE_IDS.hudSync],
+    id: UI_STAGE_IDS.overlaySync,
     run: (dt: DeltaTimeSecs) =>
-      Effect.gen(function* () {
+      Effect.gen(function*  run() {
         // Time comes from `dt`, which the frame supplies. plan.md §4.3 bans
-        // reading a global clock, and `pnpm check:deps` enforces it — so a
-        // caption's age is an accumulation, not a reading.
+        // Reading a global clock, and `pnpm check:deps` enforces it — so a
+        // Caption's age is an accumulation, not a reading.
         const nowSecs = yield* Ref.updateAndGet(state.elapsedSecs, (elapsed) => elapsed + dt)
         yield* Ref.update(state.fpsCounter, (counter) => advanceFpsCounter(counter, dt))
         // SETTINGS FIRST, then age. `receiveCaption` gates admission and cannot
-        // reach a caption that is already up, so turning captions off would
-        // otherwise leave the visible ones to drain through `expireCaptions` —
-        // for the rest of their lifetime, and forever if `dt` stops arriving.
+        // Reach a caption that is already up, so turning captions off would
+        // Otherwise leave the visible ones to drain through `expireCaptions` —
+        // For the rest of their lifetime, and forever if `dt` stops arriving.
         // See `applyCaptionSettings`.
         const settings = yield* Ref.get(state.captionSettings)
         yield* Ref.update(state.captions, (queue) =>
@@ -154,7 +157,7 @@ export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>> = Eff
 )
 
 /**
- * mx-ui as a `GameModule` (plan.md §4.1).
+ * Mx-ui as a `GameModule` (plan.md §4.1).
  *
  * This used to say "not yet a `GameModule`: that type carries a
  * `Layer.Layer<ROut, E, RIn>`, and `RIn` cannot be named until mc-sim's and
@@ -172,6 +175,6 @@ export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>> = Eff
  * parameter — because this repository builds nothing they have to supply.
  */
 export const uiModule: GameModule<never, never, never> = {
-  layers: Layer.empty,
   frameStages: makeUiStages,
+  layers: Layer.empty,
 }

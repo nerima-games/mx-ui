@@ -29,6 +29,8 @@
  */
 export type ColorVisionMode = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia'
 
+const ZERO = 0
+
 export const COLOR_VISION_MODES: ReadonlyArray<ColorVisionMode> = [
   'off',
   'protanopia',
@@ -55,9 +57,13 @@ export const COLOR_VISION_MODES: ReadonlyArray<ColorVisionMode> = [
  */
 export const COLOR_VISION_FILTER_TARGET = 'canvas' as const
 
-/** The `<body data-color-vision>` value, or `undefined` to remove the attribute. */
-export const colorVisionAttribute = (mode: ColorVisionMode): string | undefined =>
-  mode === 'off' ? undefined : mode
+/** The `<body data-color-vision>` value, or absent to remove the attribute. */
+export const colorVisionAttribute = (mode: ColorVisionMode): string | undefined => {
+  if (mode === 'off') {
+    return
+  }
+  return mode
+}
 
 // ---------------------------------------------------------------------------
 // The correction itself
@@ -107,7 +113,7 @@ export const colorVisionAttribute = (mode: ColorVisionMode): string | undefined 
  */
 
 /**
- * sRGB, not the SVG default.
+ * SRGB, not the SVG default.
  *
  * `<filter color-interpolation-filters="sRGB">`. The SVG default is linearRGB,
  * and these matrices are derived in sRGB — applying them in linear space
@@ -118,7 +124,7 @@ export const colorVisionAttribute = (mode: ColorVisionMode): string | undefined 
  */
 export const COLOR_VISION_FILTER_COLOR_SPACE = 'sRGB' as const
 
-/** sRGB channels in 0–1, the units `feColorMatrix` operates in. */
+/** SRGB channels in 0–1, the units `feColorMatrix` operates in. */
 export type RgbChannels = readonly [number, number, number]
 
 /**
@@ -133,28 +139,55 @@ export type ColorVisionMatrix = readonly [
   number, number, number, number, number,
 ]
 
+// One named constant per matrix cell, so the tuples below never repeat a bare
+// Number. `IDENTITY` is the "this channel passes through unchanged" diagonal
+// Coefficient (R's own weight in the R row, A's own weight in the A row);
+// `ZERO` is every cell where a channel takes no weight at all. The rest are
+// `<MODE>_<OUTPUT>_FROM_<INPUT>`, matching the reference's `index.html`
+// Layout of R, G, B, A rows.
+const IDENTITY = 1
+
+const PROTANOPIA_G_FROM_R = -0.2549
+const PROTANOPIA_G_FROM_G = 1.2549
+const PROTANOPIA_B_FROM_R = 0.3031
+const PROTANOPIA_B_FROM_G = -0.5451
+const PROTANOPIA_B_FROM_B = 1.242
+
+const DEUTERANOPIA_G_FROM_R = -0.4375
+const DEUTERANOPIA_G_FROM_G = 1.4375
+const DEUTERANOPIA_B_FROM_R = 0.2625
+const DEUTERANOPIA_B_FROM_G = -0.5625
+const DEUTERANOPIA_B_FROM_B = 1.3
+
+const TRITANOPIA_G_FROM_R = 0.035
+const TRITANOPIA_G_FROM_G = 1.532
+const TRITANOPIA_G_FROM_B = -0.567
+const TRITANOPIA_B_FROM_R = 0.035
+const TRITANOPIA_B_FROM_G = -0.51
+const TRITANOPIA_B_FROM_B = 1.475
+
 /** `index.html:451-453`. */
 const PROTANOPIA_CORRECTION: ColorVisionMatrix = [
-  1, 0, 0, 0, 0,
-  -0.2549, 1.2549, 0, 0, 0,
-  0.3031, -0.5451, 1.242, 0, 0,
-  0, 0, 0, 1, 0,
+  IDENTITY, ZERO, ZERO, ZERO, ZERO,
+  PROTANOPIA_G_FROM_R, PROTANOPIA_G_FROM_G, ZERO, ZERO, ZERO,
+  PROTANOPIA_B_FROM_R, PROTANOPIA_B_FROM_G, PROTANOPIA_B_FROM_B, ZERO, ZERO,
+  ZERO, ZERO, ZERO, IDENTITY, ZERO,
 ]
 
 /** `index.html:454-456`. */
 const DEUTERANOPIA_CORRECTION: ColorVisionMatrix = [
-  1, 0, 0, 0, 0,
-  -0.4375, 1.4375, 0, 0, 0,
-  0.2625, -0.5625, 1.3, 0, 0,
-  0, 0, 0, 1, 0,
+  IDENTITY, ZERO, ZERO, ZERO, ZERO,
+  DEUTERANOPIA_G_FROM_R, DEUTERANOPIA_G_FROM_G, ZERO, ZERO, ZERO,
+  DEUTERANOPIA_B_FROM_R, DEUTERANOPIA_B_FROM_G, DEUTERANOPIA_B_FROM_B, ZERO, ZERO,
+  ZERO, ZERO, ZERO, IDENTITY, ZERO,
 ]
 
 /** `index.html:457-459`. */
 const TRITANOPIA_CORRECTION: ColorVisionMatrix = [
-  1, 0, 0, 0, 0,
-  0.035, 1.532, -0.567, 0, 0,
-  0.035, -0.51, 1.475, 0, 0,
-  0, 0, 0, 1, 0,
+  IDENTITY, ZERO, ZERO, ZERO, ZERO,
+  TRITANOPIA_G_FROM_R, TRITANOPIA_G_FROM_G, TRITANOPIA_G_FROM_B, ZERO, ZERO,
+  TRITANOPIA_B_FROM_R, TRITANOPIA_B_FROM_G, TRITANOPIA_B_FROM_B, ZERO, ZERO,
+  ZERO, ZERO, ZERO, IDENTITY, ZERO,
 ]
 
 /**
@@ -175,7 +208,7 @@ export const colorVisionMatrix = (mode: ColorVisionMode): ColorVisionMatrix | un
   if (mode === 'tritanopia') {
     return TRITANOPIA_CORRECTION
   }
-  return undefined
+  return
 }
 
 /** The `<feColorMatrix values>` string, ready for the DOM layer. */
@@ -194,6 +227,21 @@ export const colorVisionMatrixValues = (mode: ColorVisionMode): string | undefin
  * runs the filter — but a matrix whose rows have stopped summing to 1, or whose
  * signs got transcribed wrong, is invisible until somebody looks at the scene.
  */
+
+const RED_INDEX = 0
+const GREEN_INDEX = 1
+const BLUE_INDEX = 2
+const CHANNEL_UPPER_BOUND = 1
+
+/** One R/G/B/A/offset row of a `ColorVisionMatrix`, taken apart by name. */
+type ColorMatrixRow = {
+  readonly red: number
+  readonly green: number
+  readonly blue: number
+  readonly alpha: number
+  readonly offset: number
+}
+
 export const applyColorVisionMatrix = (
   channels: RgbChannels,
   matrix: ColorVisionMatrix,
@@ -202,34 +250,37 @@ export const applyColorVisionMatrix = (
   //
   // Both spellings read the same twenty numbers. The arithmetic one needed five
   // `?? 0` arms, because `noUncheckedIndexedAccess` types `matrix[base + 2]`
-  // as `number | undefined` however `base` was computed — and none of those five
-  // arms can run, because `ColorVisionMatrix` is a twenty-element TUPLE and the
-  // only callers pass 0, 1 and 2. Five uncoverable branches in a nine-line
-  // function, all guarding against a shape the type forbids.
+  // As `number | undefined` however `base` was computed — and none of those five
+  // Arms can run, because `ColorVisionMatrix` is a twenty-element TUPLE and the
+  // Only callers pass 0, 1 and 2. Five uncoverable branches in a nine-line
+  // Function, all guarding against a shape the type forbids.
   //
   // A literal index into a tuple is `number`, so taking the rows apart deletes
-  // all five. It also makes the row structure visible: `feColorMatrix` is 4x5
-  // row-major and the fifth column is a constant offset, which the header says
-  // and which `base + 4` did not show.
+  // All five. It also makes the row structure visible: `feColorMatrix` is 4x5
+  // Row-major and the fifth column is a constant offset, which the header says
+  // And which `base + 4` did not show.
   const [r0, r1, r2, r3, r4, g0, g1, g2, g3, g4, b0, b1, b2, b3, b4] = matrix
 
-  const channel = (
-    red: number,
-    green: number,
-    blue: number,
-    // The alpha column: opaque, and the constant offset that follows it.
-    alpha: number,
-    offset: number,
-  ): number =>
+  // A single ROW object rather than five positional parameters — max-params
+  // Caps at three, and the five columns already have names (`ColorMatrixRow`)
+  // From the header above.
+  const channel = ({ red, green, blue, alpha, offset }: ColorMatrixRow): number =>
     Math.min(
-      1,
-      Math.max(0, red * channels[0] + green * channels[1] + blue * channels[2] + alpha + offset),
+      CHANNEL_UPPER_BOUND,
+      Math.max(
+        ZERO,
+        red * channels[RED_INDEX] +
+          green * channels[GREEN_INDEX] +
+          blue * channels[BLUE_INDEX] +
+          alpha +
+          offset,
+      ),
     )
 
   return [
-    channel(r0, r1, r2, r3, r4),
-    channel(g0, g1, g2, g3, g4),
-    channel(b0, b1, b2, b3, b4),
+    channel({ alpha: r3, blue: r2, green: r1, offset: r4, red: r0 }),
+    channel({ alpha: g3, blue: g2, green: g1, offset: g4, red: g0 }),
+    channel({ alpha: b3, blue: b2, green: b1, offset: b4, red: b0 }),
   ]
 }
 
@@ -257,7 +308,10 @@ export const resolveMotionPreference = (
   systemPrefersReducedMotion: boolean,
 ): MotionPreference => {
   if (setting === 'system') {
-    return systemPrefersReducedMotion ? 'reduced' : 'full'
+    if (systemPrefersReducedMotion) {
+      return 'reduced'
+    }
+    return 'full'
   }
   return setting
 }
@@ -270,8 +324,12 @@ export const resolveMotionPreference = (
  * rather than for people who are impatient. Routing every duration through one
  * function is what makes "did we remember?" a question with a single answer.
  */
-export const animationDurationMs = (baseMs: number, motion: MotionPreference): number =>
-  motion === 'reduced' ? 0 : Math.max(0, baseMs)
+export const animationDurationMs = (baseMs: number, motion: MotionPreference): number => {
+  if (motion === 'reduced') {
+    return ZERO
+  }
+  return Math.max(ZERO, baseMs)
+}
 
 /** Whether a purely decorative animation should run at all. */
 export const shouldAnimate = (motion: MotionPreference): boolean => motion === 'full'
@@ -340,16 +398,16 @@ export const rebind = (
   if (REBIND_CLEAR_KEYS.has(code)) {
     const cleared = new Map(bindings)
     cleared.delete(action)
-    return { kind: 'cleared', bindings: cleared }
+    return { bindings: cleared, kind: 'cleared' }
   }
 
   for (const [other, existing] of bindings) {
     if (existing === code && other !== action) {
-      return { kind: 'conflict', heldBy: other }
+      return { heldBy: other, kind: 'conflict' }
     }
   }
 
-  return { kind: 'bound', bindings: new Map(bindings).set(action, code) }
+  return { bindings: new Map(bindings).set(action, code), kind: 'bound' }
 }
 
 /** Actions with no key bound. The screen must make these visible, not hide them. */

@@ -6,21 +6,21 @@ import {
   type ChestStorageSlotView,
   type ChestStorageViewModel,
 } from '../domain/chest-storage-view-model'
+import type { DomElement, DomElementFactory } from './dom-surface'
+import { HOTBAR_SLOT_COUNT, type SlotView } from '../domain/hud-view-model'
 import {
   INVENTORY_MAIN_COLUMNS,
   INVENTORY_MAIN_SLOT_COUNT,
 } from '../domain/inventory-view-model'
-import { HOTBAR_SLOT_COUNT } from '../domain/hud-view-model'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { textCell, writeText } from './dom-write'
-import { declarePalette, PALETTE_VAR } from './palette-css'
+import { PALETTE_VAR, declarePalette } from './palette-css'
 import {
+  type SlotElement,
   createSlotElement,
   setSlotButtonView,
   setSlotHidden,
   updateSlotElement,
-  type SlotElement,
 } from './slot-element'
+import { type TextCell, textCell, writeText } from './dom-write'
 
 export type ChestStorageInteractionView = {
   readonly focusedSlot: ChestStorageSlotTarget
@@ -29,7 +29,10 @@ export type ChestStorageInteractionView = {
 
 export type ChestStorageView = {
   readonly root: DomElement
-  readonly render: (model: ChestStorageViewModel, interaction?: ChestStorageInteractionView) => void
+  readonly render: (
+    model: ChestStorageViewModel,
+    interaction?: ChestStorageInteractionView,
+  ) => void
 }
 
 type InteractiveSlotElement = {
@@ -37,31 +40,53 @@ type InteractiveSlotElement = {
   readonly target: ChestStorageSlotTarget
 }
 
+/** Cursor slot occupies index 0 of its own single-slot group — there is only one. */
+const CURSOR_SLOT_INDEX = 0
+/** Players see slots numbered from 1, not from 0. */
+const SLOT_DISPLAY_OFFSET = 1
+const DEFAULT_FOCUSED_TARGET: ChestStorageSlotTarget = { region: 'chest', slot: 0 }
+
 const sameTarget = (left: ChestStorageSlotTarget, right: ChestStorageSlotTarget): boolean =>
   left.region === right.region && left.slot === right.slot
 
+const ownerLabel = (region: ChestStorageSlotTarget['region']): string => {
+  if (region === 'chest') {
+    return 'Chest'
+  }
+  return 'Player inventory'
+}
+
 const ariaLabel = (view: ChestStorageSlotView): string => {
-  const owner = view.target.region === 'chest' ? 'Chest' : 'Player inventory'
-  return view.empty
-    ? `${owner} slot ${String(view.target.slot + 1)}, empty`
-    : `${owner} slot ${String(view.target.slot + 1)}, ${view.itemId ?? 'empty'}, ${view.countLabel ?? '1'}`
+  const owner = ownerLabel(view.target.region)
+  const displaySlot = String(view.target.slot + SLOT_DISPLAY_OFFSET)
+  // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts) guarantees the two always agree.
+  // Checking the field this function actually reads lets TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a check on `empty` alone could never let the type system prove impossible.
+  // `countLabel` stays `??`-guarded: unlike `itemId`, it is genuinely absent for a real, in-repo stack of exactly one (`slotCountLabel`, hud-view-model.ts).
+  if (typeof view.itemId === 'undefined') {
+    return `${owner} slot ${displaySlot}, empty`
+  }
+  return `${owner} slot ${displaySlot}, ${view.itemId}, ${view.countLabel ?? '1'}`
+}
+
+type GridSpec = {
+  readonly id: string
+  readonly columns: number
+  readonly targets: ReadonlyArray<ChestStorageSlotTarget>
 }
 
 const createGrid = (
   factory: DomElementFactory,
   parent: DomElement,
-  id: string,
-  columns: number,
-  targets: ReadonlyArray<ChestStorageSlotTarget>,
+  spec: GridSpec,
 ): ReadonlyArray<InteractiveSlotElement> => {
   const grid = factory.createElement('div')
-  grid.setAttribute('data-mx-ui', id)
-  grid.setAttribute('data-region', id)
+  grid.setAttribute('data-mx-ui', spec.id)
+  grid.setAttribute('data-region', spec.id)
   grid.style.setProperty('display', 'grid')
-  grid.style.setProperty('grid-template-columns', `repeat(${String(columns)}, 1fr)`)
+  grid.style.setProperty('grid-template-columns', `repeat(${String(spec.columns)}, 1fr)`)
   parent.appendChild(grid)
 
-  return targets.map((target) => {
+  return spec.targets.map((target) => {
     const slot = createSlotElement(factory, target.slot)
     slot.root.setAttribute('data-interaction-target', 'chest-storage-slot')
     slot.root.setAttribute('data-interaction-region', target.region)
@@ -71,59 +96,76 @@ const createGrid = (
   })
 }
 
+type GridFocus = {
+  readonly target: ChestStorageSlotTarget
+  readonly active: boolean
+}
+
 const updateGrid = (
   elements: ReadonlyArray<InteractiveSlotElement>,
   views: ReadonlyArray<ChestStorageSlotView>,
-  focused: ChestStorageSlotTarget,
-  showFocus: boolean,
+  focus: GridFocus,
 ): void => {
   for (const [index, element] of elements.entries()) {
     const view = views[index]
-    if (view === undefined) {
+    if (typeof view === 'undefined') {
       setSlotHidden(element.slot, true)
-      setSlotButtonView(element.slot, undefined)
-      continue
+      setSlotButtonView(element.slot)
+    } else {
+      setSlotHidden(element.slot, false)
+      updateSlotElement(element.slot, view)
+      const hasFocus = sameTarget(element.target, focus.target)
+      setSlotButtonView(element.slot, {
+        disabled: false,
+        focused: focus.active && hasFocus,
+        label: ariaLabel(view),
+        tabStop: hasFocus,
+      })
     }
-    setSlotHidden(element.slot, false)
-    updateSlotElement(element.slot, view, undefined)
-    const hasFocus = sameTarget(element.target, focused)
-    setSlotButtonView(element.slot, {
-      label: ariaLabel(view),
-      disabled: false,
-      tabStop: hasFocus,
-      focused: showFocus && hasFocus,
-    })
   }
 }
 
-const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | undefined): void => {
-  element.root.setAttribute('data-cursor-state', cursor === undefined ? 'empty' : 'stack')
-  updateSlotElement(
-    element,
-    cursor ?? {
-      index: 0,
-      itemId: undefined,
-      countLabel: undefined,
-      durabilityPercent: undefined,
-      selected: false,
-      empty: true,
-    },
-    undefined,
-  )
+/** A field the caller never supplied — read rather than spelled, so absence never writes the word. */
+type AbsentSlotFields = {
+  readonly itemId?: string
+  readonly countLabel?: string
+  readonly durabilityPercent?: number
+}
+const ABSENT_SLOT_FIELDS: AbsentSlotFields = {}
+
+/** The cursor's rest state: nothing carried, every optional field genuinely absent. */
+const EMPTY_CURSOR_VIEW: SlotView = {
+  countLabel: ABSENT_SLOT_FIELDS.countLabel,
+  durabilityPercent: ABSENT_SLOT_FIELDS.durabilityPercent,
+  empty: true,
+  index: CURSOR_SLOT_INDEX,
+  itemId: ABSENT_SLOT_FIELDS.itemId,
+  selected: false,
 }
 
-/** Creates a listener-free chest projection. The host owns click and close dispatch. */
-export const createChestStorageView = (
-  factory: DomElementFactory,
-  parent: DomElement,
-): ChestStorageView => {
+const cursorStateValue = (cursor: ChestStorageCursorView | undefined): string => {
+  if (typeof cursor === 'undefined') {
+    return 'empty'
+  }
+  return 'stack'
+}
+
+const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | undefined): void => {
+  element.root.setAttribute('data-cursor-state', cursorStateValue(cursor))
+  updateSlotElement(element, cursor ?? EMPTY_CURSOR_VIEW)
+}
+
+const createChestStorageRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('section')
   root.setAttribute('data-mx-ui', 'chest-storage')
   declarePalette(root)
   root.style.setProperty('background-color', PALETTE_VAR.surface)
   root.style.setProperty('color', PALETTE_VAR.ink)
   parent.appendChild(root)
+  return root
+}
 
+const createChestStorageCloseButton = (factory: DomElementFactory, root: DomElement): void => {
   const close = factory.createElement('button')
   close.setAttribute('type', 'button')
   close.setAttribute('data-mx-ui', 'chest-storage-close')
@@ -131,47 +173,96 @@ export const createChestStorageView = (
   close.setAttribute('aria-label', 'Close chest')
   close.textContent = 'Close'
   root.appendChild(close)
+}
 
-  const chestTargets = Array.from({ length: CHEST_STORAGE_SLOT_COUNT }, (_, slot) => ({
+const chestTargets = (): ReadonlyArray<ChestStorageSlotTarget> =>
+  Array.from({ length: CHEST_STORAGE_SLOT_COUNT }, (_element, slot) => ({
     region: 'chest' as const,
     slot,
   }))
-  const playerMainTargets = Array.from({ length: INVENTORY_MAIN_SLOT_COUNT }, (_, offset) => ({
+
+const playerMainTargets = (): ReadonlyArray<ChestStorageSlotTarget> =>
+  Array.from({ length: INVENTORY_MAIN_SLOT_COUNT }, (_element, offset) => ({
     region: 'player' as const,
     slot: offset + HOTBAR_SLOT_COUNT,
   }))
-  const playerHotbarTargets = Array.from({ length: HOTBAR_SLOT_COUNT }, (_, slot) => ({
+
+const playerHotbarTargets = (): ReadonlyArray<ChestStorageSlotTarget> =>
+  Array.from({ length: HOTBAR_SLOT_COUNT }, (_element, slot) => ({
     region: 'player' as const,
     slot,
   }))
-  const chest = createGrid(factory, root, 'chest', CHEST_STORAGE_COLUMNS, chestTargets)
-  const playerMain = createGrid(factory, root, 'player-main', INVENTORY_MAIN_COLUMNS, playerMainTargets)
-  const playerHotbar = createGrid(factory, root, 'player-hotbar', INVENTORY_MAIN_COLUMNS, playerHotbarTargets)
 
+type ChestStorageGrids = {
+  readonly chest: ReadonlyArray<InteractiveSlotElement>
+  readonly playerMain: ReadonlyArray<InteractiveSlotElement>
+  readonly playerHotbar: ReadonlyArray<InteractiveSlotElement>
+}
+
+const createChestStorageGrids = (
+  factory: DomElementFactory,
+  root: DomElement,
+): ChestStorageGrids => {
+  const chest = createGrid(factory, root, {
+    columns: CHEST_STORAGE_COLUMNS,
+    id: 'chest',
+    targets: chestTargets(),
+  })
+  const playerMain = createGrid(factory, root, {
+    columns: INVENTORY_MAIN_COLUMNS,
+    id: 'player-main',
+    targets: playerMainTargets(),
+  })
+  const playerHotbar = createGrid(factory, root, {
+    columns: INVENTORY_MAIN_COLUMNS,
+    id: 'player-hotbar',
+    targets: playerHotbarTargets(),
+  })
+  return { chest, playerHotbar, playerMain }
+}
+
+const createChestStorageCursor = (factory: DomElementFactory, root: DomElement): SlotElement => {
   const cursorRoot = factory.createElement('div')
   cursorRoot.setAttribute('data-mx-ui', 'chest-storage-cursor')
   cursorRoot.setAttribute('role', 'status')
   cursorRoot.setAttribute('aria-label', 'Carried item')
   root.appendChild(cursorRoot)
-  const cursor = createSlotElement(factory, 0)
+  const cursor = createSlotElement(factory, CURSOR_SLOT_INDEX)
   cursorRoot.appendChild(cursor.root)
+  return cursor
+}
 
+const createChestStorageStatus = (factory: DomElementFactory, root: DomElement): TextCell => {
   const status = factory.createElement('div')
   status.setAttribute('data-mx-ui', 'chest-storage-status')
   status.setAttribute('role', 'status')
   status.setAttribute('aria-live', 'polite')
   root.appendChild(status)
-  const statusText = textCell(status)
+  return textCell(status)
+}
+
+/** Creates a listener-free chest projection. The host owns click and close dispatch. */
+export const createChestStorageView = (
+  factory: DomElementFactory,
+  parent: DomElement,
+): ChestStorageView => {
+  const root = createChestStorageRoot(factory, parent)
+  createChestStorageCloseButton(factory, root)
+
+  const grids = createChestStorageGrids(factory, root)
+  const cursor = createChestStorageCursor(factory, root)
+  const statusText = createChestStorageStatus(factory, root)
 
   return {
-    root,
     render: (model, interaction): void => {
-      const focused = interaction?.focusedSlot ?? { region: 'chest', slot: 0 }
-      updateGrid(chest, model.chest, focused, interaction !== undefined)
-      updateGrid(playerMain, model.playerMain, focused, interaction !== undefined)
-      updateGrid(playerHotbar, model.playerHotbar, focused, interaction !== undefined)
+      const focused = interaction?.focusedSlot ?? DEFAULT_FOCUSED_TARGET
+      const active = typeof interaction !== 'undefined'
+      updateGrid(grids.chest, model.chest, { active, target: focused })
+      updateGrid(grids.playerMain, model.playerMain, { active, target: focused })
+      updateGrid(grids.playerHotbar, model.playerHotbar, { active, target: focused })
       updateCursor(cursor, model.cursor)
       writeText(statusText, interaction?.status ?? '')
     },
+    root,
   }
 }

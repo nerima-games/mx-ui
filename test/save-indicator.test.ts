@@ -146,10 +146,10 @@ describe('the autosave indicator puts the palette on a screen', () => {
       for (const [property, value] of element.style.properties) {
         if (property.startsWith('--mx-ui-')) {
           expect(element).toBe(root)
-          continue
+        } else {
+          expect(value.includes('#')).toBe(false)
+          expect(value.includes('rgba(')).toBe(false)
         }
-        expect(value.includes('#')).toBe(false)
-        expect(value.includes('rgba(')).toBe(false)
       }
     }
   })

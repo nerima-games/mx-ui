@@ -95,7 +95,7 @@ export type SaveStatus = {
 }
 
 /** Nothing has been saved yet, so nothing is on screen. */
-export const IDLE_SAVE_STATUS: SaveStatus = { state: 'idle', sinceSecs: 0 }
+export const IDLE_SAVE_STATUS: SaveStatus = { sinceSecs: 0, state: 'idle' }
 
 /**
  * How long "World saved" stays up.
@@ -111,6 +111,8 @@ export const IDLE_SAVE_STATUS: SaveStatus = { state: 'idle', sinceSecs: 0 }
  */
 export const SAVED_VISIBLE_SECS = 3
 
+const ZERO = 0
+
 /**
  * Enter a state at a monotonic time.
  *
@@ -120,10 +122,12 @@ export const SAVED_VISIBLE_SECS = 3
  * `sinceSecs` is `NaN` would otherwise be a confirmation that never expires,
  * which is the one behaviour reserved for a failure.
  */
-export const saveStatus = (state: SaveState, atSecs: number): SaveStatus => ({
-  state,
-  sinceSecs: Number.isFinite(atSecs) ? atSecs : 0,
-})
+export const saveStatus = (state: SaveState, atSecs: number): SaveStatus => {
+  if (Number.isFinite(atSecs)) {
+    return { sinceSecs: atSecs, state }
+  }
+  return { sinceSecs: ZERO, state }
+}
 
 /**
  * What the indicator shows right now, or `undefined` for nothing at all.
@@ -143,12 +147,15 @@ export const saveStatusMessage = (
   savedVisibleSecs: number = SAVED_VISIBLE_SECS,
 ): SaveMessage | undefined => {
   if (status.state === 'idle') {
-    return undefined
+    return
   }
   // `saving` and `failed` have no duration; see the table in the header.
   if (status.state !== 'saved') {
     return status.state
   }
   const remaining = savedVisibleSecs - (nowSecs - status.sinceSecs)
-  return Number.isNaN(remaining) || remaining > 0 ? 'saved' : undefined
+  if (Number.isNaN(remaining) || remaining > ZERO) {
+    return 'saved'
+  }
+  return
 }

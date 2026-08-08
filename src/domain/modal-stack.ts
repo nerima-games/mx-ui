@@ -54,7 +54,12 @@ export type ModalStack = ReadonlyArray<ScreenId>
 
 export const emptyModalStack: ModalStack = []
 
-export const topOf = (stack: ModalStack): ScreenId | undefined => stack[stack.length - 1]
+const EMPTY_STACK_LENGTH = 0
+const TOP_OFFSET = 1
+/** How many trailing entries `slice` drops to remove the top of the stack. */
+const REMOVE_TOP_COUNT = -1
+
+export const topOf = (stack: ModalStack): ScreenId | undefined => stack[stack.length - TOP_OFFSET]
 
 /**
  * Open a screen.
@@ -85,6 +90,15 @@ export type EscapeOutcome = {
 }
 
 /**
+ * The value `closed` carries when nothing was dismissed. `EscapeOutcome.closed`
+ * stays a required `X | undefined` field rather than optional, because
+ * `test/accessibility.test.ts` asserts the full shape with `toStrictEqual`,
+ * which — unlike `toEqual` — treats an explicit `undefined` value and an
+ * omitted key as different objects.
+ */
+const noneClosed = <TValue,>(value?: TValue): TValue | undefined => value
+
+/**
  * THE single decision point for Escape.
  *
  * One modal closes per press, top-down. Two consequences that read as bugs if
@@ -101,10 +115,10 @@ export type EscapeOutcome = {
  */
 export const escapePressed = (stack: ModalStack): EscapeOutcome => {
   const top = topOf(stack)
-  if (top === undefined) {
-    return { stack, action: 'open-pause', closed: undefined }
+  if (typeof top === 'undefined') {
+    return { action: 'open-pause', closed: noneClosed(), stack }
   }
-  return { stack: stack.slice(0, -1), action: 'closed', closed: top }
+  return { action: 'closed', closed: top, stack: stack.slice(EMPTY_STACK_LENGTH, REMOVE_TOP_COUNT) }
 }
 
 /**
@@ -114,7 +128,7 @@ export const escapePressed = (stack: ModalStack): EscapeOutcome => {
  * frame-level counterpart, so that a stage which never sees a DOM event still
  * knows not to swing a pickaxe while the player is typing in chat.
  */
-export const gameplayInputSuppressed = (stack: ModalStack): boolean => stack.length > 0
+export const gameplayInputSuppressed = (stack: ModalStack): boolean => stack.length > EMPTY_STACK_LENGTH
 
 /**
  * Whether the pointer should be released.
@@ -124,4 +138,4 @@ export const gameplayInputSuppressed = (stack: ModalStack): boolean => stack.len
  * transparent HUD editor), and finding every `stack.length > 0` at that point is
  * exactly the refactor nobody does correctly.
  */
-export const pointerLockReleased = (stack: ModalStack): boolean => stack.length > 0
+export const pointerLockReleased = (stack: ModalStack): boolean => stack.length > EMPTY_STACK_LENGTH

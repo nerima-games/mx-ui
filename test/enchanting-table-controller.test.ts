@@ -61,7 +61,7 @@ describe('enchanting table controller', () => {
     const view = createEnchantingTableView(factory, host, {
       onActivate: (target) => {
         if (target === 'offer-1' || target === 'offer-2' || target === 'offer-3') {
-          state = applyEnchantmentOffer(state, target, RULES).state
+          ({ state } = applyEnchantmentOffer(state, target, RULES))
         }
       },
     })
@@ -77,5 +77,22 @@ describe('enchanting table controller', () => {
     expect(state.lapisCount).toBe(3 - initialOffer.lapisCost)
     expect(state.seed).not.toBe(initialSeed)
     expect(button?.listeners).toStrictEqual(['click'])
+  })
+
+  it('offers nothing when no item is placed in the table', () => {
+    const empty: EnchantingTableState = { experienceLevel: 30, item: undefined, lapisCount: 3, seed: 42 }
+    expect(enchantingOffers(empty, RULES)).toStrictEqual([undefined, undefined, undefined])
+  })
+
+  it('rejects applying an offer when no item is placed, preserving state identity', () => {
+    const empty: EnchantingTableState = { experienceLevel: 30, item: undefined, lapisCount: 3, seed: 42 }
+    const result = applyEnchantmentOffer(empty, 'offer-1', RULES)
+    expect(result).toStrictEqual({ applied: false, reason: 'No compatible enchantment', state: empty })
+    expect(result.state).toBe(empty)
+  })
+
+  it('shows no lapis slot when the table has no lapis loaded', () => {
+    const noLapis = { ...readyState(), lapisCount: 0 }
+    expect(enchantingTableSnapshotOf(noLapis, RULES).lapis).toBeUndefined()
   })
 })

@@ -44,6 +44,10 @@ describe('inventory equipment actions', () => {
     })
   })
 
+  it('passes the crafting-output target through unchanged, since it is not a coordinate to translate', () => {
+    expect(inventoryActionTarget({ kind: 'crafting-output' })).toStrictEqual({ kind: 'crafting-output' })
+  })
+
   it('projects a host rejection without interpreting its simulation reason', () => {
     const state: InventoryActionState = {
       action: {

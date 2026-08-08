@@ -32,6 +32,10 @@ export const DEFAULT_MAX_HUNGER_POINTS = 20
 /** Hotbar slots. Nine, and it has been nine since 2009. */
 export const HOTBAR_SLOT_COUNT = 9
 
+const ZERO = 0
+const ONE = 1
+const FULL_PERCENT = 100
+
 export type IconState = 'full' | 'half' | 'empty'
 
 export type HotbarSlotSnapshot = {
@@ -105,8 +109,12 @@ export type HudViewModel = {
  * This must not become a throw. A HUD that is briefly wrong is survivable; a
  * HUD that kills the frame is not.
  */
-const clamp = (value: number, low: number, high: number): number =>
-  Number.isNaN(value) ? low : Math.min(Math.max(value, low), high)
+const clamp = (value: number, low: number, high: number): number => {
+  if (Number.isNaN(value)) {
+    return low
+  }
+  return Math.min(Math.max(value, low), high)
+}
 
 /**
  * The maximum, made into something a row can actually be built from.
@@ -115,8 +123,12 @@ const clamp = (value: number, low: number, high: number): number =>
  * and `Array.from({ length: Infinity })` THROWS `RangeError: Invalid array
  * length`, which is the one outcome this module is not allowed to have.
  */
-const safeMaxPoints = (maxPoints: number): number =>
-  Number.isFinite(maxPoints) ? Math.max(0, Math.floor(maxPoints)) : 0
+const safeMaxPoints = (maxPoints: number): number => {
+  if (Number.isFinite(maxPoints)) {
+    return Math.max(ZERO, Math.floor(maxPoints))
+  }
+  return ZERO
+}
 
 /**
  * THE point total, computed once.
@@ -129,7 +141,7 @@ const safeMaxPoints = (maxPoints: number): number =>
  * are gone.
  */
 const safePoints = (points: number, maxPoints: number): number =>
-  clamp(Math.floor(points), 0, safeMaxPoints(maxPoints))
+  clamp(Math.floor(points), ZERO, safeMaxPoints(maxPoints))
 
 /**
  * A count or a level, made printable.
@@ -138,7 +150,7 @@ const safePoints = (points: number, maxPoints: number): number =>
  * layer would faithfully draw on top of a hotbar slot.
  */
 const safeWholeNumber = (value: number): number =>
-  clamp(Math.floor(value), 0, Number.MAX_SAFE_INTEGER)
+  clamp(Math.floor(value), ZERO, Number.MAX_SAFE_INTEGER)
 
 /**
  * A number somebody handed us, made into a hotbar slot.
@@ -155,7 +167,7 @@ const safeWholeNumber = (value: number): number =>
  * general rule: 「2 回導出される決定は、いずれ違うように導出される」.
  */
 export const hotbarSlotIndex = (value: number): number =>
-  clamp(Math.floor(value), 0, HOTBAR_SLOT_COUNT - 1)
+  clamp(Math.floor(value), ZERO, HOTBAR_SLOT_COUNT - ONE)
 
 /**
  * Split a point total into full / half / empty icons.
@@ -174,12 +186,15 @@ export const iconRow = (points: number, maxPoints: number): ReadonlyArray<IconSt
   const iconCount = Math.ceil(safeMaxPoints(maxPoints) / HEALTH_POINTS_PER_HEART)
   const total = safePoints(points, maxPoints)
 
-  return Array.from({ length: iconCount }, (_, index): IconState => {
+  return Array.from({ length: iconCount }, (_element, index): IconState => {
     const remaining = total - index * HEALTH_POINTS_PER_HEART
     if (remaining >= HEALTH_POINTS_PER_HEART) {
       return 'full'
     }
-    return remaining === 1 ? 'half' : 'empty'
+    if (remaining === ONE) {
+      return 'half'
+    }
+    return 'empty'
   })
 }
 
@@ -193,32 +208,50 @@ export const iconRow = (points: number, maxPoints: number): ReadonlyArray<IconSt
  * matches — the inventory grid has no cursor of its own, the hotbar does, and
  * the difference is the caller's to state rather than this function's to guess.
  */
+const slotItemId = (slot: HotbarSlotSnapshot | undefined, empty: boolean): string | undefined => {
+  if (empty) {
+    return
+  }
+  return slot?.itemId
+}
+
+const slotCountLabel = (count: number, empty: boolean): string | undefined => {
+  if (empty || count <= ONE) {
+    return
+  }
+  return String(count)
+}
+
+const slotDurabilityPercent = (slot: HotbarSlotSnapshot | undefined, empty: boolean): number | undefined => {
+  if (empty || typeof slot?.durability === 'undefined') {
+    return
+  }
+  return Math.round(clamp(slot.durability, ZERO, ONE) * FULL_PERCENT)
+}
+
 export const slotView = (
   slot: HotbarSlotSnapshot | undefined,
   index: number,
   selectedIndex: number,
 ): SlotView => {
-  const count = safeWholeNumber(slot?.count ?? 0)
-  const empty = slot?.itemId === undefined || count === 0
+  const count = safeWholeNumber(slot?.count ?? ZERO)
+  const empty = typeof slot?.itemId === 'undefined' || count === ZERO
 
   return {
-    index,
-    itemId: empty ? undefined : slot?.itemId,
     // Vanilla shows no number on a stack of one; showing "1" makes a full
-    // hotbar look like a spreadsheet.
-    countLabel: empty || count <= 1 ? undefined : String(count),
+    // Hotbar look like a spreadsheet.
+    countLabel: slotCountLabel(count, empty),
     // EVERY field an empty slot has must be absent, not just the two that are
-    // obviously about an item. A DOM layer draws the durability bar when the
-    // field is present — that is the obvious way to write it — so a slot that
-    // is empty and still reports 50% draws a bar under nothing. This is
-    // reachable in play: a tool that breaks leaves count 0 behind with its
-    // durability still attached.
-    durabilityPercent:
-      empty || slot?.durability === undefined
-        ? undefined
-        : Math.round(clamp(slot.durability, 0, 1) * 100),
-    selected: index === selectedIndex,
+    // Obviously about an item. A DOM layer draws the durability bar when the
+    // Field is present — that is the obvious way to write it — so a slot that
+    // Is empty and still reports 50% draws a bar under nothing. This is
+    // Reachable in play: a tool that breaks leaves count 0 behind with its
+    // Durability still attached.
+    durabilityPercent: slotDurabilityPercent(slot, empty),
     empty,
+    index,
+    itemId: slotItemId(slot, empty),
+    selected: index === selectedIndex,
   }
 }
 
@@ -243,32 +276,32 @@ export const hudViewModel = (snapshot: VitalsSnapshot): HudViewModel => {
   const healthPoints = safePoints(snapshot.healthPoints, snapshot.maxHealthPoints)
 
   return {
-    hearts: iconRow(snapshot.healthPoints, snapshot.maxHealthPoints),
-    shanks: iconRow(snapshot.hungerPoints, snapshot.maxHungerPoints),
+    dead: healthPoints <= ZERO,
     experienceLevelLabel: String(safeWholeNumber(snapshot.experienceLevel)),
     // FLOOR, not round. `Math.round(0.999 * 100)` is 100, so the bar reads full
-    // while the level label beside it still says 7 — a contradiction the player
-    // can see, and which reads as a HUD frozen at the top of every level. Floor
-    // never claims a threshold that has not been crossed; the cost is that a
-    // genuine 1.0 is the only input that reaches 100, which is exactly right.
+    // While the level label beside it still says 7 — a contradiction the player
+    // Can see, and which reads as a HUD frozen at the top of every level. Floor
+    // Never claims a threshold that has not been crossed; the cost is that a
+    // Genuine 1.0 is the only input that reaches 100, which is exactly right.
     // (`durabilityPercent` still rounds: 100% there is not a claim about an
-    // event, and no counter sits beside it to contradict.)
-    experiencePercent: Math.floor(clamp(snapshot.experienceProgress, 0, 1) * 100),
-    hotbar: Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) =>
+    // Event, and no counter sits beside it to contradict.)
+    experiencePercent: Math.floor(clamp(snapshot.experienceProgress, ZERO, ONE) * FULL_PERCENT),
+    hearts: iconRow(snapshot.healthPoints, snapshot.maxHealthPoints),
+    hotbar: Array.from({ length: HOTBAR_SLOT_COUNT }, (_element, index) =>
       slotView(snapshot.hotbar[index], index, selectedIndex),
     ),
-    dead: healthPoints <= 0,
+    shanks: iconRow(snapshot.hungerPoints, snapshot.maxHungerPoints),
   }
 }
 
 /** A snapshot of a freshly spawned player, for previews and tests. */
 export const spawnSnapshot: VitalsSnapshot = {
-  healthPoints: DEFAULT_MAX_HEALTH_POINTS,
-  maxHealthPoints: DEFAULT_MAX_HEALTH_POINTS,
-  hungerPoints: DEFAULT_MAX_HUNGER_POINTS,
-  maxHungerPoints: DEFAULT_MAX_HUNGER_POINTS,
   experienceLevel: 0,
   experienceProgress: 0,
+  healthPoints: DEFAULT_MAX_HEALTH_POINTS,
   hotbar: [],
+  hungerPoints: DEFAULT_MAX_HUNGER_POINTS,
+  maxHealthPoints: DEFAULT_MAX_HEALTH_POINTS,
+  maxHungerPoints: DEFAULT_MAX_HUNGER_POINTS,
   selectedHotbarIndex: 0,
 }

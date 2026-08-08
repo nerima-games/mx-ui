@@ -116,6 +116,10 @@ export const moveInventoryTarget = (
 
   const regionIndex = regions.findIndex((region) => region.id === current.region)
   const region = regions[regionIndex]
+  // UNCOVERED ON PURPOSE. `regions` and `current` are BOTH derived from the same `model` a few lines up — `regions` is `navigableRegions(model)` directly, and `current` (for `kind: 'slot'`) always comes out of `targets`, which is `inventoryTargets(model)`'s own call to `navigableRegions(model)`.
+  // Two evaluations of the same pure function on the same argument agree, so `current.region` always names an id present in `regions` — no `model`, however malformed, can make `findIndex` miss.
+  // `noUncheckedIndexedAccess` still widens `regions[regionIndex]` to `NavigableRegion | undefined`, because the type of an index expression says nothing about which index this function happens to compute.
+  // A test built to trip this branch would have to make `regions` and `current` disagree about the same `model` within one call — a case this repository's own code never produces, so the branch stays uncovered rather than fabricated.
   if (region === undefined) {
     return current
   }

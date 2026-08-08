@@ -10,6 +10,17 @@
 import { StageId } from '../domain/frame-contract'
 
 /**
+ * Lowercase alias for the brand smart constructor.
+ *
+ * `StageId` is capitalised to read as the type it also names (the effect-ts
+ * Brand pattern), which trips the `new-cap` rule at every call site below —
+ * the rule reads an uppercase callee as "this wants `new`". It is a plain
+ * factory function, not a constructor, so the alias is the honest fix: a
+ * lowercase name a reader can call without the rule (correctly) objecting.
+ */
+const stageId = StageId
+
+/**
  * Stages owned by mx-ui.
  *
  * plan.md §4.2 puts `hud-sync` at the very end of the skeleton:
@@ -33,9 +44,9 @@ import { StageId } from '../domain/frame-contract'
  */
 export const UI_STAGE_IDS = {
   /** Project mc-sim's vitals, hotbar and XP into the HUD view model. */
-  hudSync: StageId('ui:hud-sync'),
+  hudSync: stageId('ui:hud-sync'),
   /** Age out captions, and settle modal open/close transitions. */
-  overlaySync: StageId('ui:overlay-sync'),
+  overlaySync: stageId('ui:overlay-sync'),
 } as const
 
 /**
@@ -46,7 +57,7 @@ export const UI_STAGE_IDS = {
  * visible when you are on half a heart.
  */
 export const UPSTREAM_STAGE_IDS = {
-  simPhysics: StageId('sim:physics'),
+  simPhysics: stageId('sim:physics'),
 } as const
 
 /**

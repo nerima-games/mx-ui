@@ -24,8 +24,7 @@
  * for it, and the whole point of kernel (plan.md §3.1) is that the vocabulary has
  * exactly one home.
  */
-import type { Effect, Layer } from 'effect'
-import { Brand } from 'effect'
+import { Brand, type Effect, type Layer } from 'effect'
 
 /**
  * Identifies a frame stage. Stage ids are the vertices of the per-frame ordering
@@ -40,8 +39,11 @@ import { Brand } from 'effect'
  */
 export type StageId = string & Brand.Brand<'StageId'>
 
+/** The boundary both brand predicates below check against. */
+const ZERO = 0
+
 export const StageId = Brand.refined<StageId>(
-  (value) => value.trim().length > 0,
+  (value) => value.trim().length > ZERO,
   (value) => Brand.error(`StageId must be a non-blank string, received ${JSON.stringify(value)}`),
 )
 
@@ -56,7 +58,7 @@ export const StageId = Brand.refined<StageId>(
 export type DeltaTimeSecs = number & Brand.Brand<'DeltaTimeSecs'>
 
 export const DeltaTimeSecs = Brand.refined<DeltaTimeSecs>(
-  (value) => Number.isFinite(value) && value >= 0,
+  (value) => Number.isFinite(value) && value >= ZERO,
   (value) => Brand.error(`DeltaTimeSecs must be a finite, non-negative number of seconds, received ${value}`),
 )
 
@@ -133,7 +135,7 @@ export interface StageRegistration {
  * module that can fail to come up says so in `E`, where a host already has to
  * handle it.
  */
-export interface GameModule<ROut, E, RIn, RRegister = never> {
-  readonly layers: Layer.Layer<ROut, E, RIn>
+export interface GameModule<ROut, Err, RIn, RRegister = never> {
+  readonly layers: Layer.Layer<ROut, Err, RIn>
   readonly frameStages: Effect.Effect<ReadonlyArray<StageRegistration>, never, RRegister>
 }

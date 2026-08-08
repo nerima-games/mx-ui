@@ -38,7 +38,7 @@
  * `application/dom-surface.ts` and would put mx-ui in charge of a defs block
  * inside a document it does not own.
  */
-import { colorVisionAttribute, type ColorVisionMode } from '../domain/accessibility'
+import { type ColorVisionMode, colorVisionAttribute } from '../domain/accessibility'
 import type { DomAttributeTarget } from './dom-surface'
 
 /**
@@ -68,14 +68,13 @@ export const COLOR_VISION_ATTRIBUTE = 'data-color-vision'
  */
 export type ColorVisionCell = {
   readonly target: DomAttributeTarget
-  previous: string | undefined
+  previous?: string
   applied: boolean
 }
 
 export const colorVisionCell = (target: DomAttributeTarget): ColorVisionCell => ({
-  target,
-  previous: undefined,
   applied: false,
+  target,
 })
 
 /**
@@ -96,10 +95,11 @@ export const applyColorVision = (cell: ColorVisionCell, mode: ColorVisionMode): 
     return
   }
   cell.applied = true
-  cell.previous = value
-  if (value === undefined) {
+  if (typeof value === 'undefined') {
+    delete cell.previous
     cell.target.removeAttribute(COLOR_VISION_ATTRIBUTE)
     return
   }
+  cell.previous = value
   cell.target.setAttribute(COLOR_VISION_ATTRIBUTE, value)
 }

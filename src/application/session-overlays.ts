@@ -1,9 +1,7 @@
-import { textCell, writeText } from './dom-write'
-
 export type DebugHudSnapshot = {
   readonly fps: number
-  readonly coordinates: Readonly<{ x: number; y: number; z: number }>
-  readonly chunk: Readonly<{ x: number; z: number }>
+  readonly coordinates: Readonly<{ worldX: number; worldY: number; worldZ: number }>
+  readonly chunk: Readonly<{ chunkX: number; chunkZ: number }>
   readonly facing?: string
 }
 
@@ -31,8 +29,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
 }
 
 export const DEFAULT_DEBUG_HUD_SNAPSHOT: DebugHudSnapshot = {
-  chunk: { x: 0, z: 0 },
-  coordinates: { x: 0, y: 0, z: 0 },
+  chunk: { chunkX: 0, chunkZ: 0 },
+  coordinates: { worldX: 0, worldY: 0, worldZ: 0 },
   fps: 0,
 }
 
@@ -92,24 +90,60 @@ const SETTING_DEFINITIONS: ReadonlyArray<SettingDefinition> = [
   },
 ]
 
-const finite = (value: number, fallback: number): number =>
-  Number.isFinite(value) ? value : fallback
+const finite = (value: number, fallback: number): number => {
+  if (Number.isFinite(value)) {
+    return value
+  }
+  return fallback
+}
 
 const focusable = (element: Element | null): element is HTMLElement =>
   element !== null && 'focus' in element && typeof element.focus === 'function'
 
-export const createSessionOverlays = (
-  document: Document,
-  parent: HTMLElement,
-  initialSettings: UiSettings = DEFAULT_UI_SETTINGS,
-  callbacks: UiSettingsCallbacks = {},
-  initialDebug: DebugHudSnapshot = DEFAULT_DEBUG_HUD_SNAPSHOT,
-  delegateKeyDown?: SessionKeyDelegate,
-): SessionOverlays => {
+/** The value shown for a non-finite coordinate or frame rate. */
+const NON_FINITE_FALLBACK = 0
+
+/** How many decimal places the debug HUD prints a coordinate to. */
+const DECIMAL_PLACES = 1
+
+const facingLine = (facing: string | undefined): string => {
+  if (typeof facing === 'undefined') {
+    return ''
+  }
+  return `\nFacing: ${facing}`
+}
+
+const debugHudText = (snapshot: DebugHudSnapshot): string => {
+  const { coordinates, chunk } = snapshot
+  const fps = finite(snapshot.fps, NON_FINITE_FALLBACK).toFixed(DECIMAL_PLACES)
+  const posX = finite(coordinates.worldX, NON_FINITE_FALLBACK).toFixed(DECIMAL_PLACES)
+  const posY = finite(coordinates.worldY, NON_FINITE_FALLBACK).toFixed(DECIMAL_PLACES)
+  const posZ = finite(coordinates.worldZ, NON_FINITE_FALLBACK).toFixed(DECIMAL_PLACES)
+  const chunkX = finite(chunk.chunkX, NON_FINITE_FALLBACK)
+  const chunkZ = finite(chunk.chunkZ, NON_FINITE_FALLBACK)
+  return `FPS: ${fps}\nXYZ: ${posX} / ${posY} / ${posZ}\nChunk: ${chunkX} / ${chunkZ}${facingLine(snapshot.facing)}`
+}
+
+const applySettingsToInputs = (
+  inputs: ReadonlyMap<keyof UiSettings, HTMLInputElement>,
+  settings: UiSettings,
+): void => {
+  for (const definition of SETTING_DEFINITIONS) {
+    const input = inputs.get(definition.key)
+    if (typeof input !== 'undefined') {
+      input.value = String(finite(settings[definition.key], DEFAULT_UI_SETTINGS[definition.key]))
+    }
+  }
+}
+
+const buildRoot = (document: Document, parent: HTMLElement): HTMLElement => {
   const root = document.createElement('div')
   root.setAttribute('data-mx-ui', 'session-overlays')
   parent.appendChild(root)
+  return root
+}
 
+const buildDebugHud = (document: Document, root: HTMLElement): HTMLElement => {
   const debugHud = document.createElement('output')
   debugHud.setAttribute('data-mx-ui', 'debug-hud')
   debugHud.setAttribute('role', 'region')
@@ -117,8 +151,10 @@ export const createSessionOverlays = (
   debugHud.hidden = true
   debugHud.style.whiteSpace = 'pre'
   root.appendChild(debugHud)
-  const debugText = textCell(debugHud)
+  return debugHud
+}
 
+const buildSettingsDialog = (document: Document, root: HTMLElement): HTMLElement => {
   const settingsDialog = document.createElement('section')
   settingsDialog.setAttribute('data-mx-ui', 'settings')
   settingsDialog.setAttribute('role', 'dialog')
@@ -126,83 +162,134 @@ export const createSessionOverlays = (
   settingsDialog.setAttribute('aria-label', 'Settings')
   settingsDialog.hidden = true
   root.appendChild(settingsDialog)
+  return settingsDialog
+}
 
+const appendSettingsTitle = (document: Document, settingsDialog: HTMLElement): void => {
   const title = document.createElement('h2')
   title.textContent = 'Settings'
   settingsDialog.appendChild(title)
+}
 
+type SettingInputContext = {
+  readonly document: Document
+  readonly settingsDialog: HTMLElement
+  readonly callbacks: UiSettingsCallbacks
+}
+
+type SettingInputBuild = {
+  readonly input: HTMLInputElement
+  readonly cleanup: () => void
+}
+
+const buildRangeInput = (
+  document: Document,
+  definition: SettingDefinition,
+  callbacks: UiSettingsCallbacks,
+): SettingInputBuild => {
+  const input = document.createElement('input')
+  input.type = 'range'
+  input.min = String(definition.min)
+  input.max = String(definition.max)
+  input.step = String(definition.step)
+  input.setAttribute('aria-label', definition.label)
+  input.setAttribute('data-setting', definition.key)
+  const onInput = (): void => definition.notify(callbacks, input.valueAsNumber)
+  input.addEventListener('input', onInput)
+  return { cleanup: () => input.removeEventListener('input', onInput), input }
+}
+
+const mountSettingInput = (
+  context: SettingInputContext,
+  definition: SettingDefinition,
+  input: HTMLInputElement,
+): void => {
+  const label = context.document.createElement('label')
+  label.textContent = definition.label
+  label.appendChild(input)
+  context.settingsDialog.appendChild(label)
+}
+
+const buildSettingInput = (
+  context: SettingInputContext,
+  definition: SettingDefinition,
+): SettingInputBuild => {
+  const built = buildRangeInput(context.document, definition, context.callbacks)
+  mountSettingInput(context, definition, built.input)
+  return built
+}
+
+type SettingInputsResult = {
+  readonly inputs: ReadonlyMap<keyof UiSettings, HTMLInputElement>
+  readonly cleanups: Array<() => void>
+}
+
+const buildSettingInputs = (context: SettingInputContext): SettingInputsResult => {
   const inputs = new Map<keyof UiSettings, HTMLInputElement>()
   const cleanups: Array<() => void> = []
   for (const definition of SETTING_DEFINITIONS) {
-    const label = document.createElement('label')
-    label.textContent = definition.label
-    const input = document.createElement('input')
-    input.type = 'range'
-    input.min = String(definition.min)
-    input.max = String(definition.max)
-    input.step = String(definition.step)
-    input.setAttribute('aria-label', definition.label)
-    input.setAttribute('data-setting', definition.key)
-    const onInput = (): void => definition.notify(callbacks, input.valueAsNumber)
-    input.addEventListener('input', onInput)
-    cleanups.push(() => input.removeEventListener('input', onInput))
-    label.appendChild(input)
-    settingsDialog.appendChild(label)
-    inputs.set(definition.key, input)
+    const built = buildSettingInput(context, definition)
+    inputs.set(definition.key, built.input)
+    cleanups.push(built.cleanup)
   }
+  return { cleanups, inputs }
+}
 
+const buildCloseButton = (document: Document, settingsDialog: HTMLElement): HTMLButtonElement => {
   const closeButton = document.createElement('button')
   closeButton.type = 'button'
   closeButton.textContent = 'Close settings'
   closeButton.setAttribute('aria-label', 'Close settings')
   settingsDialog.appendChild(closeButton)
+  return closeButton
+}
 
-  let restoreFocus: HTMLElement | undefined
-  const updateDebug = (snapshot: DebugHudSnapshot): void => {
-    const fps = finite(snapshot.fps, 0)
-    const { coordinates, chunk } = snapshot
-    const facing = snapshot.facing === undefined ? '' : `\nFacing: ${snapshot.facing}`
-    writeText(
-      debugText,
-      `FPS: ${fps.toFixed(1)}\nXYZ: ${finite(coordinates.x, 0).toFixed(1)} / ${finite(coordinates.y, 0).toFixed(1)} / ${finite(coordinates.z, 0).toFixed(1)}\nChunk: ${finite(chunk.x, 0)} / ${finite(chunk.z, 0)}${facing}`,
-    )
+type OverlaysDom = {
+  readonly root: HTMLElement
+  readonly debugHud: HTMLElement
+  readonly settingsDialog: HTMLElement
+  readonly closeButton: HTMLButtonElement
+  readonly inputs: ReadonlyMap<keyof UiSettings, HTMLInputElement>
+  readonly cleanups: Array<() => void>
+}
+
+const buildDom = (document: Document, parent: HTMLElement, callbacks: UiSettingsCallbacks): OverlaysDom => {
+  const root = buildRoot(document, parent)
+  const debugHud = buildDebugHud(document, root)
+  const settingsDialog = buildSettingsDialog(document, root)
+  appendSettingsTitle(document, settingsDialog)
+  const { cleanups, inputs } = buildSettingInputs({ callbacks, document, settingsDialog })
+  const closeButton = buildCloseButton(document, settingsDialog)
+  return { cleanups, closeButton, debugHud, inputs, root, settingsDialog }
+}
+
+const toggleSettingsVisibility = (
+  settingsDialog: HTMLElement,
+  openSettings: () => void,
+  closeSettings: () => void,
+): void => {
+  if (settingsDialog.hidden) {
+    openSettings()
+  } else {
+    closeSettings()
   }
-  const updateSettings = (settings: UiSettings): void => {
-    for (const definition of SETTING_DEFINITIONS) {
-      const input = inputs.get(definition.key)
-      if (input !== undefined) {
-        input.value = String(
-          finite(settings[definition.key], DEFAULT_UI_SETTINGS[definition.key]),
-        )
-      }
-    }
-  }
-  const toggleDebug = (): void => {
-    debugHud.hidden = !debugHud.hidden
-  }
-  const openSettings = (): void => {
-    if (!settingsDialog.hidden) {
-      return
-    }
-    const active = document.activeElement
-    restoreFocus = focusable(active) ? active : undefined
-    settingsDialog.hidden = false
-    inputs.get('mouseSensitivity')?.focus()
-  }
-  const closeSettings = (): void => {
-    if (settingsDialog.hidden) {
-      return
-    }
-    settingsDialog.hidden = true
-    const target = restoreFocus
-    restoreFocus = undefined
-    if (target?.isConnected === true) {
-      target.focus()
-    }
-  }
-  const onClose = (): void => closeSettings()
-  closeButton.addEventListener('click', onClose)
-  cleanups.push(() => closeButton.removeEventListener('click', onClose))
+}
+
+type OverlaysWiringContext = {
+  readonly document: Document
+  readonly dom: OverlaysDom
+  readonly toggleDebug: () => void
+  readonly openSettings: () => void
+  readonly closeSettings: () => void
+  readonly delegateKeyDown: SessionKeyDelegate | undefined
+}
+
+const wireEventListeners = (context: OverlaysWiringContext): void => {
+  const { document, dom, closeSettings, toggleDebug, openSettings, delegateKeyDown } = context
+
+  const onCloseClick = (): void => closeSettings()
+  dom.closeButton.addEventListener('click', onCloseClick)
+  dom.cleanups.push(() => dom.closeButton.removeEventListener('click', onCloseClick))
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) {
@@ -213,35 +300,108 @@ export const createSessionOverlays = (
       toggleDebug()
     } else if (event.key === 'F10') {
       event.preventDefault()
-      settingsDialog.hidden ? openSettings() : closeSettings()
-    } else if (event.key === 'Escape' && !settingsDialog.hidden) {
+      toggleSettingsVisibility(dom.settingsDialog, openSettings, closeSettings)
+    } else if (event.key === 'Escape' && !dom.settingsDialog.hidden) {
       event.preventDefault()
       closeSettings()
-    } else if (settingsDialog.hidden) {
+    } else if (dom.settingsDialog.hidden) {
       delegateKeyDown?.(event)
     }
   }
   document.addEventListener('keydown', onKeyDown)
-  cleanups.push(() => document.removeEventListener('keydown', onKeyDown))
+  dom.cleanups.push(() => document.removeEventListener('keydown', onKeyDown))
+}
 
-  updateSettings(initialSettings)
-  updateDebug(initialDebug)
+/** Where `cleanups.splice` starts, to run and drop every registered cleanup. */
+const SPLICE_FROM_START = 0
+
+const wireOverlaysBehavior = (
+  document: Document,
+  dom: OverlaysDom,
+  delegateKeyDown: SessionKeyDelegate | undefined,
+): SessionOverlays => {
+  let restoreFocus: HTMLElement | null = null
+
+  const updateDebug = (snapshot: DebugHudSnapshot): void => {
+    dom.debugHud.textContent = debugHudText(snapshot)
+  }
+  const updateSettings = (settings: UiSettings): void => {
+    applySettingsToInputs(dom.inputs, settings)
+  }
+  const toggleDebug = (): void => {
+    dom.debugHud.hidden = !dom.debugHud.hidden
+  }
+  const openSettings = (): void => {
+    if (!dom.settingsDialog.hidden) {
+      return
+    }
+    const active = document.activeElement
+    // `document.activeElement` is typed `Element | null`.
+    // That is wider than what this repository's own mount path ever produces.
+    // But a host embedding this differently (or a document with no body) could still hand back
+    // `null` here. So the guard stays real rather than assumed away.
+    if (focusable(active)) {
+      restoreFocus = active
+    } else {
+      restoreFocus = null
+    }
+    dom.settingsDialog.hidden = false
+    dom.inputs.get('mouseSensitivity')?.focus()
+  }
+  const closeSettings = (): void => {
+    if (dom.settingsDialog.hidden) {
+      return
+    }
+    dom.settingsDialog.hidden = true
+    const target = restoreFocus
+    restoreFocus = null
+    if (target?.isConnected === true) {
+      target.focus()
+    }
+  }
+
+  wireEventListeners({ closeSettings, delegateKeyDown, document, dom, openSettings, toggleDebug })
 
   return {
     closeSettings,
-    debugHud,
-    destroy: () => {
-      for (const cleanup of cleanups.splice(0)) {
+    debugHud: dom.debugHud,
+    destroy: (): void => {
+      for (const cleanup of dom.cleanups.splice(SPLICE_FROM_START)) {
         cleanup()
       }
-      restoreFocus = undefined
-      root.remove()
+      restoreFocus = null
+      dom.root.remove()
     },
     openSettings,
-    root,
-    settingsDialog,
+    root: dom.root,
+    settingsDialog: dom.settingsDialog,
     toggleDebug,
     updateDebug,
     updateSettings,
   }
+}
+
+export type CreateSessionOverlaysOptions = {
+  readonly callbacks?: UiSettingsCallbacks | undefined
+  readonly delegateKeyDown?: SessionKeyDelegate | undefined
+  readonly initialDebug?: DebugHudSnapshot | undefined
+  readonly initialSettings?: UiSettings | undefined
+}
+
+export const createSessionOverlays = (
+  document: Document,
+  parent: HTMLElement,
+  options: CreateSessionOverlaysOptions = {},
+): SessionOverlays => {
+  const {
+    callbacks = {},
+    delegateKeyDown,
+    initialDebug = DEFAULT_DEBUG_HUD_SNAPSHOT,
+    initialSettings = DEFAULT_UI_SETTINGS,
+  } = options
+  const dom = buildDom(document, parent, callbacks)
+  const overlays = wireOverlaysBehavior(document, dom, delegateKeyDown)
+  overlays.updateSettings(initialSettings)
+  overlays.updateDebug(initialDebug)
+  return overlays
 }

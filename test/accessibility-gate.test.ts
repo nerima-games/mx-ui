@@ -53,7 +53,7 @@ import { describe, expect, it } from 'vitest'
 import { emptyCaptionQueue, captionLines, receiveCaption } from '../src/domain/caption'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
-import { GUARDED_TOKENS, surveyPalette, type Rgb } from '../src/domain/palette'
+import { GUARDED_TOKENS, surveyPalette, type PaletteSurvey, type Rgb } from '../src/domain/palette'
 import { saveStatus, saveStatusMessage } from '../src/domain/save-status'
 import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../src/domain/crosshair'
 import { initialMainMenuState, mainMenuViewModel, openPanel } from '../src/domain/main-menu'
@@ -83,6 +83,48 @@ const TOKEN_BY_VAR: ReadonlyMap<string, PaletteTokenName> = new Map(
 
 const sameColor = (left: Rgb, right: Rgb): boolean =>
   left[0] === right[0] && left[1] === right[1] && left[2] === right[2]
+
+/**
+ * One `(element, property)` pair of the WCAG sweep below. Pulled out of the
+ * loop so each of the four outcomes — unwritten, not a token, unguarded, or
+ * guarded-but-below-floor — is a `return` rather than a `continue`.
+ */
+const auditColorProperty = (
+  element: FakeElement,
+  where: string,
+  property: 'color' | 'background-color',
+  survey: PaletteSurvey,
+  findings: Array<string>,
+): void => {
+  const written = element.style.properties.get(property)
+  if (written === undefined) {
+    return
+  }
+
+  const token = TOKEN_BY_VAR.get(written)
+  if (token === undefined) {
+    findings.push(`${where}: ${property} "${written}" is not a palette token`)
+    return
+  }
+
+  const color = PALETTE_SOURCE[token]
+  const guarded = GUARDED_TOKENS.find((candidate) => sameColor(candidate.color, color))
+  if (guarded === undefined) {
+    // A colour can be a token and still be unguarded — `METER_TRACK` and
+    // `SURFACE` are, deliberately, because they are backdrops. Using one
+    // for TEXT puts a foreground where no floor was ever measured; using
+    // one as a BACKGROUND is what it is for.
+    if (property === 'color') {
+      findings.push(`${where}: token ${token} carries text but is not guarded`)
+    }
+    return
+  }
+
+  const reading = survey.tokens.find((candidate) => candidate.name === guarded.name)
+  if (reading === undefined || !reading.meetsFloor) {
+    findings.push(`${where}: ${guarded.name} is below its ${String(guarded.role)} floor`)
+  }
+}
 
 /**
  * Every screen this repository can build, mounted.
@@ -197,7 +239,9 @@ const isHidden = (
 ): boolean => {
   let current: FakeElement | undefined = element
   while (current !== undefined) {
-    if (current.attributes.has('hidden')) return true
+    if (current.attributes.has('hidden')) {
+      return true
+    }
     current = parents.get(current)
   }
   return false
@@ -369,34 +413,7 @@ describe('WCAG AA: every colour a screen writes is one the palette has measured'
         const where = element.attributes.get('data-mx-ui') ?? element.tagName
 
         for (const property of ['color', 'background-color'] as const) {
-          const written = element.style.properties.get(property)
-          if (written === undefined) {
-            continue
-          }
-
-          const token = TOKEN_BY_VAR.get(written)
-          if (token === undefined) {
-            findings.push(`${where}: ${property} "${written}" is not a palette token`)
-            continue
-          }
-
-          const color = PALETTE_SOURCE[token]
-          const guarded = GUARDED_TOKENS.find((candidate) => sameColor(candidate.color, color))
-          if (guarded === undefined) {
-            // A colour can be a token and still be unguarded — `METER_TRACK` and
-            // `SURFACE` are, deliberately, because they are backdrops. Using one
-            // for TEXT puts a foreground where no floor was ever measured; using
-            // one as a BACKGROUND is what it is for.
-            if (property === 'color') {
-              findings.push(`${where}: token ${token} carries text but is not guarded`)
-            }
-            continue
-          }
-
-          const reading = survey.tokens.find((candidate) => candidate.name === guarded.name)
-          if (reading === undefined || !reading.meetsFloor) {
-            findings.push(`${where}: ${guarded.name} is below its ${String(guarded.role)} floor`)
-          }
+          auditColorProperty(element, where, property, survey, findings)
         }
       }
 

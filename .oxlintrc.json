@@ -150,5 +150,36 @@
     "no-param-reassign": "off",
     "no-plusplus": "off"
   },
+  // Scoped strictness (org policy, see PACKAGE_STANDARD.md / DEPENDENCY_POLICY.md): src/**
+  // is production source and stays at full strictness above, with no per-line disable
+  // comments. Non-production code — unit tests, Playwright browser tests, the dev-only
+  // preview/browser-harness apps, and any future scripts/** tooling — has its own
+  // established conventions (literal fixture values instead of named constants, assertion
+  // objects whose key order mirrors domain field order rather than alphabetical, terse
+  // ternaries in one-line expectations, `undefined` as the explicit "no value" fixture) that
+  // these purely stylistic rules keep flagging without indicating a real defect. Verified
+  // empirically against this repo's pinned oxlint (oxlint --config ... --print-config, then a
+  // behavioral probe: a file under test/** with a violation stops warning once scoped here,
+  // while the same violation under src/** still fires) that oxlint's `overrides.files` globs
+  // are matched and enforced, unlike the `no-restricted-*` rules noted as inert above.
+  "overrides": [
+    {
+      "files": ["test/**", "test-browser/**", "scripts/**", "apps/**"],
+      "rules": {
+        "no-magic-numbers": "off",
+        "id-length": "off",
+        "sort-keys": "off",
+        "sort-imports": "off",
+        "no-ternary": "off",
+        "no-nested-ternary": "off",
+        "capitalized-comments": "off",
+        "no-undefined": "off",
+        "func-names": "off",
+        "max-statements": "off",
+        "max-params": "off",
+        "new-cap": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
 }

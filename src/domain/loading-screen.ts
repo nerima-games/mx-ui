@@ -93,9 +93,18 @@ export type LoadingStatus = {
  * pin the player in front of a loading screen with a finished world behind it.
  * Both choices avoid the outcome that traps somebody.
  */
+const NON_FINITE_START_FALLBACK_SECS = 0
+
+const normalizedStartedAtSecs = (atSecs: number): number => {
+  if (Number.isFinite(atSecs)) {
+    return atSecs
+  }
+  return NON_FINITE_START_FALLBACK_SECS
+}
+
 export const loadingStatus = (progress: LoadingProgress, atSecs: number): LoadingStatus => ({
   progress,
-  startedAtSecs: Number.isFinite(atSecs) ? atSecs : 0,
+  startedAtSecs: normalizedStartedAtSecs(atSecs),
 })
 
 /** Nothing is loading, so nothing is on screen. */
@@ -123,19 +132,20 @@ export const loadingScreenView = (
   nowSecs: number,
   minimumVisibleSecs: number = LOADING_MINIMUM_VISIBLE_SECS,
 ): LoadingScreenView | undefined => {
-  const progress = status.progress
+  const {progress} = status
   if (progress.kind === 'failed') {
     return { kind: 'failed', reason: progress.reason }
   }
   if (progress.kind === 'preparing') {
-    return { kind: 'preparing', held: false }
+    return { held: false, kind: 'preparing' }
   }
   const elapsed = nowSecs - status.startedAtSecs
   // A NaN or a backwards clock keeps the screen UP for one more frame rather
-  // than tearing it away mid-transition. Same call as `saveStatusMessage`:
-  // choose the outcome that does not invent a claim, and here hiding is the
-  // claim ("the world is ready and you have had time to see that it was not").
-  return Number.isNaN(elapsed) || elapsed < minimumVisibleSecs
-    ? { kind: 'preparing', held: true }
-    : undefined
+  // Than tearing it away mid-transition. Same call as `saveStatusMessage`:
+  // Choose the outcome that does not invent a claim, and here hiding is the
+  // Claim ("the world is ready and you have had time to see that it was not").
+  if (Number.isNaN(elapsed) || elapsed < minimumVisibleSecs) {
+    return { held: true, kind: 'preparing' }
+  }
+  return
 }

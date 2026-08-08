@@ -72,9 +72,9 @@ export type StyleCell = {
 }
 
 export const styleCell = (element: DomElement, property: string): StyleCell => ({
-  style: element.style,
-  property,
   previous: '',
+  property,
+  style: element.style,
 })
 
 export const writeStyle = (cell: StyleCell, value: string): void => {
@@ -117,8 +117,8 @@ export type PercentCell = {
 }
 
 export const percentCell = (element: DomElement, property: string): PercentCell => ({
-  style: styleCell(element, property),
   previous: Number.NaN,
+  style: styleCell(element, property),
 })
 
 export const writePercent = (cell: PercentCell, percent: number): void => {
@@ -139,28 +139,32 @@ export const writePercent = (cell: PercentCell, percent: number): void => {
 export type AttributeCell = {
   readonly element: DomElement
   readonly name: string
-  previous: string | undefined
+  previous?: string
 }
 
 export const attributeCell = (element: DomElement, name: string): AttributeCell => ({
   element,
   name,
-  previous: undefined,
 })
 
-export const writeAttribute = (cell: AttributeCell, value: string | undefined): void => {
+export const writeAttribute = (cell: AttributeCell, value?: string): void => {
   if (cell.previous === value) {
     return
   }
-  cell.previous = value
-  if (value === undefined) {
+  if (typeof value === 'undefined') {
+    delete cell.previous
     cell.element.removeAttribute(cell.name)
     return
   }
+  cell.previous = value
   cell.element.setAttribute(cell.name, value)
 }
 
 /** `hidden` is an empty-valued boolean attribute; this is the only spelling used. */
 export const writeHidden = (cell: AttributeCell, hidden: boolean): void => {
-  writeAttribute(cell, hidden ? '' : undefined)
+  if (hidden) {
+    writeAttribute(cell, '')
+    return
+  }
+  writeAttribute(cell)
 }
