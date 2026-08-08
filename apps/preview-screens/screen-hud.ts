@@ -130,6 +130,49 @@ const hotbarSlot = (
   ]
 }
 
+/**
+ * Fields that disagree with each other, called out under the picture.
+ *
+ * Not a general validator — two specific disagreements the preview found, kept
+ * here so that reproducing them is a keystroke rather than a memory. Both are in
+ * this directory's README.md with the reasoning.
+ */
+const describeSlotAnomalies = (style: Style, view: HudViewModel): ReadonlyArray<string> => {
+  const lines: Array<string> = []
+
+  const ghostBars = view.hotbar.filter((slot) => slot.empty && slot.durabilityPercent !== undefined)
+  for (const slot of ghostBars) {
+    lines.push(
+      style.paint(
+        `  ! slot ${String(slot.index + 1)} is empty and still reports durabilityPercent ${String(slot.durabilityPercent)} — a bar under an empty slot`,
+        BAD,
+      ),
+    )
+  }
+
+  const noneSelected = !view.hotbar.some((slot) => slot.selected)
+  if (noneSelected) {
+    lines.push(
+      style.paint(
+        '  ! no slot is selected — selectedHotbarIndex was clamped, and the clamp let a NaN through',
+        BAD,
+      ),
+    )
+  }
+
+  const emptyRow = view.hearts.every((icon) => icon === 'empty')
+  if (emptyRow && !view.dead) {
+    lines.push(
+      style.paint(
+        '  ! every heart is empty but dead is false — the row was clamped and the flag was not',
+        BAD,
+      ),
+    )
+  }
+
+  return lines
+}
+
 export const renderHud = (
   style: Style,
   snapshot: VitalsSnapshot,
@@ -186,47 +229,4 @@ export const renderHud = (
     style.dim(`  selected slot index ${String(view.hotbar.findIndex((slot) => slot.selected))}`),
     ...describeSlotAnomalies(style, view),
   ]
-}
-
-/**
- * Fields that disagree with each other, called out under the picture.
- *
- * Not a general validator — two specific disagreements the preview found, kept
- * here so that reproducing them is a keystroke rather than a memory. Both are in
- * this directory's README.md with the reasoning.
- */
-const describeSlotAnomalies = (style: Style, view: HudViewModel): ReadonlyArray<string> => {
-  const lines: Array<string> = []
-
-  const ghostBars = view.hotbar.filter((slot) => slot.empty && slot.durabilityPercent !== undefined)
-  for (const slot of ghostBars) {
-    lines.push(
-      style.paint(
-        `  ! slot ${String(slot.index + 1)} is empty and still reports durabilityPercent ${String(slot.durabilityPercent)} — a bar under an empty slot`,
-        BAD,
-      ),
-    )
-  }
-
-  const noneSelected = !view.hotbar.some((slot) => slot.selected)
-  if (noneSelected) {
-    lines.push(
-      style.paint(
-        '  ! no slot is selected — selectedHotbarIndex was clamped, and the clamp let a NaN through',
-        BAD,
-      ),
-    )
-  }
-
-  const emptyRow = view.hearts.every((icon) => icon === 'empty')
-  if (emptyRow && !view.dead) {
-    lines.push(
-      style.paint(
-        '  ! every heart is empty but dead is false — the row was clamped and the flag was not',
-        BAD,
-      ),
-    )
-  }
-
-  return lines
 }

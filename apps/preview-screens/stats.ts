@@ -98,8 +98,7 @@ type CaptionProbe = {
 const probeCaptionLifetime = (): ReadonlyArray<CaptionProbe> => {
   const settings = { captionsEnabled: true, audioUnlocked: false }
   let queue: CaptionQueue = emptyCaptionQueue
-  const first = SAMPLE_CAPTIONS[0]
-  const second = SAMPLE_CAPTIONS[1]
+  const [first, second] = SAMPLE_CAPTIONS
   if (first === undefined || second === undefined) {
     return []
   }
@@ -245,10 +244,10 @@ const probeEscapeSequence = (): ReadonlyArray<string> => {
   const lines: Array<string> = [`  start: [${stack.join(', ')}]`]
 
   for (let press = 1; press <= 3; press += 1) {
-    const outcome = escapePressed(stack)
-    stack = outcome.stack
+    const { stack: nextStack, action, closed } = escapePressed(stack)
+    stack = nextStack
     lines.push(
-      `  escape ${String(press)}: action ${outcome.action}, closed ${String(outcome.closed)}, stack [${stack.join(', ')}]`,
+      `  escape ${String(press)}: action ${action}, closed ${String(closed)}, stack [${stack.join(', ')}]`,
     )
   }
 
@@ -275,7 +274,7 @@ const collectFindings = (): ReadonlyArray<Finding> => {
       hotbar: [{ itemId: undefined, count: 0, durability: 0.5 }, ...SAMPLE_HOTBAR.slice(1)],
     }),
   )
-  const ghost = emptied.hotbar[0]
+  const [ghost] = emptied.hotbar
   if (ghost !== undefined && ghost.empty && ghost.durabilityPercent !== undefined) {
     findings.push({
       title: 'an empty hotbar slot still reports a durability percentage',

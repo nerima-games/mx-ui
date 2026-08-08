@@ -203,7 +203,7 @@ test.describe('question 2: the engine composites where `compositeOver` says it d
       { name: 'world', x: probe.worldX, y: probe.worldY },
     ])
 
-    const world = pixels['world']
+    const { world } = pixels
     const measured = pixels['scrim']
     if (world === undefined || measured === undefined) {
       throw new Error('probe did not come back')
@@ -225,10 +225,10 @@ test.describe('question 2: the engine composites where `compositeOver` says it d
     // answers is seventeen units rather than one.
     const toLinear = (value: number): number => {
       const scaled = value / 255
-      return scaled <= 0.04045 ? scaled / 12.92 : Math.pow((scaled + 0.055) / 1.055, 2.4)
+      return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
     }
     const toSrgb = (value: number): number =>
-      255 * (value <= 0.0031308 ? value * 12.92 : 1.055 * Math.pow(value, 1 / 2.4) - 0.055)
+      255 * (value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055)
     const predictedLinear: Rgb = [0, 1, 2].map((index) =>
       toSrgb(
         SCRIM_ALPHA * toLinear(SCRIM[index] ?? 0) +
@@ -308,11 +308,15 @@ test.describe('question 3: the survey bounds what the browser actually renders',
     const findings: Array<string> = []
     let checked = 0
 
-    for (const mark of painted) {
+    // One `mark` of the sweep below, pulled out so each early exit — not a
+    // token, not guarded, no survey reading — is a `return` rather than a
+    // `continue`. Returns `true` when the mark was actually checked against
+    // the survey, so the loop can still assert `checked > 0`.
+    const auditMark = (mark: (typeof painted)[number]): boolean => {
       const token = TOKEN_BY_VAR.get(mark.written)
       if (token === undefined) {
         findings.push(`${mark.where}: ${mark.property} is not a palette token`)
-        continue
+        return false
       }
       const color = PALETTE_SOURCE[token]
       const guarded = GUARDED_TOKENS.find(
@@ -325,18 +329,17 @@ test.describe('question 3: the survey bounds what the browser actually renders',
       // `SURFACE`) and are deliberately unmeasured — they are what other things
       // are measured against. The headless audit makes the same split.
       if (guarded === undefined) {
-        continue
+        return false
       }
 
       const reading = survey.tokens.find((candidate) => candidate.name === guarded.name)
       if (reading === undefined) {
         findings.push(`${guarded.name}: the survey has no reading for a token it guards`)
-        continue
+        return false
       }
 
       const measured = contrastRatio(parseCssRgb(mark.computed), surface)
       const floor = guarded.role === 'text' ? TEXT_CONTRAST_MIN : UI_CONTRAST_MIN
-      checked += 1
 
       if (measured < floor) {
         findings.push(
@@ -349,6 +352,13 @@ test.describe('question 3: the survey bounds what the browser actually renders',
         findings.push(
           `${mark.where}/${guarded.name}: measured ${measured.toFixed(2)}:1 is BELOW the survey's supposedly worst-case ${reading.worstContrast.toFixed(2)}:1 — the bound is not a bound`,
         )
+      }
+      return true
+    }
+
+    for (const mark of painted) {
+      if (auditMark(mark)) {
+        checked += 1
       }
     }
 

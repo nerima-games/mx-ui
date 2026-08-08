@@ -190,14 +190,14 @@ const body = (state: PreviewState, style: Style, columns: number): ReadonlyArray
   return renderInventory(style, state.modals, state.escapeLog, MODAL_SCREENS)
 }
 
+const KEY_HINT =
+  'tab screen  - = health  [ ] hunger  , . xp  < > slot  d wear  E empty  N NaN  e caption  t clock  v vision  V simulate  m motion  b rebind  o modal  Esc modal-escape  ? help  x quit'
+
 const footer = (state: PreviewState, style: Style): ReadonlyArray<string> => [
   '',
   `${style.paint(padEnd('last', 6), MUTED)}${state.note === '' ? style.dim('—') : style.paint(state.note, INK)}`,
   style.dim(KEY_HINT),
 ]
-
-const KEY_HINT =
-  'tab screen  - = health  [ ] hunger  , . xp  < > slot  d wear  E empty  N NaN  e caption  t clock  v vision  V simulate  m motion  b rebind  o modal  Esc modal-escape  ? help  x quit'
 
 const render = (state: PreviewState, options: PreviewOptions, style: Style): ReadonlyArray<string> => {
   const { columns } = frameSize(options)
@@ -205,6 +205,110 @@ const render = (state: PreviewState, options: PreviewOptions, style: Style): Rea
     return [...USAGE.map((line) => style.dim(line)), '', style.dim('press any key to return')]
   }
   return [...header(state, style), ...body(state, style, columns), ...footer(state, style)]
+}
+
+/** Screen switching: tab and the 1-4 shortcuts. */
+const handleScreenKey = (state: PreviewState, key: string): string | undefined => {
+  if (key === 'tab') {
+    const index = SCREEN_NAMES.indexOf(state.screen)
+    state.screen = SCREEN_NAMES[(index + 1) % SCREEN_NAMES.length] ?? 'hud'
+    return `screen: ${state.screen}`
+  }
+  if (key === '1' || key === '2' || key === '3' || key === '4') {
+    const target = SCREEN_NAMES[Number(key) - 1]
+    if (target !== undefined) {
+      state.screen = target
+      return `screen: ${target}`
+    }
+  }
+  return undefined
+}
+
+/** Health, hunger, XP and the held hotbar slot. */
+const handleVitalsKey = (state: PreviewState, key: string): string | undefined => {
+  switch (key) {
+    case '-':
+      return adjustHealth(state, -1)
+    case '=':
+      return adjustHealth(state, 1)
+    case '[':
+      return adjustHunger(state, -1)
+    case ']':
+      return adjustHunger(state, 1)
+    case ',':
+      return adjustExperience(state, -0.1)
+    case '.':
+      return adjustExperience(state, 0.1)
+    case '<':
+      return selectSlot(state, -1)
+    case '>':
+      return selectSlot(state, 1)
+    case 'd':
+      return damageHeld(state, -0.1)
+    case 'D':
+      return damageHeld(state, 0.1)
+    case 'E':
+      return emptyHeldSlot(state)
+    case 'N':
+      return injectNaNHealth(state)
+    case 'r':
+      return resetVitals(state)
+    default:
+      return undefined
+  }
+}
+
+/** Captions and the virtual clock. */
+const handleCaptionKey = (state: PreviewState, key: string): string | undefined => {
+  switch (key) {
+    case 'e':
+      return emitCaption(state)
+    case 'a':
+      return repeatCaption(state)
+    case 't':
+      return advanceClock(state, 1)
+    case 'T':
+      return advanceClock(state, 0.25)
+    case 'c':
+      return toggleCaptions(state)
+    case 'u':
+      return toggleAudioUnlocked(state)
+    default:
+      return undefined
+  }
+}
+
+/** Colour vision, motion and key rebinding. */
+const handleAccessibilityKey = (state: PreviewState, key: string): string | undefined => {
+  switch (key) {
+    case 'v':
+      return cycleColorVision(state)
+    case 'V':
+      return toggleSimulation(state)
+    case 'm':
+      return cycleMotion(state)
+    case 'M':
+      return toggleSystemMotion(state)
+    case 'j':
+    case 'down':
+      return moveActionCursor(state, 1)
+    case 'k':
+    case 'up':
+      return moveActionCursor(state, -1)
+    case 'b':
+      return beginRebind(state)
+    default:
+      return undefined
+  }
+}
+
+/** The modal stack's one "open the next screen" key. */
+const handleModalKey = (state: PreviewState, key: string): string | undefined => {
+  if (key !== 'o') {
+    return undefined
+  }
+  const next = MODAL_SCREENS[state.modals.length % MODAL_SCREENS.length]
+  return next === undefined ? 'no screens to open' : openModal(state, next)
 }
 
 /** Returns false when the key means "quit". */
@@ -222,130 +326,31 @@ const handleKey = (state: PreviewState, key: string): boolean => {
     return true
   }
 
-  switch (key) {
-    case 'x':
-    case 'ctrl-c':
-      return false
+  if (key === 'x' || key === 'ctrl-c') {
+    return false
+  }
 
-    // Escape is NOT quit here: it is the input `domain/modal-stack.ts` is built
-    // around, and a preview that quit on it could never show what it does.
-    case 'escape':
-      state.note = pressEscape(state)
-      break
+  // Escape is NOT quit here: it is the input `domain/modal-stack.ts` is built
+  // around, and a preview that quit on it could never show what it does.
+  if (key === 'escape') {
+    state.note = pressEscape(state)
+    return true
+  }
 
-    case 'tab': {
-      const index = SCREEN_NAMES.indexOf(state.screen)
-      state.screen = SCREEN_NAMES[(index + 1) % SCREEN_NAMES.length] ?? 'hud'
-      state.note = `screen: ${state.screen}`
-      break
-    }
-    case '1':
-    case '2':
-    case '3':
-    case '4': {
-      const target = SCREEN_NAMES[Number(key) - 1]
-      if (target !== undefined) {
-        state.screen = target
-        state.note = `screen: ${target}`
-      }
-      break
-    }
+  if (key === '?') {
+    state.showHelp = true
+    return true
+  }
 
-    case '-':
-      state.note = adjustHealth(state, -1)
-      break
-    case '=':
-      state.note = adjustHealth(state, 1)
-      break
-    case '[':
-      state.note = adjustHunger(state, -1)
-      break
-    case ']':
-      state.note = adjustHunger(state, 1)
-      break
-    case ',':
-      state.note = adjustExperience(state, -0.1)
-      break
-    case '.':
-      state.note = adjustExperience(state, 0.1)
-      break
-    case '<':
-      state.note = selectSlot(state, -1)
-      break
-    case '>':
-      state.note = selectSlot(state, 1)
-      break
-    case 'd':
-      state.note = damageHeld(state, -0.1)
-      break
-    case 'D':
-      state.note = damageHeld(state, 0.1)
-      break
-    case 'E':
-      state.note = emptyHeldSlot(state)
-      break
-    case 'N':
-      state.note = injectNaNHealth(state)
-      break
-    case 'r':
-      state.note = resetVitals(state)
-      break
+  const note =
+    handleScreenKey(state, key) ??
+    handleVitalsKey(state, key) ??
+    handleCaptionKey(state, key) ??
+    handleAccessibilityKey(state, key) ??
+    handleModalKey(state, key)
 
-    case 'e':
-      state.note = emitCaption(state)
-      break
-    case 'a':
-      state.note = repeatCaption(state)
-      break
-    case 't':
-      state.note = advanceClock(state, 1)
-      break
-    case 'T':
-      state.note = advanceClock(state, 0.25)
-      break
-    case 'c':
-      state.note = toggleCaptions(state)
-      break
-    case 'u':
-      state.note = toggleAudioUnlocked(state)
-      break
-
-    case 'v':
-      state.note = cycleColorVision(state)
-      break
-    case 'V':
-      state.note = toggleSimulation(state)
-      break
-    case 'm':
-      state.note = cycleMotion(state)
-      break
-    case 'M':
-      state.note = toggleSystemMotion(state)
-      break
-    case 'j':
-    case 'down':
-      state.note = moveActionCursor(state, 1)
-      break
-    case 'k':
-    case 'up':
-      state.note = moveActionCursor(state, -1)
-      break
-    case 'b':
-      state.note = beginRebind(state)
-      break
-
-    case 'o': {
-      const next = MODAL_SCREENS[state.modals.length % MODAL_SCREENS.length]
-      state.note = next === undefined ? 'no screens to open' : openModal(state, next)
-      break
-    }
-
-    case '?':
-      state.showHelp = true
-      break
-
-    default:
-      break
+  if (note !== undefined) {
+    state.note = note
   }
 
   return true
