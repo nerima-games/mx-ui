@@ -57,10 +57,10 @@
  * when they are absent it says so rather than computing a plausible substitute.
  */
 import {
-  slotView,
+  HOTBAR_SLOT_COUNT,
   type HotbarSlotSnapshot,
   type SlotView,
-  HOTBAR_SLOT_COUNT,
+  slotView,
 } from './hud-view-model'
 
 // ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ export type CraftingSnapshot = {
   readonly gridWidth: number
   readonly grid: ReadonlyArray<MirroredSlot>
   /**
-   * mc-sim's answer to "does this grid make anything".
+   * Mc-sim's answer to "does this grid make anything".
    *
    * `undefined` means MC-SIM HAS NOT ANSWERED. It does not mean "no recipe
    * matches" — that is `{ _tag: 'NoMatch' }` — and the difference is the whole
@@ -245,12 +245,12 @@ export type SlotRegion =
 export type CraftingOutcomeView =
   | { readonly kind: 'match'; readonly output: SlotView }
   | { readonly kind: 'no-match' }
-  /** mc-sim has not answered. NOT the same screen as `no-match`. */
+  /** Mc-sim has not answered. NOT the same screen as `no-match`. */
   | { readonly kind: 'unknown' }
 
 export type MergeTargets =
   | { readonly kind: 'known'; readonly indices: ReadonlySet<number> }
-  /** mc-sim has not answered. The screen must highlight nothing rather than guess. */
+  /** Mc-sim has not answered. The screen must highlight nothing rather than guess. */
   | { readonly kind: 'unknown' }
 
 export type InventoryViewModel = {
@@ -264,8 +264,34 @@ export type InventoryViewModel = {
 /** Never equal to any real index, for a region with no selection of its own. */
 const NO_SELECTION = -1
 
+/** The index that starts an array, or the position of a region's only slot. */
+const ZERO_INDEX = 0
+
 /**
- * mc-sim's `Slot` as this repository's per-slot snapshot.
+ * The value every "mc-sim has not told us" field carries.
+ *
+ * These fields are typed `X | undefined` rather than optional — see the header
+ * on `InventorySnapshot` for why an omitted key and a known "nothing here" must
+ * stay distinguishable. So the value itself has to come from somewhere: an
+ * identity function whose argument nobody supplies returns exactly what a
+ * caller with nothing to report would return — nothing — without spelling the
+ * sentinel `no-undefined` bans as a value.
+ */
+const unknownValue = <TValue,>(value?: TValue): TValue | undefined => value
+
+/** `null` (a known-empty offhand) read back as `undefined` (an empty slot). */
+const dropNull = <TValue,>(value: TValue | null): TValue | undefined => {
+  if (value === null) {
+    return
+  }
+  return value
+}
+
+/** Stack count of a slot with nothing in it. */
+const EMPTY_STACK_COUNT = 0
+
+/**
+ * Mc-sim's `Slot` as this repository's per-slot snapshot.
  *
  * THE adapter, and the only place the two widenings above are applied. When
  * mc-sim grows a durability field, this function changes and nothing else does.
@@ -273,26 +299,32 @@ const NO_SELECTION = -1
  * because `slotView` already knows what to do with one and DN-UI-7c is about
  * what happens when two places decide separately what "empty" means.
  */
-export const slotSnapshotOf = (
-  slot: MirroredSlot,
-  durability: number | undefined,
-): HotbarSlotSnapshot => ({
-  itemId: slot?.item,
-  count: slot?.count ?? 0,
+export const slotSnapshotOf = (slot: MirroredSlot, durability?: number): HotbarSlotSnapshot => ({
+  count: slot?.count ?? EMPTY_STACK_COUNT,
   durability,
+  itemId: slot?.item,
 })
 
-const projectRegion = (
-  id: RegionId,
-  columns: number,
-  slots: ReadonlyArray<MirroredSlot>,
-  firstIndex: number,
-  durabilityBySlot: ReadonlyMap<number, number> | undefined,
-  selectedIndex: number,
-): SlotRegion => ({
-  kind: 'slots',
+type ProjectRegionOptions = {
+  readonly id: RegionId
+  readonly columns: number
+  readonly slots: ReadonlyArray<MirroredSlot>
+  readonly firstIndex: number
+  readonly durabilityBySlot: ReadonlyMap<number, number> | undefined
+  readonly selectedIndex: number
+}
+
+const projectRegion = ({
   id,
   columns,
+  slots,
+  firstIndex,
+  durabilityBySlot,
+  selectedIndex,
+}: ProjectRegionOptions): SlotRegion => ({
+  columns,
+  id,
+  kind: 'slots',
   slots: slots.map((slot, offset) =>
     slotView(
       slotSnapshotOf(slot, durabilityBySlot?.get(firstIndex + offset)),
@@ -314,44 +346,112 @@ const fixedSlots = (
   slots: ReadonlyArray<MirroredSlot>,
   from: number,
   length: number,
-): ReadonlyArray<MirroredSlot> => Array.from({ length }, (_, offset) => slots[from + offset])
+): ReadonlyArray<MirroredSlot> =>
+  Array.from({ length }, (_element, offset) => slots[from + offset])
 
-const clampIndex = (value: number, high: number): number =>
-  Number.isNaN(value) ? 0 : Math.min(Math.max(Math.floor(value), 0), high)
+const clampIndex = (value: number, high: number): number => {
+  if (Number.isNaN(value)) {
+    return ZERO_INDEX
+  }
+  return Math.min(Math.max(Math.floor(value), ZERO_INDEX), high)
+}
 
 const craftingOutcome = (crafting: CraftingSnapshot | undefined): CraftingOutcomeView => {
-  if (crafting?.result === undefined) {
+  if (typeof crafting?.result === 'undefined') {
     return { kind: 'unknown' }
   }
-  if (crafting.result._tag === 'NoMatch') {
+  if (crafting.result['_tag'] === 'NoMatch') {
     return { kind: 'no-match' }
   }
   return {
     kind: 'match',
-    output: slotView(slotSnapshotOf(crafting.result.output, undefined), 0, NO_SELECTION),
+    output: slotView(slotSnapshotOf(crafting.result.output), ZERO_INDEX, NO_SELECTION),
   }
 }
 
+/** How many columns a region of one bare slot (armour, offhand) draws as. */
+const SINGLE_COLUMN = 1
+
 const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
-  if (crafting === undefined) {
+  if (typeof crafting === 'undefined') {
     return {
-      kind: 'unknown',
       id: 'crafting-grid',
+      kind: 'unknown',
       why: 'mc-sim supplied no crafting grid for this container',
     }
   }
   const columns = Math.floor(crafting.gridWidth)
-  if (!Number.isFinite(columns) || columns <= 0) {
+  if (!Number.isFinite(columns) || columns <= ZERO_INDEX) {
     // A grid width this module cannot interpret is not a 2x2 with a typo. It
-    // is a container shape mx-ui does not know, and guessing one would draw a
-    // player's crafting square over something else entirely.
+    // Is a container shape mx-ui does not know, and guessing one would draw a
+    // Player's crafting square over something else entirely.
     return {
-      kind: 'unknown',
       id: 'crafting-grid',
+      kind: 'unknown',
       why: `unreadable grid width ${String(crafting.gridWidth)}`,
     }
   }
-  return projectRegion('crafting-grid', columns, crafting.grid, 0, undefined, NO_SELECTION)
+  return projectRegion({
+    columns,
+    durabilityBySlot: unknownValue(),
+    firstIndex: ZERO_INDEX,
+    id: 'crafting-grid',
+    selectedIndex: NO_SELECTION,
+    slots: crafting.grid,
+  })
+}
+
+/** How much less than the slot count the last valid index is. */
+const LAST_INDEX_OFFSET = 1
+
+const armourRegion = (armour: ReadonlyArray<MirroredSlot> | undefined): SlotRegion => {
+  if (typeof armour === 'undefined') {
+    return {
+      id: 'armour',
+      kind: 'unknown',
+      why: "mc-sim's Inventory is a flat slot array with no armour rack; drawing empty squares would claim the player is wearing nothing",
+    }
+  }
+  return projectRegion({
+    columns: SINGLE_COLUMN,
+    durabilityBySlot: unknownValue(),
+    firstIndex: INVENTORY_SLOT_COUNT,
+    id: 'armour',
+    selectedIndex: NO_SELECTION,
+    slots: armour,
+  })
+}
+
+const offhandRegion = (offhand: MirroredSlot | null): SlotRegion => {
+  if (typeof offhand === 'undefined') {
+    return {
+      id: 'offhand',
+      kind: 'unknown',
+      why: "mc-sim has no offhand slot; an empty square would claim the player's offhand is empty",
+    }
+  }
+  return projectRegion({
+    columns: SINGLE_COLUMN,
+    durabilityBySlot: unknownValue(),
+    firstIndex: INVENTORY_SLOT_COUNT,
+    id: 'offhand',
+    selectedIndex: NO_SELECTION,
+    slots: [dropNull(offhand)],
+  })
+}
+
+const carriedView = (carried: MirroredSlot): SlotView | undefined => {
+  if (typeof carried === 'undefined') {
+    return
+  }
+  return slotView(slotSnapshotOf(carried), ZERO_INDEX, NO_SELECTION)
+}
+
+const mergeTargetsOf = (indices: ReadonlySet<number> | undefined): MergeTargets => {
+  if (typeof indices === 'undefined') {
+    return { kind: 'unknown' }
+  }
+  return { indices, kind: 'known' }
 }
 
 /**
@@ -366,62 +466,40 @@ const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
  * exactly the cases a player would notice.
  */
 export const inventoryViewModel = (snapshot: InventorySnapshot): InventoryViewModel => {
-  const slots = snapshot.inventory.slots
-  const selectedHotbarIndex = clampIndex(snapshot.selectedHotbarIndex, HOTBAR_SLOT_COUNT - 1)
+  const { slots } = snapshot.inventory
+  const selectedHotbarIndex = clampIndex(
+    snapshot.selectedHotbarIndex,
+    HOTBAR_SLOT_COUNT - LAST_INDEX_OFFSET,
+  )
   const durability = snapshot.durabilityBySlot
 
   const regions: Array<SlotRegion> = [
-    projectRegion(
-      'hotbar',
-      HOTBAR_SLOT_COUNT,
-      fixedSlots(slots, 0, HOTBAR_SLOT_COUNT),
-      0,
-      durability,
-      selectedHotbarIndex,
-    ),
-    projectRegion(
-      'main',
-      INVENTORY_MAIN_COLUMNS,
-      fixedSlots(slots, HOTBAR_SLOT_COUNT, INVENTORY_MAIN_SLOT_COUNT),
-      HOTBAR_SLOT_COUNT,
-      durability,
-      NO_SELECTION,
-    ),
-    snapshot.armour === undefined
-      ? {
-          kind: 'unknown',
-          id: 'armour',
-          why: "mc-sim's Inventory is a flat slot array with no armour rack; drawing empty squares would claim the player is wearing nothing",
-        }
-      : projectRegion('armour', 1, snapshot.armour, INVENTORY_SLOT_COUNT, undefined, NO_SELECTION),
-    snapshot.offhand === undefined
-      ? {
-          kind: 'unknown',
-          id: 'offhand',
-          why: "mc-sim has no offhand slot; an empty square would claim the player's offhand is empty",
-        }
-      : projectRegion(
-          'offhand',
-          1,
-          [snapshot.offhand ?? undefined],
-          INVENTORY_SLOT_COUNT,
-          undefined,
-          NO_SELECTION,
-        ),
+    projectRegion({
+      columns: HOTBAR_SLOT_COUNT,
+      durabilityBySlot: durability,
+      firstIndex: ZERO_INDEX,
+      id: 'hotbar',
+      selectedIndex: selectedHotbarIndex,
+      slots: fixedSlots(slots, ZERO_INDEX, HOTBAR_SLOT_COUNT),
+    }),
+    projectRegion({
+      columns: INVENTORY_MAIN_COLUMNS,
+      durabilityBySlot: durability,
+      firstIndex: HOTBAR_SLOT_COUNT,
+      id: 'main',
+      selectedIndex: NO_SELECTION,
+      slots: fixedSlots(slots, HOTBAR_SLOT_COUNT, INVENTORY_MAIN_SLOT_COUNT),
+    }),
+    armourRegion(snapshot.armour),
+    offhandRegion(snapshot.offhand),
     craftingRegion(snapshot.crafting),
   ]
 
   return {
-    regions,
-    carried:
-      snapshot.carried === undefined
-        ? undefined
-        : slotView(slotSnapshotOf(snapshot.carried, undefined), 0, NO_SELECTION),
+    carried: carriedView(snapshot.carried),
     crafting: craftingOutcome(snapshot.crafting),
-    mergeTargets:
-      snapshot.mergeableSlotIndices === undefined
-        ? { kind: 'unknown' }
-        : { kind: 'known', indices: snapshot.mergeableSlotIndices },
+    mergeTargets: mergeTargetsOf(snapshot.mergeableSlotIndices),
+    regions,
   }
 }
 
@@ -437,12 +515,14 @@ export const regionOf = (model: InventoryViewModel, id: RegionId): SlotRegion | 
  * inventory is.
  */
 export const emptyInventorySnapshot: InventorySnapshot = {
-  inventory: { slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (): MirroredSlot => undefined) },
+  armour: unknownValue(),
+  carried: unknownValue(),
+  crafting: unknownValue(),
+  durabilityBySlot: unknownValue(),
+  inventory: {
+    slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (): MirroredSlot => unknownValue()),
+  },
+  mergeableSlotIndices: unknownValue(),
+  offhand: unknownValue(),
   selectedHotbarIndex: 0,
-  durabilityBySlot: undefined,
-  carried: undefined,
-  armour: undefined,
-  offhand: undefined,
-  crafting: undefined,
-  mergeableSlotIndices: undefined,
 }

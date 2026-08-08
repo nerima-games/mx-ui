@@ -85,21 +85,21 @@ export * from './stages/stage-ids'
 // --- Provisional ---------------------------------------------------------------
 // `domain/frame-contract.ts` is a temporary local stand-in for
 // @nerima-games/mc-kernel and is NOT re-exported. It carries a deletion date —
-// see its "WHY THIS FILE EXISTS AND WHEN IT DIES" header — and re-exporting it
-// would make `StageId`, `DeltaTimeSecs` and `StageRegistration` published API of
-// a package that does not own them, so deleting the stand-in would become a
-// breaking change for every consumer. Consumers take that vocabulary from
-// kernel; the types are structurally identical, so a consumer importing them
-// from kernel typechecks against the signatures above. Same call, and the same
-// reason, as mc-sim's and mc-render's barrels.
+// See its "WHY THIS FILE EXISTS AND WHEN IT DIES" header — and re-exporting it
+// Would make `StageId`, `DeltaTimeSecs` and `StageRegistration` published API of
+// A package that does not own them, so deleting the stand-in would become a
+// Breaking change for every consumer. Consumers take that vocabulary from
+// Kernel; the types are structurally identical, so a consumer importing them
+// From kernel typechecks against the signatures above. Same call, and the same
+// Reason, as mc-sim's and mc-render's barrels.
 //
 // `domain/inventory-view-model.ts` carries a mirror too — mc-sim's `Inventory`,
 // `Slot` and `ItemStack` — and IS re-exported, which is the opposite call. The
-// difference is what the mirror denotes. `frame-contract` mirrors kernel's
+// Difference is what the mirror denotes. `frame-contract` mirrors kernel's
 // CONTRACT, the thing mc-compose consumes, so republishing it would make a
-// promised deletion breaking for every consumer. The inventory mirror is the
+// Promised deletion breaking for every consumer. The inventory mirror is the
 // PARAMETER of one of this repository's own pure functions, exactly as
 // `VitalsSnapshot` has been since the first cut: mc-compose does not call
 // `inventoryViewModel`, so narrowing the parameter when mc-sim is published is
-// a MINOR bump under docs/versioning.md §5, not a breaking change. Pinned by
+// A MINOR bump under docs/versioning.md §5, not a breaking change. Pinned by
 // `test/inventory-mirror.test.ts`.

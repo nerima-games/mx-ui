@@ -72,6 +72,9 @@ export const MAX_VISIBLE_CAPTIONS = 4
 /** How long a caption stays up, in seconds. */
 export const CAPTION_LIFETIME_SECS = 3
 
+const ZERO = 0
+const ONE = 1
+
 export type CaptionQueue = {
   /** Newest first. */
   readonly visible: ReadonlyArray<CaptionEvent>
@@ -95,7 +98,7 @@ export const receiveCaption = (
   }
 
   const withoutDuplicate = queue.visible.filter((existing) => existing.cueId !== event.cueId)
-  return { visible: [event, ...withoutDuplicate].slice(0, MAX_VISIBLE_CAPTIONS) }
+  return { visible: [event, ...withoutDuplicate].slice(ZERO, MAX_VISIBLE_CAPTIONS) }
 }
 
 /**
@@ -133,7 +136,10 @@ export const applyCaptionSettings = (
   if (settings.captionsEnabled) {
     return queue
   }
-  return queue.visible.length === 0 ? queue : emptyCaptionQueue
+  if (queue.visible.length === ZERO) {
+    return queue
+  }
+  return emptyCaptionQueue
 }
 
 /**
@@ -149,7 +155,10 @@ export const expireCaptions = (
   lifetimeSecs: number = CAPTION_LIFETIME_SECS,
 ): CaptionQueue => {
   const visible = queue.visible.filter((event) => nowSecs - event.atSecs < lifetimeSecs)
-  return visible.length === queue.visible.length ? queue : { visible }
+  if (visible.length === queue.visible.length) {
+    return queue
+  }
+  return { visible }
 }
 
 export type CaptionLineView = {
@@ -160,11 +169,25 @@ export type CaptionLineView = {
 }
 
 const ARROWS = {
-  left: '←',
-  right: '→',
   ahead: '↑',
   behind: '↓',
+  left: '←',
+  right: '→',
 } as const
+
+const captionArrow = (direction: CaptionEvent['direction']): CaptionLineView['arrow'] => {
+  if (typeof direction === 'undefined') {
+    return
+  }
+  return ARROWS[direction]
+}
+
+const captionFreshness = (nowSecs: number, atSecs: number, lifetimeSecs: number): number => {
+  if (lifetimeSecs <= ZERO) {
+    return ZERO
+  }
+  return Math.min(Math.max(ONE - (nowSecs - atSecs) / lifetimeSecs, ZERO), ONE)
+}
 
 /**
  * Project the queue for rendering.
@@ -179,10 +202,7 @@ export const captionLines = (
   lifetimeSecs: number = CAPTION_LIFETIME_SECS,
 ): ReadonlyArray<CaptionLineView> =>
   queue.visible.map((event) => ({
+    arrow: captionArrow(event.direction),
+    freshness: captionFreshness(nowSecs, event.atSecs, lifetimeSecs),
     text: event.text,
-    arrow: event.direction === undefined ? undefined : ARROWS[event.direction],
-    freshness:
-      lifetimeSecs <= 0
-        ? 0
-        : Math.min(Math.max(1 - (nowSecs - event.atSecs) / lifetimeSecs, 0), 1),
   }))

@@ -84,10 +84,10 @@
  * The state is already carried by a glyph and by three words; motion would add
  * no information and one more thing to remember to disable.
  */
-import type { SaveMessage } from '../domain/save-status'
+import { type AttributeCell, attributeCell, writeAttribute, writeHidden } from './dom-write'
 import type { DomElement, DomElementFactory } from './dom-surface'
-import { attributeCell, writeAttribute, writeHidden, type AttributeCell } from './dom-write'
-import { declarePalette, PALETTE_VAR } from './palette-css'
+import { PALETTE_VAR, declarePalette } from './palette-css'
+import type { SaveMessage } from '../domain/save-status'
 
 /** Render order, top to bottom. Also the order the tests sweep. */
 export const SAVE_MESSAGES: ReadonlyArray<SaveMessage> = ['saving', 'saved', 'failed']
@@ -97,9 +97,9 @@ export const SAVE_MESSAGES: ReadonlyArray<SaveMessage> = ['saving', 'saved', 'fa
  * characters rather than as an attribute (DN-UI-13f).
  */
 export const SAVE_STATUS_GLYPH: Readonly<Record<SaveMessage, string>> = {
-  saving: '⟳',
-  saved: '✔',
   failed: '✖',
+  saved: '✔',
+  saving: '⟳',
 }
 
 /**
@@ -111,9 +111,9 @@ export const SAVE_STATUS_GLYPH: Readonly<Record<SaveMessage, string>> = {
  * `domain/caption.ts`: 「already localised by whoever owns the strings」.)
  */
 export const SAVE_STATUS_LABEL: Readonly<Record<SaveMessage, string>> = {
-  saving: 'Saving world…',
-  saved: 'World saved',
   failed: 'Save failed',
+  saved: 'World saved',
+  saving: 'Saving world…',
 }
 
 /**
@@ -125,9 +125,9 @@ export const SAVE_STATUS_LABEL: Readonly<Record<SaveMessage, string>> = {
  * the WORDS and not of a dot beside them.
  */
 const SAVE_STATUS_TOKEN: Readonly<Record<SaveMessage, string>> = {
-  saving: PALETTE_VAR.statusBusy,
-  saved: PALETTE_VAR.statusOk,
   failed: PALETTE_VAR.statusAlert,
+  saved: PALETTE_VAR.statusOk,
+  saving: PALETTE_VAR.statusBusy,
 }
 
 type SaveMessageElement = {
@@ -149,35 +149,58 @@ export type SaveIndicator = {
   readonly render: (message: SaveMessage | undefined) => void
 }
 
-const createMessageElement = (
+const buildMessageRoot = (
   factory: DomElementFactory,
   parent: DomElement,
   message: SaveMessage,
-): SaveMessageElement => {
+): DomElement => {
   const root = factory.createElement('div')
   root.setAttribute('data-mx-ui', 'save-message')
   root.setAttribute('data-save-message', message)
   root.setAttribute('hidden', '')
   // THE colour, written once, on the element that owns this message. Nothing
-  // below is on the frame path.
+  // Below is on the frame path.
   root.style.setProperty('color', SAVE_STATUS_TOKEN[message])
   parent.appendChild(root)
+  return root
+}
 
+const appendMessageGlyph = (
+  factory: DomElementFactory,
+  root: DomElement,
+  message: SaveMessage,
+): void => {
   const glyph = factory.createElement('span')
   glyph.setAttribute('data-mx-ui', 'save-glyph')
   // Redundant with the words, so it is for the eyes only.
   glyph.setAttribute('aria-hidden', 'true')
   glyph.textContent = SAVE_STATUS_GLYPH[message]
   root.appendChild(glyph)
+}
 
+const appendMessageLabel = (
+  factory: DomElementFactory,
+  root: DomElement,
+  message: SaveMessage,
+): void => {
   const label = factory.createElement('span')
   label.setAttribute('data-mx-ui', 'save-label')
   label.textContent = SAVE_STATUS_LABEL[message]
   root.appendChild(label)
+}
 
-  const element: SaveMessageElement = { message, hidden: attributeCell(root, 'hidden') }
+const createMessageElement = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  message: SaveMessage,
+): SaveMessageElement => {
+  const root = buildMessageRoot(factory, parent, message)
+  appendMessageGlyph(factory, root, message)
+  appendMessageLabel(factory, root, message)
+
+  const element: SaveMessageElement = { hidden: attributeCell(root, 'hidden'), message }
   // The attribute was set directly above so the first frame does not flash all
-  // three lines at once; tell the cell what the element already says.
+  // Three lines at once; tell the cell what the element already says.
   element.hidden.previous = ''
   return element
 }
@@ -190,28 +213,33 @@ const createMessageElement = (
  * save indicator outlives any one screen, so it must not depend on inheriting
  * tokens from a HUD that may not be mounted.
  */
-export const createSaveIndicator = (
-  factory: DomElementFactory,
-  parent: DomElement,
-): SaveIndicator => {
+const buildIndicatorRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('div')
   root.setAttribute('data-mx-ui', 'save-indicator')
   declarePalette(root)
   // The scrim, which is the surface G1 is stated against — `domain/palette.ts`:
   // 「content that leaves it leaves the guarantee with it」. All three status
-  // tokens are measured over this backdrop composited onto the worst world pixel
-  // there is, and `STATUS_ALERT` clears the 4.5:1 text floor by 0.01.
+  // Tokens are measured over this backdrop composited onto the worst world pixel
+  // There is, and `STATUS_ALERT` clears the 4.5:1 text floor by 0.01.
   root.style.setProperty('background-color', PALETTE_VAR.scrim)
   // A live region, as the captions are. `polite` rather than `assertive`:
-  // assertive interrupts, and a save status is never worth cutting off a sentence
-  // the player is already listening to. The failure state does not need the
-  // interruption either, because it does not expire — a polite announcement that
-  // is queued behind something else still finds the message on screen when the
-  // player gets to it (`domain/save-status.ts`).
+  // Assertive interrupts, and a save status is never worth cutting off a sentence
+  // The player is already listening to. The failure state does not need the
+  // Interruption either, because it does not expire — a polite announcement that
+  // Is queued behind something else still finds the message on screen when the
+  // Player gets to it (`domain/save-status.ts`).
   root.setAttribute('role', 'status')
   root.setAttribute('aria-live', 'polite')
   root.setAttribute('hidden', '')
   parent.appendChild(root)
+  return root
+}
+
+export const createSaveIndicator = (
+  factory: DomElementFactory,
+  parent: DomElement,
+): SaveIndicator => {
+  const root = buildIndicatorRoot(factory, parent)
 
   const rootHidden = attributeCell(root, 'hidden')
   rootHidden.previous = ''
@@ -220,13 +248,13 @@ export const createSaveIndicator = (
   const messages = SAVE_MESSAGES.map((message) => createMessageElement(factory, root, message))
 
   return {
-    root,
     render: (message: SaveMessage | undefined): void => {
-      writeHidden(rootHidden, message === undefined)
+      writeHidden(rootHidden, typeof message === 'undefined')
       writeAttribute(stateFlag, message)
       for (const element of messages) {
         writeHidden(element.hidden, element.message !== message)
       }
     },
+    root,
   }
 }

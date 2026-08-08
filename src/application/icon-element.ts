@@ -35,17 +35,17 @@
  * character to switch to, and 「an icon is full at 2 points, half at exactly 1」
  * is not expressible by recolouring. A 50% clip is exactly expressible.
  */
-import type { IconState } from '../domain/hud-view-model'
-import type { DomElement, DomElementFactory } from './dom-surface'
 import {
+  type AttributeCell,
+  type PercentCell,
   attributeCell,
   percentCell,
   writeAttribute,
   writeHidden,
   writePercent,
-  type AttributeCell,
-  type PercentCell,
 } from './dom-write'
+import type { DomElement, DomElementFactory } from './dom-surface'
+import type { IconState } from '../domain/hud-view-model'
 import { PALETTE_VAR } from './palette-css'
 
 /** Which row an icon belongs to. Selects the glyph pair and the fill token. */
@@ -91,9 +91,9 @@ export const ICON_ROW_LABEL: Readonly<Record<IconKind, string>> = {
 }
 
 const FILL_PERCENT: Readonly<Record<IconState, number>> = {
+  empty: 0,
   full: 100,
   half: 50,
-  empty: 0,
 }
 
 export type IconElement = {
@@ -101,27 +101,46 @@ export type IconElement = {
   readonly stateFlag: AttributeCell
   readonly hiddenFlag: AttributeCell
   readonly fillWidth: PercentCell
+  // Not optional: `exactOptionalPropertyTypes` forbids assigning `undefined`
+  // To an optional property, and `writeIconState` needs to CLEAR this field,
+  // Not just ever leave it unset.
   previous: IconState | undefined
 }
 
-export const createIconElement = (factory: DomElementFactory, kind: IconKind): IconElement => {
-  const glyphs = GLYPHS[kind]
+type IconElementCells = {
+  readonly root: DomElement
+  readonly stateFlag: AttributeCell
+  readonly hiddenFlag: AttributeCell
+  readonly fillWidth: PercentCell
+}
 
+/** `previous` starts absent by omission — see `writeIconState` below. */
+const buildIconElement = (cells: IconElementCells, previous?: IconState): IconElement => ({
+  ...cells,
+  previous,
+})
+
+const buildRootElement = (factory: DomElementFactory, kind: IconKind): DomElement => {
   const root = factory.createElement('span')
   root.setAttribute('data-mx-ui', 'icon')
   root.setAttribute('data-icon', kind)
   root.style.setProperty('position', 'relative')
   root.style.setProperty('display', 'inline-block')
+  return root
+}
 
+const appendHollowGlyph = (factory: DomElementFactory, root: DomElement, hollowGlyph: string): void => {
   const hollow = factory.createElement('span')
   hollow.setAttribute('data-mx-ui', 'icon-hollow')
-  hollow.textContent = glyphs.hollow
+  hollow.textContent = hollowGlyph
   hollow.style.setProperty('color', PALETTE_VAR.iconEmpty)
   root.appendChild(hollow)
+}
 
-  // The clip. `overflow: hidden` on a positioned box whose width is the state,
-  // with the solid glyph at full size inside it — so a half icon is half a
-  // glyph rather than a differently coloured one.
+// The clip. `overflow: hidden` on a positioned box whose width is the state,
+// With the solid glyph at full size inside it — so a half icon is half a
+// Glyph rather than a differently coloured one.
+const buildClipElement = (factory: DomElementFactory, kind: IconKind): DomElement => {
   const clip = factory.createElement('span')
   clip.setAttribute('data-mx-ui', 'icon-clip')
   clip.style.setProperty('position', 'absolute')
@@ -130,20 +149,40 @@ export const createIconElement = (factory: DomElementFactory, kind: IconKind): I
   clip.style.setProperty('overflow', 'hidden')
   clip.style.setProperty('white-space', 'nowrap')
   clip.style.setProperty('color', FILL_TOKEN[kind])
-  root.appendChild(clip)
+  return clip
+}
 
+const appendSolidGlyph = (factory: DomElementFactory, clip: DomElement, solidGlyph: string): void => {
   const solid = factory.createElement('span')
   solid.setAttribute('data-mx-ui', 'icon-solid')
-  solid.textContent = glyphs.solid
+  solid.textContent = solidGlyph
   clip.appendChild(solid)
+}
 
-  return {
+/**
+ * Set (or clear) the state attribute and the tracked previous state together,
+ * so the two can never drift apart. Omitting `state` — rather than passing an
+ * explicit "no state" literal — is what `retireIconElement` uses to clear both.
+ */
+const writeIconState = (icon: IconElement, state?: IconState): void => {
+  icon.previous = state
+  writeAttribute(icon.stateFlag, state)
+}
+
+export const createIconElement = (factory: DomElementFactory, kind: IconKind): IconElement => {
+  const glyphs = GLYPHS[kind]
+  const root = buildRootElement(factory, kind)
+  appendHollowGlyph(factory, root, glyphs.hollow)
+  const clip = buildClipElement(factory, kind)
+  root.appendChild(clip)
+  appendSolidGlyph(factory, clip, glyphs.solid)
+
+  return buildIconElement({
+    fillWidth: percentCell(clip, 'width'),
+    hiddenFlag: attributeCell(root, 'hidden'),
     root,
     stateFlag: attributeCell(root, 'data-icon-state'),
-    hiddenFlag: attributeCell(root, 'hidden'),
-    fillWidth: percentCell(clip, 'width'),
-    previous: undefined,
-  }
+  })
 }
 
 /**
@@ -155,8 +194,7 @@ export const createIconElement = (factory: DomElementFactory, kind: IconKind): I
  */
 export const retireIconElement = (icon: IconElement): void => {
   writeHidden(icon.hiddenFlag, true)
-  writeAttribute(icon.stateFlag, undefined)
-  icon.previous = undefined
+  writeIconState(icon)
 }
 
 /**
@@ -172,7 +210,6 @@ export const updateIconElement = (icon: IconElement, state: IconState): void => 
   if (icon.previous === state) {
     return
   }
-  icon.previous = state
-  writeAttribute(icon.stateFlag, state)
+  writeIconState(icon, state)
   writePercent(icon.fillWidth, FILL_PERCENT[state])
 }

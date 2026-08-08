@@ -49,17 +49,18 @@
  * and the easier case, and it is the same call `application/inventory-view.ts`
  * makes for a modal.
  */
-import type { LoadingScreenView } from '../domain/loading-screen'
-import type { DomElement, DomElementFactory } from './dom-surface'
 import {
+  type AttributeCell,
+  type TextCell,
   attributeCell,
   textCell,
   writeAttribute,
   writeHidden,
   writeText,
-  type AttributeCell,
 } from './dom-write'
-import { declarePalette, PALETTE_VAR } from './palette-css'
+import type { DomElement, DomElementFactory } from './dom-surface'
+import { PALETTE_VAR, declarePalette } from './palette-css'
+import type { LoadingScreenView } from '../domain/loading-screen'
 
 /** Render order, and the order the tests sweep. */
 export const LOADING_STATES: ReadonlyArray<LoadingScreenView['kind']> = ['preparing', 'failed']
@@ -72,13 +73,13 @@ export const LOADING_STATES: ReadonlyArray<LoadingScreenView['kind']> = ['prepar
  * `:97`.
  */
 export const LOADING_LABEL: Readonly<Record<LoadingScreenView['kind'], string>> = {
-  preparing: 'Preparing your world',
   failed: 'We could not build this world',
+  preparing: 'Preparing your world',
 }
 
 export const LOADING_KICKER: Readonly<Record<LoadingScreenView['kind'], string>> = {
-  preparing: 'WORLD GENERATION',
   failed: 'WORLD INTERRUPTED',
+  preparing: 'WORLD GENERATION',
 }
 
 /**
@@ -88,8 +89,8 @@ export const LOADING_KICKER: Readonly<Record<LoadingScreenView['kind'], string>>
  * advice whichever repository gives it.
  */
 export const LOADING_DETAIL: Readonly<Record<LoadingScreenView['kind'], string>> = {
-  preparing: 'Shaping terrain, placing blocks, and lighting the horizon.',
   failed: 'Check your connection or refresh the page to try again.',
+  preparing: 'Shaping terrain, placing blocks, and lighting the horizon.',
 }
 
 /**
@@ -101,8 +102,8 @@ export const LOADING_DETAIL: Readonly<Record<LoadingScreenView['kind'], string>>
  * indicator does, by the words themselves.
  */
 const LOADING_TOKEN: Readonly<Record<LoadingScreenView['kind'], string>> = {
-  preparing: PALETTE_VAR.statusBusy,
   failed: PALETTE_VAR.statusAlert,
+  preparing: PALETTE_VAR.statusBusy,
 }
 
 type LoadingStateElement = {
@@ -124,47 +125,147 @@ export type LoadingView = {
   readonly render: (view: LoadingScreenView | undefined) => void
 }
 
-const createStateElement = (
+const buildStateRoot = (
   factory: DomElementFactory,
   parent: DomElement,
   kind: LoadingScreenView['kind'],
-): LoadingStateElement => {
+): DomElement => {
   const root = factory.createElement('section')
   root.setAttribute('data-mx-ui', 'loading-state')
   root.setAttribute('data-loading-state', kind)
   root.setAttribute('hidden', '')
   // A named group, because the three lines below are one message. An unnamed
-  // container of three paragraphs is three announcements with no subject —
-  // the failure `ICON_ROW_LABEL` records for the vitals rows, arriving as prose
-  // instead of as punctuation.
+  // Container of three paragraphs is three announcements with no subject —
+  // The failure `ICON_ROW_LABEL` records for the vitals rows, arriving as prose
+  // Instead of as punctuation.
   root.setAttribute('role', 'group')
   root.setAttribute('aria-label', LOADING_LABEL[kind])
   parent.appendChild(root)
+  return root
+}
 
+const appendStateKicker = (
+  factory: DomElementFactory,
+  root: DomElement,
+  kind: LoadingScreenView['kind'],
+): void => {
   const kicker = factory.createElement('p')
   kicker.setAttribute('data-mx-ui', 'loading-kicker')
   // THE colour, written once, on the element that owns this state.
   kicker.style.setProperty('color', LOADING_TOKEN[kind])
   kicker.textContent = LOADING_KICKER[kind]
   root.appendChild(kicker)
+}
 
+const appendStateTitle = (
+  factory: DomElementFactory,
+  root: DomElement,
+  kind: LoadingScreenView['kind'],
+): void => {
   const title = factory.createElement('h1')
   title.setAttribute('data-mx-ui', 'loading-title')
   title.style.setProperty('color', PALETTE_VAR.ink)
   title.textContent = LOADING_LABEL[kind]
   root.appendChild(title)
+}
 
+const appendStateDetail = (
+  factory: DomElementFactory,
+  root: DomElement,
+  kind: LoadingScreenView['kind'],
+): void => {
   const detail = factory.createElement('p')
   detail.setAttribute('data-mx-ui', 'loading-detail')
   detail.style.setProperty('color', PALETTE_VAR.inkMuted)
   detail.textContent = LOADING_DETAIL[kind]
   root.appendChild(detail)
+}
 
-  const element: LoadingStateElement = { kind, root, hidden: attributeCell(root, 'hidden') }
+const createStateElement = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  kind: LoadingScreenView['kind'],
+): LoadingStateElement => {
+  const root = buildStateRoot(factory, parent, kind)
+  appendStateKicker(factory, root, kind)
+  appendStateTitle(factory, root, kind)
+  appendStateDetail(factory, root, kind)
+
+  const element: LoadingStateElement = { hidden: attributeCell(root, 'hidden'), kind, root }
   // Set directly above so the first frame does not flash both states at once;
-  // tell the cell what the element already says.
+  // Tell the cell what the element already says.
   element.hidden.previous = ''
   return element
+}
+
+const buildLoadingRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
+  const root = factory.createElement('div')
+  root.setAttribute('data-mx-ui', 'loading')
+  declarePalette(root)
+  root.style.setProperty('background-color', PALETTE_VAR.surface)
+  root.style.setProperty('color', PALETTE_VAR.ink)
+  // A live region, as the captions and the save indicator are. `polite` rather
+  // Than `assertive` for the reason `application/save-indicator.ts` gives about
+  // Its own failure: neither of these states expires, so a queued announcement
+  // Still finds the message on screen when the player reaches it, and nothing
+  // Here is worth cutting off a sentence they are already listening to.
+  root.setAttribute('role', 'status')
+  root.setAttribute('aria-live', 'polite')
+  root.setAttribute('hidden', '')
+  parent.appendChild(root)
+  return root
+}
+
+/**
+ * The one line on either state that is not written in advance.
+ *
+ * It is built INSIDE the failure rather than beside it, so it is hidden by the
+ * same toggle. A reason element that outlives the state it belongs to is a
+ * sentence about a failure sitting under a screen that is describing a
+ * different one.
+ *
+ * INK rather than INK_MUTED: this is the only sentence carrying information
+ * the player did not already have, so demoting it would make the new thing the
+ * faintest thing on the screen.
+ */
+const buildFailureReason = (
+  factory: DomElementFactory,
+  states: ReadonlyArray<LoadingStateElement>,
+): TextCell => {
+  const reason = factory.createElement('p')
+  reason.setAttribute('data-mx-ui', 'loading-reason')
+  reason.style.setProperty('color', PALETTE_VAR.ink)
+  for (const state of states) {
+    if (state.kind === 'failed') {
+      state.root.appendChild(reason)
+    }
+  }
+  return textCell(reason)
+}
+
+const busyAttributeValue = (view: LoadingScreenView | undefined): string | undefined => {
+  if (typeof view === 'undefined') {
+    return
+  }
+  return String(view.kind === 'preparing')
+}
+
+const HELD_ATTRIBUTE_VALUE = ''
+
+const heldAttributeValue = (view: LoadingScreenView | undefined): string | undefined => {
+  if (view?.kind === 'preparing' && view.held) {
+    return HELD_ATTRIBUTE_VALUE
+  }
+  return
+}
+
+const EMPTY_REASON_TEXT = ''
+
+const reasonTextValue = (view: LoadingScreenView | undefined): string => {
+  if (view?.kind === 'failed') {
+    return view.reason
+  }
+  return EMPTY_REASON_TEXT
 }
 
 /**
@@ -176,29 +277,16 @@ export const createLoadingView = (
   factory: DomElementFactory,
   parent: DomElement,
 ): LoadingView => {
-  const root = factory.createElement('div')
-  root.setAttribute('data-mx-ui', 'loading')
-  declarePalette(root)
-  root.style.setProperty('background-color', PALETTE_VAR.surface)
-  root.style.setProperty('color', PALETTE_VAR.ink)
-  // A live region, as the captions and the save indicator are. `polite` rather
-  // than `assertive` for the reason `application/save-indicator.ts` gives about
-  // its own failure: neither of these states expires, so a queued announcement
-  // still finds the message on screen when the player reaches it, and nothing
-  // here is worth cutting off a sentence they are already listening to.
-  root.setAttribute('role', 'status')
-  root.setAttribute('aria-live', 'polite')
-  root.setAttribute('hidden', '')
-  parent.appendChild(root)
+  const root = buildLoadingRoot(factory, parent)
 
   const rootHidden = attributeCell(root, 'hidden')
   rootHidden.previous = ''
   const stateFlag = attributeCell(root, 'data-loading')
   // `aria-busy` distinguishes 「still working」 from 「stopped, and it went wrong」
-  // for a screen reader that cannot see that the words changed colour. It is an
-  // attribute rather than a role swap: the reference switches the overlay to
+  // For a screen reader that cannot see that the words changed colour. It is an
+  // Attribute rather than a role swap: the reference switches the overlay to
   // `role="alertdialog"` on failure, which is a live region turning into a
-  // dialog under an assistive technology that has already announced it.
+  // Dialog under an assistive technology that has already announced it.
   const busyFlag = attributeCell(root, 'aria-busy')
   /**
    * The floor, visible in the document.
@@ -212,40 +300,19 @@ export const createLoadingView = (
   const heldFlag = attributeCell(root, 'data-loading-held')
 
   const states = LOADING_STATES.map((kind) => createStateElement(factory, root, kind))
-
-  /**
-   * The one line on either state that is not written in advance.
-   *
-   * It is built INSIDE the failure rather than beside it, so it is hidden by the
-   * same toggle. A reason element that outlives the state it belongs to is a
-   * sentence about a failure sitting under a screen that is describing a
-   * different one.
-   *
-   * INK rather than INK_MUTED: this is the only sentence carrying information
-   * the player did not already have, so demoting it would make the new thing the
-   * faintest thing on the screen.
-   */
-  const reason = factory.createElement('p')
-  reason.setAttribute('data-mx-ui', 'loading-reason')
-  reason.style.setProperty('color', PALETTE_VAR.ink)
-  for (const state of states) {
-    if (state.kind === 'failed') {
-      state.root.appendChild(reason)
-    }
-  }
-  const reasonText = textCell(reason)
+  const reasonText = buildFailureReason(factory, states)
 
   return {
-    root,
     render: (view: LoadingScreenView | undefined): void => {
-      writeHidden(rootHidden, view === undefined)
+      writeHidden(rootHidden, typeof view === 'undefined')
       writeAttribute(stateFlag, view?.kind)
-      writeAttribute(busyFlag, view === undefined ? undefined : String(view.kind === 'preparing'))
-      writeAttribute(heldFlag, view?.kind === 'preparing' && view.held ? '' : undefined)
+      writeAttribute(busyFlag, busyAttributeValue(view))
+      writeAttribute(heldFlag, heldAttributeValue(view))
       for (const state of states) {
         writeHidden(state.hidden, state.kind !== view?.kind)
       }
-      writeText(reasonText, view?.kind === 'failed' ? view.reason : '')
+      writeText(reasonText, reasonTextValue(view))
     },
+    root,
   }
 }

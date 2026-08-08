@@ -44,9 +44,11 @@
  * expose button semantics, but activation still needs a key or pointer event and
  * that half has not moved into mx-ui.
  */
-import type { SlotView } from '../domain/hud-view-model'
-import type { DomElement, DomElementFactory } from './dom-surface'
 import {
+  type AttributeCell,
+  type PercentCell,
+  type StyleCell,
+  type TextCell,
   attributeCell,
   percentCell,
   styleCell,
@@ -56,12 +58,10 @@ import {
   writePercent,
   writeStyle,
   writeText,
-  type AttributeCell,
-  type PercentCell,
-  type StyleCell,
-  type TextCell,
 } from './dom-write'
+import type { DomElement, DomElementFactory } from './dom-surface'
 import { PALETTE_VAR } from './palette-css'
+import type { SlotView } from '../domain/hud-view-model'
 
 /**
  * Below this, a durability bar turns from `DURABILITY_HIGH` to `DURABILITY_LOW`.
@@ -202,7 +202,7 @@ export type SlotButtonView = {
  * so the token VALUES live on the mounted root (see `application/palette-css.ts`)
  * and appear nowhere in this subtree.
  */
-export const createSlotElement = (factory: DomElementFactory, index: number): SlotElement => {
+const createSlotRoot = (factory: DomElementFactory, index: number): DomElement => {
   const root = factory.createElement('div')
   root.setAttribute('data-mx-ui', 'slot')
   root.setAttribute('data-slot-index', String(index))
@@ -210,21 +210,39 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
   root.style.setProperty('background-color', PALETTE_VAR.slotFill)
   root.style.setProperty('border-style', 'solid')
   // The floor, not a size. See `SLOT_TARGET_MIN_SIZE`: `min-*` leaves a host
-  // free to make slots bigger, and a slot whose content box is zero tall takes
-  // its focus ring and its `weight` distinguisher down with it.
+  // Free to make slots bigger, and a slot whose content box is zero tall takes
+  // Its focus ring and its `weight` distinguisher down with it.
   root.style.setProperty('min-width', SLOT_TARGET_MIN_SIZE)
   root.style.setProperty('min-height', SLOT_TARGET_MIN_SIZE)
+  return root
+}
 
+const createSlotItem = (factory: DomElementFactory, root: DomElement): TextCell => {
   const item = factory.createElement('span')
   item.setAttribute('data-mx-ui', 'slot-item')
   item.style.setProperty('color', PALETTE_VAR.ink)
   root.appendChild(item)
+  return textCell(item)
+}
 
+const createSlotCount = (factory: DomElementFactory, root: DomElement): TextCell => {
   const count = factory.createElement('span')
   count.setAttribute('data-mx-ui', 'slot-count')
   count.style.setProperty('color', PALETTE_VAR.ink)
   root.appendChild(count)
+  return textCell(count)
+}
 
+type SlotDurabilityElements = {
+  readonly hidden: AttributeCell
+  readonly width: PercentCell
+  readonly color: StyleCell
+}
+
+const createSlotDurability = (
+  factory: DomElementFactory,
+  root: DomElement,
+): SlotDurabilityElements => {
   const durabilityTrack = factory.createElement('div')
   durabilityTrack.setAttribute('data-mx-ui', 'slot-durability')
   durabilityTrack.style.setProperty('background-color', PALETTE_VAR.meterTrack)
@@ -234,61 +252,83 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
   durabilityFill.setAttribute('data-mx-ui', 'slot-durability-fill')
   durabilityTrack.appendChild(durabilityFill)
 
-  // The focus ring, as its OWN element rather than as a border on the slot.
-  //
-  // That is not a layout convenience, it is the palette's own sentence made
-  // structural: 「"Which slot is the game using" and "which control is the
-  // keyboard on" are different questions and a player who is navigating by
-  // keyboard is asking both at once」. The game's answer is the slot's border
-  // (`SLOT_SELECTED` at 3px); the keyboard's answer is this overlay. Two
-  // questions, two elements, and both can be visible on two different slots at
-  // the same moment.
-  //
-  // It also keeps both colours off the frame path entirely: they are written here
-  // and never again, and focusing is one `hidden` toggle.
-  const focusRing = factory.createElement('div')
-  focusRing.setAttribute('data-mx-ui', 'slot-focus-ring')
-  focusRing.setAttribute('hidden', '')
+  return {
+    color: styleCell(durabilityFill, 'background-color'),
+    hidden: attributeCell(durabilityTrack, 'hidden'),
+    width: percentCell(durabilityFill, 'width'),
+  }
+}
+
+// The focus ring, as its OWN element rather than as a border on the slot.
+//
+// That is not a layout convenience, it is the palette's own sentence made
+// Structural: 「"Which slot is the game using" and "which control is the
+// Keyboard on" are different questions and a player who is navigating by
+// Keyboard is asking both at once」. The game's answer is the slot's border
+// (`SLOT_SELECTED` at 3px); the keyboard's answer is this overlay. Two
+// Questions, two elements, and both can be visible on two different slots at
+// The same moment.
+//
+// It also keeps both colours off the frame path entirely: they are written here
+// And never again, and focusing is one `hidden` toggle.
+const styleFocusRingGeometry = (focusRing: DomElement): void => {
   focusRing.style.setProperty('position', 'absolute')
   focusRing.style.setProperty('left', '0')
   focusRing.style.setProperty('top', '0')
   focusRing.style.setProperty('right', '0')
   focusRing.style.setProperty('bottom', '0')
-  focusRing.style.setProperty(
-    'outline',
-    `${FOCUS_RING_WIDTH} solid ${PALETTE_VAR.focusRing}`,
-  )
+}
+
+const styleFocusRingAppearance = (focusRing: DomElement): void => {
+  focusRing.style.setProperty('outline', `${FOCUS_RING_WIDTH} solid ${PALETTE_VAR.focusRing}`)
   focusRing.style.setProperty(
     'box-shadow',
     `0 0 0 ${FOCUS_RING_SHADOW_WIDTH} ${PALETTE_VAR.focusRingShadow}`,
   )
+}
+
+const createSlotFocusRing = (factory: DomElementFactory, root: DomElement): AttributeCell => {
+  const focusRing = factory.createElement('div')
+  focusRing.setAttribute('data-mx-ui', 'slot-focus-ring')
+  focusRing.setAttribute('hidden', '')
+  styleFocusRingGeometry(focusRing)
+  styleFocusRingAppearance(focusRing)
   root.appendChild(focusRing)
+  return attributeCell(focusRing, 'hidden')
+}
+
+export const createSlotElement = (factory: DomElementFactory, index: number): SlotElement => {
+  const root = createSlotRoot(factory, index)
+  const item = createSlotItem(factory, root)
+  const count = createSlotCount(factory, root)
+  const durability = createSlotDurability(factory, root)
+  const focusRingHidden = createSlotFocusRing(factory, root)
 
   const slot: SlotElement = {
-    root,
-    hiddenFlag: attributeCell(root, 'hidden'),
-    itemText: textCell(item),
-    countText: textCell(count),
-    emptyFlag: attributeCell(root, 'data-empty'),
-    mergeableFlag: attributeCell(root, 'data-mergeable'),
-    selectedFlag: attributeCell(root, 'data-selected'),
+    ariaDisabled: attributeCell(root, 'aria-disabled'),
+    ariaLabel: attributeCell(root, 'aria-label'),
+    ariaLive: attributeCell(root, 'aria-live'),
     borderColor: styleCell(root, 'border-color'),
     borderWeight: styleCell(root, 'border-width'),
-    durabilityHidden: attributeCell(durabilityTrack, 'hidden'),
-    durabilityWidth: percentCell(durabilityFill, 'width'),
-    durabilityColor: styleCell(durabilityFill, 'background-color'),
-    tabStop: attributeCell(root, 'tabindex'),
-    focusRingHidden: attributeCell(focusRing, 'hidden'),
+    countText: count,
+    durabilityColor: durability.color,
+    durabilityHidden: durability.hidden,
+    durabilityWidth: durability.width,
+    emptyFlag: attributeCell(root, 'data-empty'),
+    focusRingHidden,
+    hiddenFlag: attributeCell(root, 'hidden'),
+    itemText: item,
+    mergeableFlag: attributeCell(root, 'data-mergeable'),
     role: attributeCell(root, 'role'),
-    ariaLabel: attributeCell(root, 'aria-label'),
-    ariaDisabled: attributeCell(root, 'aria-disabled'),
-    ariaLive: attributeCell(root, 'aria-live'),
+    root,
+    selectedFlag: attributeCell(root, 'data-selected'),
+    tabStop: attributeCell(root, 'tabindex'),
   }
   // The ring was hidden directly above; tell its cell so, or the first call
-  // issues a redundant write from the construction side, where the 「unchanged
-  // re-render mutates nothing」 test cannot see it. `tabStop` is deliberately NOT
-  // seeded: a slot has no `tabindex` until somebody makes it part of a focus
-  // group, so an inventory slot stays exactly as unfocusable as it was.
+  // Issues a redundant write from the construction side, where the 「unchanged
+  // Re-render mutates nothing」 test cannot see it. `tabStop` is deliberately NOT
+  // Seeded: a slot has no `tabindex` until somebody makes it part of a focus
+  // Group, so an inventory slot stays exactly as unfocusable as it was.
   slot.focusRingHidden.previous = ''
 
   return slot
@@ -329,7 +369,11 @@ export const setSlotHidden = (slot: SlotElement, hidden: boolean): void => {
  * inside the group without mx-ui rewriting the attribute first.
  */
 export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
-  writeAttribute(slot.tabStop, tabbable ? '0' : '-1')
+  if (tabbable) {
+    writeAttribute(slot.tabStop, '0')
+  } else {
+    writeAttribute(slot.tabStop, '-1')
+  }
 }
 
 /**
@@ -350,21 +394,66 @@ export const setSlotKeyboardFocus = (slot: SlotElement, focused: boolean): void 
   writeHidden(slot.focusRingHidden, !focused)
 }
 
+const clearSlotButtonView = (slot: SlotElement): void => {
+  writeAttribute(slot.role)
+  writeAttribute(slot.ariaLabel)
+  writeAttribute(slot.ariaDisabled)
+  writeAttribute(slot.tabStop)
+  setSlotKeyboardFocus(slot, false)
+}
+
 /** Project optional button semantics without taking ownership of activation. */
-export const setSlotButtonView = (
-  slot: SlotElement,
-  view: SlotButtonView | undefined,
-): void => {
-  writeAttribute(slot.role, view === undefined ? undefined : 'button')
-  writeAttribute(slot.ariaLabel, view?.label)
-  writeAttribute(slot.ariaDisabled, view === undefined ? undefined : String(view.disabled))
-  if (view === undefined) {
-    writeAttribute(slot.tabStop, undefined)
-    setSlotKeyboardFocus(slot, false)
+export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): void => {
+  if (typeof view === 'undefined') {
+    clearSlotButtonView(slot)
     return
   }
+  writeAttribute(slot.role, 'button')
+  writeAttribute(slot.ariaLabel, view.label)
+  writeAttribute(slot.ariaDisabled, String(view.disabled))
   setSlotTabStop(slot, view.tabStop)
   setSlotKeyboardFocus(slot, view.focused)
+}
+
+/** `''` when present, otherwise no attribute at all. */
+const presenceValue = (present: boolean): string | undefined => {
+  if (present) {
+    return ''
+  }
+  return
+}
+
+const selectionColor = (selected: boolean): string => {
+  if (selected) {
+    return PALETTE_VAR.slotSelected
+  }
+  return PALETTE_VAR.slotBorder
+}
+
+const selectionBorderWeight = (selected: boolean): string => {
+  if (selected) {
+    return SELECTED_BORDER_WEIGHT
+  }
+  return BORDER_WEIGHT
+}
+
+const durabilityColor = (percent: number): string => {
+  if (percent <= DURABILITY_LOW_PERCENT) {
+    return PALETTE_VAR.durabilityLow
+  }
+  return PALETTE_VAR.durabilityHigh
+}
+
+const updateSlotDurability = (slot: SlotElement, durability: number | undefined): void => {
+  // DN-UI-7c, from the other side: this is the "obvious way to write it" the
+  // Derivation's `empty` guard was tightened to survive. An empty slot whose
+  // Snapshot still carried durability would draw a bar here, under nothing.
+  writeHidden(slot.durabilityHidden, typeof durability === 'undefined')
+  if (typeof durability === 'undefined') {
+    return
+  }
+  writePercent(slot.durabilityWidth, durability)
+  writeStyle(slot.durabilityColor, durabilityColor(durability))
 }
 
 /**
@@ -379,28 +468,16 @@ export const setSlotButtonView = (
 export const updateSlotElement = (
   slot: SlotElement,
   view: SlotView,
-  mergeable: boolean | undefined,
+  mergeable?: boolean,
 ): void => {
   writeText(slot.itemText, view.itemId ?? '')
   writeText(slot.countText, view.countLabel ?? '')
-  writeAttribute(slot.emptyFlag, view.empty ? '' : undefined)
-  writeAttribute(slot.selectedFlag, view.selected ? '' : undefined)
-  writeAttribute(slot.mergeableFlag, mergeable === true ? '' : undefined)
+  writeAttribute(slot.emptyFlag, presenceValue(view.empty))
+  writeAttribute(slot.selectedFlag, presenceValue(view.selected))
+  writeAttribute(slot.mergeableFlag, presenceValue(mergeable === true))
 
-  writeStyle(slot.borderColor, view.selected ? PALETTE_VAR.slotSelected : PALETTE_VAR.slotBorder)
-  writeStyle(slot.borderWeight, view.selected ? SELECTED_BORDER_WEIGHT : BORDER_WEIGHT)
+  writeStyle(slot.borderColor, selectionColor(view.selected))
+  writeStyle(slot.borderWeight, selectionBorderWeight(view.selected))
 
-  const durability = view.durabilityPercent
-  // DN-UI-7c, from the other side: this is the "obvious way to write it" the
-  // derivation's `empty` guard was tightened to survive. An empty slot whose
-  // snapshot still carried durability would draw a bar here, under nothing.
-  writeHidden(slot.durabilityHidden, durability === undefined)
-  if (durability === undefined) {
-    return
-  }
-  writePercent(slot.durabilityWidth, durability)
-  writeStyle(
-    slot.durabilityColor,
-    durability <= DURABILITY_LOW_PERCENT ? PALETTE_VAR.durabilityLow : PALETTE_VAR.durabilityHigh,
-  )
+  updateSlotDurability(slot, view.durabilityPercent)
 }

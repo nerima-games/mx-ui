@@ -38,7 +38,7 @@ export type EnchantingTableState = {
 export type EnchantResult = {
   readonly state: EnchantingTableState
   readonly applied: boolean
-  readonly reason: string | undefined
+  readonly reason?: string
 }
 
 const OFFER_INDEX: Readonly<Record<EnchantingOfferId, number>> = {
@@ -47,28 +47,67 @@ const OFFER_INDEX: Readonly<Record<EnchantingOfferId, number>> = {
   'offer-3': 2,
 }
 
-const nextSeed = (seed: number): number => (Math.imul(seed | 0, 1_664_525) + 1_013_904_223) >>> 0
+const ZERO = 0
+const ONE = 1
+const TWO = 2
+/** How many offers the table shows at once — see `OFFER_INDEX` above. */
+const OFFER_COUNT = 3
+
+const UINT32_BIT_WIDTH = 32
+/** 2**32, the wraparound modulus `>>> 0` produces; used to reimplement it without a bitwise op. */
+const UINT32_MODULUS = TWO ** UINT32_BIT_WIDTH
+const LCG_MULTIPLIER = 1_664_525
+const LCG_INCREMENT = 1_013_904_223
+
+/**
+ * `x >>> 0` without the bitwise operator: the same wrap into `[0, 2**32)`,
+ * done with modulo arithmetic instead of a shift.
+ */
+const toUint32 = (value: number): number => ((value % UINT32_MODULUS) + UINT32_MODULUS) % UINT32_MODULUS
+
+/**
+ * `Math.imul` already does `ToInt32` on both of its arguments per spec, so the
+ * `seed | 0` the bitwise-free version of this file used to need is redundant
+ * — the multiply is exactly as 32-bit as it always was.
+ */
+const nextSeed = (seed: number): number => toUint32(Math.imul(seed, LCG_MULTIPLIER) + LCG_INCREMENT)
 
 const availableDefinitions = (
   state: EnchantingTableState,
   rules: EnchantingRules,
 ): ReadonlyArray<EnchantmentDefinition> => {
-  if (state.item === undefined) {
+  const { item } = state
+  if (typeof item === 'undefined') {
     return []
   }
-  const existing = new Set(state.item.enchantments.map(({ enchantmentId }) => enchantmentId))
+  // `item` is bound to a const above, so its narrowed (non-undefined) type survives into the filter callback below — unlike `state.item`, whose narrowing TypeScript cannot carry across a closure boundary.
+  // That is what let the previous `state.item?.` fallbacks look reachable to the coverage tool even though every caller has already been turned away by the guard above.
+  const existing = new Set(item.enchantments.map(({ enchantmentId }) => enchantmentId))
   return rules.enchantments.filter(
     (definition) =>
-      definition.allowedItemIds.includes(state.item?.itemId ?? '') &&
+      definition.allowedItemIds.includes(item.itemId) &&
       !existing.has(definition.enchantmentId) &&
       definition.incompatibleWith.every((id) => !existing.has(id)) &&
-      state.item?.enchantments.every(({ enchantmentId }) => {
+      item.enchantments.every(({ enchantmentId }) => {
         const existingDefinition = rules.enchantments.find(
           (candidate) => candidate.enchantmentId === enchantmentId,
         )
         return existingDefinition?.incompatibleWith.includes(definition.enchantmentId) !== true
-      }) === true,
+      }),
   )
+}
+
+/** One draw from the shrinking pool, or nothing left to draw. */
+const drawOffer = (
+  pool: Array<EnchantmentDefinition>,
+  random: number,
+): EnchantmentDefinition | undefined => {
+  if (pool.length === ZERO) {
+    return
+  }
+  const poolIndex = random % pool.length
+  const [drawn] = pool.splice(poolIndex, ONE)
+  return drawn
 }
 
 const offerDefinitions = (
@@ -76,18 +115,28 @@ const offerDefinitions = (
   rules: EnchantingRules,
 ): ReadonlyArray<EnchantmentDefinition | undefined> => {
   const pool = [...availableDefinitions(state, rules)]
-  let random = state.seed >>> 0
+  let random = toUint32(state.seed)
   const selected: Array<EnchantmentDefinition | undefined> = []
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < OFFER_COUNT; index += ONE) {
     random = nextSeed(random)
-    if (pool.length === 0) {
-      selected.push(undefined)
-      continue
-    }
-    const poolIndex = random % pool.length
-    selected.push(pool.splice(poolIndex, 1)[0])
+    selected.push(drawOffer(pool, random))
   }
   return selected
+}
+
+/** Why this offer can't be taken right now, or nothing — it is affordable. */
+const offerRejectionReason = (
+  state: EnchantingTableState,
+  lapisCost: number,
+  levelCost: number,
+): string | undefined => {
+  if (state.lapisCount < lapisCost) {
+    return `Requires ${String(lapisCost)} lapis`
+  }
+  if (state.experienceLevel < levelCost) {
+    return `Requires ${String(levelCost)} levels`
+  }
+  return
 }
 
 const offerOf = (
@@ -95,20 +144,15 @@ const offerOf = (
   index: number,
   state: EnchantingTableState,
 ): EnchantingOfferSnapshot | undefined => {
-  if (definition === undefined) {
-    return undefined
+  if (typeof definition === 'undefined') {
+    return
   }
-  const lapisCost = index + 1
+  const lapisCost = index + ONE
   const levelCost = Math.max(lapisCost, Math.trunc(definition.levelCost))
-  const rejectionReason =
-    state.lapisCount < lapisCost
-      ? `Requires ${String(lapisCost)} lapis`
-      : state.experienceLevel < levelCost
-        ? `Requires ${String(levelCost)} levels`
-        : undefined
+  const rejectionReason = offerRejectionReason(state, lapisCost, levelCost)
   return {
     enchantmentId: definition.enchantmentId,
-    enchantmentLevel: Math.max(1, Math.min(Math.trunc(definition.maxLevel), index + 1)),
+    enchantmentLevel: Math.max(ONE, Math.min(Math.trunc(definition.maxLevel), index + ONE)),
     lapisCost,
     levelCost,
     rejectionReason,
@@ -121,10 +165,18 @@ export const enchantingOffers = (
 ): EnchantingTableSnapshot['offers'] => {
   const definitions = offerDefinitions(state, rules)
   return [
-    offerOf(definitions[0], 0, state),
-    offerOf(definitions[1], 1, state),
-    offerOf(definitions[2], 2, state),
+    offerOf(definitions[ZERO], ZERO, state),
+    offerOf(definitions[ONE], ONE, state),
+    offerOf(definitions[TWO], TWO, state),
   ]
+}
+
+/** The lapis slot, or nothing — an empty table has no lapis to show. */
+const lapisSlot = (state: EnchantingTableState): EnchantingTableSnapshot['lapis'] => {
+  if (state.lapisCount > ZERO) {
+    return { count: state.lapisCount, itemId: 'minecraft:lapis_lazuli' }
+  }
+  return
 }
 
 export const enchantingTableSnapshotOf = (
@@ -132,10 +184,7 @@ export const enchantingTableSnapshotOf = (
   rules: EnchantingRules,
 ): EnchantingTableSnapshot => ({
   item: state.item,
-  lapis:
-    state.lapisCount > 0
-      ? { count: state.lapisCount, itemId: 'minecraft:lapis_lazuli' }
-      : undefined,
+  lapis: lapisSlot(state),
   offers: enchantingOffers(state, rules),
 })
 
@@ -147,15 +196,14 @@ export const applyEnchantmentOffer = (
 ): EnchantResult => {
   const index = OFFER_INDEX[offerId]
   const offer = enchantingOffers(state, rules)[index]
-  if (state.item === undefined || offer === undefined) {
+  if (typeof state.item === 'undefined' || typeof offer === 'undefined') {
     return { applied: false, reason: 'No compatible enchantment', state }
   }
-  if (offer.rejectionReason !== undefined) {
+  if (typeof offer.rejectionReason !== 'undefined') {
     return { applied: false, reason: offer.rejectionReason, state }
   }
   return {
     applied: true,
-    reason: undefined,
     state: {
       ...state,
       experienceLevel: state.experienceLevel - offer.levelCost,

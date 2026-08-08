@@ -52,7 +52,7 @@
  * because a timer that outlives the thing it was about will fire into a
  * crosshair that has since been taken down.
  */
-import { pointerLockReleased, type ModalStack } from './modal-stack'
+import { type ModalStack, pointerLockReleased } from './modal-stack'
 
 /**
  * How long a landed hit is marked.
@@ -71,10 +71,10 @@ export type CrosshairStatus = {
    */
   readonly modals: ModalStack
   /**
-   * Monotonic seconds at which the last hit LANDED, or `undefined` for none —
+   * Monotonic seconds at which the last hit LANDED, or absent for none —
    * supplied by the caller, never read from a global (DN-UI-10).
    */
-  readonly lastHitAtSecs: number | undefined
+  readonly lastHitAtSecs?: number | undefined
   /**
    * Active block-breaking progress, where zero is a started but empty bar.
    * `undefined` means no block is currently being broken.
@@ -84,7 +84,6 @@ export type CrosshairStatus = {
 
 export const IDLE_CROSSHAIR_STATUS: CrosshairStatus = {
   modals: [],
-  lastHitAtSecs: undefined,
 }
 
 /**
@@ -106,32 +105,39 @@ export type CrosshairViewModel = {
   readonly breakProgress?: number | undefined
 }
 
+const ZERO = 0
+const PROGRESS_UPPER_BOUND = 1
+
+/** Clamp a supplied break-progress value to 0-1, or report there is none. */
+const clampBreakProgress = (supplied: number | undefined): number | undefined => {
+  if (typeof supplied === 'undefined' || !Number.isFinite(supplied)) {
+    return
+  }
+  return Math.min(PROGRESS_UPPER_BOUND, Math.max(ZERO, supplied))
+}
+
 export const crosshairViewModel = (
   status: CrosshairStatus,
   nowSecs: number,
   pulseSecs: number = CROSSHAIR_PULSE_SECS,
 ): CrosshairViewModel | undefined => {
   if (pointerLockReleased(status.modals)) {
-    return undefined
+    return
   }
-  const suppliedProgress = status.breakProgress
-  const breakProgress =
-    suppliedProgress !== undefined && Number.isFinite(suppliedProgress)
-      ? Math.min(1, Math.max(0, suppliedProgress))
-      : undefined
+  const breakProgress = clampBreakProgress(status.breakProgress)
   const at = status.lastHitAtSecs
-  if (at === undefined) {
-    return { hit: false, breakProgress }
+  if (typeof at === 'undefined') {
+    return { breakProgress, hit: false }
   }
   const since = nowSecs - at
   // A NaN or a backwards clock shows NO hit, which is the opposite call from
   // `saveStatusMessage` and `loadingScreenView` and for the same underlying
-  // rule: choose the outcome that does not invent a claim. There, keeping a
-  // message up claims nothing new. Here, a hit marker IS the claim — 「you struck
-  // something」 — and one that stuck because of a bad subtraction would tell the
-  // player they connected when they missed.
+  // Rule: choose the outcome that does not invent a claim. There, keeping a
+  // Message up claims nothing new. Here, a hit marker IS the claim — 「you struck
+  // Something」 — and one that stuck because of a bad subtraction would tell the
+  // Player they connected when they missed.
   return {
-    hit: Number.isFinite(since) && since >= 0 && since < pulseSecs,
     breakProgress,
+    hit: Number.isFinite(since) && since >= ZERO && since < pulseSecs,
   }
 }

@@ -37,8 +37,30 @@ export type AnvilViewModel = {
   readonly rejectionReason: string | undefined
 }
 
-const safeLevelCost = (cost: number): number =>
-  Number.isFinite(cost) ? Math.max(0, Math.trunc(cost)) : 0
+const ZERO = 0
+const NO_SELECTION_INDEX = -1
+const PRIMARY_INPUT_SLOT_INDEX = 0
+const SECONDARY_INPUT_SLOT_INDEX = 1
+const OUTPUT_SLOT_INDEX = 2
+
+const safeLevelCost = (cost: number): number => {
+  if (Number.isFinite(cost)) {
+    return Math.max(ZERO, Math.trunc(cost))
+  }
+  return ZERO
+}
+
+// No explicit return type: an inferred structural type (`durability` PRESENT
+// And nullable) is what `slotView`'s `HotbarSlotSnapshot` parameter wants.
+// Annotating this `AnvilSlotSnapshot` (`durability` OPTIONAL) would make the
+// Call below fail — `exactOptionalPropertyTypes` treats "optional" and
+// "present but nullable" as different contracts.
+const cloneSlotSnapshot = (snapshot: AnvilSlotSnapshot | undefined) => {
+  if (typeof snapshot === 'undefined') {
+    return
+  }
+  return { ...snapshot, durability: snapshot.durability }
+}
 
 const projectSlot = (
   id: AnvilSlotId,
@@ -47,19 +69,15 @@ const projectSlot = (
 ): AnvilSlotView =>
   Object.freeze({
     id,
-    ...slotView(
-      snapshot === undefined ? undefined : { ...snapshot, durability: snapshot.durability },
-      index,
-      -1,
-    ),
+    ...slotView(cloneSlotSnapshot(snapshot), index, NO_SELECTION_INDEX),
   })
 
 /** Purely derives the immutable presentation state for an anvil screen. */
 export const anvilViewModel = (snapshot: AnvilSnapshot): AnvilViewModel => {
   const slots = Object.freeze([
-    projectSlot('primary-input', 0, snapshot.primaryInput),
-    projectSlot('secondary-input', 1, snapshot.secondaryInput),
-    projectSlot('output', 2, snapshot.output),
+    projectSlot('primary-input', PRIMARY_INPUT_SLOT_INDEX, snapshot.primaryInput),
+    projectSlot('secondary-input', SECONDARY_INPUT_SLOT_INDEX, snapshot.secondaryInput),
+    projectSlot('output', OUTPUT_SLOT_INDEX, snapshot.output),
   ])
 
   return Object.freeze({

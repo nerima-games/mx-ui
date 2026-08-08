@@ -1,4 +1,4 @@
-import { type SlotView, slotView } from './hud-view-model'
+import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model'
 
 export const ENCHANTING_SLOT_IDS = ['item', 'lapis'] as const
 export const ENCHANTING_OFFER_IDS = ['offer-1', 'offer-2', 'offer-3'] as const
@@ -53,8 +53,27 @@ export type EnchantingTableViewModel = {
   readonly offers: ReadonlyArray<EnchantingOfferView>
 }
 
-const safeWhole = (value: number): number =>
-  Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+const ZERO = 0
+/** Passed as `slotView`'s `selectedIndex` for a region with no cursor of its own. */
+const NO_SELECTION = -1
+const ITEM_INDEX = 0
+const LAPIS_INDEX = 1
+
+const safeWhole = (value: number): number => {
+  if (Number.isFinite(value)) {
+    return Math.max(ZERO, Math.trunc(value))
+  }
+  return ZERO
+}
+
+const toHotbarSlot = (
+  snapshot: EnchantingSlotSnapshot | undefined,
+): HotbarSlotSnapshot | undefined => {
+  if (typeof snapshot === 'undefined') {
+    return snapshot
+  }
+  return { ...snapshot, durability: snapshot.durability }
+}
 
 const projectSlot = (
   id: EnchantingSlotId,
@@ -63,11 +82,7 @@ const projectSlot = (
 ): EnchantingSlotView =>
   Object.freeze({
     id,
-    ...slotView(
-      snapshot === undefined ? undefined : { ...snapshot, durability: snapshot.durability },
-      index,
-      -1,
-    ),
+    ...slotView(toHotbarSlot(snapshot), index, NO_SELECTION),
   })
 
 const projectOffer = (
@@ -76,10 +91,10 @@ const projectOffer = (
 ): EnchantingOfferView =>
   Object.freeze({
     enchantmentId: snapshot?.enchantmentId,
-    enchantmentLevel: safeWhole(snapshot?.enchantmentLevel ?? 0),
+    enchantmentLevel: safeWhole(snapshot?.enchantmentLevel ?? ZERO),
     id,
-    lapisCost: safeWhole(snapshot?.lapisCost ?? 0),
-    levelCost: safeWhole(snapshot?.levelCost ?? 0),
+    lapisCost: safeWhole(snapshot?.lapisCost ?? ZERO),
+    levelCost: safeWhole(snapshot?.levelCost ?? ZERO),
     rejectionReason: snapshot?.rejectionReason,
   })
 
@@ -92,7 +107,7 @@ export const enchantingTableViewModel = (
       ENCHANTING_OFFER_IDS.map((id, index) => projectOffer(id, snapshot.offers[index])),
     ),
     slots: Object.freeze([
-      projectSlot('item', 0, snapshot.item),
-      projectSlot('lapis', 1, snapshot.lapis),
+      projectSlot('item', ITEM_INDEX, snapshot.item),
+      projectSlot('lapis', LAPIS_INDEX, snapshot.lapis),
     ]),
   })

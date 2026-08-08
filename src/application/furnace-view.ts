@@ -1,27 +1,27 @@
 import {
-  FURNACE_SLOT_IDS,
-  type FurnaceSlotId,
-  type FurnaceSlotView,
-  type FurnaceViewModel,
-} from '../domain/furnace-view-model'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import {
+  type AttributeCell,
+  type PercentCell,
+  type TextCell,
+  attributeCell,
   percentCell,
   textCell,
   writeAttribute,
   writePercent,
   writeText,
-  attributeCell,
-  type AttributeCell,
-  type PercentCell,
-  type TextCell,
 } from './dom-write'
-import { declarePalette, PALETTE_VAR } from './palette-css'
+import type { DomElement, DomElementFactory } from './dom-surface'
 import {
+  FURNACE_SLOT_IDS,
+  type FurnaceSlotId,
+  type FurnaceSlotView,
+  type FurnaceViewModel,
+} from '../domain/furnace-view-model'
+import { PALETTE_VAR, declarePalette } from './palette-css'
+import {
+  type SlotElement,
   createSlotElement,
   setSlotButtonView,
   updateSlotElement,
-  type SlotElement,
 } from './slot-element'
 
 export type FurnaceInteractionView = {
@@ -41,35 +41,65 @@ type ProgressElement = {
 }
 
 const SLOT_LABEL: Readonly<Record<FurnaceSlotId, string>> = {
-  input: 'Furnace input',
   fuel: 'Furnace fuel',
+  input: 'Furnace input',
   output: 'Furnace output',
 }
 
-const slotAriaLabel = (slot: FurnaceSlotView): string =>
-  slot.empty
-    ? `${SLOT_LABEL[slot.id]}, empty`
-    : `${SLOT_LABEL[slot.id]}, ${slot.itemId ?? 'empty'}, ${slot.countLabel ?? '1'}`
+const slotAriaLabel = (slot: FurnaceSlotView): string => {
+  if (slot.empty) {
+    return `${SLOT_LABEL[slot.id]}, empty`
+  }
+  // `itemId ?? 'empty'` is UNCOVERED ON PURPOSE (docs/testing.md §5).
+  // `slotView` (domain/hud-view-model.ts) guarantees `itemId` is defined exactly when `empty` is
+  // `false`. `anvil-view.ts` and `chest-storage-view.ts` document the same invariant for their own
+  // Label builders. Forging a slot where the two disagree would mean bypassing the producer.
+  // `countLabel`'s own `?? '1'` stays guarded: it is genuinely absent for a real stack of one.
+  return `${SLOT_LABEL[slot.id]}, ${slot.itemId ?? 'empty'}, ${slot.countLabel ?? '1'}`
+}
+
+const progressLabel = (kind: 'cook' | 'burn'): string => {
+  if (kind === 'cook') {
+    return 'Cooking progress'
+  }
+  return 'Fuel remaining'
+}
+
+const createProgressTrack = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  kind: 'cook' | 'burn',
+): DomElement => {
+  const root = factory.createElement('div')
+  root.setAttribute('data-mx-ui', `furnace-${kind}-progress`)
+  root.setAttribute('role', 'progressbar')
+  root.setAttribute('aria-label', progressLabel(kind))
+  root.setAttribute('aria-valuemin', '0')
+  root.setAttribute('aria-valuemax', '100')
+  root.style.setProperty('background-color', PALETTE_VAR.meterTrack)
+  parent.appendChild(root)
+  return root
+}
+
+const createProgressFillElement = (
+  factory: DomElementFactory,
+  root: DomElement,
+  kind: 'cook' | 'burn',
+): DomElement => {
+  const fill = factory.createElement('div')
+  fill.setAttribute('data-mx-ui', `furnace-${kind}-progress-fill`)
+  fill.style.setProperty('background-color', PALETTE_VAR.xpFill)
+  root.appendChild(fill)
+  return fill
+}
 
 const createProgress = (
   factory: DomElementFactory,
   parent: DomElement,
   kind: 'cook' | 'burn',
 ): ProgressElement => {
-  const root = factory.createElement('div')
-  root.setAttribute('data-mx-ui', `furnace-${kind}-progress`)
-  root.setAttribute('role', 'progressbar')
-  root.setAttribute('aria-label', kind === 'cook' ? 'Cooking progress' : 'Fuel remaining')
-  root.setAttribute('aria-valuemin', '0')
-  root.setAttribute('aria-valuemax', '100')
-  root.style.setProperty('background-color', PALETTE_VAR.meterTrack)
-  parent.appendChild(root)
-
-  const fill = factory.createElement('div')
-  fill.setAttribute('data-mx-ui', `furnace-${kind}-progress-fill`)
-  fill.style.setProperty('background-color', PALETTE_VAR.xpFill)
-  root.appendChild(fill)
-
+  const root = createProgressTrack(factory, parent, kind)
+  const fill = createProgressFillElement(factory, root, kind)
   return {
     now: attributeCell(root, 'aria-valuenow'),
     valueText: attributeCell(root, 'aria-valuetext'),
@@ -84,69 +114,101 @@ const renderProgress = (element: ProgressElement, percent: number): void => {
   writePercent(element.width, percent)
 }
 
-/** Creates a listener-free furnace projection. The host owns every interaction. */
-export const createFurnaceView = (
-  factory: DomElementFactory,
-  parent: DomElement,
-): FurnaceView => {
+const createFurnaceRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('section')
   root.setAttribute('data-mx-ui', 'furnace')
   declarePalette(root)
   root.style.setProperty('background-color', PALETTE_VAR.surface)
   root.style.setProperty('color', PALETTE_VAR.ink)
   parent.appendChild(root)
+  return root
+}
 
+const createFurnaceGrid = (factory: DomElementFactory, root: DomElement): DomElement => {
   const grid = factory.createElement('div')
   grid.setAttribute('data-mx-ui', 'furnace-slots')
   grid.style.setProperty('display', 'grid')
   grid.style.setProperty('grid-template-columns', 'repeat(3, 1fr)')
   root.appendChild(grid)
+  return grid
+}
 
-  const slots = FURNACE_SLOT_IDS.map((id, index): SlotElement => {
+const createFurnaceSlots = (
+  factory: DomElementFactory,
+  grid: DomElement,
+): Array<SlotElement> => {
+  const createFurnaceSlot = (id: FurnaceSlotId, index: number): SlotElement => {
     const slot = createSlotElement(factory, index)
     slot.root.setAttribute('data-furnace-slot', id)
     slot.root.setAttribute('data-interaction-target', 'furnace-slot')
     slot.root.setAttribute('data-interaction-slot', id)
     grid.appendChild(slot.root)
     return slot
-  })
+  }
+  return FURNACE_SLOT_IDS.map(createFurnaceSlot)
+}
 
-  const cook = createProgress(factory, root, 'cook')
-  const burn = createProgress(factory, root, 'burn')
-
+const createFurnaceStatus = (factory: DomElementFactory, root: DomElement): TextCell => {
   const status = factory.createElement('div')
   status.setAttribute('data-mx-ui', 'furnace-status')
   status.setAttribute('role', 'status')
   status.setAttribute('aria-live', 'polite')
   status.setAttribute('aria-atomic', 'true')
   root.appendChild(status)
-  const statusText: TextCell = textCell(status)
+  return textCell(status)
+}
+
+const resolveFocusedSlot = (requested: FurnaceSlotId): FurnaceSlotId => {
+  // `FurnaceInteractionView` is a published type with no canonical constructor.
+  // A host can hand `render()` a stale or round-tripped value that only claims to satisfy the
+  // `FurnaceSlotId` union at compile time.
+  // Falling back to the input slot is the inert answer.
+  if (FURNACE_SLOT_IDS.includes(requested)) {
+    return requested
+  }
+  return 'input'
+}
+
+/** Creates a listener-free furnace projection. The host owns every interaction. */
+export const createFurnaceView = (
+  factory: DomElementFactory,
+  parent: DomElement,
+): FurnaceView => {
+  const root = createFurnaceRoot(factory, parent)
+  const grid = createFurnaceGrid(factory, root)
+  const slots = createFurnaceSlots(factory, grid)
+
+  const cook = createProgress(factory, root, 'cook')
+  const burn = createProgress(factory, root, 'burn')
+
+  const statusText = createFurnaceStatus(factory, root)
 
   return {
-    root,
     render: (model: FurnaceViewModel, interaction?: FurnaceInteractionView): void => {
-      const focusedSlot = FURNACE_SLOT_IDS.includes(interaction?.focusedSlot ?? 'input')
-        ? (interaction?.focusedSlot ?? 'input')
-        : 'input'
+      const focusedSlot = resolveFocusedSlot(interaction?.focusedSlot ?? 'input')
+
+      const renderFurnaceSlot = (slotElement: SlotElement, slot: FurnaceSlotView): void => {
+        updateSlotElement(slotElement, slot)
+        const focused = slot.id === focusedSlot
+        setSlotButtonView(slotElement, {
+          disabled: false,
+          focused: typeof interaction !== 'undefined' && focused,
+          label: slotAriaLabel(slot),
+          tabStop: focused,
+        })
+      }
 
       for (const [index, slotElement] of slots.entries()) {
         const slot = model.slots[index]
-        if (slot === undefined) {
-          continue
+        if (typeof slot !== 'undefined') {
+          renderFurnaceSlot(slotElement, slot)
         }
-        updateSlotElement(slotElement, slot, undefined)
-        const focused = slot.id === focusedSlot
-        setSlotButtonView(slotElement, {
-          label: slotAriaLabel(slot),
-          disabled: false,
-          tabStop: focused,
-          focused: interaction !== undefined && focused,
-        })
       }
 
       renderProgress(cook, model.cookProgressPercent)
       renderProgress(burn, model.burnProgressPercent)
       writeText(statusText, interaction?.status ?? '')
     },
+    root,
   }
 }
