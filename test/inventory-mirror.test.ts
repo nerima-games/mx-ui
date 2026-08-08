@@ -193,8 +193,9 @@ describe('the mc-sim inventory mirror', () => {
       // recorded here so the difference is deliberate rather than an
       // inconsistency somebody later "fixes" in the wrong direction.
       //
-      // Kernel vocabulary stays OUT of the barrel because it is owned by
-      // mc-kernel. This mirror is the argument of a function mc-compose does not
+      // `domain/frame-contract.ts` stays OUT of the barrel because it restates
+      // the contract mc-compose consumes, so a promised deletion would be
+      // breaking. This mirror is the argument of a function mc-compose does not
       // call, exactly like `VitalsSnapshot`, so it goes IN — and the two live
       // in the same barrel to make the distinction visible.
       const barrel = yield* Effect.promise(() => import('../src/index'))

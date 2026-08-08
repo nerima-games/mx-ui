@@ -41,9 +41,13 @@ describe('public API surface', () => {
     }),
   )
 
-  // REGRESSION: kernel vocabulary is owned by @nerima-games/mc-kernel and is
-  // not republished by this package's barrel. Consumers import these symbols
-  // from the owner, so the UI package can evolve without creating a second API.
+  // REGRESSION: `domain/frame-contract.ts` is a stand-in for
+  // @nerima-games/mc-kernel with a deletion date written into its header. The
+  // barrel used to `export *` from it, which published `StageId` and
+  // `DeltaTimeSecs` as API of a package that does not own them — and therefore
+  // turned the promised deletion into a breaking change for every consumer.
+  // mc-sim, mc-render and mc-playground-kit mention their mirrors in an
+  // `index.ts` comment and re-export nothing; this repository now matches.
   it.effect('REGRESSION: does not republish mc-kernel’s vocabulary as its own', () =>
     Effect.sync(() => {
       const kernelsToOwn = ['StageId', 'DeltaTimeSecs']

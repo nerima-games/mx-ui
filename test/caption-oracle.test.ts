@@ -44,7 +44,7 @@ import {
   type CaptionSettings,
 } from '../src/domain/caption'
 import { createCaptionView } from '../src/application/caption-view'
-import { DeltaTimeSecs } from '@nerima-games/mc-kernel'
+import { DeltaTimeSecs } from '../src/domain/frame-contract'
 import { makeUiFrameState, uiStages } from '../src/stages/registration'
 import { UI_STAGE_IDS } from '../src/stages/stage-ids'
 import { fakeDocument, writeNames, type FakeElement } from './fake-dom'

@@ -31,7 +31,7 @@ import {
   type CaptionQueue,
   type CaptionSettings,
 } from '../domain/caption'
-import type { DeltaTimeSecs, GameModule, StageRegistration } from '@nerima-games/mc-kernel'
+import type { DeltaTimeSecs, GameModule, StageRegistration } from '../domain/frame-contract'
 import {
   type FpsCounter,
   advanceFpsCounter,

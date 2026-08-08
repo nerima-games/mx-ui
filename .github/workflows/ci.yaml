@@ -10,7 +10,6 @@ on:
 # managed in Terraform.
 permissions:
   contents: read
-  packages: read
 
 jobs:
   ci:
@@ -36,11 +35,6 @@ jobs:
           node-version: "24"
           cache: "pnpm"
 
-      - name: Configure GitHub Packages authentication
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm config set --location=user //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
-
       - name: Install dependencies
         # --ignore-scripts: pnpm runs postinstall, and a fork PR can edit
         # package.json and the lockfile consistently and still satisfy
@@ -50,19 +44,8 @@ jobs:
       - name: Type check
         run: pnpm typecheck
 
-      # oxlint is provided by the Nix devShell (flake.nix), not a package.json
-      # devDependency — see flake.nix's comment on why. Installing Nix just for
-      # this one step is the org-wide trade-off (DEPENDENCY_POLICY.md §5
-      # "前提条件"): one pinned oxlint version instead of 16 repos each
-      # independently drifting on their own npm-resolved version.
-      - name: Set up Nix
-        uses: ./.github/actions/nix-setup
-        with:
-          cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
       - name: Lint
-        run: nix develop --command pnpm lint
+        run: pnpm lint
 
       - name: Test
         run: pnpm test

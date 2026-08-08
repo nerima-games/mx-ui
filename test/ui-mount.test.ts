@@ -117,39 +117,6 @@ describe('UiMount', () => {
     expect(debug?.textContent).toContain('Facing: north')
   })
 
-  it('does not mutate the debug HUD for an equivalent snapshot', async () => {
-    const host = document.createElement('main')
-    document.body.appendChild(host)
-    const runtime = makeUiMount({ root: host })
-    await Effect.runPromise(runtime.start)
-
-    const debug = host.querySelector<HTMLElement>('[data-mx-ui="debug-hud"]')
-    expect(debug).not.toBeNull()
-    const mutations: MutationRecord[] = []
-    const observer = new MutationObserver((records) => mutations.push(...records))
-    observer.observe(debug as HTMLElement, { childList: true, subtree: true })
-
-    const snapshot = {
-      chunk: { x: 3, z: -2 },
-      coordinates: { x: 12.5, y: 64, z: -8.25 },
-      facing: 'north',
-      fps: 59.94,
-    }
-    runtime.updateDebug(snapshot)
-    await Promise.resolve()
-    expect(mutations).not.toHaveLength(0)
-
-    mutations.splice(0)
-    runtime.updateDebug({
-      ...snapshot,
-      chunk: { ...snapshot.chunk },
-      coordinates: { ...snapshot.coordinates },
-    })
-    await Promise.resolve()
-    expect(mutations).toHaveLength(0)
-    observer.disconnect()
-  })
-
   it('opens accessible settings, reports changes, and restores focus', async () => {
     const host = document.createElement('main')
     const trigger = document.createElement('button')

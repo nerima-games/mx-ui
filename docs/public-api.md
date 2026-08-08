@@ -31,8 +31,9 @@ interface GameModule<ROut, E, RIn, RRegister = never> {
 }
 ```
 
-`StageRegistration` と `GameModule` は `@nerima-games/mc-kernel@0.2.18` から直接 import している。
-mx-ui は kernel の契約をローカルで再掲せず、barrelからも再公開しない。
+`domain/frame-contract.ts` はこれを**逐語で**再掲している。`type` ではなく `interface` のままなのも意図的で、
+そのために `.oxlintrc.json` は `@typescript-eslint/consistent-type-definitions` の例外を明記している
+（「Keeping the spec and the code character-identical is worth more than local style consistency」）。
 
 このファイルは mc-kernel が publish された時点で削除される（[versioning.md](./versioning.md) §6）。
 
@@ -159,7 +160,7 @@ export type UiMount = {
 ## 5. `index.ts` の全 export
 
 `index.ts` は 21 モジュールを `export *` している——`domain/` の 7、`stages/` の 2、
-そして **`application/` の 12**（mc-kernel の frame 契約は**含まれない**。下記）。分類:
+そして **`application/` の 12**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。
@@ -184,11 +185,25 @@ export type UiMount = {
 | `EXPERIENCE_MODULE_STAGE_PREFIXES` | `readonly string[]` | 内部(可視)（回帰テスト用） |
 | `OWN_STAGE_PREFIX` | `'ui:'` | 内部(可視)（回帰テスト用） |
 
-### `@nerima-games/mc-kernel` の frame 契約 — **バレルには載せない**
+### `domain/frame-contract.ts` — **バレルには載せない**
 
-ローカルの `domain/frame-contract.ts` は削除済みである。`StageId`、`DeltaTimeSecs`、
-`StageRegistration`、`FrameServices` は kernel の所有物として直接参照し、mx-ui の barrel では再公開しない。
-固定しているテストは `REGRESSION: does not republish mc-kernel’s vocabulary as its own` である。
+`index.ts` はこのファイルを `export *` **しない**。末尾のコメントが存在と削除予定を記すだけである。
+
+| export | 種別 | 分類 |
+| --- | --- | --- |
+| `StageId` | type + `Brand.refined` | **非公開**（所有者は mc-kernel） |
+| `DeltaTimeSecs` | type + `Brand.refined` | **非公開**（所有者は mc-kernel） |
+| `StageRegistration` | interface | **非公開**（所有者は mc-kernel）。`makeUiStages` の**戻り値の形**としてだけ観測される |
+| `FrameServices` | type（現状 `never`） | **非公開**（所有者は mc-kernel） |
+
+**re-export しない理由。** このファイルは mc-kernel が publish された時点でまるごと消える
+（[versioning.md](./versioning.md) §6）。バレルに載せると `StageId` / `DeltaTimeSecs` /
+`StageRegistration` が**所有していないパッケージの公開 API** になり、
+約束済みの削除がすべての消費者にとっての破壊的変更に化ける。
+消費者はこの語彙を kernel から取る。型は構造的に同一なので、
+kernel から import した消費者は `makeUiStages` の戻り値に対してそのまま型検査を通る。
+mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしており、mx-gameplay / mx-redstone も同じである。
+固定しているテスト: `REGRESSION: does not republish mc-kernel’s vocabulary as its own`。
 
 ### 5-1. ではなぜインベントリのミラーは**載せる**のか
 
@@ -199,7 +214,7 @@ export type UiMount = {
 
 | ミラー | 指しているもの | バレル | 削除・置換のコスト |
 | --- | --- | --- | --- |
-| `@nerima-games/mc-kernel` の frame 契約 | mc-compose が消費する**契約**。所有者は kernel | 載せない | mx-ui が別の語彙を公開しない |
+| `domain/frame-contract.ts` | mc-kernel の**契約**。mc-compose が消費する | 載せない | 載せれば約束済みの削除が MAJOR に化ける |
 | `mx-gameplay/domain/chunk-store-port.ts` | mc-worldgen の**サービス**（`Context.Tag`） | 載せない | 他リポジトリのサービスの再公開。タグキー衝突という実害もある |
 | `domain/inventory-view-model.ts` のミラー | 本リポジトリの純粋関数の**引数型** | **載せる** | mc-compose は `inventoryViewModel` を呼ばない → §5 の表で MINOR |
 | `VitalsSnapshot` | 同上（最初のカットから載っている） | **載っている** | 同上 |
@@ -213,8 +228,11 @@ export type UiMount = {
 この 2 方向（ミラーは載る / `StageId` と `DeltaTimeSecs` は載らない）を 1 本で固定している。
 詳細は [design-notes.md](./design-notes.md) DN-UI-12。
 
-`FrameServices` は kernel の `ClockPort` を直接参照する。固定時計が必要なテストは
-`FixedClockLayer` を使い、`Layer.empty` や `never` で必要な実行時契約を隠さない。
+`FrameServices = never` は意図的な乖離である。kernel は `ClockPort` の別名にしているが、
+ここで `ClockPort` を再掲すると kernel と同じ文字列 ID を持つ**別の** `Context.Tag` ができてしまう。
+見分けがつかない 2 つのタグは、狭すぎる型よりはるかに悪い。
+`Effect<void, never, never>` は `Effect<void, never, ClockPort>` が欲しい場所に代入できるので、
+このファイルに対して書かれた stage は kernel の import に差し替えても型検査を通り続ける。
 
 ### `domain/hud-view-model.ts` — すべて内部(可視)
 

@@ -562,7 +562,7 @@ plan.md §2.3-3:
 
 ### import ゲートに見えない穴
 
-`StageId` は文字列である（`@nerima-games/mc-kernel`）。文字列であることは意図的で、
+`StageId` は文字列である（`domain/frame-contract.ts`）。文字列であることは意図的で、
 `after: [StageId('sim:physics')]` が mc-sim の stage モジュールを import せずに順序を表現できる。
 
 **その同じ性質が穴でもある。**
@@ -621,7 +621,7 @@ plan.md §3.13 は各画面を単体起動できることを完成条件にし�
 - `every stage tolerates dt = 0`
 
 2 本目は `DeltaTimeSecs` の契約側で、ゼロ delta は合法であり stage が拒否せず処理しなければならない
-（mc-kernel の `DeltaTimeSecs` の注記）。
+（`domain/frame-contract.ts` の `DeltaTimeSecs` の注記）。
 
 ---
 
@@ -793,7 +793,7 @@ HUD の後ろに立っているのはこれだけである。そして G3 を壊
 
 | ミラー | 何を写しているか | pin しているテスト |
 | --- | --- | --- |
-| `@nerima-games/mc-kernel` の frame 契約 | mc-kernel が所有する語彙 | `test/public-api.test.ts` |
+| `domain/frame-contract.ts`（本リポジトリ） | mc-kernel の frame 契約 | `test/public-api.test.ts` |
 | `mx-gameplay/domain/chunk-store-port.ts` | mc-worldgen の `ChunkStore` **全体** | `test/chunk-store-mirror.test.ts` |
 | `mc-render/domain/camera-mirror.ts` | mc-sim のカメラ姿勢 | `test/camera-mirror.test.ts` |
 | 各 `domain/kernel-vocabulary.ts` | kernel 語彙 | 各 `test/kernel-mirror.test.ts` |

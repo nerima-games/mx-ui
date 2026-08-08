@@ -69,7 +69,7 @@ mx-ui が触るのは `CaptionEventStream` の購読側だけである。
 | **ネットワークトランスポートとプロトコル** | `mx-multiplayer` | plan.md §3.14。**画面はこちら、通信はあちら** |
 | **表示されているものの背後にあるルール** — 採掘 / Mob AI / ドロップ / 流体 / 昼夜、レッドストーンの電力伝播 | `mx-gameplay` / `mx-redstone` | plan.md §3.11、§3.12。エッジはゼロ（[architecture.md](./architecture.md) §5） |
 | **stage の全順序表・Layer 配線・セッションライフサイクル（タイトル⇄ゲーム）** | `mc-compose` | plan.md §2.3-3、§3.15 |
-| **ブランデッド型・座標・ブロック能力モデル・契約型** | `mc-kernel` | plan.md §3.1。frame契約は `@nerima-games/mc-kernel` から直接参照する |
+| **ブランデッド型・座標・ブロック能力モデル・契約型** | `mc-kernel` | plan.md §3.1。現状 `domain/frame-contract.ts` が仮に再掲している（[versioning.md](./versioning.md) §6） |
 | **世界の canvas そのもの・マテリアル・ポストFX・パーティクル** | `mc-render` | plan.md §3.9 |
 
 ### 3-1. 入力の境界がいちばん間違えやすい
