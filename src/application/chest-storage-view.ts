@@ -5,22 +5,22 @@ import {
   type ChestStorageSlotTarget,
   type ChestStorageSlotView,
   type ChestStorageViewModel,
-} from '../domain/chest-storage-view-model'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { HOTBAR_SLOT_COUNT, type SlotView } from '../domain/hud-view-model'
+} from '../domain/chest-storage-view-model.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { HOTBAR_SLOT_COUNT, type SlotView } from '../domain/hud-view-model.js'
 import {
   INVENTORY_MAIN_COLUMNS,
   INVENTORY_MAIN_SLOT_COUNT,
-} from '../domain/inventory-view-model'
-import { PALETTE_VAR, declarePalette } from './palette-css'
+} from '../domain/inventory-view-model.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotElement,
   createSlotElement,
   setSlotButtonView,
   setSlotHidden,
   updateSlotElement,
-} from './slot-element'
-import { type TextCell, textCell, writeText } from './dom-write'
+} from './slot-element.js'
+import { type TextCell, textCell, writeText } from './dom-write.js'
 
 export type ChestStorageInteractionView = {
   readonly focusedSlot: ChestStorageSlotTarget

@@ -129,10 +129,13 @@ const applySettingsToInputs = (
   settings: UiSettings,
 ): void => {
   for (const definition of SETTING_DEFINITIONS) {
-    const input = inputs.get(definition.key)
-    if (typeof input !== 'undefined') {
-      input.value = String(finite(settings[definition.key], DEFAULT_UI_SETTINGS[definition.key]))
-    }
+    // Non-null: the settings screen's construction loop calls
+    // `inputs.set(definition.key, ...)` for every entry of this SAME
+    // `SETTING_DEFINITIONS` array, and nothing ever deletes from `inputs` — so
+    // Every key this loop asks for is already present by the time settings
+    // Are applied.
+    const input = inputs.get(definition.key)!
+    input.value = String(finite(settings[definition.key], DEFAULT_UI_SETTINGS[definition.key]))
   }
 }
 

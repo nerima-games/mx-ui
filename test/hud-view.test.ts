@@ -472,4 +472,24 @@ describe('the HUD renderer is a dumb projection', () => {
     expect(slots[0]?.style.properties.get('border-color')).toBe(PALETTE_VAR.slotBorder)
     expect(slots[0]?.style.properties.get('border-width')).toBe('2px')
   })
+
+  it('REGRESSION: a shorter hotbar than the DOM leaves the surplus slot elements untouched', () => {
+    // HudViewModel is a published type (docs/public-api.md) with no canonical
+    // constructor site other than `hudViewModel`, which always returns exactly
+    // HOTBAR_SLOT_COUNT (9) hotbar entries via `Array.from({ length:
+    // HOTBAR_SLOT_COUNT })` — a consumer assembling one by hand, which is what a
+    // published view model is for, can hand over fewer.
+    const { view, root } = mount()
+    expect(() =>
+      view.render({
+        dead: false,
+        experienceLevelLabel: '',
+        experiencePercent: 0,
+        hearts: [],
+        hotbar: [],
+        shanks: [],
+      }),
+    ).not.toThrow()
+    expect(root.findAll('data-mx-ui', 'slot')).toHaveLength(9)
+  })
 })

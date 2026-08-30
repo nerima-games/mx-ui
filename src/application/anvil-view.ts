@@ -5,7 +5,7 @@ import {
   type AnvilSlotId,
   type AnvilSlotView,
   type AnvilViewModel,
-} from '../domain/anvil-view-model'
+} from '../domain/anvil-view-model.js'
 import {
   type AttributeCell,
   type TextCell,
@@ -14,15 +14,15 @@ import {
   writeAttribute,
   writeHidden,
   writeText,
-} from './dom-write'
-import type { DomElement, DomElementFactory, DomInputElement } from './dom-surface'
-import { PALETTE_VAR, declarePalette } from './palette-css'
+} from './dom-write.js'
+import type { DomElement, DomElementFactory, DomInputElement } from './dom-surface.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotElement,
   createSlotElement,
   setSlotButtonView,
   updateSlotElement,
-} from './slot-element'
+} from './slot-element.js'
 
 export type AnvilInteractionView = {
   readonly focusedTarget: AnvilOperationTarget

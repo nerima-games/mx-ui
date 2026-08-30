@@ -61,7 +61,7 @@ import {
   type HotbarSlotSnapshot,
   type SlotView,
   slotView,
-} from './hud-view-model'
+} from './hud-view-model.js'
 
 // ---------------------------------------------------------------------------
 // PROVISIONAL LOCAL MIRROR OF `@nerima-games/mc-sim`'s inventory value
@@ -141,7 +141,7 @@ export const INVENTORY_SLOT_COUNT = 36
  */
 export const INVENTORY_MAIN_COLUMNS = 9
 export const INVENTORY_MAIN_ROWS = 3
-export const INVENTORY_MAIN_SLOT_COUNT = INVENTORY_MAIN_COLUMNS * INVENTORY_MAIN_ROWS
+export const INVENTORY_MAIN_SLOT_COUNT: number = INVENTORY_MAIN_COLUMNS * INVENTORY_MAIN_ROWS
 
 // ---------------------------------------------------------------------------
 // The snapshot this screen reads

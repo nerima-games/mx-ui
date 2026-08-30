@@ -98,4 +98,19 @@ describe('createAnvilView', () => {
         .map((target) => target.attributes.get('tabindex')),
     ).toStrictEqual(['0', '-1', '-1', '-1'])
   })
+
+  it('REGRESSION: a shorter slots array than the DOM leaves the surplus slot elements untouched', () => {
+    // AnvilViewModel is a published type (docs/public-api.md) with no canonical
+    // constructor site other than `anvilViewModel`, which always returns exactly
+    // three slots — a consumer assembling one by hand, which is what a published
+    // view model is for, can hand over fewer.
+    const factory = fakeDocument()
+    const host = factory.createElement('main')
+    const view = createAnvilView(factory, host)
+    const root = view.root as FakeElement
+    expect(() =>
+      view.render({ levelCost: 0, name: '', rejectionReason: undefined, slots: [] }),
+    ).not.toThrow()
+    expect(root.findAll('data-interaction-target', 'anvil-operation')).toHaveLength(4)
+  })
 })

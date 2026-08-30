@@ -57,10 +57,10 @@ import {
   writeAttribute,
   writeHidden,
   writeText,
-} from './dom-write'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { PALETTE_VAR, declarePalette } from './palette-css'
-import type { LoadingScreenView } from '../domain/loading-screen'
+} from './dom-write.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import type { LoadingScreenView } from '../domain/loading-screen.js'
 
 /** Render order, and the order the tests sweep. */
 export const LOADING_STATES: ReadonlyArray<LoadingScreenView['kind']> = ['preparing', 'failed']

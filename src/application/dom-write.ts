@@ -34,7 +34,7 @@
  * the NUMBER and compares numbers — the string is built only on the frames where
  * the number actually moved.
  */
-import type { DomElement, DomStyle } from './dom-surface'
+import type { DomElement, DomStyle } from './dom-surface.js'
 
 /**
  * A text sink.

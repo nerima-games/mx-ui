@@ -10,8 +10,8 @@ import {
   separation,
   simulateColorVision,
   worstCaseContrastOnScrim,
-} from './palette-math'
-import { COLOR_VISION_MODES, type ColorVisionMode } from './accessibility'
+} from './palette-math.js'
+import { COLOR_VISION_MODES, type ColorVisionMode } from './accessibility.js'
 import {
   DURABILITY_HIGH,
   DURABILITY_LOW,
@@ -34,7 +34,7 @@ import {
   SURFACE_RAISED,
   XP_FILL,
   XP_LEVEL,
-} from './palette-tokens'
+} from './palette-tokens.js'
 
 const ZERO = 0
 const ONE = 1

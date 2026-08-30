@@ -77,15 +77,15 @@ import {
   writePercent,
   writeStyle,
   writeText,
-} from './dom-write'
-import type { DomElement, DomElementFactory } from './dom-surface'
+} from './dom-write.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
 import {
   HOTBAR_SLOT_COUNT,
   type HudViewModel,
   type IconState,
   type SlotView,
   hotbarSlotIndex,
-} from '../domain/hud-view-model'
+} from '../domain/hud-view-model.js'
 import {
   ICON_ROW_LABEL,
   type IconElement,
@@ -93,19 +93,19 @@ import {
   createIconElement,
   retireIconElement,
   updateIconElement,
-} from './icon-element'
+} from './icon-element.js'
 import {
   type MotionPreference,
   animationDurationMs,
-} from '../domain/accessibility'
-import { PALETTE_VAR, declarePalette } from './palette-css'
+} from '../domain/accessibility.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotElement,
   createSlotElement,
   setSlotKeyboardFocus,
   setSlotTabStop,
   updateSlotElement,
-} from './slot-element'
+} from './slot-element.js'
 
 /**
  * How long the XP bar takes to slide, at full motion.
@@ -265,20 +265,15 @@ const renderHotbarSlots = (
 ): void => {
   for (const [index, slot] of hotbar.entries()) {
     const view = views[index]
-    // UNCOVERED ON PURPOSE, and it is the only such arm in this repository.
-    //
     // `hudViewModel` builds `hotbar` with `Array.from({ length:
-    // HOTBAR_SLOT_COUNT })`, so its output is always exactly as long as
-    // `cells.hotbar` and this can never be `undefined`. It stays because
-    // `HudViewModel` is a PUBLISHED type and `render` a published function:
-    // The type says `ReadonlyArray<SlotView>` and nothing in it says nine,
-    // So a consumer that assembles one by hand — which is what a published
-    // View model is FOR — can hand over a shorter one.
-    //
-    // Covering it would mean building a model that bypasses the only
-    // Producer, which teaches the next reader that the producer can be
-    // Short. Leaving the surplus squares alone is the inert answer: a
-    // Stale slot rather than a crash mid-frame. docs/testing.md §6-2.
+    // HOTBAR_SLOT_COUNT })`, so ITS output is always exactly as long as
+    // `cells.hotbar`. But `HudViewModel` is a PUBLISHED type and `render` a
+    // Published function: the type says `ReadonlyArray<SlotView>` and nothing
+    // In it says nine, so a consumer that assembles one by hand — which is
+    // What a published view model is for — can hand over a shorter one, and
+    // This guard's "leave the surplus square alone" arm is exercised directly
+    // By such a model in `test/hud-view.test.ts` (the "shorter hotbar" case),
+    // Not by anything `hudViewModel` itself can produce.
     if (typeof view !== 'undefined') {
       // The hotbar has no merge highlighting — that is an inventory-drag
       // Concept and mc-sim answers it per screen, not per frame.

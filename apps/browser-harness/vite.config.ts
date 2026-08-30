@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 const here = fileURLToPath(new URL('.', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url))
 
-export default defineConfig({
+const config: ReturnType<typeof defineConfig> = defineConfig({
   root: here,
   server: {
     // 5182, and the two numbers it is avoiding are both real.
@@ -46,3 +46,5 @@ export default defineConfig({
   // `package.json#files` to disagree about.
   appType: 'mpa',
 })
+
+export default config

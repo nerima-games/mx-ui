@@ -84,10 +84,10 @@
  * The state is already carried by a glyph and by three words; motion would add
  * no information and one more thing to remember to disable.
  */
-import { type AttributeCell, attributeCell, writeAttribute, writeHidden } from './dom-write'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { PALETTE_VAR, declarePalette } from './palette-css'
-import type { SaveMessage } from '../domain/save-status'
+import { type AttributeCell, attributeCell, writeAttribute, writeHidden } from './dom-write.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import type { SaveMessage } from '../domain/save-status.js'
 
 /** Render order, top to bottom. Also the order the tests sweep. */
 export const SAVE_MESSAGES: ReadonlyArray<SaveMessage> = ['saving', 'saved', 'failed']

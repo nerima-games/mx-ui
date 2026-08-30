@@ -1,10 +1,13 @@
-import { type SlotView, slotView } from './hud-view-model'
+import { type SlotView, slotView } from './hud-view-model.js'
 
 export const ANVIL_SLOT_IDS = ['primary-input', 'secondary-input', 'output'] as const
 
 export type AnvilSlotId = (typeof ANVIL_SLOT_IDS)[number]
 
-export const ANVIL_OPERATION_TARGETS = [...ANVIL_SLOT_IDS, 'name'] as const
+export const ANVIL_OPERATION_TARGETS: readonly [...typeof ANVIL_SLOT_IDS, 'name'] = [
+  ...ANVIL_SLOT_IDS,
+  'name',
+]
 
 export type AnvilOperationTarget = (typeof ANVIL_OPERATION_TARGETS)[number]
 

@@ -42,7 +42,7 @@ export type StageId = string & Brand.Brand<'StageId'>
 /** The boundary both brand predicates below check against. */
 const ZERO = 0
 
-export const StageId = Brand.refined<StageId>(
+export const StageId: Brand.Brand.Constructor<StageId> = Brand.refined<StageId>(
   (value) => value.trim().length > ZERO,
   (value) => Brand.error(`StageId must be a non-blank string, received ${JSON.stringify(value)}`),
 )
@@ -57,7 +57,7 @@ export const StageId = Brand.refined<StageId>(
  */
 export type DeltaTimeSecs = number & Brand.Brand<'DeltaTimeSecs'>
 
-export const DeltaTimeSecs = Brand.refined<DeltaTimeSecs>(
+export const DeltaTimeSecs: Brand.Brand.Constructor<DeltaTimeSecs> = Brand.refined<DeltaTimeSecs>(
   (value) => Number.isFinite(value) && value >= ZERO,
   (value) => Brand.error(`DeltaTimeSecs must be a finite, non-negative number of seconds, received ${value}`),
 )

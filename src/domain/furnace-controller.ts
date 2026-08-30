@@ -284,7 +284,16 @@ const cookProgressOf = (state: FurnaceState, recipe: FurnaceRecipe | undefined):
   return state.cookProgressSecs / recipe.cookTimeSecs
 }
 
-export const furnaceSnapshotOf = (state: FurnaceState, rules: FurnaceRules) => {
+export const furnaceSnapshotOf = (
+  state: FurnaceState,
+  rules: FurnaceRules,
+): {
+  readonly burnProgress: number
+  readonly cookProgress: number
+  readonly fuel: FurnaceStack | undefined
+  readonly input: FurnaceStack | undefined
+  readonly output: FurnaceStack | undefined
+} => {
   const recipe = recipeFor(rules, state)
   return {
     burnProgress: burnProgressOf(state),

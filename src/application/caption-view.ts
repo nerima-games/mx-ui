@@ -38,11 +38,11 @@ import {
   writeHidden,
   writeStyle,
   writeText,
-} from './dom-write'
-import { type CaptionLineView, MAX_VISIBLE_CAPTIONS } from '../domain/caption'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { type MotionPreference, shouldAnimate } from '../domain/accessibility'
-import { PALETTE_VAR, declarePalette } from './palette-css'
+} from './dom-write.js'
+import { type CaptionLineView, MAX_VISIBLE_CAPTIONS } from '../domain/caption.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { type MotionPreference, shouldAnimate } from '../domain/accessibility.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
 
 /** Below this a line would be unreadable; the queue expires it before then anyway. */
 const MIN_OPACITY = 0.15

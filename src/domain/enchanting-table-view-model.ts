@@ -1,11 +1,11 @@
-import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model'
+import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
 
 export const ENCHANTING_SLOT_IDS = ['item', 'lapis'] as const
 export const ENCHANTING_OFFER_IDS = ['offer-1', 'offer-2', 'offer-3'] as const
-export const ENCHANTING_OPERATION_TARGETS = [
-  ...ENCHANTING_SLOT_IDS,
-  ...ENCHANTING_OFFER_IDS,
-] as const
+export const ENCHANTING_OPERATION_TARGETS: readonly [
+  ...typeof ENCHANTING_SLOT_IDS,
+  ...typeof ENCHANTING_OFFER_IDS,
+] = [...ENCHANTING_SLOT_IDS, ...ENCHANTING_OFFER_IDS]
 
 export type EnchantingSlotId = (typeof ENCHANTING_SLOT_IDS)[number]
 export type EnchantingOfferId = (typeof ENCHANTING_OFFER_IDS)[number]

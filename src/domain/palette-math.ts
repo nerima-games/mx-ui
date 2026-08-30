@@ -1,6 +1,6 @@
 /** Colour arithmetic used by the palette accessibility survey. */
-import { type Rgb, SCRIM, SCRIM_ALPHA } from './palette-tokens'
-import type { ColorVisionMode } from './accessibility'
+import { type Rgb, SCRIM, SCRIM_ALPHA } from './palette-tokens.js'
+import type { ColorVisionMode } from './accessibility.js'
 
 const ZERO = 0
 const CHANNEL_MAX = 255

@@ -29,22 +29,22 @@ import {
   applyCaptionSettings,
   emptyCaptionQueue,
   expireCaptions,
-} from '../domain/caption'
-import type { DeltaTimeSecs, GameModule, StageRegistration } from '../domain/frame-contract'
+} from '../domain/caption.js'
+import type { DeltaTimeSecs, GameModule, StageRegistration } from '../domain/frame-contract.js'
 import { Effect, Layer, Ref } from 'effect'
 import {
   type FpsCounter,
   advanceFpsCounter,
   emptyFpsCounter,
-} from '../domain/fps-counter'
+} from '../domain/fps-counter.js'
 import {
   type HudViewModel,
   type VitalsSnapshot,
   hudViewModel,
   spawnSnapshot,
-} from '../domain/hud-view-model'
-import { type ModalStack, emptyModalStack } from '../domain/modal-stack'
-import { UI_STAGE_IDS, UPSTREAM_STAGE_IDS } from './stage-ids'
+} from '../domain/hud-view-model.js'
+import { type ModalStack, emptyModalStack } from '../domain/modal-stack.js'
+import { UI_STAGE_IDS, UPSTREAM_STAGE_IDS } from './stage-ids.js'
 
 /** `elapsedSecs` starts at zero and only ever accumulates `dt`. */
 const INITIAL_ELAPSED_SECS = 0

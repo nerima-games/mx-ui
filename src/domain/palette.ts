@@ -4,6 +4,6 @@
  * Tokens, colour arithmetic, and the accessibility survey are kept in separate
  * modules so callers can retain this stable import path without coupling them.
  */
-export * from './palette-tokens'
-export * from './palette-math'
-export * from './palette-survey'
+export * from './palette-tokens.js'
+export * from './palette-math.js'
+export * from './palette-survey.js'

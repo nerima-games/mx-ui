@@ -6,8 +6,8 @@ import {
   writeAttribute,
   writeHidden,
   writeText,
-} from './dom-write'
-import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface'
+} from './dom-write.js'
+import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import {
   ENCHANTING_OFFER_IDS,
   ENCHANTING_OPERATION_TARGETS,
@@ -18,14 +18,14 @@ import {
   type EnchantingSlotId,
   type EnchantingSlotView,
   type EnchantingTableViewModel,
-} from '../domain/enchanting-table-view-model'
-import { PALETTE_VAR, declarePalette } from './palette-css'
+} from '../domain/enchanting-table-view-model.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotElement,
   createSlotElement,
   setSlotButtonView,
   updateSlotElement,
-} from './slot-element'
+} from './slot-element.js'
 
 export type EnchantingInteractionView = {
   readonly focusedTarget: EnchantingOperationTarget
@@ -62,15 +62,17 @@ const SLOT_LABEL: Readonly<Record<EnchantingSlotId, string>> = {
 }
 
 const slotAriaLabel = (slot: EnchantingSlotView): string => {
-  if (slot.empty) {
+  // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts)
+  // Guarantees the two always agree. Checking the field this function actually reads lets
+  // TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a
+  // Check on `empty` alone could never let the type system prove impossible (same call as
+  // `anvil-view.ts`'s `slotAriaLabel`).
+  // `countLabel` stays `??`-guarded: unlike `itemId`, it is genuinely absent for a real, in-repo
+  // Stack of exactly one.
+  if (typeof slot.itemId === 'undefined') {
     return `${SLOT_LABEL[slot.id]}, empty`
   }
-  // `itemId ?? 'empty'` is UNCOVERED ON PURPOSE (docs/testing.md §5).
-  // `slotView` (domain/hud-view-model.ts) guarantees `itemId` is defined exactly when `empty` is
-  // `false`. `anvil-view.ts` and `chest-storage-view.ts` document the same invariant for their own
-  // Label builders. Forging a slot where the two disagree would mean bypassing the producer.
-  // `countLabel`'s own `?? '1'` stays guarded: it is genuinely absent for a real stack of one.
-  return `${SLOT_LABEL[slot.id]}, ${slot.itemId ?? 'empty'}, ${slot.countLabel ?? '1'}`
+  return `${SLOT_LABEL[slot.id]}, ${slot.itemId}, ${slot.countLabel ?? '1'}`
 }
 
 const offerLabel = (offer: EnchantingOfferView): string => {

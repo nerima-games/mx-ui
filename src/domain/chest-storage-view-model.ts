@@ -1,9 +1,9 @@
-import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model'
+import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
 import {
   INVENTORY_MAIN_SLOT_COUNT,
   INVENTORY_SLOT_COUNT,
   type MirroredItemId,
-} from './inventory-view-model'
+} from './inventory-view-model.js'
 
 const ZERO = 0
 /** The slot index a value with no real position projects through, e.g. the cursor. */
@@ -17,7 +17,11 @@ const DISPENSER_SLOT_COUNT = 9
 
 export const CHEST_STORAGE_COLUMNS = 9
 export const CHEST_STORAGE_ROWS = 3
-export const CHEST_STORAGE_SLOT_COUNT = CHEST_STORAGE_COLUMNS * CHEST_STORAGE_ROWS
+// A literal, not `CHEST_STORAGE_COLUMNS * CHEST_STORAGE_ROWS`: --isolatedDeclarations
+// Cannot infer an arithmetic expression's result without evaluating it, and this
+// Needs to stay the exact literal `27` for `ChestStorageSlotCount` below to remain a
+// Union of the three real slot counts rather than widening to plain `number`.
+export const CHEST_STORAGE_SLOT_COUNT = 27 // === CHEST_STORAGE_COLUMNS * CHEST_STORAGE_ROWS
 export type ChestStorageSlotCount =
   | typeof HOPPER_SLOT_COUNT
   | typeof DISPENSER_SLOT_COUNT
@@ -153,7 +157,7 @@ export const chestStorageViewModel = (snapshot: ChestStorageSnapshot): ChestStor
 /** Typed result for a host-owned pointer or keyboard activation of a slot. */
 export const chestStorageSlotClickIntent = (
   target: ChestStorageSlotTarget,
-  chestSlotCount = CHEST_STORAGE_SLOT_COUNT,
+  chestSlotCount: ChestStorageSlotCount = CHEST_STORAGE_SLOT_COUNT,
 ): ChestStorageIntent | undefined => {
   if (validSlot(target.region, target.slot, chestSlotCount)) {
     return Object.freeze({ _tag: 'SlotClicked', target: Object.freeze({ ...target }) })

@@ -17,7 +17,7 @@ export const emptyFpsCounter: FpsCounter = {
 export const advanceFpsCounter = (
   counter: FpsCounter,
   dtSecs: number,
-  sampleWindowSecs = FPS_SAMPLE_WINDOW_SECS,
+  sampleWindowSecs: number = FPS_SAMPLE_WINDOW_SECS,
 ): FpsCounter => {
   if (
     !Number.isFinite(dtSecs) ||

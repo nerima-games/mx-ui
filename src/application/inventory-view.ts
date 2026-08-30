@@ -49,15 +49,15 @@ import {
   writeHidden,
   writeStyle,
   writeText,
-} from './dom-write'
+} from './dom-write.js'
 import type {
   CraftingOutcomeView,
   InventoryViewModel,
   RegionId,
   SlotRegion,
-} from '../domain/inventory-view-model'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { PALETTE_VAR, declarePalette } from './palette-css'
+} from '../domain/inventory-view-model.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotButtonView,
   type SlotElement,
@@ -66,8 +66,8 @@ import {
   setSlotButtonView,
   setSlotHidden,
   updateSlotElement,
-} from './slot-element'
-import type { SlotView } from '../domain/hud-view-model'
+} from './slot-element.js'
+import type { SlotView } from '../domain/hud-view-model.js'
 
 type RegionElement = {
   readonly root: DomElement

@@ -69,9 +69,15 @@ export type FakeDocument = DomElementFactory & {
 }
 
 export class FakeStyle implements DomStyle {
-  readonly properties = new Map<string, string>()
+  readonly properties: Map<string, string> = new Map<string, string>()
+  private readonly owner: FakeElement
 
-  constructor(private readonly owner: FakeElement) {}
+  // Not a parameter-property shorthand: `erasableSyntaxOnly` bans it, since it
+  // needs a runtime transform (an implicit field assignment) rather than being
+  // erasable type syntax.
+  constructor(owner: FakeElement) {
+    this.owner = owner
+  }
 
   setProperty(property: string, value: string): void {
     this.properties.set(property, value)
@@ -88,15 +94,22 @@ export class FakeElement implements DomElement {
   readonly nodeType = 1
   readonly tagName: string
   readonly children: Array<FakeElement> = []
-  readonly attributes = new Map<string, string>()
+  readonly attributes: Map<string, string> = new Map<string, string>()
   readonly listeners: Array<string> = []
-  readonly eventListeners = new Map<string, Array<EventListenerOrEventListenerObject>>()
+  readonly eventListeners: Map<string, Array<EventListenerOrEventListenerObject>> = new Map<
+    string,
+    Array<EventListenerOrEventListenerObject>
+  >()
   readonly style: FakeStyle
   value = ''
   private text = ''
+  private readonly log: Array<Mutation>
 
-  constructor(tagName: string, private readonly log: Array<Mutation>) {
+  // Not a parameter-property shorthand: `erasableSyntaxOnly` bans it (see
+  // `FakeStyle`'s constructor above).
+  constructor(tagName: string, log: Array<Mutation>) {
     this.tagName = tagName
+    this.log = log
     this.style = new FakeStyle(this)
   }
 

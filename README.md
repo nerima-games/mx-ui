@@ -90,29 +90,37 @@ roving tabindex とスクリーンリーダー向けラベルは同期したま�
 ### セットアップ
 
 ```console
-$ direnv allow          # flake.nix の devShell で nodejs_24 + corepack が入る
-$ pnpm install
+$ direnv allow          # flake.nix の devShell で nodejs_24 + corepack_24 + oxlint + ast-grep が入る
+$ NODE_AUTH_TOKEN=$(gh auth token) pnpm install
 ```
 
-Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）を用意する。
+Nix を使わない場合は Node.js 24 以上と pnpm 11.24.0 以上（`corepack` 推奨）、
+`oxlint` 1.75.0、`ast-grep` を別途用意する。
+
+`NODE_AUTH_TOKEN` が要るのは、`@nerima-games/*`（mc-kernel / mc-sim / mc-audio）を GitHub Packages
+から解決するため（`.npmrc` の `@nerima-games:registry=`）。公開リポジトリの読み取りでも認証は要る。
 
 > **注意**: ツールチェーンは `devenv.nix` から `flake.nix` + `flake.lock` に移行済みである。
 > `flake.lock` はコミットされているので、`nix develop`（`.envrc` は `use flake`）は
 > 誰の手元でも同じ nixpkgs に解決される。`devenv.nix` / `devenv.lock` はもう存在しない。
+> `oxlint` と `ast-grep` は npm devDependency ではなく Nix 側（`flake.nix`）から供給される
+> ——組織のツールチェーン凍結（Wave 0）で 16 リポジトリ共通の 1 バージョンに揃えた。
 
 ### コマンド
 
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json` / `tsconfig.test.json` / `tsconfig.preview.json` を型検査 |
-| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
+| `pnpm lint` | `oxlint --deny-warnings` + `ast-grep scan`（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。oxlint は **`--deny-warnings` 付きで走る**ため `warn` のルールもビルドを落とす。ast-grep は依存境界（`no-restricted-imports`）と壁時計直読み禁止（`no-wall-clock-read`）を見る |
 | `pnpm lint:fix` | oxlint の自動修正 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm test:watch` | vitest watch |
-| `pnpm test:coverage` | カバレッジ計測（閾値は未設定。[docs/testing.md](./docs/testing.md) §5） |
-| `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + 壁時計直読み禁止の検査 |
+| `pnpm test:coverage` | カバレッジ計測 + **100% ゲート**（[docs/testing.md](./docs/testing.md) §5） |
+| `pnpm build` | `scripts/clean-dist.mjs` で `dist/` を消してから `tsc -p tsconfig.release.json` で emit |
+| `pnpm package:verify` | `pnpm build` の後、packed tarball を別ディレクトリにインストールして `exports` を検証 |
 | `pnpm preview` | 各画面プレビュー（[apps/preview-screens/](./apps/preview-screens/README.md)）。**`pnpm verify` には入れていない** |
-| `pnpm verify` | `typecheck && lint && check:deps && api:check && test`。CI と同じ内容 |
+| `pnpm test:browser` | Playwright。**`pnpm verify` には入れていない**（CI では別 job） |
+| `pnpm verify` | `typecheck && lint && test`。CI と同じ内容 |
 
 ## 現状
 

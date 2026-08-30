@@ -1,0 +1,13 @@
+{
+  // The sole emitting project. `pnpm build` runs `tsc -p tsconfig.release.json`
+  // after `scripts/clean-dist.mjs` clears `dist/`. Shipped source only: the
+  // same file set `tsconfig.build.json` type-checks.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/index.ts", "src/domain/**/*.ts", "src/application/**/*.ts", "src/stages/**/*.ts"],
+  "exclude": ["node_modules", "coverage", "dist", "test/**", "scripts/**", "**/*.test.ts", "**/*.spec.ts"]
+}

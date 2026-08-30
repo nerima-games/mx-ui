@@ -2,7 +2,7 @@ import type {
   EnchantingOfferId,
   EnchantingOfferSnapshot,
   EnchantingTableSnapshot,
-} from './enchanting-table-view-model'
+} from './enchanting-table-view-model.js'
 
 export type ItemEnchantment = {
   readonly enchantmentId: string
