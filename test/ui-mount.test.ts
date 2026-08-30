@@ -10,6 +10,7 @@ import {
   inventoryViewModel,
   type InventoryViewModel,
 } from '../src/domain/inventory-view-model'
+import { itemStack } from '@nerima-games/mc-sim'
 
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [{ sessionId: 'session-1', name: 'Cliff House' }]
 
@@ -520,7 +521,7 @@ describe('UiMount', () => {
 
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [{ item: 'minecraft:torch', count: 3 }] },
+      inventory: { slots: [itemStack('torch', 3)] },
     })
 
     runtime.updateInventory(model)
@@ -528,17 +529,17 @@ describe('UiMount', () => {
     const hotbarFirstSlot = () =>
       inventory?.querySelector('[data-region="hotbar"] [data-mx-ui="slot"]')
     expect(hotbarFirstSlot()?.querySelector('[data-mx-ui="slot-item"]')?.textContent).toBe(
-      'minecraft:torch',
+      'torch',
     )
 
     runtime.openInventory()
     const other = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [{ item: 'minecraft:coal', count: 5 }] },
+      inventory: { slots: [itemStack('coal', 5)] },
     })
     runtime.updateInventory(other)
     expect(hotbarFirstSlot()?.querySelector('[data-mx-ui="slot-item"]')?.textContent).toBe(
-      'minecraft:coal',
+      'coal',
     )
   })
 
@@ -655,7 +656,7 @@ describe('UiMount', () => {
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+          result: { _tag: 'Match', output: itemStack('stick', 4) },
         },
       }),
     )
@@ -746,7 +747,7 @@ describe('UiMount', () => {
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+          result: { _tag: 'Match', output: itemStack('stick', 4) },
         },
       }),
     )
@@ -770,7 +771,7 @@ describe('UiMount', () => {
 
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [{ item: 'minecraft:diamond', count: 1 }] },
+      inventory: { slots: [itemStack('diamond', 1)] },
     })
     runtime.openInventory(model)
     const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
@@ -778,7 +779,7 @@ describe('UiMount', () => {
       inventory
         ?.querySelector('[data-region="hotbar"] [data-mx-ui="slot"]')
         ?.querySelector('[data-mx-ui="slot-item"]')?.textContent,
-    ).toBe('minecraft:diamond')
+    ).toBe('diamond')
 
     const focusedBefore = document.activeElement
     runtime.openInventory()
@@ -848,7 +849,7 @@ describe('UiMount', () => {
 
     const base = inventoryViewModel({
       ...emptyInventorySnapshot,
-      offhand: { item: 'minecraft:shield', count: 1 },
+      offhand: itemStack('shield', 1),
     })
     const widenedOffhand: InventoryViewModel = {
       ...base,

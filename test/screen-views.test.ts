@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
 import { captionLines, emptyCaptionQueue, receiveCaption, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
 import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
+import { itemStack } from '@nerima-games/mc-sim'
 import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
 import { createCaptionView } from '../src/application/caption-view'
 import { createInventoryView } from '../src/application/inventory-view'
@@ -187,7 +188,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     view.render(
       inventoryViewModel({
         ...emptyInventorySnapshot,
-        armour: [{ item: 'IRON_HELMET', count: 1 }],
+        armour: [itemStack('iron_helmet', 1)],
       }),
       { focused: { index: 0, kind: 'slot', region: 'armour' }, status: 'Helmet equipped' },
     )
@@ -251,7 +252,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     view.render(
       inventoryViewModel({
         ...emptyInventorySnapshot,
-        carried: { item: 'stone', count: 12 },
+        carried: itemStack('stone', 12),
       }),
     )
 
@@ -273,7 +274,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const view = createInventoryView(factory, parent)
 
     view.render(
-      inventoryViewModel({ ...emptyInventorySnapshot, carried: { item: 'stone', count: 1 } }),
+      inventoryViewModel({ ...emptyInventorySnapshot, carried: itemStack('stone', 1) }),
       { focused: { kind: 'crafting-output' }, status: 'Carrying stone' },
     )
 
@@ -296,7 +297,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+          result: { _tag: 'Match', output: itemStack('stick', 4) },
         },
       }),
     )
@@ -319,7 +320,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+          result: { _tag: 'Match', output: itemStack('stick', 4) },
         },
       }),
       { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
@@ -335,7 +336,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: { item: 'stick', count: 1 } },
+          result: { _tag: 'Match', output: itemStack('stick', 1) },
         },
       }),
       { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
@@ -353,13 +354,13 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: { item: 'stick', count: 4 } },
+          result: { _tag: 'Match', output: itemStack('stick', 4) },
         },
       }),
     )
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      carried: { item: 'stone', count: 12 },
+      carried: itemStack('stone', 12),
       crafting: {
         gridWidth: 2,
         grid: [undefined, undefined, undefined, undefined],
@@ -441,7 +442,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         ...emptyInventorySnapshot,
         crafting: {
           gridWidth: size,
-          grid: Array.from({ length: size * size }, () => ({ item: 'stone', count: 1 })),
+          grid: Array.from({ length: size * size }, () => itemStack('stone', 1)),
           result: { _tag: 'NoMatch' },
         },
       })

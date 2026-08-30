@@ -2,45 +2,6 @@
  * The inventory and crafting screens: a pure function from state to layout.
  *
  * ---------------------------------------------------------------------------
- * Why this exists now, when it was deferred before
- * ---------------------------------------------------------------------------
- *
- * `pnpm preview --stats` carried this as G2 for a while, with a real argument
- * behind it: mc-sim owns the inventory STATE (plan.md §2.3-1) and has not
- * published its shape, so a derivation written now would invent the snapshot
- * type it reads and `api-lock.md` would publish the invention as this package's
- * surface.
- *
- * The argument is sound and it is not unique to this case — which is what
- * settles it. It is the argument for every mirror in the organisation:
- *
- *   - `domain/frame-contract.ts` here restates mc-kernel's contract because
- *     kernel is not published, and carries a deletion date.
- *   - `mx-gameplay/domain/chunk-store-port.ts` restates mc-worldgen's entire
- *     `ChunkStore` for the same reason, with `test/chunk-store-mirror.test.ts`
- *     pinning the shape and the tag key.
- *   - `mc-render/domain/camera-mirror.ts` and every `domain/kernel-vocabulary.ts`
- *     are the same move again.
- *   - And `VitalsSnapshot`, forty lines away in `domain/hud-view-model.ts`, is
- *     already exactly this: mc-sim's player state, mirrored, exported through
- *     the barrel, and recorded in `api-lock.md` since the first cut. The
- *     deferral argument, applied consistently, would have forbidden
- *     `hudViewModel` too.
- *
- * The premise was also wrong on the facts in the way that matters. mc-sim's
- * shape is not UNKNOWN, it is UNPUBLISHED: `mc-sim/domain/inventory.ts` defines
- * `Inventory`, `Slot`, `ItemStack`, `ItemId` and `INVENTORY_SLOT_COUNT`, and
- * mc-sim's own `api-lock.md` has all five under `## Exported`. "Nothing is on
- * GitHub Packages yet" is the whole of the obstacle, and it is the obstacle the
- * mirror pattern was invented for.
- *
- * What the deferral got RIGHT is preserved: nothing below is a guess dressed as
- * a fact. The mirror is marked provisional, carries its replacement instructions,
- * and is pinned by `test/inventory-mirror.test.ts`. Where mc-sim genuinely has
- * not answered for a particular frame, this module projects `unknown` rather
- * than inventing an answer. See `CraftingOutcomeView`.
- *
- * ---------------------------------------------------------------------------
  * The boundary, stated once
  * ---------------------------------------------------------------------------
  *
@@ -55,6 +16,22 @@
  * There is no `canStack` and no `matchRecipe` in this file and there must never
  * be one. Both answers arrive in the snapshot; this module PROJECTS them, and
  * when they are absent it says so rather than computing a plausible substitute.
+ *
+ * ---------------------------------------------------------------------------
+ * `Inventory` / `Slot` / `ItemStack` are `@nerima-games/mc-sim`'s, imported
+ * directly (Wave 1, W1-M7)
+ * ---------------------------------------------------------------------------
+ *
+ * This module used to carry a hand-written copy of these three types, from
+ * before mc-sim was published. `count` is `StackCount` there — a branded,
+ * mc-kernel-owned integer clamped per item's stack limit — and this module
+ * never brands one itself; every `ItemStack` it handles either arrived from a
+ * snapshot mc-sim built, or (in `slotSnapshotOf`) has its count read into the
+ * plain `number` `HotbarSlotSnapshot` expects, which a `StackCount` widens
+ * into without help. `durability` still does not exist in mc-sim's
+ * `ItemStack` (`{ item, count }` only) — mx-ui's `HotbarSlotSnapshot` carries
+ * it as its own field, and `slotSnapshotOf` remains the one place that
+ * attaches it.
  */
 import {
   HOTBAR_SLOT_COUNT,
@@ -62,70 +39,9 @@ import {
   type SlotView,
   slotView,
 } from './hud-view-model.js'
+import { INVENTORY_SLOT_COUNT, type Inventory, type ItemStack, type Slot } from '@nerima-games/mc-sim'
 
-// ---------------------------------------------------------------------------
-// PROVISIONAL LOCAL MIRROR OF `@nerima-games/mc-sim`'s inventory value
-// ---------------------------------------------------------------------------
-
-/*
- * This section is scheduled for deletion. Do not build on it.
- *
- * mc-sim is a legitimate `dependencies` edge for this repository (plan.md
- * §3.13: mx-ui's parents are sim and audio), so this mirror stands in for an
- * UNPUBLISHED import rather than a forbidden one. plan.md §6 Step 3 publishes
- * bottom-up and nothing is published yet, so `pnpm check:deps` would reject an
- * import of a package absent from `package.json#dependencies`.
- *
- * WHEN mc-sim IS PUBLISHED:
- *   1. add `@nerima-games/mc-sim` to `package.json#dependencies`;
- *   2. delete this section;
- *   3. `import type { Inventory, ItemStack, Slot, ItemId } from '@nerima-games/mc-sim'`
- *      and delete the re-declarations, keeping `slotSnapshotOf` as the adapter.
- *
- * The names and shapes below are transcribed from `mc-sim/domain/inventory.ts`
- * and cross-checked against mc-sim's own `api-lock.md`, so the repoint in step 3
- * is an import statement and nothing else. `test/inventory-mirror.test.ts`
- * asserts that in both directions, which is the only thing that can keep the
- * promise honest.
- *
- * TWO DELIBERATE WIDENINGS, recorded here rather than left to be discovered:
- *
- *   1. `count` is a plain `number`. mc-sim's is `StackCount`, a branded integer
- *      in [0, 64] owned by mc-kernel. Branding it here would mint a SECOND
- *      brand of the same name for the same concept, and a downstream reader
- *      would end up converting between two brands of one number — the failure
- *      `domain/frame-contract.ts` refuses for `ClockPort` and for the same
- *      reason. A branded value from kernel is assignable to this alias, which
- *      is the direction a consumer needs, so step 3 narrows rather than widens.
- *
- *   2. `durability` does not exist in mc-sim at all. Its `ItemStack` is
- *      `{ item, count }`, and its own header says so: 「PRE-AUDIT FIRST CUT.
- *      The real model needs durability, enchantments, NBT-ish per-item state and
- *      armour slots」. mx-ui already had a `durability` field on
- *      `HotbarSlotSnapshot` before this file existed, so the divergence is not
- *      introduced here — it is *named* here, and `slotSnapshotOf` is the single
- *      place that has to change when mc-sim grows the field.
- */
-
-/** Mirrors mc-sim's `ItemId`. A bare string there too, and provisional there too. */
-export type MirroredItemId = string
-
-/** Mirrors mc-sim's `ItemStack`. See widening 1 on `count`. */
-export type MirroredItemStack = {
-  readonly item: MirroredItemId
-  readonly count: number
-}
-
-/** Mirrors mc-sim's `Slot`: empty is `undefined`, not a zero-count stack. */
-export type MirroredSlot = MirroredItemStack | undefined
-
-/** Mirrors mc-sim's `Inventory`. */
-export type MirroredInventory = {
-  readonly slots: ReadonlyArray<MirroredSlot>
-}
-
-/** Mirrors mc-sim's `INVENTORY_SLOT_COUNT` (`mc-sim/domain/inventory.ts:34`). */
-export const INVENTORY_SLOT_COUNT = 36
+export { INVENTORY_SLOT_COUNT }
 
 // ---------------------------------------------------------------------------
 // What mx-ui owns: the layout
@@ -157,7 +73,7 @@ export const INVENTORY_MAIN_SLOT_COUNT: number = INVENTORY_MAIN_COLUMNS * INVENT
  */
 export type CraftingSnapshot = {
   readonly gridWidth: number
-  readonly grid: ReadonlyArray<MirroredSlot>
+  readonly grid: ReadonlyArray<Slot>
   /**
    * Mc-sim's answer to "does this grid make anything".
    *
@@ -172,7 +88,7 @@ export type CraftingSnapshot = {
 }
 
 export type CraftingResultSnapshot =
-  | { readonly _tag: 'Match'; readonly output: MirroredItemStack }
+  | { readonly _tag: 'Match'; readonly output: ItemStack }
   | { readonly _tag: 'NoMatch' }
 
 /**
@@ -185,20 +101,21 @@ export type CraftingResultSnapshot =
  * exists to refuse.
  */
 export type InventorySnapshot = {
-  readonly inventory: MirroredInventory
+  readonly inventory: Inventory
   /** Which hotbar slot the player is holding. Clamped, never trusted (DN-UI-7). */
   readonly selectedHotbarIndex: number
   /**
    * Per-slot durability in 0–1, by slot index. `undefined` for the whole map
-   * means mc-sim does not carry durability yet — see widening 2 above.
+   * means mc-sim does not carry durability yet — see the module header on
+   * `ItemStack`.
    */
   readonly durabilityBySlot: ReadonlyMap<number, number> | undefined
   /** The stack on the cursor, if the player is dragging one. */
-  readonly carried: MirroredSlot
+  readonly carried: Slot
   /** `undefined` — mc-sim has no armour slots. Projected as unknown, not as empty. */
-  readonly armour: ReadonlyArray<MirroredSlot> | undefined
+  readonly armour: ReadonlyArray<Slot> | undefined
   /** `undefined` is unknown, `null` is a known-empty offhand, and a stack is occupied. */
-  readonly offhand: MirroredSlot | null
+  readonly offhand: Slot | null
   readonly crafting: CraftingSnapshot | undefined
   /**
    * Slot indices the carried stack may be dropped into, as MC-SIM ANSWERED.
@@ -299,7 +216,7 @@ const EMPTY_STACK_COUNT = 0
  * because `slotView` already knows what to do with one and DN-UI-7c is about
  * what happens when two places decide separately what "empty" means.
  */
-export const slotSnapshotOf = (slot: MirroredSlot, durability?: number): HotbarSlotSnapshot => ({
+export const slotSnapshotOf = (slot: Slot, durability?: number): HotbarSlotSnapshot => ({
   count: slot?.count ?? EMPTY_STACK_COUNT,
   durability,
   itemId: slot?.item,
@@ -308,7 +225,7 @@ export const slotSnapshotOf = (slot: MirroredSlot, durability?: number): HotbarS
 type ProjectRegionOptions = {
   readonly id: RegionId
   readonly columns: number
-  readonly slots: ReadonlyArray<MirroredSlot>
+  readonly slots: ReadonlyArray<Slot>
   readonly firstIndex: number
   readonly durabilityBySlot: ReadonlyMap<number, number> | undefined
   readonly selectedIndex: number
@@ -343,10 +260,10 @@ const projectRegion = ({
  * screen has one.
  */
 const fixedSlots = (
-  slots: ReadonlyArray<MirroredSlot>,
+  slots: ReadonlyArray<Slot>,
   from: number,
   length: number,
-): ReadonlyArray<MirroredSlot> =>
+): ReadonlyArray<Slot> =>
   Array.from({ length }, (_element, offset) => slots[from + offset])
 
 const clampIndex = (value: number, high: number): number => {
@@ -404,7 +321,7 @@ const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
 /** How much less than the slot count the last valid index is. */
 const LAST_INDEX_OFFSET = 1
 
-const armourRegion = (armour: ReadonlyArray<MirroredSlot> | undefined): SlotRegion => {
+const armourRegion = (armour: ReadonlyArray<Slot> | undefined): SlotRegion => {
   if (typeof armour === 'undefined') {
     return {
       id: 'armour',
@@ -422,7 +339,7 @@ const armourRegion = (armour: ReadonlyArray<MirroredSlot> | undefined): SlotRegi
   })
 }
 
-const offhandRegion = (offhand: MirroredSlot | null): SlotRegion => {
+const offhandRegion = (offhand: Slot | null): SlotRegion => {
   if (typeof offhand === 'undefined') {
     return {
       id: 'offhand',
@@ -440,7 +357,7 @@ const offhandRegion = (offhand: MirroredSlot | null): SlotRegion => {
   })
 }
 
-const carriedView = (carried: MirroredSlot): SlotView | undefined => {
+const carriedView = (carried: Slot): SlotView | undefined => {
   if (typeof carried === 'undefined') {
     return
   }
@@ -520,7 +437,7 @@ export const emptyInventorySnapshot: InventorySnapshot = {
   crafting: unknownValue(),
   durabilityBySlot: unknownValue(),
   inventory: {
-    slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (): MirroredSlot => unknownValue()),
+    slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (): Slot => unknownValue()),
   },
   mergeableSlotIndices: unknownValue(),
   offhand: unknownValue(),

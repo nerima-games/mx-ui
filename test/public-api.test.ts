@@ -41,13 +41,13 @@ describe('public API surface', () => {
     }),
   )
 
-  // REGRESSION: `domain/frame-contract.ts` is a stand-in for
-  // @nerima-games/mc-kernel with a deletion date written into its header. The
-  // barrel used to `export *` from it, which published `StageId` and
-  // `DeltaTimeSecs` as API of a package that does not own them — and therefore
-  // turned the promised deletion into a breaking change for every consumer.
-  // mc-sim, mc-render and mc-playground-kit mention their mirrors in an
-  // `index.ts` comment and re-export nothing; this repository now matches.
+  // REGRESSION: `stages/*.ts` import `StageId` and `DeltaTimeSecs` straight
+  // from @nerima-games/mc-kernel (Wave 1, W1-M7 deleted the local stand-in
+  // this repository used to carry). The barrel must not `export *` a kernel
+  // re-export path either, or it would publish `StageId` and `DeltaTimeSecs`
+  // as API of a package that does not own them. mc-sim, mc-render and
+  // mc-playground-kit mention their mirrors in an `index.ts` comment and
+  // re-export nothing; this repository matches.
   it.effect('REGRESSION: does not republish mc-kernel’s vocabulary as its own', () =>
     Effect.sync(() => {
       const kernelsToOwn = ['StageId', 'DeltaTimeSecs']

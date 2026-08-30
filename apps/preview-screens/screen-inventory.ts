@@ -39,6 +39,7 @@ import {
   type ModalStack,
   type ScreenId,
 } from '../../src/domain/modal-stack'
+import { itemStack } from '@nerima-games/mc-sim'
 import { padEnd, type Style } from './ansi'
 import { BAD, FAINT, GOOD, INK, MUTED, SLOT_SELECTED, WARN } from './palette'
 
@@ -47,16 +48,16 @@ export const SAMPLE_INVENTORY: InventorySnapshot = {
   inventory: {
     slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => {
       if (index === 0) {
-        return { item: 'diamond_pickaxe', count: 1 }
+        return itemStack('diamond_pickaxe', 1)
       }
       if (index === 2) {
-        return { item: 'torch', count: 64 }
+        return itemStack('torch', 64)
       }
       if (index === 11) {
-        return { item: 'cobblestone', count: 48 }
+        return itemStack('cobblestone', 48)
       }
       if (index === 19) {
-        return { item: 'bread', count: 3 }
+        return itemStack('bread', 3)
       }
       return undefined
     }),

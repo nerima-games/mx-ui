@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Ref } from 'effect'
-import { DeltaTimeSecs, StageId, type GameModule, type StageRegistration } from '../src/domain/frame-contract'
+import { DeltaTimeSecs, StageId, type GameModule, type StageRegistration } from '@nerima-games/mc-kernel'
 import { CAPTION_LIFETIME_SECS, receiveCaption } from '../src/domain/caption'
 import { hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
 import {
@@ -207,17 +207,22 @@ describe('stage behaviour', () => {
   )
 })
 
-describe('the mirrored DeltaTimeSecs brand is kernel’s', () => {
+describe('the DeltaTimeSecs brand is kernel’s', () => {
   /*
-   * REGRESSION. `domain/frame-contract.ts` restates kernel's `DeltaTimeSecs`
-   * (`mc-kernel/domain/quantities.ts:37-42`), and a brand is keyed by its
-   * STRING: `Brand.Brand<'DeltaTimeSecs'>` here and in kernel are ONE TYPE to
-   * TypeScript, however differently the two constructors validate. So a mirror
-   * that refined differently would be a false guarantee the compiler could
-   * never contradict — which is exactly what mc-physics had, refining to the
+   * REGRESSION, carried over from when this repository restated kernel's
+   * `DeltaTimeSecs` (`mc-kernel/domain/quantities.ts:37-42`) in a local
+   * stand-in (Wave 1, W1-M7 repointed this file straight at kernel's own
+   * export instead). The
+   * risk that test named is still real for a BRAND specifically: it is keyed
+   * by its STRING, so `Brand.Brand<'DeltaTimeSecs'>` written in two places is
+   * ONE TYPE to TypeScript however differently the two constructors validate.
+   * mc-physics once had exactly that — a local mirror refining to the
    * frame-loop clamp [0.001, 0.05] while kernel refines to "finite and
-   * non-negative". A kernel-built `DeltaTimeSecs(30)` satisfied its parameter
-   * types while breaking the invariant its comments claimed.
+   * non-negative" — so a kernel-built `DeltaTimeSecs(30)` satisfied its
+   * parameter types while breaking the invariant its comments claimed. This
+   * test now exercises kernel's real constructor directly, and stays as the
+   * check that its refinement is still the loose one this repository's stages
+   * assume.
    *
    * Kernel's is the agreed refinement and it is deliberately LOOSE: a zero
    * delta is legal, because a frame may be scheduled twice inside one clock

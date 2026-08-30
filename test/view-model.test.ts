@@ -42,8 +42,9 @@ import {
   inventoryViewModel,
   regionOf,
   type InventorySnapshot,
-  type MirroredInventory,
 } from '../src/domain/inventory-view-model'
+import { itemStack, type Inventory } from '@nerima-games/mc-sim'
+import type { ItemType, StackCount } from '@nerima-games/mc-kernel'
 import {
   COLLAPSE_SEPARATION,
   compositeOver,
@@ -883,15 +884,16 @@ describe('inventory and crafting project state without interpreting it', () => {
     ...overrides,
   })
 
-  const filled = (index: number, item: string, count: number): MirroredInventory => ({
+  /** A one-item inventory, for tests that need a single occupied slot. */
+  const filled = (index: number, item: ItemType, count: number): Inventory => ({
     slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, slot) =>
-      slot === index ? { item, count } : undefined,
+      slot === index ? itemStack(item, count) : undefined,
     ),
   })
 
   it.effect('the projection is pure, total and the same for the same input', () =>
     Effect.sync(() => {
-      const snapshot = inventoryWith({ inventory: filled(0, 'DIAMOND_PICKAXE', 1) })
+      const snapshot = inventoryWith({ inventory: filled(0, 'diamond_pickaxe', 1) })
 
       expect(inventoryViewModel(snapshot)).toStrictEqual(inventoryViewModel(snapshot))
       // Nothing is mutated: the caller's snapshot is a value, not a handle.
@@ -910,7 +912,7 @@ describe('inventory and crafting project state without interpreting it', () => {
       // player looks at thirty-six slots instead of nine.
       const model = inventoryViewModel(
         inventoryWith({
-          inventory: filled(0, 'DIAMOND_PICKAXE', 1),
+          inventory: filled(0, 'diamond_pickaxe', 1),
           durabilityBySlot: new Map([[0, 0.5]]),
         }),
       )
@@ -923,7 +925,7 @@ describe('inventory and crafting project state without interpreting it', () => {
       expect(hotbar.slots[0]).toStrictEqual(
         hudViewModel(
           withVitals({
-            hotbar: [{ itemId: 'DIAMOND_PICKAXE', count: 1, durability: 0.5 }],
+            hotbar: [{ itemId: 'diamond_pickaxe', count: 1, durability: 0.5 }],
             selectedHotbarIndex: 0,
           }),
         ).hotbar[0],
@@ -1021,12 +1023,12 @@ describe('inventory and crafting project state without interpreting it', () => {
       const model = inventoryViewModel(
         inventoryWith({
           armour: [
-            { item: 'IRON_HELMET', count: 1 },
+            itemStack('iron_helmet', 1),
             undefined,
             undefined,
-            { item: 'IRON_BOOTS', count: 1 },
+            itemStack('iron_boots', 1),
           ],
-          offhand: { item: 'SHIELD', count: 1 },
+          offhand: itemStack('shield', 1),
         }),
       )
 
@@ -1044,15 +1046,15 @@ describe('inventory and crafting project state without interpreting it', () => {
       // padded to the inventory's 36 — because the region's width is the thing
       // mc-sim said and not a layout constant.
       expect(armour.slots).toHaveLength(4)
-      expect(armour.slots[0]?.itemId).toBe('IRON_HELMET')
+      expect(armour.slots[0]?.itemId).toBe('iron_helmet')
       // An EMPTY armour square is empty, which is a different claim from the
       // whole rack being unknown, and the distinction only exists once the rack
       // is supplied at all.
       expect(armour.slots[1]?.empty).toBe(true)
-      expect(armour.slots[3]?.itemId).toBe('IRON_BOOTS')
+      expect(armour.slots[3]?.itemId).toBe('iron_boots')
 
       expect(offhand.slots).toHaveLength(1)
-      expect(offhand.slots[0]?.itemId).toBe('SHIELD')
+      expect(offhand.slots[0]?.itemId).toBe('shield')
 
       // …and supplying them changed nothing about the regions that were already
       // known, so the two projections are independent.
@@ -1094,7 +1096,7 @@ describe('inventory and crafting project state without interpreting it', () => {
 
       const matched = inventoryViewModel(
         inventoryWith({
-          crafting: { ...grid, result: { _tag: 'Match', output: { item: 'OAK_PLANKS', count: 4 } } },
+          crafting: { ...grid, result: { _tag: 'Match', output: itemStack('oak_planks', 4) } },
         }),
       )
       expect(matched.crafting.kind).toBe('match')
@@ -1103,7 +1105,7 @@ describe('inventory and crafting project state without interpreting it', () => {
       }
       // Projected through the SAME `slotView` as everything else, so the output
       // square and a hotbar slot cannot disagree about when to print a count.
-      expect(matched.crafting.output.itemId).toBe('OAK_PLANKS')
+      expect(matched.crafting.output.itemId).toBe('oak_planks')
       expect(matched.crafting.output.countLabel).toBe('4')
     }),
   )
@@ -1151,11 +1153,11 @@ describe('inventory and crafting project state without interpreting it', () => {
       // nobody was asked.
       const model = inventoryViewModel(
         inventoryWith({
-          inventory: filled(0, 'COBBLESTONE', 32),
-          carried: { item: 'COBBLESTONE', count: 32 },
+          inventory: filled(0, 'cobblestone', 32),
+          carried: itemStack('cobblestone', 32),
         }),
       )
-      expect(model.carried?.itemId).toBe('COBBLESTONE')
+      expect(model.carried?.itemId).toBe('cobblestone')
       expect(model.mergeTargets).toStrictEqual({ kind: 'unknown' })
     }),
   )
@@ -1165,9 +1167,19 @@ describe('inventory and crafting project state without interpreting it', () => {
       // DN-UI-7 applies here for the same reason it applies there: the value
       // crosses a pinned version boundary from mc-sim. A screen that throws is
       // worse than a screen that is briefly wrong.
+      //
+      // Built by hand rather than through `filled`/`itemStack`: mc-sim's own
+      // smart constructor brands `count` via `StackCount`, which THROWS on a
+      // NaN — exactly what this regression needs to hand `inventoryViewModel`
+      // instead, to prove the derivation survives a slot mc-sim itself would
+      // refuse to build.
+      const slots: Array<{ readonly item: 'stone'; readonly count: StackCount } | undefined> =
+        Array.from({ length: INVENTORY_SLOT_COUNT }, (_element, index) =>
+          index === 0 ? { count: Number.NaN as StackCount, item: 'stone' } : undefined,
+        )
       const model = inventoryViewModel(
         inventoryWith({
-          inventory: filled(0, 'STONE', Number.NaN),
+          inventory: { slots },
           selectedHotbarIndex: Number.NaN,
         }),
       )

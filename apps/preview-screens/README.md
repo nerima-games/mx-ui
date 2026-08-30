@@ -108,7 +108,7 @@ DOM プレビューのほうは「ビューモデルが NaN をどう畳むか�
 | # | 無いもの | 状態 |
 | --- | --- | --- |
 | ~~G1~~ | ~~mx-ui が色を 1 つも定義していない~~ | **閉じた。** `domain/palette.ts` がトークンを持ち、保証を宣言し、`surveyPalette()` がそれを測る。§5 の表は**このプレビューが発明した色ではなくパレットそのもの**を測っており、同じ導出を `test/view-model.test.ts` が assert している。下記「調査が見つけたもの」 |
-| ~~G2~~ | ~~インベントリ／クラフトにビューモデルが無い~~ | **閉じた。** `domain/inventory-view-model.ts`。mc-sim の形はミラーで写し（provisional、`test/inventory-mirror.test.ts` が pin）、全スロットをホットバーと**同じ `slotView()`** で射影する。mc-sim が所有する問い（スタッキング・レシピ）は `unknown` を返す |
+| ~~G2~~ | ~~インベントリ／クラフトにビューモデルが無い~~ | **閉じた。** `domain/inventory-view-model.ts`。mc-sim の `Inventory` / `Slot` / `ItemStack` を `@nerima-games/mc-sim` から直接 import し（Wave 1, W1-M7 でミラーを撤去）、全スロットをホットバーと**同じ `slotView()`** で射影する。mc-sim が所有する問い（スタッキング・レシピ）は `unknown` を返す |
 | **G1** | **パレットに消費者が無く、mc-sim にレシピモデルが無い** | 前より狭い。トークンを CSS にする層がまだ無いので保証は数値については証明済み・画面については未証明であり、`CraftingSnapshot.result` は mc-sim にレシピが無いので実際 `unknown` である。**どちらも本リポジトリの中では閉じられない** |
 
 ### 調査が見つけたもの — 参照実装の自動保存インジケータ
