@@ -60,6 +60,7 @@ import {
   inventoryViewModel,
   regionOf,
 } from '../../src/domain/inventory-view-model'
+import { itemStack } from '@nerima-games/mc-sim'
 import { escapePressed, openScreen, type ModalStack } from '../../src/domain/modal-stack'
 import { COLLAPSE_SEPARATION, hex, surveyPalette } from '../../src/domain/palette'
 import { DEFAULT_BINDINGS, PREVIEW_ACTIONS, SAMPLE_CAPTIONS, SAMPLE_HOTBAR } from './state'
@@ -205,7 +206,7 @@ const inventoryLines = (): ReadonlyArray<string> => {
     ...emptyInventorySnapshot,
     inventory: {
       slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) =>
-        index === 0 ? { item: 'diamond_pickaxe', count: 1 } : index === 11 ? { item: 'cobblestone', count: 64 } : undefined,
+        index === 0 ? itemStack('diamond_pickaxe', 1) : index === 11 ? itemStack('cobblestone', 64) : undefined,
       ),
     },
     durabilityBySlot: new Map([[0, 0.82]]),

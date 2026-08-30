@@ -30,7 +30,7 @@ import {
   emptyCaptionQueue,
   expireCaptions,
 } from '../domain/caption.js'
-import type { DeltaTimeSecs, GameModule, StageRegistration } from '../domain/frame-contract.js'
+import type { DeltaTimeSecs, GameModule, StageRegistration } from '@nerima-games/mc-kernel'
 import { Effect, Layer, Ref } from 'effect'
 import {
   type FpsCounter,

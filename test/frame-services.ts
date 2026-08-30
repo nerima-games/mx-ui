@@ -2,46 +2,23 @@
  * The context a frame stage runs in, for tests.
  *
  * ---------------------------------------------------------------------------
- * WHY THIS FILE EXISTS, AND WHY IT LOOKS LIKE IT DOES NOTHING
+ * WHY THIS FILE PROVIDES A REAL CLOCK, AND WHY EVERY STAGE CALL PIPES IT
  * ---------------------------------------------------------------------------
  *
- * `Layer.empty` below is not a placeholder waiting to be inlined away. It is
- * the ONE place at which this repository will have to hand a real clock to the
- * stages its tests run, and it is written as a layer today so that the day it
- * has to carry one is a one-line edit here rather than an edit at every test
- * that runs a stage.
- *
- * `domain/frame-contract.ts` aliases `FrameServices` to `never` and gives the
- * argument for it: mc-kernel is unpublished, and restating its `ClockPort`
- * locally would mean a second `Context.Tag` carrying kernel's identifier
- * string. Kernel's own alias is `ClockPort`. So on the day that mirror is
- * deleted and its importers repointed at `@nerima-games/mc-kernel`, every
- * `stage.run(dt)` in this repository's tests stops being an
- * `Effect<void, never, never>` and becomes an `Effect<void, never, ClockPort>`
- * — which neither `it.effect` nor `Effect.runPromise` can run, because a test
- * context that was never given a clock cannot discharge it.
- *
- * That is measured rather than predicted. mc-dev-meta's `pnpm check:repoint`
- * performs the repoint on a throwaway copy and compiles it; before this file
- * existed it reported FIVE such call sites in this repository — three in
- * `test/stage-registration.test.ts` and two in `test/caption-oracle.test.ts`,
- * which drives `ui:overlay-sync` through `Effect.runPromise` because it is a
- * DOM oracle and runs on plain `it` (DN-UI-2). Each of them now provides
- * `FrameServicesLayer`, so the count is one — this declaration — and the
- * remaining fix is to replace `Layer.empty` with kernel's own fixed clock:
- *
- *     import { FixedClockLayer, MonotonicTimeSecs, EpochMillis } from '@nerima-games/mc-kernel'
- *
- *     export const FrameServicesLayer: Layer.Layer<FrameServices> = FixedClockLayer({
- *       monotonicSecs: MonotonicTimeSecs(0),
- *       wallClockEpochMillis: EpochMillis(0),
- *     })
+ * `FrameServices` is `@nerima-games/mc-kernel`'s `ClockPort` (Wave 1, W1-M7 —
+ * this file used to import a local stand-in that aliased `FrameServices` to
+ * `never`, back when kernel was unpublished). Every `stage.run(dt)` in this
+ * repository's tests is therefore an `Effect<void, never, ClockPort>`, which
+ * neither `it.effect` nor `Effect.runPromise` can run unless something
+ * discharges `ClockPort` first — hence `FixedClockLayer` below, and hence
+ * every call site piping `Effect.provide(FrameServicesLayer)` even though no
+ * stage this repository registers reads the clock itself yet.
  *
  * DO NOT SIMPLIFY THE CALL SITES. Deleting an
- * `Effect.provide(FrameServicesLayer)` is invisible today — the layer is empty,
- * so providing it changes neither type nor behaviour — and silently re-opens
- * that call site on the day of the repoint. The pipe is load-bearing in the
- * future tense, which is the only tense a mirror lives in.
+ * `Effect.provide(FrameServicesLayer)` looks harmless precisely because
+ * nothing reads `ClockPort` today, but the requirement is real at the type
+ * level regardless, and a stage that starts reading the clock would silently
+ * lose its test coverage at every call site the provide was trimmed from.
  *
  * ---------------------------------------------------------------------------
  * Why a layer and not a hand-rolled clock
@@ -55,17 +32,14 @@
  * so that a caption's lifetime is driven by accumulated `dt` and never by a
  * global, and `test/stage-registration.test.ts` carries a named regression
  * saying so. Kernel ships `FixedClockLayer` so that a deterministic clock never
- * has to be written by hand again; when this file needs one it takes kernel's,
- * and the substitution above is the whole of the work.
+ * has to be written by hand again; this file takes kernel's rather than
+ * rolling its own.
  */
 import { Layer } from 'effect'
-import type { FrameServices } from '../src/domain/frame-contract'
+import { EpochMillis, FixedClockLayer, MonotonicTimeSecs, type FrameServices } from '@nerima-games/mc-kernel'
 
-/**
- * Everything a stage of this repository may assume is present when it runs.
- *
- * Empty today because `FrameServices` is `never` today. The TYPE is what
- * carries the intent: it tracks the contract rather than the current state of
- * the mirror, so widening the alias moves this declaration and nothing else.
- */
-export const FrameServicesLayer: Layer.Layer<FrameServices> = Layer.empty
+/** Everything a stage of this repository may assume is present when it runs. */
+export const FrameServicesLayer: Layer.Layer<FrameServices> = FixedClockLayer({
+  monotonicSecs: MonotonicTimeSecs(0),
+  wallClockEpochMillis: EpochMillis(0),
+})

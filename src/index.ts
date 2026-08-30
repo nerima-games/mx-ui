@@ -82,24 +82,20 @@ export * from './domain/save-status.js'
 export * from './stages/registration.js'
 export * from './stages/stage-ids.js'
 
-// --- Provisional ---------------------------------------------------------------
-// `domain/frame-contract.ts` is a temporary local stand-in for
-// @nerima-games/mc-kernel and is NOT re-exported. It carries a deletion date —
-// See its "WHY THIS FILE EXISTS AND WHEN IT DIES" header — and re-exporting it
-// Would make `StageId`, `DeltaTimeSecs` and `StageRegistration` published API of
-// A package that does not own them, so deleting the stand-in would become a
-// Breaking change for every consumer. Consumers take that vocabulary from
-// Kernel; the types are structurally identical, so a consumer importing them
-// From kernel typechecks against the signatures above. Same call, and the same
-// Reason, as mc-sim's and mc-render's barrels.
+// --- Vocabulary ownership --------------------------------------------------
+// This repository used to carry a local stand-in for the kernel contract
+// (Wave 1, W1-M7 deleted it); `stages/*.ts` now import `StageId`,
+// `DeltaTimeSecs`, `GameModule` and `StageRegistration` from
+// @nerima-games/mc-kernel directly. Deliberately NOT re-exported here, same
+// As before: republishing them would make `StageId` and `DeltaTimeSecs`
+// Published API of a package that does not own them (`test/public-api.test.ts`
+// Pins the absence). Consumers take that vocabulary from kernel — same call,
+// And the same reason, as mc-sim's and mc-render's barrels.
 //
-// `domain/inventory-view-model.ts` carries a mirror too — mc-sim's `Inventory`,
-// `Slot` and `ItemStack` — and IS re-exported, which is the opposite call. The
-// Difference is what the mirror denotes. `frame-contract` mirrors kernel's
-// CONTRACT, the thing mc-compose consumes, so republishing it would make a
-// Promised deletion breaking for every consumer. The inventory mirror is the
-// PARAMETER of one of this repository's own pure functions, exactly as
-// `VitalsSnapshot` has been since the first cut: mc-compose does not call
-// `inventoryViewModel`, so narrowing the parameter when mc-sim is published is
-// A MINOR bump under docs/versioning.md §5, not a breaking change. Pinned by
-// `test/inventory-mirror.test.ts`.
+// `domain/inventory-view-model.ts` also used to carry a local copy of
+// Mc-sim's `Inventory`, `Slot` and `ItemStack`; it now imports them from
+// `@nerima-games/mc-sim` directly. Those three type names are likewise not
+// Re-exported through this barrel, for the same ownership reason — only
+// `inventoryViewModel`, `slotSnapshotOf` and `INVENTORY_SLOT_COUNT` (the
+// Functions and constant that are this repository's own) are, via
+// `export * from './domain/inventory-view-model.js'` above.

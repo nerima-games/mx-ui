@@ -1,9 +1,18 @@
 import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
-import {
-  INVENTORY_MAIN_SLOT_COUNT,
-  INVENTORY_SLOT_COUNT,
-  type MirroredItemId,
-} from './inventory-view-model.js'
+import { INVENTORY_MAIN_SLOT_COUNT, INVENTORY_SLOT_COUNT } from './inventory-view-model.js'
+
+/**
+ * A storage screen's item identifier.
+ *
+ * Not mc-sim's `ItemType`: chests, droppers and hoppers preview against
+ * fixture ids (`test/chest-storage-view-model.test.ts` uses namespaced ones
+ * like `minecraft:iron_pickaxe`) rather than kernel's closed roster, the same
+ * way `domain/hud-view-model.ts`'s `HotbarSlotSnapshot.itemId` does. This
+ * alias used to import `inventory-view-model.ts`'s `MirroredItemId`, which
+ * was `string` for the same reason before that file repointed to mc-sim's
+ * real, narrower `ItemType`.
+ */
+type ChestItemId = string
 
 const ZERO = 0
 /** The slot index a value with no real position projects through, e.g. the cursor. */
@@ -29,7 +38,7 @@ export type ChestStorageSlotCount =
 
 /** The item state a storage screen must preserve, including durable tools. */
 export type ChestStorageStackSnapshot = {
-  readonly item: MirroredItemId
+  readonly item: ChestItemId
   readonly count: number
   readonly durability: number | undefined
 }
