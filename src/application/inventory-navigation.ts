@@ -1,6 +1,6 @@
 /* eslint-disable max-params, max-statements, no-magic-numbers, no-ternary, no-undefined -- Geometry is clearer with direct index arithmetic and absent-region checks. */
-import type { InventoryViewModel, SlotRegion } from '../domain/inventory-view-model'
-import type { InventoryInteractionTarget } from './inventory-view'
+import type { InventoryViewModel, SlotRegion } from '../domain/inventory-view-model.js'
+import type { InventoryInteractionTarget } from './inventory-view.js'
 
 export type InventoryNavigationDirection = 'down' | 'left' | 'right' | 'up'
 
@@ -115,14 +115,16 @@ export const moveInventoryTarget = (
   }
 
   const regionIndex = regions.findIndex((region) => region.id === current.region)
-  const region = regions[regionIndex]
-  // UNCOVERED ON PURPOSE. `regions` and `current` are BOTH derived from the same `model` a few lines up — `regions` is `navigableRegions(model)` directly, and `current` (for `kind: 'slot'`) always comes out of `targets`, which is `inventoryTargets(model)`'s own call to `navigableRegions(model)`.
-  // Two evaluations of the same pure function on the same argument agree, so `current.region` always names an id present in `regions` — no `model`, however malformed, can make `findIndex` miss.
-  // `noUncheckedIndexedAccess` still widens `regions[regionIndex]` to `NavigableRegion | undefined`, because the type of an index expression says nothing about which index this function happens to compute.
-  // A test built to trip this branch would have to make `regions` and `current` disagree about the same `model` within one call — a case this repository's own code never produces, so the branch stays uncovered rather than fabricated.
-  if (region === undefined) {
-    return current
-  }
+  // Non-null, not a runtime guard: `regions` and `current` are BOTH derived from the same `model` a
+  // Few lines up — `regions` is `navigableRegions(model)` directly, and `current` (for `kind: 'slot'`)
+  // Always comes out of `targets`, which is `inventoryTargets(model)`'s own call to
+  // `navigableRegions(model)`. Two evaluations of the same pure function on the same argument agree,
+  // So `current.region` always names an id present in `regions` — no `model`, however malformed, can
+  // Make `findIndex` miss. `noUncheckedIndexedAccess` cannot see that invariant: the type of an index
+  // Expression says nothing about which index this function happens to compute. A guard here would be
+  // An `if` branch no `model` this repository's own code ever produces could take, which is exactly the
+  // Shape of branch that must be proven unreachable rather than fabricated a test for.
+  const region = regions[regionIndex]!
   const columns = regionColumns(region)
   const column = current.index % columns
 

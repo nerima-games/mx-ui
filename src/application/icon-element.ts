@@ -43,10 +43,10 @@ import {
   writeAttribute,
   writeHidden,
   writePercent,
-} from './dom-write'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import type { IconState } from '../domain/hud-view-model'
-import { PALETTE_VAR } from './palette-css'
+} from './dom-write.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import type { IconState } from '../domain/hud-view-model.js'
+import { PALETTE_VAR } from './palette-css.js'
 
 /** Which row an icon belongs to. Selects the glyph pair and the fill token. */
 export type IconKind = 'heart' | 'shank'

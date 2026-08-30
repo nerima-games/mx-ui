@@ -1,4 +1,4 @@
-import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model'
+import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
 
 export const FURNACE_SLOT_IDS = ['input', 'fuel', 'output'] as const
 

@@ -5,9 +5,9 @@ on:
     branches: [main]
   pull_request:
 
-# These are public repositories, so a fork PR runs this workflow. Nothing here
-# needs write access, and an unset block inherits an org default that is not
-# managed in Terraform.
+# These are public repositories, so a fork PR runs this workflow. `packages:
+# read` lets Install dependencies authenticate against GitHub Packages for
+# @nerima-games/* reads; nothing here needs write access.
 permissions:
   contents: read
   packages: read
@@ -15,64 +15,128 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
-        # Pinned to a commit, not the mutable v6 tag (SUPPLY_CHAIN.md「アクションの固定」):
-        # a tag is a mutable reference the upstream owner can repoint at any time.
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        # Pinned to a commit, not the mutable v7 tag: a tag is a mutable
+        # reference the upstream owner can repoint at any time (SUPPLY_CHAIN.md
+        # "アクションの固定").
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Setup pnpm
-        # Pinned to a commit, not the mutable v4 tag: this is a third-party action
+        # Pinned to a commit, not the mutable v6 tag: this is a third-party action
         # and a tag can be repointed at new code without any change here.
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           cache: "pnpm"
 
+      # Keep CI's toolchain identical to the documented local environment.
+      - name: Set up Nix
+        uses: ./.github/actions/nix-setup
+        with:
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # mx-ui depends on @nerima-games/mc-kernel, mc-sim and mc-audio:
+      # @nerima-games:registry in .npmrc points every scoped resolution at
+      # GitHub Packages, which requires an authenticated request even for a
+      # public read.
       - name: Configure GitHub Packages authentication
+        run: pnpm config set --location=user //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm config set --location=user //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
 
       - name: Install dependencies
-        # --ignore-scripts: pnpm runs postinstall, and a fork PR can edit
-        # package.json and the lockfile consistently and still satisfy
-        # --frozen-lockfile. Nothing here needs a lifecycle script.
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: nix develop --command pnpm install --frozen-lockfile
 
-      - name: Type check
-        run: pnpm typecheck
+      # verify covers typecheck, lint, and the unit suite (3 stages).
+      - name: Verify
+        run: nix develop --command pnpm verify
 
-      - name: Lint
-        run: pnpm lint
+      - name: Changeset status
+        if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/')
+        run: |
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE '^(docs/|\.github/)'; then
+            nix develop --command pnpm exec changeset status --since="origin/${{ github.base_ref }}"
+          else
+            echo "Only docs/ or .github/ changed; skipping changeset check."
+          fi
 
-      - name: Test
-        run: pnpm test
+      - name: Coverage
+        run: nix develop --command pnpm test:coverage
 
-      # The 99% gate (docs/testing.md §6), and it is this step that enforces it.
-      # No extra flag is needed and none should be added: the thresholds live in
-      # vitest.config.ts, and `vitest run --coverage` exits non-zero by itself
-      # when any of the four falls below. Keeping the numbers in the config
-      # rather than here means `pnpm test:coverage` gates identically on a laptop
-      # and in CI, so the gate cannot be one that only ever fires after a push.
-      #
-      # NOTE: `pnpm verify` deliberately does NOT include this step — it runs
-      # `pnpm test` without coverage. Run `pnpm test:coverage` before pushing if
-      # you have touched a branch in domain/, application/ or stages/.
-      - name: Coverage (99% gate)
-        run: pnpm test:coverage
+      # Exercise the exact packed bytes in a clean consumer before a release
+      # can be created. verify-package.mjs's consumer install resolves
+      # @nerima-games/* siblings from GitHub Packages, so it needs the token
+      # too (a plain `npm install` in the temp consumer dir has none of pnpm's
+      # user config from the step above).
+      - name: Verify package boundary
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command pnpm package:verify
+
+      # Deliberately NOT `--prod`: this audits the whole toolchain, not just the
+      # one runtime dependency. Pin a transitive package in pnpm-workspace.yaml's
+      # `overrides` when an advisory lands, rather than narrowing the gate.
+      - name: Audit dependencies
+        run: nix develop --command pnpm audit
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: coverage/
           retention-days: 7
+
+  # The Playwright gate, as its own job: it needs a Chromium binary the main
+  # job does not, and docs/testing.md §8-1 records why it stays out of
+  # `pnpm verify` (CI has no browser binary otherwise; this job supplies one
+  # explicitly instead of making the headline gate depend on it).
+  test-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Set up Nix
+        uses: ./.github/actions/nix-setup
+        with:
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Configure GitHub Packages authentication
+        run: pnpm config set --location=user //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: nix develop --command pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser tests
+        run: nix develop --command pnpm test:browser

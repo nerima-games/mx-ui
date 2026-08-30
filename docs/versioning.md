@@ -4,11 +4,11 @@
 
 ## 1. 現状
 
-- **バージョン: `0.1.0`。**
-- **publish パイプラインは無い。** `package.json` の `exports` は TypeScript ソースを直接指しており、
-  `tsconfig.base.json` は `noEmit: true`。したがって `dist/` は存在しない。
-- **実行時依存は `effect` だけ。** mc-sim も mc-audio も mc-kernel も `dependencies` に無い。
-  組織のどのパッケージもまだ publish されていないためである（§3）。
+- **publish パイプラインが存在する（組織のツールチェーン凍結、Wave 0）。** `tsconfig.release.json` が
+  `tsc -p tsconfig.release.json` で `dist/` を emit し、`package.json` の `main` / `types` / `exports` は
+  `dist/` を指す。`pnpm build` → `pnpm package:verify`（packed tarball を実際にインストールして
+  `exports` を検証）→ `.github/workflows/release.yaml` の publish job（`pnpm publish --no-git-checks`）が
+  一直線に繋がっている。
 - 開発中は `mc-dev-meta` workspace による `workspace:*` 解決でモノレポ同等の DX を得る（plan.md §6 Step 0-2）。
 
 ## 2. 0.x に留める方針
@@ -37,19 +37,19 @@ plan.md §8 のリスク表も同じことを別角度から:
 
 ### 公開先
 
-**GitHub Packages**（`https://npm.pkg.github.com`、`access: restricted`）。
-`package.json` の `publishConfig` に設定済みだが、**publish 自体はまだ実行されない**。
+**GitHub Packages**（`https://npm.pkg.github.com`、`access: public`）。パッケージが public 化されたため
+（下流 CI が 403 にならないよう）`restricted` ではなく `public` を使う。
 
 ```json
 "publishConfig": {
   "registry": "https://npm.pkg.github.com",
-  "access": "restricted"
+  "access": "public"
 }
 ```
 
-`.npmrc` にレジストリ設定は入っていない。現在の `.npmrc` は `fast-check` / `pure-rand` の
-hoist 設定だけであり、`@nerima-games:registry=` の行と認証トークンの受け渡しは
-publish パイプラインを追加するときに足す。
+`.npmrc` に `@nerima-games:registry=https://npm.pkg.github.com` の行がある。認証トークンは
+CI では `pnpm config set --location=user //npm.pkg.github.com/:_authToken` で、ローカルでは
+`NODE_AUTH_TOKEN=$(gh auth token)` で渡す。
 
 ### 構築順（plan.md §6 Step 2）
 

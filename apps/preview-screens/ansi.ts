@@ -65,8 +65,8 @@ export type { Rgb }
 export { contrastRatio, hex, relativeLuminance, simulateColorVision }
 
 /** The preview's older names for two domain functions, kept so screens read the same. */
-export const distance = separation
-export const COLLAPSE_DISTANCE = COLLAPSE_SEPARATION
+export const distance: typeof separation = separation
+export const COLLAPSE_DISTANCE: typeof COLLAPSE_SEPARATION = COLLAPSE_SEPARATION
 
 /**
  * `mode` arrives as a `ColorVisionMode` from the domain and as a `--simulate`
@@ -85,7 +85,7 @@ export const simulate = (color: Rgb, mode: string): Rgb =>
  */
 export const ESC: string = String.fromCharCode(27)
 
-export const RESET = `${ESC}[0m`
+export const RESET: string = `${ESC}[0m`
 
 const foreground = (color: Rgb): string =>
   `${ESC}[38;2;${String(color[0])};${String(color[1])};${String(color[2])}m`

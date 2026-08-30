@@ -4,28 +4,35 @@
 
 ## 1. 検証ゲート
 
+組織のツールチェーン凍結（Wave 0）で、ゲート構成が以下の形に揃った。
+
 ```console
-$ pnpm verify        # typecheck && lint && check:deps && test。CI と同じ内容
+$ pnpm verify          # typecheck && lint && test。CI と同じ内容
+$ pnpm test:coverage   # カバレッジ計測 + 100% ゲート。verify には含まれない
+$ pnpm package:verify  # build && dist/ の実体検証。verify には含まれない
+$ pnpm test:browser    # Playwright。verify には含まれない
 ```
 
 | ゲート | 何を捕まえるか |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）、`tsconfig.test.json`（テスト + ツール）、`tsconfig.preview.json`（`apps/` の dev アプリ）の 3 プロジェクト。**出荷ソースには Node 型が無い** — `types: []` を継承しているので、画面の中で `process.env` を読むと落ちる。プレビューが Node の stdio を使えるのは**別プロジェクト**だからであって、build 側を緩めたからではない（§4） |
-| `pnpm lint` | oxlint。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
-| `pnpm check:deps` | 依存ホワイトリスト / 循環 / 推移閉包 / kit の実行時混入 / **壁時計の直読み**（DN-UI-10） |
-| `pnpm api:check` | `api-lock.md` と公開 API の乖離（plan.md §6 Step 0-3） |
+| `pnpm lint` | `oxlint --deny-warnings` + `ast-grep scan`。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。oxlint は `--deny-warnings` 付きで走るため `warn` のルールもビルドを落とす。`ast-grep` は `no-restricted-imports`（依存境界、Tier3）と `no-wall-clock-read`（壁時計の直読み禁止）を見る。`no-type-assertion` は Wave 0 時点では `warning` — 既存ヒットは Wave 3 で `as` を外して `error` に上げる |
 | `pnpm test` | vitest |
-| `pnpm test:coverage` | カバレッジ計測 + **99% ゲート**（4 指標すべて）。**`verify` には含まれない**ので別に走らせる（§5） |
-| `pnpm test:browser` | Playwright。実ブラウザにしか答えられない 3 種——**実 `Document` への mount / 実測ピクセル / レイアウト**。**`verify` には含まれない**（CI にブラウザが無い）。§8 |
+| `pnpm test:coverage` | カバレッジ計測 + **100% ゲート**（4 指標すべて）。**`verify` には含まれない**ので別に走らせる（§5） |
+| `pnpm test:browser` | Playwright。実ブラウザにしか答えられない 3 種——**実 `Document` への mount / 実測ピクセル / レイアウト**。**`verify` には含まれない**（CI では別 job として Chromium を入れてから走る）。§8 |
+| `pnpm build` | `scripts/clean-dist.mjs` で `dist/` を消してから `tsc -p tsconfig.release.json` で emit する。**`verify` には含まれない** |
+| `pnpm package:verify` | `pnpm build` の後、packed tarball を別ディレクトリにインストールして `exports` が実際に解決すること（実行時 + 型）を検証する。**`verify` には含まれない** |
 
-**`apps/`（プレビュー）は `SCAN_ROOTS` にも lint 対象にも入っている。**
-`pnpm verify` はプレビューを*実行*しないが、型検査・lint・依存ゲート・壁時計禁止はすべて適用される。
+**`apps/`（プレビュー）は lint 対象にも `tsconfig.preview.json` にも入っている。**
+`pnpm verify` はプレビューを*実行*しないが、型検査・lint・壁時計禁止はすべて適用される。
 「dev アプリだから検査しない」にすると、依存を 1 つ足すのに最も抵抗の少ない場所ができてしまう。
 
-`pnpm` は `corepack` 経由で 9.15.0（`package.json` の `packageManager` でピン留め）。
+`pnpm` は Nix の devShell が `packageManager`（`package.json`）のバージョンで解決する（11.24.0）。
+oxlint と ast-grep は npm devDependency ではなく `flake.nix` の `pkgs.oxlint` / `pkgs.ast-grep` から供給される。
 
-`check:deps` が壁時計禁止まで見ているのは oxlint 0.12 が該当ルールを実装していないためで、
-経緯は `.oxlintrc.json` の冒頭と DN-UI-10 にある。
+壁時計の直読み禁止が oxlint ではなく `ast-grep` の仕事なのは、oxlint が該当ルール
+（`no-restricted-syntax` 等）を実装していないためで、経緯は `.ast-grep/rules/no-wall-clock-read.yml`
+と DN-UI-10 にある。
 
 ## 2. 現状の suite（2026-07-27 実測）
 
@@ -228,7 +235,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ⚠️ **63 ファイル全部を triage 済み**（[dom-oracle-triage.md](./dom-oracle-triage.md)）。**移植すべきは 63 ファイルではない** — 25 ファイル / 203 本（45%）は所有者が別か、mx-ui が構造的に別の答えを出している。今日書けるのは 8 ファイル / 71 本で、うち 5 ファイル分は既存オラクルが持っている。**未着手は NEEDS-SCREEN の 29 ファイル / 176 本**で、これは画面の残作業そのものである |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
 | 4 | アクセシビリティ資産 4 つが目視で確認済み | ✅ **ブラウザで測った**（`pnpm test:browser` の 18 本、§8）。残っていた 2 点は「ブラウザにしか答えられない」で正しかったが、**それは誰も作っていないというだけだった**。測ったら**欠陥が 2 件出た**（スロットに寸法が無い / ホットバーが 1 列に並ばない）——両方とも直してある |
-| 5 | 99% カバレッジゲートが有効 | ✅（`vitest.config.ts` の `thresholds` + CI の `Coverage (99% gate)` ステップ。実測 99.89 / 99.76 / 100 / 99.89、§5） |
+| 5 | 100% カバレッジゲートが有効（組織のツールチェーン凍結、Wave 0） | ✅（`vitest.config.ts` の `thresholds` + CI の `Coverage` ステップ。実測 100 / 100 / 100 / 100、§5） |
 
 ### プレビューの条件（満たしている）
 
@@ -419,22 +426,25 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
 > 参照実装の `Playwright MCP で手で確かめた` という記録は、
 > **手で確かめたことを次の人が確かめ直せない**という意味でもある。
 
-## 5. カバレッジ — 99% ゲートは有効である
+## 5. カバレッジ — 100% ゲートは有効である
 
-**閾値は 4 指標すべてに設定してある。** 参照実装（`takeokunn/ts-minecraft`）と同じ 99% である。
+**閾値は 4 指標すべてに設定してある。** 組織のツールチェーン凍結（Wave 0）で 99% → 100% に上げた。
 
 ```typescript
 // vitest.config.ts
-thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 ```
 
-実測は **statements 99.89 / branch 99.76 / functions 100 / lines 99.89**（314 テスト、2026-07-27）。
+実測は **statements 100 / branch 100 / functions 100 / lines 100**（394 テスト）。
+99% だった当時「producer が保証している」「型システムでは証明できない」という理由で未カバーのまま
+残っていた分岐は、100% への引き上げに際して 1 つずつ「テストする」か「到達不能を証明して削除する」の
+どちらかで解消した——後者は多くの場合 `noUncheckedIndexedAccess` が要求する `if` ガードを
+非 null アサーション 1 個に置き換える形になった（分岐そのものを消す。理由は各サイトのコメントに書いてある）。
 
-閾値を置かなかった理由は「スケルトンに課しても意味がない」であり、その前提はもう成り立たない。
 `domain/` はビューモデル、字幕キュー、モーダルスタック、そしてパレット自身のアクセシビリティ測定を持ち、
 `application/` はこのリポジトリが定義した DOM 界面の上に 7 つのレンダラを持つ。
 
-`vitest.config.ts` と CI ワークフロー（`Coverage (99% gate)` ステップ）の**両方**で有効にしてある。
+`vitest.config.ts` と CI ワークフロー（`Coverage` ステップ）の**両方**で有効にしてある。
 閾値は `vitest.config.ts` にしか書かない —— `vitest run --coverage` が自力で非ゼロ終了するので
 CI に追加のフラグは要らず、そうしておけば手元と CI が同じ判定をする。
 なお `pnpm verify` はカバレッジを含まない。

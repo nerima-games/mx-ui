@@ -7,7 +7,7 @@
  * makes them reviewable, and `test/stage-registration.test.ts` fails if one
  * points at a sibling experience module.
  */
-import { StageId } from '../domain/frame-contract'
+import { StageId } from '../domain/frame-contract.js'
 
 /**
  * Lowercase alias for the brand smart constructor.
@@ -42,12 +42,15 @@ const stageId = StageId
  *     It needs no simulation state at all, which is why it can also run in a
  *     per-screen preview with no game behind it (plan.md §3.13).
  */
-export const UI_STAGE_IDS = {
+export const UI_STAGE_IDS: {
+  readonly hudSync: StageId
+  readonly overlaySync: StageId
+} = {
   /** Project mc-sim's vitals, hotbar and XP into the HUD view model. */
   hudSync: stageId('ui:hud-sync'),
   /** Age out captions, and settle modal open/close transitions. */
   overlaySync: stageId('ui:overlay-sync'),
-} as const
+}
 
 /**
  * Stages owned by OTHER repositories that mx-ui orders itself against.
@@ -56,9 +59,11 @@ export const UI_STAGE_IDS = {
  * health one frame late, which is invisible in a screenshot and extremely
  * visible when you are on half a heart.
  */
-export const UPSTREAM_STAGE_IDS = {
+export const UPSTREAM_STAGE_IDS: {
+  readonly simPhysics: StageId
+} = {
   simPhysics: stageId('sim:physics'),
-} as const
+}
 
 /**
  * The `<repo>:` prefixes belonging to the four experience modules (plan.md

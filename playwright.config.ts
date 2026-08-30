@@ -43,7 +43,7 @@ import { defineConfig, devices } from '@playwright/test'
 /** Kept in one place: `test-browser/harness.ts` builds every URL from it. */
 export const HARNESS_PORT = 5182
 
-export default defineConfig({
+const config: ReturnType<typeof defineConfig> = defineConfig({
   testDir: './test-browser',
   testMatch: '**/*.spec.ts',
   // 30s rather than the reference's 60s. Its timeout budgets a WebGL world
@@ -106,3 +106,5 @@ export default defineConfig({
     stderr: 'pipe',
   },
 })
+
+export default config

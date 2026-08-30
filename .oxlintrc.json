@@ -117,8 +117,14 @@
     // every repository may import and which therefore must NOT appear in either pattern below —
     // DEPENDENCY_POLICY.md §2 rule 5, `checkPolicyConfiguration` treats an explicit mc-kernel
     // entry as a configuration error).
+    // Wave 0 (org toolchain freeze, DEPENDENCY_POLICY.md §5): allow-list form.
+    // `patterns[0].group` bans every `@nerima-games/*` import and then
+    // re-admits exactly the packages Tier3 mx-ui may depend on. This replaces
+    // the previous deny-list (regex per forbidden package), because a
+    // deny-list silently admits a NEW sibling repository added later; an
+    // allow-list instead requires a deliberate edit here to grant it.
     "no-restricted-imports": [
-      "warn",
+      "error",
       {
         "paths": [
           {
@@ -129,12 +135,16 @@
         ],
         "patterns": [
           {
-            "regex": "^@nerima-games/(mx-gameplay|mx-redstone|mx-multiplayer)(/.*)?$",
-            "message": "Tier3 experience modules do not depend on each other laterally (DEPENDENCY_POLICY.md §2). Talk through mc-sim or mc-worldgen instead."
-          },
-          {
-            "regex": "^@nerima-games/(mc-worldgen|mc-render|mc-meshing|mc-noise|mc-physics|mc-save|mc-playground-kit|mc-compose)(/.*)?$",
-            "message": "mx-ui (Tier3, DEPENDENCY_POLICY.md) may depend only on mc-sim, mc-audio, and mc-kernel."
+            "group": [
+              "@nerima-games/**",
+              "!@nerima-games/mc-kernel",
+              "!@nerima-games/mc-kernel/**",
+              "!@nerima-games/mc-sim",
+              "!@nerima-games/mc-sim/**",
+              "!@nerima-games/mc-audio",
+              "!@nerima-games/mc-audio/**"
+            ],
+            "message": "mx-ui is Tier3 (DEPENDENCY_POLICY.md §1); only the listed packages may be imported."
           }
         ]
       }

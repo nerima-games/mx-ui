@@ -6,41 +6,41 @@ import {
   type UiSettings,
   type UiSettingsCallbacks,
   createSessionOverlays,
-} from './session-overlays'
-import { type HudView, createHudView } from './hud-view'
+} from './session-overlays.js'
+import { type HudView, createHudView } from './hud-view.js'
 import {
   type InventoryAction,
   type InventoryActionState,
   type InventoryDragTarget,
   inventoryActionStatus,
   inventoryActionTarget,
-} from './inventory-actions'
+} from './inventory-actions.js'
 import {
   type InventoryInteractionTarget,
   type InventoryView,
   createInventoryView,
-} from './inventory-view'
+} from './inventory-view.js'
 import {
   type InventoryNavigationDirection,
   inventoryTargets,
   moveInventoryTarget,
   sameInventoryTarget,
-} from './inventory-navigation'
+} from './inventory-navigation.js'
 import {
   type InventoryViewModel,
   emptyInventorySnapshot,
   inventoryViewModel,
-} from '../domain/inventory-view-model'
+} from '../domain/inventory-view-model.js'
 import {
   type MainMenuCallbacks,
   type MainMenuView,
   createMainMenuView,
-} from './main-menu-view'
-import { hudViewModel, spawnSnapshot } from '../domain/hud-view-model'
-import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu'
+} from './main-menu-view.js'
+import { hudViewModel, spawnSnapshot } from '../domain/hud-view-model.js'
+import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import { Effect } from 'effect'
-import type { MotionPreference } from '../domain/accessibility'
-import { uiModule } from '../stages/registration'
+import type { MotionPreference } from '../domain/accessibility.js'
+import { uiModule } from '../stages/registration.js'
 
 export type UiMountedViews = {
   readonly root: HTMLElement
@@ -164,13 +164,13 @@ const cycleInventoryFocus = (
   }
   const currentIndex = targets.findIndex((target) => sameInventoryTarget(target, currentFocus))
   const direction = focusStep(shiftKey)
-  // UNCOVERED ON PURPOSE, same section.
-  // `currentIndex` is `-1` only when nothing in `targets` matches `currentFocus`.
-  // `direction` is always `1` or `-1`.
-  // `targets.length` here is always at least one, given the fallback above.
-  // Given both facts, the modulo arithmetic below always stays within bounds.
-  // The `?? targets[ZERO]!` exists only because `noUncheckedIndexedAccess` cannot see that proof.
-  return targets[(currentIndex + direction + targets.length) % targets.length] ?? targets[ZERO]!
+  // Non-null, not a `??` fallback: `currentIndex` is `-1` only when nothing in `targets` matches
+  // `currentFocus`. `direction` is always `1` or `-1`. `targets.length` here is always at least
+  // One, given the fallback above. Given all three facts, the modulo arithmetic below always
+  // Stays within `[0, targets.length)` — `noUncheckedIndexedAccess` cannot see that proof, but a
+  // `?? targets[ZERO]!` fallback here would be a branch no input can ever take, which is exactly
+  // The shape that must be proven unreachable rather than fabricated a test for.
+  return targets[(currentIndex + direction + targets.length) % targets.length]!
 }
 
 /** Where keyboard focus lands after a render: the crafting output, or a real slot. */
@@ -227,14 +227,13 @@ const handleTabKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): bool
 }
 
 const handleArrowKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  const direction = inventoryDirectionForKey(event.key)
-  // UNCOVERED ON PURPOSE (docs/testing.md §5).
-  // `handleArrowKeyEvent` is only ever reached through `INVENTORY_KEY_HANDLERS`.
-  // Its own matcher for this entry is the exact condition this guards against.
-  // The only caller has already excluded the branch by the time this line runs.
-  if (direction === null) {
-    return false
-  }
+  // Non-null: `handleArrowKeyEvent` is only ever reached through
+  // `INVENTORY_KEY_HANDLERS`, whose `matches` for this entry is
+  // `inventoryDirectionForKey(event.key) !== null` — the exact condition this
+  // Asks again. Two evaluations of the same pure function on the same
+  // `event.key` agree, so by the time this line runs the caller has already
+  // Excluded `null`.
+  const direction = inventoryDirectionForKey(event.key)!
   event.preventDefault()
   return ctx.moveInventoryFocus(direction)
 }
@@ -411,17 +410,13 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     inventory.root.setAttribute('hidden', '')
     renderInventory(inventory)
 
+    // No `if (!session.inventoryOpen) return` guard here, unlike the public
+    // `closeInventory` member below: this closure is only reachable through
+    // `dispatchInventoryKey`, and every key that reaches `INVENTORY_KEY_HANDLERS`
+    // (including Escape) is already gated by `!ctx.session.inventoryOpen`
+    // Returning `false` one level up — so `inventoryOpen` is always `true` here.
+    // A guard restating that would be a branch no key event can ever take.
     const closeInventory = (): void => {
-      // UNCOVERED ON PURPOSE (docs/testing.md §5).
-      // This closure is only reachable through `dispatchInventoryKey`, and every key that reaches
-      // `INVENTORY_KEY_HANDLERS` (including Escape) is already gated by
-      // `!ctx.session.inventoryOpen` returning `false` one level up.
-      // This guard can only see `inventoryOpen === true`.
-      // It stays because this function is a published member of `InventoryKeyContext`.
-      // Same published-with-no-canonical-caller shape as `resolveFocusedTarget` in `anvil-view.ts`.
-      if (!session.inventoryOpen) {
-        return
-      }
       session.inventoryOpen = false
       inventory.root.setAttribute('hidden', '')
       const target = session.inventoryRestoreFocus
@@ -430,14 +425,12 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
         target.focus()
       }
     }
+    // No `if (session.inventoryOpen) return` guard here, unlike the public
+    // `openInventory` member below: this closure's only real caller is
+    // `handleToggleKey`, which calls it exclusively from the
+    // `!ctx.session.inventoryOpen` branch of its own toggle — so `inventoryOpen`
+    // Is always `false` here.
     const openInventory = (): void => {
-      // UNCOVERED ON PURPOSE, same reasoning as `closeInventory` above.
-      // This closure's only real caller is `handleToggleKey`, which calls it exclusively from the
-      // `!ctx.session.inventoryOpen` branch of its own toggle.
-      // The `true` arm here never runs through that path.
-      if (session.inventoryOpen) {
-        return
-      }
       session.inventoryRestoreFocus = restoreFocusTarget(document.activeElement)
       session.inventoryOpen = true
       inventory.root.removeAttribute('hidden')

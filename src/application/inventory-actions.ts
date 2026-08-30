@@ -1,5 +1,5 @@
-import type { InventoryInteractionTarget } from './inventory-view'
-import type { RegionId } from '../domain/inventory-view-model'
+import type { InventoryInteractionTarget } from './inventory-view.js'
+import type { RegionId } from '../domain/inventory-view-model.js'
 
 export const EQUIPMENT_SLOT_IDS = ['head', 'chest', 'legs', 'feet', 'offhand'] as const
 

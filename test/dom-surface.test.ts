@@ -18,12 +18,13 @@
  * narrows the lib, and because "compiles in a project that also has our own
  * types" is a weaker statement than "compiles against nothing but lib.dom".
  */
-import { readFile, readdir } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
-import ts from 'typescript'
 import { fakeDocument, FakeElement } from './fake-dom'
 import type { DomAttributeTarget, DomElement, DomElementFactory } from '../src/application/dom-surface'
 
@@ -33,42 +34,62 @@ describe('REGRESSION: the DOM surface is a real subset of the real DOM', () => {
   it.effect(
     'a real Document, HTMLElement, HTMLCanvasElement and SVGElement satisfy it without a cast',
     () =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         // Three of the four shapes do not compile when written the natural way;
         // `test/fixtures/dom-surface.ts` records which three and why. None of
         // those regressions is visible to `pnpm typecheck` if the fixture is
         // edited to match a narrowed surface, which is why the fixture asserts
         // the DIRECTION that bites — a built element into a real `appendChild`,
         // and a real element into the surface's.
+        //
+        // TypeScript 7 (the "native"/tsgo rewrite, org toolchain freeze) does not
+        // export the classic Program/Diagnostic JS API from the package root —
+        // its `exports` map only allows `.`, `./unstable/sync` (a server/client
+        // LSP-session API) and `./unstable/async`. Shelling out to the pinned
+        // `tsc` binary — the same one `scripts/verify-package.mjs` invokes — is
+        // the stable surface this repository already depends on elsewhere, and
+        // it answers the same question: does the fixture compile clean against
+        // the REAL `lib.dom.d.ts`.
         const fixture = path.join(repositoryRoot, 'test', 'fixtures', 'dom-surface.ts')
-        const program = ts.createProgram({
-          rootNames: [fixture],
-          options: {
-            noEmit: true,
-            strict: true,
-            exactOptionalPropertyTypes: true,
-            noUncheckedIndexedAccess: true,
-            target: ts.ScriptTarget.ES2022,
-            module: ts.ModuleKind.ESNext,
-            moduleResolution: ts.ModuleResolutionKind.Bundler,
-            moduleDetection: ts.ModuleDetectionKind.Force,
-            skipLibCheck: true,
-            types: [],
-            // THE POINT OF THE TEST: the real thing, not a hand-written stub.
-            lib: ['lib.es2022.d.ts', 'lib.dom.d.ts'],
-          },
-        })
+        const workspace = yield* Effect.promise(() => mkdtemp(path.join(tmpdir(), 'mx-ui-dom-surface-')))
+        try {
+          const tsconfigPath = path.join(workspace, 'tsconfig.json')
+          yield* Effect.promise(() =>
+            writeFile(
+              tsconfigPath,
+              JSON.stringify({
+                compilerOptions: {
+                  noEmit: true,
+                  strict: true,
+                  exactOptionalPropertyTypes: true,
+                  noUncheckedIndexedAccess: true,
+                  target: 'ES2022',
+                  module: 'ESNext',
+                  moduleResolution: 'Bundler',
+                  moduleDetection: 'force',
+                  skipLibCheck: true,
+                  types: [],
+                  // THE POINT OF THE TEST: the real thing, not a hand-written stub.
+                  lib: ['ES2022', 'DOM'],
+                },
+                files: [fixture],
+              }),
+            ),
+          )
+          const tscBinary = path.join(repositoryRoot, 'node_modules', 'typescript', 'bin', 'tsc')
+          const result = spawnSync(
+            process.execPath,
+            [tscBinary, '--project', tsconfigPath, '--pretty', 'false'],
+            { encoding: 'utf8', timeout: 25_000 },
+          )
+          const diagnosticLines = (result.stdout + result.stderr)
+            .split('\n')
+            .filter((line) => line.includes('): error TS'))
 
-        const diagnostics = [
-          ...program.getSemanticDiagnostics(),
-          ...program.getSyntacticDiagnostics(),
-        ].filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error)
-
-        expect(
-          diagnostics.map((diagnostic) =>
-            ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
-          ),
-        ).toStrictEqual([])
+          expect(diagnosticLines).toStrictEqual([])
+        } finally {
+          yield* Effect.promise(() => rm(workspace, { recursive: true, force: true }))
+        }
       }),
     30_000,
   )

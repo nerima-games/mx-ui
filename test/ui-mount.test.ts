@@ -215,6 +215,35 @@ describe('UiMount', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
+  it('REGRESSION: closing the inventory via a key does not throw when nothing was focused to restore', async () => {
+    // `document.activeElement` is typed `Element | null` — jsdom never actually hands the keyboard
+    // path a `null`, but the internal `closeInventory` closure still guards for it. Overriding the
+    // getter for this one test is what reaches that path (see the analogous `openSettings` test
+    // above) without weakening the real DOM assumption everywhere else.
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const original = Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement')
+    Object.defineProperty(document, 'activeElement', { configurable: true, value: null })
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'e' }))
+      const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
+      expect(inventory?.hasAttribute('hidden')).toBe(false)
+
+      expect(() =>
+        document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'e' })),
+      ).not.toThrow()
+      expect(inventory?.hasAttribute('hidden')).toBe(true)
+    } finally {
+      if (typeof original !== 'undefined') {
+        Object.defineProperty(Document.prototype, 'activeElement', original)
+      }
+      Reflect.deleteProperty(document, 'activeElement')
+    }
+  })
+
   // eslint-disable-next-line max-statements -- Covers the complete focus and activation flow.
   it('shares spatial inventory navigation between arrow keys and controller commands', async () => {
     const host = document.createElement('main')
@@ -511,6 +540,27 @@ describe('UiMount', () => {
     expect(hotbarFirstSlot()?.querySelector('[data-mx-ui="slot-item"]')?.textContent).toBe(
       'minecraft:coal',
     )
+  })
+
+  it('REGRESSION: updateInventory and updateInventoryActionState are no-ops before start (or after stop)', async () => {
+    // `session.mounted` is `null` until `start` succeeds (and again after `stop`) — a host that
+    // calls either update before mounting, or races a `stop`, must not crash.
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+
+    expect(() =>
+      runtime.updateInventory(inventoryViewModel(emptyInventorySnapshot)),
+    ).not.toThrow()
+    expect(() => runtime.updateInventoryActionState({ kind: 'idle' })).not.toThrow()
+
+    await Effect.runPromise(runtime.start)
+    await Effect.runPromise(runtime.stop)
+
+    expect(() =>
+      runtime.updateInventory(inventoryViewModel(emptyInventorySnapshot)),
+    ).not.toThrow()
+    expect(() => runtime.updateInventoryActionState({ kind: 'idle' })).not.toThrow()
   })
 
   it('applies host-pushed settings through updateSettings without opening the dialog', async () => {

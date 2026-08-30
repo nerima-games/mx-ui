@@ -6,7 +6,7 @@ import {
   writeAttribute,
   writeHidden,
   writeText,
-} from './dom-write'
+} from './dom-write.js'
 import {
   type CreateWorldRequest,
   type GameMode,
@@ -23,14 +23,14 @@ import {
   nameWorld,
   openPanel,
   worldNameLabel,
-} from '../domain/main-menu'
+} from '../domain/main-menu.js'
 import type {
   DomElement,
   DomElementFactory,
   DomInputElement,
   DomInteractiveElement,
-} from './dom-surface'
-import { PALETTE_VAR, declarePalette } from './palette-css'
+} from './dom-surface.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
 
 export const MAIN_MENU_TITLE = 'nerima-games'
 
@@ -314,7 +314,11 @@ const createCancelButton = (ctx: MountContext, parent: DomElement, bindings: Men
     onClick: () => {
       bindings.transition(
         backToRoot(bindings.box.state),
-        bindings.rootButtons.get('new-world') ?? cancelButton,
+        // Non-null: `createRootEntryButtons` populates `rootButtons` for every
+        // `RootEntry` (a closed 3-member union) once, at construction, before
+        // Any click handler can fire — 'new-world' is always present by the
+        // Time this callback runs.
+        bindings.rootButtons.get('new-world')!,
       )
     },
     role: 'menu-action',
@@ -398,7 +402,9 @@ const createLoadWorldSection = (
     onClick: () => {
       bindings.transition(
         backToRoot(bindings.box.state),
-        bindings.rootButtons.get('load-world') ?? backButton,
+        // Non-null: see the `cancelButton` handler above — same guarantee,
+        // For 'load-world'.
+        bindings.rootButtons.get('load-world')!,
       )
     },
     role: 'menu-action',
@@ -410,7 +416,12 @@ const createLoadWorldSection = (
     if (typeof first === 'undefined') {
       return backButton
     }
-    return rows.get(first.sessionId)?.root ?? backButton
+    // Non-null: `createRenderModel` sets `box.savedWorlds = model.savedWorlds`
+    // And calls `syncSavedWorldRows(listDeps, model.savedWorlds)` in the same
+    // Pass, and `syncSavedWorldRows` calls `ensureSavedWorldRow` for every
+    // World in that same array — so every sessionId in `box.savedWorlds` has a
+    // Row by the time any click handler can read `box.savedWorlds` at all.
+    return rows.get(first.sessionId)!.root
   }
 
   return {
@@ -448,10 +459,13 @@ const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): Saved
   const button = createButton(deps.ctx, deps.parent, {
     label: '',
     onClick: () => {
-      const current = deps.rows.get(world.sessionId)
-      if (typeof current !== 'undefined') {
-        deps.callbacks.onLoadWorld(current.current)
-      }
+      // Non-null: this row's own button cannot be clicked before it exists,
+      // And `deps.rows` entries are only ever added or updated (`.set` in
+      // This function and in `ensureSavedWorldRow`), never deleted — so
+      // `deps.rows.get(world.sessionId)` always finds (at least) this row by
+      // The time its click handler runs.
+      const current = deps.rows.get(world.sessionId)!
+      deps.callbacks.onLoadWorld(current.current)
     },
     role: 'menu-world-row',
   })

@@ -94,6 +94,29 @@ describe('End HUD primitives', () => {
     })
   })
 
+  it('REGRESSION: a NaN insertion count clamps to 0 rather than propagating NaN', () => {
+    expect(portalEyeProgressViewModel(Number.NaN)).toEqual({
+      accessibleLabel: '0 of 12 portal eyes inserted.',
+      complete: false,
+      inserted: 0,
+      progressPercent: 0,
+      total: 12,
+    })
+  })
+
+  it('REGRESSION: a bearing left of centre describes "left", not just "right"', () => {
+    // The 405-degree case above only ever exercises the positive (right) arm
+    // of `describeRelativeBearing`; nothing in this file drove a negative one.
+    expect(
+      strongholdLocatorViewModel({ distanceBlocks: 5, relativeBearingDegrees: -45, status: 'tracking' }),
+    ).toEqual({
+      accessibleLabel: 'Stronghold: 5 blocks away, 45 degrees left.',
+      distanceBlocks: 5,
+      relativeBearingDegrees: -45,
+      status: 'tracking',
+    })
+  })
+
   it('derives an exactly-once presentation key from stable defeat event identity', () => {
     expect(dragonDefeatPresentationKey(' defeat-42 ')).toBe('end-hud:dragon-defeat:defeat-42')
     expect(dragonDefeatPresentationKey('')).toBeUndefined()

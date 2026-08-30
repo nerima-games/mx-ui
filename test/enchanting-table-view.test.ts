@@ -142,4 +142,17 @@ describe('createEnchantingTableView', () => {
         .map((target) => target.attributes.get('tabindex')),
     ).toStrictEqual(['0', '-1', '-1', '-1', '-1'])
   })
+
+  it('REGRESSION: fewer slots and offers than the DOM leaves the surplus elements untouched', () => {
+    // EnchantingTableViewModel is a published type (docs/public-api.md) with no
+    // canonical constructor site other than `enchantingTableViewModel`, which
+    // always returns two slots and three offers — a consumer assembling one by
+    // hand, which is what a published view model is for, can hand over fewer.
+    const factory = fakeDocument()
+    const host = factory.createElement('main')
+    const view = createEnchantingTableView(factory, host)
+    const root = view.root as FakeElement
+    expect(() => view.render({ offers: [], slots: [] })).not.toThrow()
+    expect(root.findAll('data-interaction-target', 'enchanting-operation')).toHaveLength(5)
+  })
 })

@@ -97,8 +97,8 @@ import {
   XP_FILL_HIGHLIGHT,
   XP_LEVEL,
   cssColor,
-} from '../domain/palette'
-import type { DomElement } from './dom-surface'
+} from '../domain/palette.js'
+import type { DomElement } from './dom-surface.js'
 
 /**
  * The prefix, and why it is not `--ui-` or `--color-`.

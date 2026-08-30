@@ -38,8 +38,8 @@
  * `application/dom-surface.ts` and would put mx-ui in charge of a defs block
  * inside a document it does not own.
  */
-import { type ColorVisionMode, colorVisionAttribute } from '../domain/accessibility'
-import type { DomAttributeTarget } from './dom-surface'
+import { type ColorVisionMode, colorVisionAttribute } from '../domain/accessibility.js'
+import type { DomAttributeTarget } from './dom-surface.js'
 
 /**
  * The attribute name, matching the reference's

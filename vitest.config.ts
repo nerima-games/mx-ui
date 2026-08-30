@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({
+const config: ReturnType<typeof defineConfig> = defineConfig({
   test: {
     // 'node', in the DOM repository, on purpose.
     //
@@ -16,15 +16,13 @@ export default defineConfig({
     // listener. See docs/testing.md and docs/design-notes.md (DN-UI-2).
     environment: 'node',
     globals: false,
+    // vitest 4 flattened the old `poolOptions.forks.{maxForks,minForks,isolate,
+    // singleFork}` shape to top-level options (org toolchain freeze). `minForks`
+    // has no replacement — vitest 4 no longer exposes a worker-pool floor.
+    // `fileParallelism: true` below is what `singleFork: false` used to say.
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        maxForks: '50%',
-        minForks: 1,
-        isolate: true,
-        singleFork: false,
-      },
-    },
+    isolate: true,
+    maxWorkers: '50%',
     include: ['test/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '**/.git/**'],
     testTimeout: 10000,
@@ -40,25 +38,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       enabled: false,
-      include: ['src/index.ts', 'src/domain/**/*.ts', 'src/application/**/*.ts', 'src/stages/**/*.ts'],
+      include: ['src/**/*.ts'],
       exclude: ['**/*.d.ts', '**/*.config.ts', '**/*.test.ts', '**/*.spec.ts'],
-      all: true,
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // THE 99% GATE, ON. `docs/testing.md` §6.
-      //
-      // This block used to explain why there was NO threshold: a number imposed
-      // on a skeleton is trivially satisfied by type-only modules and says
-      // nothing about the implementation. That argument was about the skeleton
-      // and it has expired — `domain/` now carries the view models, the caption
-      // queue, the modal stack and the palette's own accessibility survey, and
-      // `application/` carries seven renderers over a DOM surface this
-      // repository defines.
-      //
-      // It is 99 rather than the measured 99.76 because the gate exists to catch
-      // a REGRESSION. A threshold pinned to the current number turns every
-      // unrelated refactor into a red build, which teaches people to lower the
-      // number instead of writing the test.
+      // THE 100% GATE (org toolchain freeze, Wave 0). `docs/testing.md` §5-6.
       //
       // THE `exclude` LIST HAS FOUR ENTRIES AND ALL FOUR ARE FILE PATTERNS, not
       // source files. Nothing in `domain/`, `application/` or `stages/` is
@@ -66,20 +50,8 @@ export default defineConfig({
       // `application/dom-surface.ts`, which reports 0/0/0/0 because it is
       // declarations only. It does not need excluding: a file with no statements
       // contributes 0/0 to the totals, so the row reads 0% and the headline is
-      // unaffected. (mc-kernel and mx-redstone DO exclude their equivalent, to
-      // keep the report free of a red row nobody should act on. Two defensible
-      // answers; this one keeps the exclude list empty of source files, which is
-      // the property that matters when somebody is tempted to add a fifth.)
-      //
-      // ONE BRANCH ARM IS UNCOVERED, in `application/hud-view.ts`: a
-      // `HudViewModel` whose `hotbar` is shorter than the nine cells the view
-      // built. `hudViewModel` always produces exactly nine, so nothing in this
-      // repository can reach it; the type is published and says only
-      // `ReadonlyArray<SlotView>`, so a consumer assembling one by hand can.
-      // Covering it would mean bypassing the only producer, which teaches the
-      // next reader that the producer can be short. The reason is written at the
-      // call site and in docs/testing.md §6-2, and it is 0.24% of the branches.
-      thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+      // unaffected.
+      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
     },
   },
   esbuild: {
@@ -88,3 +60,5 @@ export default defineConfig({
     platform: 'node',
   },
 })
+
+export default config

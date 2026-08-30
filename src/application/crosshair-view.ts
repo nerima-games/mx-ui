@@ -109,11 +109,11 @@ import {
   writeHidden,
   writePercent,
   writeStyle,
-} from './dom-write'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { type MotionPreference, shouldAnimate } from '../domain/accessibility'
-import { PALETTE_VAR, declarePalette } from './palette-css'
-import type { CrosshairViewModel } from '../domain/crosshair'
+} from './dom-write.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { type MotionPreference, shouldAnimate } from '../domain/accessibility.js'
+import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import type { CrosshairViewModel } from '../domain/crosshair.js'
 
 /** The reticle's box, in CSS pixels. `crosshair.ts:15-16` (`width/height: 20px`). */
 export const CROSSHAIR_SIZE = '20px'

@@ -52,7 +52,7 @@
  * because a timer that outlives the thing it was about will fire into a
  * crosshair that has since been taken down.
  */
-import { type ModalStack, pointerLockReleased } from './modal-stack'
+import { type ModalStack, pointerLockReleased } from './modal-stack.js'
 
 /**
  * How long a landed hit is marked.

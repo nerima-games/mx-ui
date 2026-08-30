@@ -58,10 +58,10 @@ import {
   writePercent,
   writeStyle,
   writeText,
-} from './dom-write'
-import type { DomElement, DomElementFactory } from './dom-surface'
-import { PALETTE_VAR } from './palette-css'
-import type { SlotView } from '../domain/hud-view-model'
+} from './dom-write.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { PALETTE_VAR } from './palette-css.js'
+import type { SlotView } from '../domain/hud-view-model.js'
 
 /**
  * Below this, a durability bar turns from `DURABILITY_HIGH` to `DURABILITY_LOW`.

@@ -4,6 +4,13 @@
   inputs = {
     # nixos-unstable, not nixpkgs-unstable: it advances only after the NixOS
     # release tests pass, so it is less likely to land a broken build.
+    #
+    # flake.lock is pinned to rev 624af665 (2026-07-26) rather than the
+    # channel head: every revision from 2026-08-28 onward ships oxlint
+    # >=1.79.0, whose `no-redeclare` rule false-positives on the `type X` /
+    # `const X = Brand.refined<X>(...)` branded-type idiom used throughout
+    # src/domain (proven by A/B testing oxlint 1.75.0 vs 1.79.0 against the
+    # same source tree). Re-check on the next bump.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
@@ -32,26 +39,30 @@
           # the `packageManager` field in package.json — one source of truth
           # instead of two that can drift.
           #
-          # oxlint is the opposite case: it is NOT a package.json devDependency.
-          # It used to be, and every repo in the org independently drifted onto
-          # a different version (some on 0.12.x, some on 1.76.x) without anyone
-          # noticing, because the config file (`.oxlintrc.json`) had a filename
-          # bug that meant it was never actually being loaded either way — see
-          # DEPENDENCY_POLICY.md §5's "前提条件" note. Once that bug was fixed,
-          # a single pinned Nix-provided oxlint became the one source of truth
-          # instead of 16 independently-drifting npm pins.
+          # oxlint is intentionally supplied by Nix rather than package.json.
+          # This keeps the executable version in the reproducible development
+          # shell and avoids a second package-manager lockfile entry.
+          #
+          # ast-grep is here for the same reason, and covers what oxlint cannot:
+          # it implements none of no-restricted-syntax, no-restricted-properties
+          # or no-restricted-globals, so the org-wide ban on reading a
+          # process-global clock had no mechanical gate. `.ast-grep/rules/`
+          # holds that gate. Structural matching is the point — the ban is
+          # documented in prose beside the code it governs, and a textual check
+          # would fail its own documentation.
           default = pkgs.mkShell {
             packages = [
               pkgs.nodejs_24
               pkgs.corepack_24
               pkgs.typescript-language-server
               pkgs.oxlint
+              pkgs.ast-grep
             ];
 
             shellHook = ''
-              mkdir -p "$PWD/.corepack"
-              corepack enable --install-directory "$PWD/.corepack"
-              export PATH="$PWD/.corepack:$PATH"
+              corepackDir="$(mktemp -d "''${TMPDIR:-/tmp}/mx-ui-corepack.XXXXXX")"
+              corepack enable --install-directory "$corepackDir"
+              export PATH="$corepackDir:$PATH"
             '';
           };
         }
