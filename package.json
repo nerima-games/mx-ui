@@ -59,9 +59,9 @@
     "prepublishOnly": "pnpm verify && pnpm package:verify"
   },
   "dependencies": {
-    "@nerima-games/mc-audio": "0.2.7",
+    "@nerima-games/mc-audio": "0.2.8",
     "@nerima-games/mc-kernel": "0.7.0",
-    "@nerima-games/mc-sim": "0.4.1",
+    "@nerima-games/mc-sim": "0.4.2",
     "effect": "3.22.1"
   },
   "devDependencies": {
