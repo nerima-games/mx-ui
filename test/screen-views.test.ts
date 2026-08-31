@@ -18,6 +18,17 @@
  * `KeyboardEvent.code`, which needs a listener, which is not in the vocabulary.
  * "Focusable" and "operable" were never the same claim — the ring is the first,
  * a settings screen is the second.
+ *
+ * Wave 1 (W1-L3') adds exactly the "list of labels" ceiling this paragraph
+ * predicted — `application/settings-view.ts`, tested separately in
+ * `test/settings-view.test.ts`, not here. It is a projection with no
+ * `addEventListener` anywhere in its tree (that file's own DN-UI-4 regression
+ * test), built the same listener-free way `application/anvil-view.ts` is:
+ * every field is a `data-` hook, and the host owns activating it. It does not
+ * reverse this paragraph's argument, because rebind still cannot WORK through
+ * it — the button shows a code or "Unbound" and nothing calls
+ * `KeyboardEvent.code`. The input surface stays out of this repository; only
+ * its display half moved.
  */
 import { describe, expect, it } from 'vitest'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
