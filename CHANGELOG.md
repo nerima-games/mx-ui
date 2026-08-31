@@ -1,5 +1,16 @@
 # @nerima-games/mx-ui
 
+## 0.5.2
+
+### Patch Changes
+
+- [#20](https://github.com/nerima-games/mx-ui/pull/20) [`383b5ca`](https://github.com/nerima-games/mx-ui/commit/383b5caa42859c1daeb737404f99dd136b85e84e) Thanks [@takeokunn](https://github.com/takeokunn)! - Align internal pins to the current published versions
+  
+  - `@nerima-games/mc-audio` to 0.2.8
+  - `@nerima-games/mc-sim` to 0.4.2
+  Each of these upstream releases contained a pin change and no source change,
+  so no behaviour moves with this bump.
+
 ## 0.5.1
 
 ### Patch Changes
