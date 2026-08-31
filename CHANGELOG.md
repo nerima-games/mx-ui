@@ -1,5 +1,11 @@
 # @nerima-games/mx-ui
 
+## 0.5.0
+
+### Minor Changes
+
+- [#16](https://github.com/nerima-games/mx-ui/pull/16) [`04a7d07`](https://github.com/nerima-games/mx-ui/commit/04a7d0776cb9c6ebd829e5a279e233b08e1af243) Thanks [@takeokunn](https://github.com/takeokunn)! - Add a listener-free settings screen projection (`createSettingsView`, `settingsViewModel`) lowered from mc-compose's `apps/web/settings-view.ts`, and the main menu's session-link builders (`sessionHref`, `createSessionHref`, `createUniqueSessionId`) lowered from `apps/web/session-navigation.ts`. The settings value rules and the Title⇄InGame session-lifecycle decision stay outside this repository — see the new modules' headers.
+
 ## 0.4.0
 
 ### Minor Changes
