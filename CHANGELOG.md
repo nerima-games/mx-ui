@@ -1,5 +1,17 @@
 # @nerima-games/mx-ui
 
+## 0.5.3
+
+### Patch Changes
+
+- [#22](https://github.com/nerima-games/mx-ui/pull/22) [`0f90742`](https://github.com/nerima-games/mx-ui/commit/0f90742d39306a2c307e17ff205450849ecea023) Thanks [@takeokunn](https://github.com/takeokunn)! - Record the styling/asset shipping decision in `docs/versioning.md` §4: mx-ui ships no external
+  stylesheet, font, or image asset — palette colours and layout are custom properties and inline
+  styles written by the JS the package already exports (`declarePalette`, `application/*.ts`), icons
+  are Unicode glyphs, and the DN-UI-1a colour-vision filter ships as plain matrix values while its
+  `<defs>` block and CSS scoping stay the host's asset, matching the reference split. `files` and
+  `exports` need no addition; the previous "undecided" note predated the implementation that settled
+  it. No source or public API changed.
+
 ## 0.5.2
 
 ### Patch Changes
