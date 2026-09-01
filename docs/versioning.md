@@ -93,30 +93,59 @@ changeset(`major` bump)を書く運びになる。
 **先にやらない理由**: ビルド成果物を介すと型エラーがビルド時にしか出なくなり、
 16 リポジトリを 1 つの workspace で開発している間の DX が落ちる。
 
-### mx-ui だけが抱える面倒 — アセットが JS ではない
+### mx-ui だけが抱える面倒だった話 — 決着済み、CSS ファイルは無い
 
-**他の 2 つの体験モジュールに無い問題が mx-ui にはある。** plan.md §5.3:
+**この節はもともと plan.md §5.3 / §7 を根拠に「mx-ui は CSS とフォント/アイコンを
+同梱しなければならない」と書いていた。** その前提は
+`application/palette-css.ts` と `application/accessibility-dom.ts` が実装される前の
+scaffold 時点（2026-07-26）のもので、実装（2026-08-03）の後も更新されていなかった。
+以下が実装の到達点であり、上の前提を置き換える。
 
-> 独立アセットリポジトリ → アセットは消費者に同梱（テクスチャ→render、音声→audio）
+**結論: mx-ui は外部スタイルシートもフォントもアイコン画像も同梱しない。全スタイリングが
+`dist/` の JS そのものである。** `files` に足すディレクトリは無く、`exports` にサブパスは
+要らない — [public-api.md](./public-api.md) §5 の一覧そのものが唯一の出荷物である。
 
-§7 の対応表は 3 つ目を挙げている:「アセットファイル → 消費者に同梱（render / audio / **ui**）」。
+理由は 3 つの独立した設計判断で、どれも「後で足す」ではなく「最初から JS 側でやる」を選んだ:
 
-mx-ui が同梱することになるのは **CSS とフォント / アイコン**である。
-つまり `tsc` の出力だけでは `dist/` が完成しない。具体的に効いてくるのは:
+1. **色（パレット）はスタイルシートではなくカスタムプロパティを、mount された root に
+   実行時に書く。** `application/palette-css.ts` 冒頭の "THE DECISION" が理由を書いている
+   — 生成した `<style>` は `document.head` を要求し、それは
+   [public-api.md](./public-api.md) §4-1 制約 1（`document` を自分で探しに行かない、
+   複数の mx-ui インスタンスが同一ページに同居できる必要がある）に反する。
+   `declarePalette(root)` が mount ごとに 1 回、23 個の `--mx-ui-*` カスタムプロパティを
+   `root.style.setProperty` で書き、以後の状態変化はどの変数を参照するかを切り替えるだけで
+   色そのものは書かない。
+2. **レイアウトも同じ経路。** `application/*.ts` 全体が座標・grid・サイズを
+   `element.style.setProperty(...)` で直接書いており（`hud-view.ts` / `slot-element.ts` /
+   `crosshair-view.ts` 他）、`application/dom-surface.ts` の `DomStyle` 型が
+   `setProperty` / `removeProperty` しか持たない。クラス名でスタイルを当てる経路
+   （`classList` 経由の外部 CSS）はそもそも `DomElement` の契約に存在しない
+   （`dom-surface.ts` の型定義コメントが `classList` を明示的に「無い」ものとして挙げている）。
+3. **アイコンは画像でもアイコンフォントでもなく Unicode グリフである。** `♡ ♥`（heart）
+   と `○ ●`（shank）を hollow/solid の 2 レイヤーに重ね、幅を clip して満タン/半分/空を表現する
+   （`application/icon-element.ts`）。ホストページのフォントをそのまま使うので、
+   同梱すべきフォントファイルが存在しない。
 
-- **`files`**: 現在は `["index.ts", "domain", "stages", "tsconfig.base.json", "LICENSE", "README.md"]`。
-  スタイルシートとアセットのディレクトリを足す必要がある。
-  **これを忘れると、publish は成功して消費者側でスタイルだけが消える** — 最も気づきにくい壊れ方である。
-- **`exports`**: JS の入口に加えて `"./styles.css"` のようなサブパスが要る。
-  `exports` を書いた時点でサブパスは列挙式になるので、書き忘れたファイルは import 不能になる。
-- **ビルドパイプライン**: `tsc` 以外の何か（CSS のバンドル / コピー）が要る。
-  16 リポジトリのうち**ここだけ**である。
+**DN-UI-1a の SVG `feColorMatrix` フィルタも、この節が書かれた時点では未決だったが、
+実装時に決着している。** 参照実装と同じ分担を採った:
+このリポジトリが決めるのは**値**（`domain/accessibility.ts` の `colorVisionMatrix` /
+`colorVisionMatrixValues` / `COLOR_VISION_FILTER_COLOR_SPACE`、いずれもプレーンな JS
+export）で、`<filter><feColorMatrix values="…"/></filter>` という **defs ブロックそのもの**と
+それを canvas だけに効かせる CSS ルールは mc-compose 側の資産のままである
+（[design-notes.md](./design-notes.md) DN-UI-1a、`application/accessibility-dom.ts` 冒頭コメント）。
+mx-ui がここで defs を組み立てるには `createElementNS` が要り、
+それは自分が所有していないドキュメントの中に defs ブロックを持つことになる —
+`applyColorVision` が `DomAttributeTarget`（属性 1 個だけ書ける最小の受け口）しか
+受け取らない理由はこれである。行列を JS で export した時点で「値を出荷物として渡す」は
+すでに満たされており、渡し方として SVG マークアップを追加で出荷する必要は無い。
 
-DN-UI-1a の SVG `feColorMatrix` フィルタも同じ系統の資産である。
-参照実装ではフィルタ定義が `index.html` に置かれていた
-（`packages/presentation/hud/color-vision.ts:1-3`）。
-`index.html` は mc-compose の資産なので、mx-ui は
-**フィルタ定義を出荷物として渡す形**に設計し直す必要がある。今は未決である。
+**検証済みの到達性。** `declarePalette` と `PALETTE_VAR` は
+[public-api.md](./public-api.md) §5 のバレルから export されており、`pnpm pack` で作った
+実アーカイブをインストールしてこの 2 つを呼ぶと、実際の `#rrggbb` / `rgba(...)` 文字列が
+返る（`scripts/verify-package.mjs` の runtime probe と同じ形の追加確認で実測済み）。
+`test-browser/dom-surface.spec.ts` の
+`the palette reaches the document as VALUES › every custom property is declared on an
+mx-ui root and resolves` が同じ主張を実ブラウザで固定している。
 
 ## 5. ここでの「破壊的変更」の定義
 
