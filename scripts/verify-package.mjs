@@ -203,6 +203,17 @@ try {
   // exercised by the unit suite against source, not by this boundary check,
   // whose job is "did dist/ ship what src/ promises", not "is the domain
   // logic correct".
+  //
+  // One internal-visible module is the deliberate exception:
+  // `application/palette-css.ts` (docs/public-api.md §5 lists it 内部(可視)).
+  // mx-ui ships no stylesheet asset — colour tokens exist only as the CSS
+  // custom-property writes `declarePalette` performs at runtime
+  // (src/application/palette-css.ts). The unit suite proves that behaviour
+  // against `src/`; it cannot prove dist/ still has it, because there is no
+  // separate styling file for a bundler to drop or a build step to tree-shake
+  // — the "did dist/ ship what src/ promises" question this script exists to
+  // answer applies to it exactly as much as to a contract-tier export, even
+  // though a change to it is not itself a breaking change.
   const probe = `
     const packageName = ${JSON.stringify(packageName)};
     const module = await import(packageName);
@@ -245,6 +256,56 @@ try {
     if (typeof module.applyColorVision !== 'function' || typeof module.colorVisionCell !== 'function') {
       throw new Error('The root export does not expose the accessibility-dom contract');
     }
+    if (typeof module.declarePalette !== 'function') {
+      throw new Error('The root export does not expose declarePalette');
+    }
+    if (typeof module.PALETTE_VALUE !== 'object' || module.PALETTE_VALUE === null) {
+      throw new Error('The root export does not expose PALETTE_VALUE');
+    }
+    if (typeof module.PALETTE_PROPERTY !== 'object' || module.PALETTE_PROPERTY === null) {
+      throw new Error('The root export does not expose PALETTE_PROPERTY');
+    }
+    if (!Array.isArray(module.PALETTE_TOKEN_NAMES) || module.PALETTE_TOKEN_NAMES.length === 0) {
+      throw new Error('The root export does not expose a non-empty PALETTE_TOKEN_NAMES');
+    }
+    // Styling probe: call the packed declarePalette against a minimal
+    // structural stand-in for DomElement (setProperty/removeProperty are the
+    // whole of DomStyle — src/application/dom-surface.ts) and check that every
+    // token in PALETTE_TOKEN_NAMES landed as a REAL CSS colour, not merely
+    // that the call did not throw. A tree-shaken PALETTE_VALUE or a
+    // declarePalette silently reduced to a no-op would both still be
+    // "function"-typed and pass every check above; only reading the writes
+    // back proves the colours survived packaging.
+    const paletteWrites = {};
+    const paletteRoot = {
+      nodeType: 1,
+      textContent: null,
+      style: {
+        setProperty(property, value) { paletteWrites[property] = value; },
+        removeProperty(property) { delete paletteWrites[property]; },
+      },
+      setAttribute() {},
+      removeAttribute() {},
+      appendChild() {},
+    };
+    module.declarePalette(paletteRoot);
+    const CSS_COLOR_PATTERN = /^#[0-9a-f]{6}$|^rgba\\(\\d{1,3}, \\d{1,3}, \\d{1,3}, [01](\\.\\d+)?\\)$/i;
+    for (const name of module.PALETTE_TOKEN_NAMES) {
+      const property = module.PALETTE_PROPERTY[name];
+      if (typeof property !== 'string') {
+        throw new Error(\`PALETTE_PROPERTY is missing a custom-property name for \${name}\`);
+      }
+      const expected = module.PALETTE_VALUE[name];
+      if (!CSS_COLOR_PATTERN.test(expected)) {
+        throw new Error(\`PALETTE_VALUE.\${name} is not a real CSS colour: \${JSON.stringify(expected)}\`);
+      }
+      if (paletteWrites[property] !== expected) {
+        throw new Error(
+          \`declarePalette did not write PALETTE_VALUE.\${name} to \${property} (got \${JSON.stringify(paletteWrites[property])})\`,
+        );
+      }
+    }
+    process.stdout.write(\`verified \${packageName} styling: declarePalette wrote \${module.PALETTE_TOKEN_NAMES.length} real custom properties\\n\`);
     // Actually execute the two Effect-valued exports mc-compose runs every
     // frame; RIn is documented as \`never\` (docs/public-api.md §4), so this
     // needs no host services to complete.
@@ -286,9 +347,16 @@ import {
   createSaveIndicator,
   applyColorVision,
   colorVisionCell,
+  declarePalette,
+  PALETTE_TOKEN_NAMES,
+  PALETTE_PROPERTY,
+  PALETTE_VALUE,
   type UiMount,
   type UiMountOptions,
   type HudView,
+  type DomElement,
+  type DomNode,
+  type PaletteTokenName,
 } from ${JSON.stringify(packageName)}
 import { Effect } from 'effect'
 
@@ -312,6 +380,27 @@ const saveIndicatorType: typeof createSaveIndicator = createSaveIndicator
 const colorVisionType: typeof applyColorVision = applyColorVision
 const colorVisionCellType: typeof colorVisionCell = colorVisionCell
 
+// Styling type probe: declarePalette takes a DomElement, satisfied here with
+// no cast — the same "structural type, no \`as\`" discipline
+// test/dom-surface.test.ts holds against real lib.dom.d.ts. PALETTE_VALUE and
+// PALETTE_PROPERTY must type-check as Readonly<Record<PaletteTokenName, string>>.
+const paletteElement: DomElement = {
+  nodeType: 1,
+  textContent: null,
+  style: {
+    setProperty(_property: string, _value: string): void {},
+    removeProperty(_property: string): void {},
+  },
+  setAttribute(_name: string, _value: string): void {},
+  removeAttribute(_name: string): void {},
+  appendChild(_child: DomNode): unknown { return undefined },
+}
+const declarePaletteType: (root: DomElement) => void = declarePalette
+declarePaletteType(paletteElement)
+const paletteTokenNames: ReadonlyArray<PaletteTokenName> = PALETTE_TOKEN_NAMES
+const paletteProperty: Readonly<Record<PaletteTokenName, string>> = PALETTE_PROPERTY
+const paletteValue: Readonly<Record<PaletteTokenName, string>> = PALETTE_VALUE
+
 void hudSync
 void overlaySync
 void simPhysics
@@ -324,6 +413,9 @@ void inventoryViewType
 void saveIndicatorType
 void colorVisionType
 void colorVisionCellType
+void paletteTokenNames
+void paletteProperty
+void paletteValue
 `;
   if (typeConsumerSource.trim().length === 0) {
     throw new Error("TypeScript consumer source must not be empty");
