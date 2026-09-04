@@ -117,6 +117,18 @@ describe('inventory controller navigation', () => {
     })
   })
 
+  it('moves up within a region from the first column of a row, not just a middle column', () => {
+    // The boundary condition is `index >= columns`, not `index > columns`: the
+    // first slot of a non-first row (index === columns exactly, here 3) is the
+    // case an off-by-one in that comparison mishandles, sending the move to the
+    // adjacent region above instead of one row up within `main`.
+    expect(moveInventoryTarget(model, { index: 3, kind: 'slot', region: 'main' }, 'up')).toStrictEqual({
+      index: 0,
+      kind: 'slot',
+      region: 'main',
+    })
+  })
+
   it('does not move past the first region when there is nothing above it', () => {
     const topLeft = { index: 0, kind: 'slot', region: 'main' } as const
     expect(moveInventoryTarget(model, topLeft, 'up')).toStrictEqual(topLeft)
