@@ -100,6 +100,14 @@ describe('turning captions off takes down the captions that are already up', () 
     expect(applyCaptionSettings(live, ON)).toBe(live)
     // And an already-empty queue is not replaced with a different empty one.
     expect(applyCaptionSettings(emptyCaptionQueue, OFF)).toBe(emptyCaptionQueue)
+    // The check above passes even without the identity guard it names, because
+    // the fallback path also happens to return the `emptyCaptionQueue`
+    // singleton — so passing that exact singleton in can never distinguish the
+    // two. A DIFFERENT, structurally-empty queue object closes that hole: only
+    // the guard returns THIS object back; the fallback would substitute the
+    // singleton instead.
+    const distinctEmptyQueue: CaptionQueue = { visible: [] }
+    expect(applyCaptionSettings(distinctEmptyQueue, OFF)).toBe(distinctEmptyQueue)
   })
 
   it('REGRESSION: expiry alone could NOT have done this, which is why admission-gating was not enough', () => {

@@ -65,6 +65,25 @@ describe('createUniqueSessionId', () => {
     )
   })
 
+  it('gives up after exactly 32 attempts, not 33', () => {
+    // The always-colliding randomId above cannot tell "gives up after 32
+    // attempts" from "gives up after 33" — it never emits a fresh id at all.
+    // This generator collides for the first 32 calls, then produces a fresh
+    // id on the 33rd. An attempt cap that is off by one (`<=` in place of
+    // `<`) would reach that 33rd call and succeed where it must throw.
+    const ATTEMPTS_BEFORE_GIVING_UP = 32
+    let call = 0
+    const randomId = (): string => {
+      call += 1
+      return call <= ATTEMPTS_BEFORE_GIVING_UP ? 'dup' : 'fresh'
+    }
+
+    expect(() => createUniqueSessionId('World', ['world-dup'], randomId)).toThrow(
+      'Could not allocate a unique session id',
+    )
+    expect(call).toBe(ATTEMPTS_BEFORE_GIVING_UP)
+  })
+
   it('SECOND ANGLE — property: every generated id satisfies the readSessionId contract mc-compose kept', () => {
     // Rather than one more example matching the happy path above, this checks
     // the cross-repository invariant the split in this file's header depends

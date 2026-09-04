@@ -41,6 +41,7 @@ import {
   INVENTORY_SLOT_COUNT,
   inventoryViewModel,
   regionOf,
+  slotSnapshotOf,
   type InventorySnapshot,
 } from '../src/domain/inventory-view-model'
 import { itemStack, type Inventory } from '@nerima-games/mc-sim'
@@ -868,6 +869,18 @@ describe('the palette keeps its guarantee', () => {
       expect(simulateColorVision(red, 'off')).toStrictEqual(red)
     }),
   )
+
+  it.effect('simulateColorVision ROUNDS a channel, rather than leaving it fractional', () =>
+    Effect.sync(() => {
+      // Every simulation row sums to 1, so a pure black/white/grey round-trips
+      // exactly and never exercises the rounding at all — which is exactly why
+      // `toBeLessThan(255)` above cannot tell a rounded result from an
+      // unrounded one. Pure red is the case where the matrix product itself is
+      // fractional (0.567 * 255 = 144.585) before it is ever clamped, so this
+      // pins the post-round integer rather than merely "less than 255".
+      expect(simulateColorVision([255, 0, 0], 'protanopia')).toStrictEqual([145, 142, 0])
+    }),
+  )
 })
 
 /**
@@ -1196,6 +1209,34 @@ describe('inventory and crafting project state without interpreting it', () => {
       expect(() =>
         inventoryViewModel(inventoryWith({ selectedHotbarIndex: Number.POSITIVE_INFINITY })),
       ).not.toThrow()
+    }),
+  )
+
+  it.effect('a fractional selectedHotbarIndex is FLOORED, not left fractional', () =>
+    Effect.sync(() => {
+      // `slotView` marks a slot selected with `index === selectedIndex`. A
+      // selectedHotbarIndex that stayed fractional (2.7, say) would equal no
+      // integer slot offset at all — every slot in the hotbar reading
+      // unselected, silently, with no error and no visibly wrong index either.
+      const model = inventoryViewModel(inventoryWith({ selectedHotbarIndex: 2.7 }))
+      const hotbar = regionOf(model, 'hotbar')
+      if (hotbar?.kind !== 'slots') {
+        throw new Error('the hotbar region should be projected')
+      }
+
+      expect(hotbar.slots.filter((slot) => slot.selected)).toHaveLength(1)
+      expect(hotbar.slots[2]?.selected).toBe(true)
+    }),
+  )
+
+  it.effect('slotSnapshotOf reports a real 0, never undefined, for a slot with nothing in it', () =>
+    Effect.sync(() => {
+      // `HotbarSlotSnapshot.count` is typed `number`, not `number | undefined`.
+      // `slotSnapshotOf` is exported through the barrel, so a caller outside
+      // this repository may read `.count` straight off its result without
+      // going through `slotView` — which has its own, independent fallback and
+      // would otherwise be the only thing keeping this promise.
+      expect(slotSnapshotOf(undefined).count).toBe(0)
     }),
   )
 
