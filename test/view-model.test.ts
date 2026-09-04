@@ -49,6 +49,7 @@ import type { ItemType, StackCount } from '@nerima-games/mc-kernel'
 import {
   COLLAPSE_SEPARATION,
   compositeOver,
+  contrastRatio,
   cssColor,
   hex,
   HEART,
@@ -674,6 +675,45 @@ describe('the palette keeps its guarantee', () => {
       expect(compositeOver([200, 100, 0], 0.5, [0, 0, 0])).toStrictEqual([100, 50, 0])
       expect(compositeOver([255, 255, 255], -3, [0, 0, 0])).toStrictEqual([0, 0, 0])
       expect(compositeOver([255, 255, 255], 9, [0, 0, 0])).toStrictEqual([255, 255, 255])
+    }),
+  )
+
+  it.effect('PROPERTY: contrastRatio is symmetric, self-contrast is exactly 1, and the result never leaves 1..21', () =>
+    Effect.sync(() => {
+      // Every existing check of `contrastRatio` goes through `surveyPalette()`
+      // and this repository's own fixed tokens — this is the only place its
+      // three algebraic properties (WCAG defines the ratio as order-independent,
+      // bounded to [1, 21], and 1 for any colour against itself) are checked
+      // directly, over a spread wide enough to include the inputs a fixed
+      // token list would never produce: NaN and out-of-gamut channels.
+      const colors: ReadonlyArray<Rgb> = [
+        [0, 0, 0],
+        [255, 255, 255],
+        [255, 0, 0],
+        [0, 255, 0],
+        [0, 0, 255],
+        [128, 128, 128],
+        [10, 14, 18],
+        [200, 100, 0],
+        [Number.NaN, 50, 50],
+        [-10, 300, 50],
+      ]
+
+      for (const a of colors) {
+        // Self-contrast is EXACTLY 1, not merely close to it: `clampChannel`
+        // makes both sides of the ratio deterministic functions of the same
+        // clamped input, so there is no floating-point wobble to tolerate.
+        expect(contrastRatio(a, a)).toBe(1)
+        for (const b of colors) {
+          expect(contrastRatio(a, b)).toBe(contrastRatio(b, a))
+          expect(contrastRatio(a, b)).toBeGreaterThanOrEqual(1)
+          expect(contrastRatio(a, b)).toBeLessThanOrEqual(21)
+        }
+      }
+
+      // The one pair that must hit the range's exact top: pure black against
+      // pure white is WCAG's own reference maximum.
+      expect(contrastRatio([0, 0, 0], [255, 255, 255])).toBe(21)
     }),
   )
 
