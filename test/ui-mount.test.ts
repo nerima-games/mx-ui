@@ -709,6 +709,43 @@ describe('UiMount', () => {
     expect(onInventoryAction).not.toHaveBeenCalled()
   })
 
+  it('REGRESSION: Tab does not move focus into the inventory while it is closed', async () => {
+    // `dispatchInventoryKey` gates every handler but `E` behind ONE check —
+    // `!ctx.session.inventoryOpen` — and the internal `closeInventory`/
+    // `openInventory` closures it feeds deliberately carry NO guard of their
+    // own, trusting that single check (see the comments beside them in
+    // ui-mount.ts). If that one gate were ever weakened, every OTHER test in
+    // this file would still pass, because all of them open the inventory
+    // before dispatching Tab/Arrow/Enter — none presses a navigation key
+    // while the inventory is closed, which is the ordinary case: a player
+    // pressing Tab while just walking around. A regression here would move
+    // keyboard focus into the (still hidden) inventory and hijack the key.
+    //
+    // Asserted as a focus change scoped to THIS test's own `host`, not as
+    // `event.defaultPrevented` on the shared document-level event: earlier
+    // tests in this file open an inventory and never call `runtime.stop()`,
+    // so their `document`-level keydown listener is still attached when this
+    // test runs and can independently set `defaultPrevented` on ANY key —
+    // that would make a global check flaky depending on test order. A stale
+    // listener's DOM targets are already detached (removed by `afterEach`),
+    // so `.focus()` calls from a leaked listener cannot land inside this
+    // test's own, still-attached `host` — which is what makes this
+    // assertion order-independent.
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+
+    expect(host.contains(document.activeElement)).toBe(false)
+    expect(
+      host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')?.hasAttribute('hidden'),
+    ).toBe(true)
+
+    await Effect.runPromise(runtime.stop)
+  })
+
   it('does not restore focus to a non-HTMLElement active element when the inventory closes', async () => {
     // `restoreFocusTarget` narrows `document.activeElement` (`Element | null`) to `HTMLElement`.
     // jsdom lets a focusable SVG element become `activeElement`, and `SVGElement` is real and not
@@ -784,6 +821,33 @@ describe('UiMount', () => {
     const focusedBefore = document.activeElement
     runtime.openInventory()
     expect(document.activeElement).toBe(focusedBefore)
+  })
+
+  it('REGRESSION: a redundant openInventory call does not overwrite the focus to restore on close', async () => {
+    // The guard this test targets (`typeof view === 'undefined' || session.inventoryOpen`)
+    // is the only thing stopping a second `openInventory()` call from re-capturing
+    // `document.activeElement` while the inventory is already open — at which point
+    // the active element is something INSIDE the inventory, not the trigger the
+    // player actually opened it from. Without the guard, `closeInventory()` would
+    // restore focus to whatever was focused inside the inventory instead of back
+    // to the trigger, which reads as "closing the inventory silently stole focus."
+    const host = document.createElement('main')
+    const trigger = document.createElement('button')
+    host.appendChild(trigger)
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    trigger.focus()
+    runtime.openInventory()
+    expect(document.activeElement).not.toBe(trigger)
+
+    // Redundant: the inventory is already open. Must no-op, including leaving
+    // `restoreFocus` pointed at `trigger` rather than at whatever has focus now.
+    runtime.openInventory()
+
+    runtime.closeInventory()
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('opens settings without capturing a focus target when the document reports none', async () => {
