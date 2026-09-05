@@ -95,4 +95,50 @@ describe('enchanting table controller', () => {
     const noLapis = { ...readyState(), lapisCount: 0 }
     expect(enchantingTableSnapshotOf(noLapis, RULES).lapis).toBeUndefined()
   })
+
+  it('SECOND ANGLE — property: an offer never costs fewer levels than its own slot lapis cost', () => {
+    // Independently-computed invariant, not a value read back from the function
+    // under test: vanilla's 1/2/3-lapis slots cost AT LEAST 1/2/3 levels even
+    // when the drawn enchantment's own levelCost (RULES: 2-5) is cheaper than
+    // the slot it lands in — `mending` (levelCost 4 -> trunc 2 here, RULES
+    // above) landing in the 3-lapis slot is exactly this case. A mutant that
+    // swapped `Math.max(lapisCost, ...)` for `Math.min(...)` would let a cheap
+    // enchantment undercut its own slot, and the seed sweep below reaches that
+    // arrangement without needing to know in advance which seed produces it.
+    const SEED_SWEEP_SIZE = 64
+    let sawLapisCostBindTheFloor = false
+    for (let seed = 0; seed < SEED_SWEEP_SIZE; seed += 1) {
+      const state = { ...readyState(), seed }
+      for (const offer of enchantingOffers(state, RULES)) {
+        if (typeof offer !== 'undefined') {
+          expect(offer.levelCost).toBeGreaterThanOrEqual(offer.lapisCost)
+          if (offer.levelCost === offer.lapisCost) {
+            sawLapisCostBindTheFloor = true
+          }
+        }
+      }
+    }
+    // If the floor never binds across 64 seeds, the property above is
+    // vacuously true for every draw and proves nothing — this is the
+    // non-empty-input check the invariant needs to mean something.
+    expect(sawLapisCostBindTheFloor).toBe(true)
+  })
+
+  it('excludes an offer whose OWN incompatibleWith lists an enchantment already on the item (forward direction)', () => {
+    // `sharpness`'s incompatibleWith is ['smite']; `smite`'s is []. The other
+    // test above (enchanted with sharpness -> smite excluded) exercises the
+    // REVERSE direction only (looking up the EXISTING enchantment's own
+    // incompatibleWith list). This drives the opposite case: the item already
+    // has `smite` and the CANDIDATE (`sharpness`) is the one whose own list
+    // names it. Only the forward `definition.incompatibleWith.every(...)`
+    // filter can catch this — the reverse lookup finds nothing, because
+    // `smite.incompatibleWith` is empty.
+    const state: EnchantingTableState = {
+      ...readyState(),
+      item: { ...readyState().item!, enchantments: [{ enchantmentId: 'smite', level: 1 }] },
+    }
+    const ids = enchantingOffers(state, RULES).map((offer) => offer?.enchantmentId)
+    expect(ids).not.toContain('sharpness')
+    expect(ids).not.toContain('smite')
+  })
 })
