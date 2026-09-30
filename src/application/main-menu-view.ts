@@ -387,7 +387,7 @@ type LoadWorldSection = {
   readonly rows: Map<string, SavedWorldRow>
   readonly savedWorldList: DomElement
   readonly firstSavedWorldButton: () => DomInteractiveElement
-  readonly setFirstSavedWorldButton: (button: DomInteractiveElement) => void
+  readonly setFirstSavedWorldButton: (button: DomInteractiveElement | undefined) => void
 }
 
 const createLoadWorldSection = (
@@ -412,10 +412,8 @@ const createLoadWorldSection = (
   })
   backButton.setAttribute('data-menu-action', 'back')
 
-  const firstSavedWorldButton = (): DomInteractiveElement => {
-    return firstSavedWorldTarget
-  }
   let firstSavedWorldTarget: DomInteractiveElement = backButton
+  const firstSavedWorldButton = (): DomInteractiveElement => firstSavedWorldTarget
 
   return {
     emptyNoteHidden,
@@ -424,7 +422,7 @@ const createLoadWorldSection = (
     rows,
     savedWorldList: list.element,
     setFirstSavedWorldButton: (button) => {
-      firstSavedWorldTarget = button
+      firstSavedWorldTarget = button ?? backButton
     },
   }
 }
@@ -564,7 +562,7 @@ const applyNewWorldSection = (newWorld: NewWorldSection, model: MainMenuViewMode
 const syncSavedWorldRows = (
   listDeps: SavedWorldListDeps,
   savedWorlds: ReadonlyArray<SavedWorld>,
-  setFirstSavedWorldButton: (button: DomInteractiveElement) => void,
+  setFirstSavedWorldButton: (button: DomInteractiveElement | undefined) => void,
 ): void => {
   const visibleSessionIds = new Set(savedWorlds.map((world) => world.sessionId))
   let firstRow: SavedWorldRow | undefined
@@ -578,9 +576,7 @@ const syncSavedWorldRows = (
     writeText(row.sessionId, world.sessionId)
     writeAttribute(row.accessibleName, `Load ${world.name} (${world.sessionId})`)
   }
-  if (firstRow !== undefined) {
-    setFirstSavedWorldButton(firstRow.root)
-  }
+  setFirstSavedWorldButton(firstRow?.root)
   for (const [sessionId, row] of listDeps.rows) {
     if (!visibleSessionIds.has(sessionId)) {
       writeHidden(row.hidden, true)

@@ -223,6 +223,25 @@ describe('operable main menu', () => {
     expect(keptRow?.attributes.has('hidden')).toBe(false)
   })
 
+  it('returns focus to Back when a saved-world list becomes empty', () => {
+    const mounted = mount()
+    mounted.view.render(mainMenuViewModel(initialMainMenuState, SAVED_WORLDS))
+    mounted.root.find('data-menu-entry', 'load-world')?.dispatch('click')
+
+    mounted.view.render(mainMenuViewModel(openPanel(initialMainMenuState, 'load-world'), []))
+    const backButton = mounted.root.find('data-menu-action', 'back')
+    if (backButton === undefined) {
+      throw new Error('back button was not mounted')
+    }
+
+    const before = mounted.factory.mark()
+    mounted.root.find('data-menu-entry', 'load-world')?.dispatch('click')
+
+    expect(
+      mounted.factory.since(before).some((mutation) => mutation.kind === 'focus' && mutation.target === backButton),
+    ).toBe(true)
+  })
+
   it('lets a caller omit callbacks entirely and still navigate every panel', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
