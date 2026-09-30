@@ -26,7 +26,7 @@ UI 全部を含むリポジトリは、import を 1 本足すだけでゲーム�
 | [public-api.md](./public-api.md) | stage 登録 + 将来の mount 面。全 export の 契約 / 内部(可視) 分類 | mc-compose を書く人 |
 | [design-notes.md](./design-notes.md) | **設計注意 DN-UI-1 〜 DN-UI-10。** 参照実装の実測根拠と、それを守る回帰テストの名前 | 画面を実装する人 |
 | [porting.md](./porting.md) | 移植元と**実測 LOC**、`input/` の境界訂正、移植順序 | 参照実装から持ってくる人 |
-| [testing.md](./testing.md) | 検証ゲート、`it.effect` デッドロック、完成条件、99% ゲートの投入時期 | CI / テストを触る人 |
+| [testing.md](./testing.md) | 検証ゲート、`it.effect` デッドロック、完成条件、カバレッジ設定 | CI / テストを触る人 |
 | [versioning.md](./versioning.md) | 0.x → 1.0.0 方針、GitHub Packages、アセット同梱と `files` の面倒 | リリース作業者 |
 
 ## 読む順序

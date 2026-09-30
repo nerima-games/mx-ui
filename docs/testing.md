@@ -4,7 +4,7 @@
 
 ## 1. 検証ゲート
 
-組織のツールチェーン凍結（Wave 0）で、ゲート構成が以下の形に揃った。
+ゲート構成は各コマンドと設定ファイルが正である。
 
 ```console
 $ pnpm verify          # typecheck && lint && test。CI と同じ内容
@@ -16,7 +16,7 @@ $ pnpm test:browser    # Playwright。verify には含まれない
 | ゲート | 何を捕まえるか |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）、`tsconfig.test.json`（テスト + ツール）、`tsconfig.preview.json`（`apps/` の dev アプリ）の 3 プロジェクト。**出荷ソースには Node 型が無い** — `types: []` を継承しているので、画面の中で `process.env` を読むと落ちる。プレビューが Node の stdio を使えるのは**別プロジェクト**だからであって、build 側を緩めたからではない（§4） |
-| `pnpm lint` | `oxlint --deny-warnings` + `ast-grep scan`。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。oxlint は `--deny-warnings` 付きで走るため `warn` のルールもビルドを落とす。`ast-grep` は `no-restricted-imports`（依存境界、Tier3）と `no-wall-clock-read`（壁時計の直読み禁止）を見る。`no-type-assertion` は Wave 0 時点では `warning` — 既存ヒットは Wave 3 で `as` を外して `error` に上げる |
+| `pnpm lint` | `oxlint --deny-warnings` + `ast-grep scan`。**このリポジトリ唯一の lint / format 設定**。prettier も biome も `.editorconfig` も置かない。oxlint は `--deny-warnings` 付きで走るため `warn` のルールもビルドを落とす。`ast-grep` は依存境界、壁時計直読み禁止、型 assertion 禁止を検査する |
 | `pnpm test` | vitest |
 | `pnpm test:coverage` | カバレッジ計測 + **100% ゲート**（4 指標すべて）。**`verify` には含まれない**ので別に走らせる（§5） |
 | `pnpm test:browser` | Playwright。実ブラウザにしか答えられない 3 種——**実 `Document` への mount / 実測ピクセル / レイアウト**。**`verify` には含まれない**（CI では別 job として Chromium を入れてから走る）。§8 |
@@ -34,83 +34,18 @@ oxlint と ast-grep は npm devDependency ではなく `flake.nix` の `pkgs.oxl
 （`no-restricted-syntax` 等）を実装していないためで、経緯は `.ast-grep/rules/no-wall-clock-read.yml`
 と DN-UI-10 にある。
 
-## 2. 現状の suite（2026-07-27 実測）
+## 2. 現状の suite
 
-```
-vitest 3.2.7
- ✓ test/public-api.test.ts                 (8 tests)
- ✓ test/stage-registration.test.ts         (15 tests)
- ✓ test/accessibility.test.ts              (17 tests)
- ✓ test/view-model.test.ts                 (49 tests)
- ✓ test/inventory-mirror.test.ts           (6 tests)
- ✓ test/check-dependency-whitelist.test.ts (21 tests)
- ✓ test/api-lock.test.ts                   (26 tests)
- ✓ test/dom-surface.test.ts                (4 tests)
- ✓ test/hud-view.test.ts                   (21 tests)
- ✓ test/screen-views.test.ts               (10 tests)
- ✓ test/palette-css.test.ts                (6 tests)
- ✓ test/save-indicator.test.ts             (15 tests)
- ✓ test/screen-mount.test.ts               (13 tests)
- ✓ test/modal-flows.test.ts                (6 tests)
- ✓ test/accessibility-gate.test.ts         (12 tests)
- ✓ test/main-menu.test.ts                  (20 tests)
- ✓ test/loading-screen.test.ts             (22 tests)
- ✓ test/crosshair.test.ts                  (16 tests)
- ✓ test/caption-oracle.test.ts             (7 tests)
+Vitest の対象は `vitest.config.ts` の `include: ['test/**/*.test.ts']` が定める。
+実行環境、テストファイル数、テスト件数、使用中の Vitest 版は、固定スナップショットではなく
+`package.json`、`vitest.config.ts`、および実行時の `pnpm test` 出力を正とする。
 
- Test Files  20 passed (20)
-      Tests  314 passed (314)
-```
+ブラウザ suite（`test-browser/`）は Vitest とは別に `pnpm test:browser` で実行する。
+DOM mount、実測ピクセル、レイアウトのように実ブラウザが必要な検証をここに置き、
+純粋な導出と属性・変更ログの検証は `test/` に置く。
 
-後半 11 ファイルが `application/`（DOM 層）のぶんである。**環境は `node` のまま**で、
-jsdom も `@vitest-environment` プラグマも入っていない（§3）。
-
-> **2026-07-28 追記 4。この数は動いていない。** ブラウザゲート（§8、18 本）が入ったが、
-> **それは vitest の下では走らない別 suite** であり、`test/` には 1 本も足していない。
-> 足すべきでもなかった —— §3 の「C が A/B より優れているのは速度ではなく、
-> **答えられる問いの種類**である」がそのまま逆向きに効く。
-> ブラウザに持っていく価値があるのは偽 document が原理的に答えられない問いだけで、
-> 属性・変更ログ・純関数の射影は今も `test/` のほうが速く厳密に答える。
-> **ブラウザで見つけた欠陥 2 件の修正も、`test/` の本数を 1 本も増やしていない**
-> （どちらも mount 時の幾何であり、偽 document には見えない。§8-5 の変異 1 と 2）。
-
-`save-indicator.test.ts` は**新しい 2 コンポーネントのうち 1 つ**のためのファイルで、
-純粋な時間設計（`domain/save-status.ts`）と要素（`application/save-indicator.ts`）の両方を持つ。
-1 ファイルに置いているのは、そのコンポーネントの主張——**参照実装が潰していた 2 状態を色以外で区別する**——が
-2 層にまたがって初めて成立するからである。もう 1 つ（フォーカスリング）は
-`hud-view.test.ts` に describe を 1 つ増やしている（DN-UI-13i）。
-
-`view-model.test.ts` が 20 → 35 に増えたのはプレビューの finding 4 件と gap 2 件を
-assertion として降ろしたぶんで、35 → 49 に増えたのは**その gap 2 件を埋めたぶん**である。
-**「無い」ことを assert していた 2 本は消え、「何を保証するか」を assert する 14 本になった**（§4）。
-`inventory-mirror.test.ts` は mc-sim のミラーを pin する新ファイルで、
-`mx-gameplay/test/chunk-store-mirror.test.ts` と同じ役割である（DN-UI-12）。
-
-**プレビュー（`apps/`）にテストは無い。** 意図的である——プレビューは検査対象ではなく検査**手段**であり、
-そこで見つかったことは `test/view-model.test.ts` に assertion として降ろすのが正しい置き場所である（§4）。
-
-**この数字はスケルトンが育つたびに動く。** 権威は `pnpm verify` の出力であって本節ではない。
-本節が古くなっていたら、それは suite が増えたということである。
-
-> **2026-07-27 追記。** 上の一覧は実際に 3 ファイル分古かった
-> （`screen-mount` / `modal-flows` / `accessibility-gate` は `docs/e2e-triage.md` の
-> 移植で入ったが、ここには反映されていなかった）。その 3 つと、
-> メインメニュー / ローディング画面 / crosshair の 3 つを合わせて 198 → 283 になっている。
-> **手で書いた数字が本文から導出されていない限りまた壊れる**という
-> `docs/e2e-triage.md` §2.1 の欄外注は、この節にもそのまま当てはまる。
-
-> **2026-07-27 追記 2。** 283 → 294 は
-> [dom-oracle-triage.md](./dom-oracle-triage.md) の移植 11 本ぶんである
-> （`caption-oracle` 7 本 + `loading-screen` に 4 本追記）。
-> **そして上の一覧はまたしても 1 件ずれていた** — `accessibility-gate` は
-> 11 ではなく 12 だった。前回の欄外注が書いたとおりのことが、
-> その欄外注を書いた次の版で起きている。
-
-> **2026-07-27 追記 3。** 294 → 314 は 99% カバレッジゲートを入れたぶんである（§5）。
-> 新ファイルは `palette-survey.test.ts`（10 本）1 つで、残りは
-> `screen-views` +5 / `view-model` +4 / `caption-oracle` 系 0 の内訳になる。
-> **20 本のうち「数字のため」に書いたものは 1 本も無い** —— 未到達だった 27 分岐のうち
-> 12 本だけがテストを必要としており、残りは削除か、理由を書いて残すかだった。表は §5-0 にある。
+プレビュー（`apps/`）は検査対象ではなく検査手段であり、そこで見つけた問題は
+対応する `test/` の assertion に降ろす。
 
 | ファイル | 守っているもの |
 | --- | --- |
@@ -235,7 +170,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ⚠️ **63 ファイル全部を triage 済み**（[dom-oracle-triage.md](./dom-oracle-triage.md)）。**移植すべきは 63 ファイルではない** — 25 ファイル / 203 本（45%）は所有者が別か、mx-ui が構造的に別の答えを出している。今日書けるのは 8 ファイル / 71 本で、うち 5 ファイル分は既存オラクルが持っている。**未着手は NEEDS-SCREEN の 29 ファイル / 176 本**で、これは画面の残作業そのものである |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
 | 4 | アクセシビリティ資産 4 つが目視で確認済み | ✅ **ブラウザで測った**（`pnpm test:browser` の 18 本、§8）。残っていた 2 点は「ブラウザにしか答えられない」で正しかったが、**それは誰も作っていないというだけだった**。測ったら**欠陥が 2 件出た**（スロットに寸法が無い / ホットバーが 1 列に並ばない）——両方とも直してある |
-| 5 | 100% カバレッジゲートが有効（組織のツールチェーン凍結、Wave 0） | ✅（`vitest.config.ts` の `thresholds` + CI の `Coverage` ステップ。実測 100 / 100 / 100 / 100、§5） |
+| 5 | 100% カバレッジゲートが有効 | ✅（`vitest.config.ts` の `thresholds` + CI の `Coverage` ステップ。§5） |
 
 ### プレビューの条件（満たしている）
 
@@ -428,14 +363,14 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
 
 ## 5. カバレッジ — 100% ゲートは有効である
 
-**閾値は 4 指標すべてに設定してある。** 組織のツールチェーン凍結（Wave 0）で 99% → 100% に上げた。
+**閾値は 4 指標すべてに設定してある。** 値は `vitest.config.ts` の `coverage.thresholds` を正とする。
 
 ```typescript
 // vitest.config.ts
 thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 ```
 
-実測は **statements 100 / branch 100 / functions 100 / lines 100**（394 テスト）。
+実測値とテスト件数は、実行時の `pnpm test:coverage` 出力を正とする。
 99% だった当時「producer が保証している」「型システムでは証明できない」という理由で未カバーのまま
 残っていた分岐は、100% への引き上げに際して 1 つずつ「テストする」か「到達不能を証明して削除する」の
 どちらかで解消した——後者は多くの場合 `noUncheckedIndexedAccess` が要求する `if` ガードを
