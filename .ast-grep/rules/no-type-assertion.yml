@@ -1,7 +1,8 @@
 id: no-type-assertion
 language: TypeScript
-# Wave 0 installs at warning; W3-mx-ui removes the assertions and raises to error.
-severity: warning
+# Type assertions are forbidden; `as const` is allowed for literal preservation.
+# Runtime boundaries must use a guard, a validated constructor, or a Schema.
+severity: error
 files:
   - "src/**/*.ts"
   - "src/**/*.tsx"

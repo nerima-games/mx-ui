@@ -170,7 +170,11 @@ const cycleInventoryFocus = (
   // Stays within `[0, targets.length)` — `noUncheckedIndexedAccess` cannot see that proof, but a
   // `?? targets[ZERO]!` fallback here would be a branch no input can ever take, which is exactly
   // The shape that must be proven unreachable rather than fabricated a test for.
-  return targets[(currentIndex + direction + targets.length) % targets.length]!
+  const next = targets[(currentIndex + direction + targets.length) % targets.length]
+  if (typeof next === 'undefined') {
+    throw new Error('inventory focus target is missing')
+  }
+  return next
 }
 
 /** Where keyboard focus lands after a render: the crafting output, or a real slot. */
@@ -233,7 +237,10 @@ const handleArrowKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): bo
   // Asks again. Two evaluations of the same pure function on the same
   // `event.key` agree, so by the time this line runs the caller has already
   // Excluded `null`.
-  const direction = inventoryDirectionForKey(event.key)!
+  const direction = inventoryDirectionForKey(event.key)
+  if (direction === null) {
+    return false
+  }
   event.preventDefault()
   return ctx.moveInventoryFocus(direction)
 }

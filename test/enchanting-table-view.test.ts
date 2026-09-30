@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { createEnchantingTableView, type EnchantingInteractionView } from '../src/application/enchanting-table-view'
-import { enchantingTableViewModel, type EnchantingOperationTarget } from '../src/domain/enchanting-table-view-model'
-import { type FakeElement, fakeDocument } from './fake-dom'
+import { enchantingTableViewModel } from '../src/domain/enchanting-table-view-model'
+import { fakeDocument, fakeElement } from './fake-dom'
 
 describe('createEnchantingTableView', () => {
   it('projects five operation targets, costs, rejection, and accessibility without listeners', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createEnchantingTableView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       enchantingTableViewModel({
         item: { count: 1, itemId: 'minecraft:diamond_sword' },
@@ -71,7 +71,7 @@ describe('createEnchantingTableView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createEnchantingTableView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       enchantingTableViewModel({
         item: undefined,
@@ -99,7 +99,7 @@ describe('createEnchantingTableView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createEnchantingTableView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       enchantingTableViewModel({
         item: undefined,
@@ -126,9 +126,9 @@ describe('createEnchantingTableView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createEnchantingTableView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     const interaction: EnchantingInteractionView = {
-      focusedTarget: 'stale-target' as EnchantingOperationTarget,
+      focusedTarget: JSON.parse('"stale-target"'),
       status: 'Recovered focus',
     }
     view.render(
@@ -151,7 +151,7 @@ describe('createEnchantingTableView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createEnchantingTableView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(() => view.render({ offers: [], slots: [] })).not.toThrow()
     expect(root.findAll('data-interaction-target', 'enchanting-operation')).toHaveLength(5)
   })

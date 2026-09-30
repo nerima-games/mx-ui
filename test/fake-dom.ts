@@ -140,7 +140,10 @@ export class FakeElement implements DomElement {
   }
 
   appendChild(child: DomNode): unknown {
-    const element = child as FakeElement
+    if (!(child instanceof FakeElement)) {
+      throw new Error('fake DOM can only append fake elements')
+    }
+    const element = child
     this.children.push(element)
     this.record('append', element.tagName, undefined)
     return element
@@ -202,6 +205,14 @@ export class FakeElement implements DomElement {
     }
     return all
   }
+}
+
+/** Narrow a view root or factory result at the fake-DOM test boundary. */
+export const fakeElement = (element: unknown): FakeElement => {
+  if (!(element instanceof FakeElement)) {
+    throw new Error('expected a FakeElement')
+  }
+  return element
 }
 
 export class FakeInteractiveElement extends FakeElement implements DomInteractiveElement {

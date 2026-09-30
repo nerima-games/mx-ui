@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { InputAction } from '../src/domain/accessibility'
 import { createSettingsView } from '../src/application/settings-view'
 import { settingsViewModel, type SettingsSnapshot } from '../src/domain/settings-view-model'
-import { type FakeElement, fakeDocument } from './fake-dom'
+import { fakeDocument, fakeElement } from './fake-dom'
 
 const SNAPSHOT: SettingsSnapshot = {
   audioEnabled: true,
@@ -18,7 +18,7 @@ describe('createSettingsView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createSettingsView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(settingsViewModel(SNAPSHOT))
 
     expect(root.find('data-settings-field', 'sensitivity')?.value).toBe('100')
@@ -63,7 +63,7 @@ describe('createSettingsView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createSettingsView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
 
     view.render(settingsViewModel(SNAPSHOT))
     view.render(settingsViewModel({ ...SNAPSHOT, audioEnabled: false }))

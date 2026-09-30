@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { createFurnaceView, type FurnaceInteractionView } from '../src/application/furnace-view'
-import { furnaceViewModel, type FurnaceSlotId } from '../src/domain/furnace-view-model'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { furnaceViewModel } from '../src/domain/furnace-view-model'
+import { fakeDocument, fakeElement } from './fake-dom'
 
 describe('createFurnaceView', () => {
   it('projects host interaction attributes, accessibility, and progress without listeners', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createFurnaceView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       furnaceViewModel({
         input: { itemId: 'minecraft:sand', count: 3 },
@@ -44,7 +44,7 @@ describe('createFurnaceView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createFurnaceView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       furnaceViewModel({
         input: undefined,
@@ -67,7 +67,7 @@ describe('createFurnaceView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createFurnaceView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       furnaceViewModel({
         input: undefined,
@@ -94,9 +94,9 @@ describe('createFurnaceView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createFurnaceView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     const interaction: FurnaceInteractionView = {
-      focusedSlot: 'stale-slot' as FurnaceSlotId,
+      focusedSlot: JSON.parse('"stale-slot"'),
       status: 'Recovered focus',
     }
     view.render(
@@ -117,7 +117,7 @@ describe('createFurnaceView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createFurnaceView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(() =>
       view.render({ burnProgressPercent: 0, cookProgressPercent: 0, slots: [] }),
     ).not.toThrow()

@@ -40,7 +40,7 @@ import { createCaptionView } from '../src/application/caption-view'
 import { createChestStorageView } from '../src/application/chest-storage-view'
 import { createSaveIndicator } from '../src/application/save-indicator'
 import { PALETTE_VAR } from '../src/application/palette-css'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, type FakeElement } from './fake-dom'
 
 /** What a host has had mounted into it, by name and in order. */
 const mounted = (parent: FakeElement): ReadonlyArray<string | undefined> =>
@@ -59,8 +59,8 @@ describe('a screen is built into the parent it was handed', () => {
     // two mx-ui instances at once, and a view that reached for a global would
     // make the second one overwrite the first.
     const factory = fakeDocument()
-    const first = factory.createElement('div') as FakeElement
-    const second = factory.createElement('div') as FakeElement
+    const first = fakeElement(factory.createElement('div'))
+    const second = fakeElement(factory.createElement('div'))
 
     createHudView(factory, first, 'full')
     createInventoryView(factory, second)
@@ -81,8 +81,8 @@ describe('a screen is built into the parent it was handed', () => {
     // `apps/preview-screens` mounts more than one; so does any host that wants a
     // second HUD for a split screen.
     const factory = fakeDocument()
-    const left = factory.createElement('div') as FakeElement
-    const right = factory.createElement('div') as FakeElement
+    const left = fakeElement(factory.createElement('div'))
+    const right = fakeElement(factory.createElement('div'))
 
     const one = createHudView(factory, left, 'full')
     const other = createHudView(factory, right, 'full')
@@ -90,7 +90,7 @@ describe('a screen is built into the parent it was handed', () => {
     other.render(hudViewModel(spawnSnapshot))
 
     const stateOf = (view: { readonly root: unknown }): ReadonlyArray<string | undefined> =>
-      (view.root as FakeElement)
+      fakeElement(view.root)
         .findAll('data-icon', 'heart')
         .map((icon) => icon.attributes.get('data-icon-state'))
 
@@ -113,11 +113,11 @@ describe('a fresh survival inventory', () => {
     // hotbar row that is missing, short, or already showing items nobody gave
     // them.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     view.render(inventoryViewModel(emptyInventorySnapshot))
 
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     const hotbar = root.find('data-region', 'hotbar')
     const slots = hotbar?.findAll('data-mx-ui', 'slot') ?? []
 
@@ -166,11 +166,11 @@ describe('the hotbar shows the slot it was told is selected', () => {
       // failure a per-slot assertion misses entirely: check slot 3 and slot 3 is
       // fine.
       const factory = fakeDocument()
-      const parent = factory.createElement('div') as FakeElement
+      const parent = fakeElement(factory.createElement('div'))
       const view = createHudView(factory, parent, 'full')
       view.render(hudViewModel({ ...spawnSnapshot, selectedHotbarIndex: index }))
 
-      const slots = (view.root as FakeElement).findAll('data-mx-ui', 'slot')
+      const slots = fakeElement(view.root).findAll('data-mx-ui', 'slot')
       expect(slots).toHaveLength(HOTBAR_SLOT_COUNT)
 
       const selected = slots
@@ -196,13 +196,13 @@ describe('the hotbar shows the slot it was told is selected', () => {
     // at once」, and a number key must move the first without disturbing the
     // second.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createHudView(factory, parent, 'full')
 
     view.setKeyboardFocus(6)
     view.render(hudViewModel({ ...spawnSnapshot, selectedHotbarIndex: 2 }))
 
-    const slots = (view.root as FakeElement).findAll('data-mx-ui', 'slot')
+    const slots = fakeElement(view.root).findAll('data-mx-ui', 'slot')
     const ringVisible = (at: number): boolean =>
       slots[at]?.find('data-mx-ui', 'slot-focus-ring')?.attributes.has('hidden') === false
 

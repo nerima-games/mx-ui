@@ -68,6 +68,14 @@ export type MenuAction = keyof typeof MENU_ACTION_LABEL
 
 export const EMPTY_SAVE_LIST_NOTE = 'No saved worlds'
 
+const requiredMapValue = <Key, Value>(map: ReadonlyMap<Key, Value>, key: Key): Value => {
+  const value = map.get(key)
+  if (typeof value === 'undefined') {
+    throw new Error('required menu binding is missing')
+  }
+  return value
+}
+
 /** @deprecated The menu now distinguishes a host-supplied empty list directly. */
 export const NO_SAVE_LIST_NOTE =
   'mc-save has not been asked. This list is unknown, which is not the same as empty.'
@@ -132,7 +140,6 @@ type MenuTransition = (next: MainMenuState, focusTarget: DomInteractiveElement) 
 type MenuBindings = {
   readonly box: MenuStateBox
   readonly callbacks: MainMenuCallbacks
-  readonly rootButtons: Map<RootEntry, DomInteractiveElement>
   readonly transition: MenuTransition
 }
 
@@ -308,17 +315,18 @@ const createModeButton = (
   return { accessibleName: modeAccessibleName, text: modeText }
 }
 
-const createCancelButton = (ctx: MountContext, parent: DomElement, bindings: MenuBindings): void => {
+const createCancelButton = (
+  ctx: MountContext,
+  parent: DomElement,
+  bindings: MenuBindings,
+  focusTarget: DomInteractiveElement,
+): void => {
   const cancelButton = createButton(ctx, parent, {
     label: MENU_ACTION_LABEL.cancel,
     onClick: () => {
       bindings.transition(
         backToRoot(bindings.box.state),
-        // Non-null: `createRootEntryButtons` populates `rootButtons` for every
-        // `RootEntry` (a closed 3-member union) once, at construction, before
-        // Any click handler can fire — 'new-world' is always present by the
-        // Time this callback runs.
-        bindings.rootButtons.get('new-world')!,
+        focusTarget,
       )
     },
     role: 'menu-action',
@@ -356,7 +364,6 @@ const createNewWorldSection = (
 ): NewWorldSection => {
   const worldNameInput = createWorldNameField(ctx, parent, bindings)
   const modeElements = createModeButton(ctx, parent, bindings)
-  createCancelButton(ctx, parent, bindings)
   createConfirmButton(ctx, parent, bindings)
   return { modeElements, worldNameInput }
 }
@@ -397,31 +404,12 @@ const createLoadWorldSection = (
   const emptyNoteHidden = createEmptyNote(ctx, list.element)
   const rows = new Map<string, SavedWorldRow>()
 
-  const backButton = createButton(ctx, parent, {
-    label: MENU_ACTION_LABEL.back,
-    onClick: () => {
-      bindings.transition(
-        backToRoot(bindings.box.state),
-        // Non-null: see the `cancelButton` handler above — same guarantee,
-        // For 'load-world'.
-        bindings.rootButtons.get('load-world')!,
-      )
-    },
-    role: 'menu-action',
-  })
-  backButton.setAttribute('data-menu-action', 'back')
-
   const firstSavedWorldButton = (): DomInteractiveElement => {
     const [first] = bindings.box.savedWorlds
     if (typeof first === 'undefined') {
       return backButton
     }
-    // Non-null: `createRenderModel` sets `box.savedWorlds = model.savedWorlds`
-    // And calls `syncSavedWorldRows(listDeps, model.savedWorlds)` in the same
-    // Pass, and `syncSavedWorldRows` calls `ensureSavedWorldRow` for every
-    // World in that same array — so every sessionId in `box.savedWorlds` has a
-    // Row by the time any click handler can read `box.savedWorlds` at all.
-    return rows.get(first.sessionId)!.root
+    return rows.get(first.sessionId)?.root ?? firstSavedWorldButton()
   }
 
   return {
@@ -464,7 +452,10 @@ const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): Saved
       // This function and in `ensureSavedWorldRow`), never deleted — so
       // `deps.rows.get(world.sessionId)` always finds (at least) this row by
       // The time its click handler runs.
-      const current = deps.rows.get(world.sessionId)!
+      const current = deps.rows.get(world.sessionId)
+      if (typeof current === 'undefined') {
+        throw new Error('saved world row is missing')
+      }
       deps.callbacks.onLoadWorld(current.current)
     },
     role: 'menu-world-row',

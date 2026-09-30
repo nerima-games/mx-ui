@@ -45,7 +45,7 @@ import {
   type InventorySnapshot,
 } from '../src/domain/inventory-view-model'
 import { itemStack, type Inventory } from '@nerima-games/mc-sim'
-import type { ItemType, StackCount } from '@nerima-games/mc-kernel'
+import type { ItemType } from '@nerima-games/mc-kernel'
 import {
   COLLAPSE_SEPARATION,
   compositeOver,
@@ -467,7 +467,7 @@ describe('colour vision correction (the feColorMatrix matrices themselves)', () 
    * row-separating double spaces left in so the comparison below is against the
    * source text rather than against a re-typing of it.
    */
-  const REFERENCE_VALUES = new Map<string, string>([
+  const REFERENCE_VALUES = new Map<(typeof COLOR_VISION_MODES)[number], string>([
     ['protanopia', '1 0 0 0 0  -0.2549 1.2549 0 0 0  0.3031 -0.5451 1.242 0 0  0 0 0 1 0'],
     ['deuteranopia', '1 0 0 0 0  -0.4375 1.4375 0 0 0  0.2625 -0.5625 1.3 0 0  0 0 0 1 0'],
     ['tritanopia', '1 0 0 0 0  0.035 1.532 -0.567 0 0  0.035 -0.51 1.475 0 0  0 0 0 1 0'],
@@ -488,7 +488,7 @@ describe('colour vision correction (the feColorMatrix matrices themselves)', () 
   it.effect('the matrices are the reference’s, number for number', () =>
     Effect.sync(() => {
       for (const [mode, values] of REFERENCE_VALUES) {
-        expect(colorVisionMatrixValues(mode as never)).toBe(values.split(/\s+/u).join(' '))
+        expect(colorVisionMatrixValues(mode)).toBe(values.split(/\s+/u).join(' '))
       }
     }),
   )
@@ -1226,10 +1226,10 @@ describe('inventory and crafting project state without interpreting it', () => {
       // NaN — exactly what this regression needs to hand `inventoryViewModel`
       // instead, to prove the derivation survives a slot mc-sim itself would
       // refuse to build.
-      const slots: Array<{ readonly item: 'stone'; readonly count: StackCount } | undefined> =
-        Array.from({ length: INVENTORY_SLOT_COUNT }, (_element, index) =>
-          index === 0 ? { count: Number.NaN as StackCount, item: 'stone' } : undefined,
-        )
+      const slots = emptyInventorySnapshot.inventory.slots.slice()
+      const firstSlot = itemStack('stone', 1)
+      Object.defineProperty(firstSlot, 'count', { value: Number.NaN })
+      slots[0] = firstSlot
       const model = inventoryViewModel(
         inventoryWith({
           inventory: { slots },

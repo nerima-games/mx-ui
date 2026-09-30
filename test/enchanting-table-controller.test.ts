@@ -8,7 +8,7 @@ import {
   type EnchantingTableState,
 } from '../src/domain/enchanting-table-controller'
 import { enchantingTableViewModel } from '../src/domain/enchanting-table-view-model'
-import { type FakeElement, fakeDocument } from './fake-dom'
+import { fakeDocument, fakeElement } from './fake-dom'
 
 const RULES: EnchantingRules = {
   enchantments: [
@@ -33,9 +33,13 @@ describe('enchanting table controller', () => {
     const ids = enchantingOffers(state, RULES).map((offer) => offer?.enchantmentId)
     expect(new Set(ids).size).toBe(3)
 
+    const { item } = state
+    if (item === undefined) {
+      throw new Error('test state must contain an item')
+    }
     const enchanted: EnchantingTableState = {
       ...state,
-      item: { ...state.item!, enchantments: [{ enchantmentId: 'sharpness', level: 1 }] },
+      item: { ...item, enchantments: [{ enchantmentId: 'sharpness', level: 1 }] },
     }
     expect(enchantingOffers(enchanted, RULES).some((offer) => offer?.enchantmentId === 'smite')).toBe(false)
   })
@@ -57,7 +61,10 @@ describe('enchanting table controller', () => {
     const host = factory.createElement('main')
     let state = readyState()
     const initialSeed = state.seed
-    const initialOffer = enchantingOffers(state, RULES)[0]!
+    const initialOffer = enchantingOffers(state, RULES).find((offer) => offer !== undefined)
+    if (initialOffer === undefined) {
+      throw new Error('test state must contain an enchantment offer')
+    }
     const view = createEnchantingTableView(factory, host, {
       onActivate: (target) => {
         if (target === 'offer-1' || target === 'offer-2' || target === 'offer-3') {
@@ -66,7 +73,7 @@ describe('enchanting table controller', () => {
       },
     })
     view.render(enchantingTableViewModel(enchantingTableSnapshotOf(state, RULES)))
-    const button = (view.root as FakeElement).find('data-operation-target', 'offer-1')
+    const button = fakeElement(view.root).find('data-operation-target', 'offer-1')
     button?.dispatch('click')
 
     expect(state.item?.enchantments).toContainEqual({
@@ -133,9 +140,13 @@ describe('enchanting table controller', () => {
     // names it. Only the forward `definition.incompatibleWith.every(...)`
     // filter can catch this — the reverse lookup finds nothing, because
     // `smite.incompatibleWith` is empty.
+    const { item } = readyState()
+    if (item === undefined) {
+      throw new Error('test state must contain an item')
+    }
     const state: EnchantingTableState = {
       ...readyState(),
-      item: { ...readyState().item!, enchantments: [{ enchantmentId: 'smite', level: 1 }] },
+      item: { ...item, enchantments: [{ enchantmentId: 'smite', level: 1 }] },
     }
     const ids = enchantingOffers(state, RULES).map((offer) => offer?.enchantmentId)
     expect(ids).not.toContain('sharpness')

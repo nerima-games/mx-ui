@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { createAnvilView, type AnvilInteractionView } from '../src/application/anvil-view'
-import { anvilViewModel, type AnvilOperationTarget } from '../src/domain/anvil-view-model'
-import { type FakeElement, fakeDocument } from './fake-dom'
+import { anvilViewModel } from '../src/domain/anvil-view-model'
+import { fakeDocument, fakeElement } from './fake-dom'
 
 describe('createAnvilView', () => {
   it('projects every operation target, cost, rejection, and accessibility without listeners', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createAnvilView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       anvilViewModel({
         levelCost: 39,
@@ -47,7 +47,7 @@ describe('createAnvilView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createAnvilView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       anvilViewModel({
         levelCost: Number.NaN,
@@ -75,9 +75,9 @@ describe('createAnvilView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createAnvilView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     const interaction: AnvilInteractionView = {
-      focusedTarget: 'stale-target' as AnvilOperationTarget,
+      focusedTarget: JSON.parse('"stale-target"'),
       status: 'Recovered focus',
     }
     view.render(
@@ -107,7 +107,7 @@ describe('createAnvilView', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createAnvilView(factory, host)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(() =>
       view.render({ levelCost: 0, name: '', rejectionReason: undefined, slots: [] }),
     ).not.toThrow()

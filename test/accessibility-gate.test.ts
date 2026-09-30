@@ -68,14 +68,15 @@ import { ICON_ROW_LABEL } from '../src/application/icon-element'
 import {
   PALETTE_PROPERTY_PREFIX,
   PALETTE_SOURCE,
+  PALETTE_TOKEN_NAMES,
   PALETTE_VAR,
   type PaletteTokenName,
 } from '../src/application/palette-css'
-import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 
 /** `var(--mx-ui-ink)` back to `INK`'s three numbers. */
 const TOKEN_BY_VAR: ReadonlyMap<string, PaletteTokenName> = new Map(
-  (Object.keys(PALETTE_VAR) as ReadonlyArray<PaletteTokenName>).map((name) => [
+  PALETTE_TOKEN_NAMES.map((name) => [
     PALETTE_VAR[name],
     name,
   ]),
@@ -143,7 +144,7 @@ const auditColorProperty = (
  */
 const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeElement }> => {
   const factory = fakeDocument()
-  const parent = factory.createElement('div') as FakeElement
+  const parent = fakeElement(factory.createElement('div'))
 
   const menu = createMainMenuView(factory, parent)
   menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'new-world')))
@@ -189,13 +190,13 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   save.render(saveStatusMessage(saveStatus('failed', 0), 1))
 
   return [
-    { name: 'main menu', root: menu.root as FakeElement },
-    { name: 'in-session HUD', root: hud.root as FakeElement },
-    { name: 'inventory and crafting overlay', root: inventory.root as FakeElement },
-    { name: 'captions', root: captions.root as FakeElement },
-    { name: 'autosave indicator', root: save.root as FakeElement },
-    { name: 'loading screen', root: loading.root as FakeElement },
-    { name: 'crosshair', root: crosshair.root as FakeElement },
+    { name: 'main menu', root: fakeElement(menu.root) },
+    { name: 'in-session HUD', root: fakeElement(hud.root) },
+    { name: 'inventory and crafting overlay', root: fakeElement(inventory.root) },
+    { name: 'captions', root: fakeElement(captions.root) },
+    { name: 'autosave indicator', root: fakeElement(save.root) },
+    { name: 'loading screen', root: fakeElement(loading.root) },
+    { name: 'crosshair', root: fakeElement(crosshair.root) },
   ]
 }
 
@@ -345,9 +346,9 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     // Neither row is a tab stop, so the sweep above cannot see this. That is why
     // it is stated separately rather than folded in.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createHudView(factory, parent, 'full')
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
 
     const labelOf = (kind: 'heart' | 'shank'): string | undefined =>
       root.find('data-mx-ui', `${kind}-row`)?.attributes.get('aria-label')
@@ -364,7 +365,7 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     // plan.md §5.2 is the reason `ui:hud-sync` is allowed to run every frame at
     // all. The labels are static, so a steady frame still mutates nothing.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createHudView(factory, parent, 'full')
 
     view.render(hudViewModel(spawnSnapshot))

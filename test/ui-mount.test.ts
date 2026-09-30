@@ -919,7 +919,11 @@ describe('UiMount', () => {
       ...base,
       regions: base.regions.map((region) => {
         if (region.kind === 'slots' && region.id === 'offhand') {
-          return { ...region, slots: [...region.slots, { ...region.slots[0]!, index: 1 }] }
+          const [firstSlot] = region.slots
+          if (firstSlot === undefined) {
+            return region
+          }
+          return { ...region, slots: [...region.slots, { ...firstSlot, index: 1 }] }
         }
         return region
       }),

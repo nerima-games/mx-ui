@@ -194,16 +194,40 @@ const PALETTE_ALPHA: Partial<Readonly<Record<PaletteTokenName, number>>> = {
   slotFill: SLOT_FILL_ALPHA,
 }
 
-export const PALETTE_TOKEN_NAMES: ReadonlyArray<PaletteTokenName> = Object.keys(
-  PALETTE_PROPERTY,
-) as ReadonlyArray<PaletteTokenName>
+const isPaletteTokenName = (name: string): name is PaletteTokenName => name in PALETTE_PROPERTY
+
+type PaletteFields = { readonly [TokenName in PaletteTokenName]: string }
+
+export const PALETTE_TOKEN_NAMES: ReadonlyArray<PaletteTokenName> = Object.keys(PALETTE_PROPERTY).filter(
+  isPaletteTokenName,
+)
 
 /** The CSS text of each token — `cssColor` and nothing hand-written. */
-export const PALETTE_VALUE: Readonly<Record<PaletteTokenName, string>> = Object.freeze(
-  Object.fromEntries(
-    PALETTE_TOKEN_NAMES.map((name) => [name, cssColor(PALETTE_SOURCE[name], PALETTE_ALPHA[name])]),
-  ),
-) as Readonly<Record<PaletteTokenName, string>>
+export const PALETTE_VALUE: PaletteFields = Object.freeze({
+  durabilityHigh: cssColor(PALETTE_SOURCE.durabilityHigh, PALETTE_ALPHA.durabilityHigh),
+  durabilityLow: cssColor(PALETTE_SOURCE.durabilityLow, PALETTE_ALPHA.durabilityLow),
+  focusRing: cssColor(PALETTE_SOURCE.focusRing, PALETTE_ALPHA.focusRing),
+  focusRingShadow: cssColor(PALETTE_SOURCE.focusRingShadow, PALETTE_ALPHA.focusRingShadow),
+  heart: cssColor(PALETTE_SOURCE.heart, PALETTE_ALPHA.heart),
+  iconEmpty: cssColor(PALETTE_SOURCE.iconEmpty, PALETTE_ALPHA.iconEmpty),
+  ink: cssColor(PALETTE_SOURCE.ink, PALETTE_ALPHA.ink),
+  inkFaint: cssColor(PALETTE_SOURCE.inkFaint, PALETTE_ALPHA.inkFaint),
+  inkMuted: cssColor(PALETTE_SOURCE.inkMuted, PALETTE_ALPHA.inkMuted),
+  meterTrack: cssColor(PALETTE_SOURCE.meterTrack, PALETTE_ALPHA.meterTrack),
+  scrim: cssColor(PALETTE_SOURCE.scrim, PALETTE_ALPHA.scrim),
+  shank: cssColor(PALETTE_SOURCE.shank, PALETTE_ALPHA.shank),
+  slotBorder: cssColor(PALETTE_SOURCE.slotBorder, PALETTE_ALPHA.slotBorder),
+  slotFill: cssColor(PALETTE_SOURCE.slotFill, PALETTE_ALPHA.slotFill),
+  slotSelected: cssColor(PALETTE_SOURCE.slotSelected, PALETTE_ALPHA.slotSelected),
+  statusAlert: cssColor(PALETTE_SOURCE.statusAlert, PALETTE_ALPHA.statusAlert),
+  statusBusy: cssColor(PALETTE_SOURCE.statusBusy, PALETTE_ALPHA.statusBusy),
+  statusOk: cssColor(PALETTE_SOURCE.statusOk, PALETTE_ALPHA.statusOk),
+  surface: cssColor(PALETTE_SOURCE.surface, PALETTE_ALPHA.surface),
+  surfaceRaised: cssColor(PALETTE_SOURCE.surfaceRaised, PALETTE_ALPHA.surfaceRaised),
+  xpFill: cssColor(PALETTE_SOURCE.xpFill, PALETTE_ALPHA.xpFill),
+  xpFillHighlight: cssColor(PALETTE_SOURCE.xpFillHighlight, PALETTE_ALPHA.xpFillHighlight),
+  xpLevel: cssColor(PALETTE_SOURCE.xpLevel, PALETTE_ALPHA.xpLevel),
+})
 
 /**
  * `var(--mx-ui-heart)` and its twenty-two siblings, built once at module load.
@@ -213,9 +237,31 @@ export const PALETTE_VALUE: Readonly<Record<PaletteTokenName, string>> = Object.
  * writes comes from here, so a state change costs one comparison and at most one
  * `setProperty` of a short constant.
  */
-export const PALETTE_VAR: Readonly<Record<PaletteTokenName, string>> = Object.freeze(
-  Object.fromEntries(PALETTE_TOKEN_NAMES.map((name) => [name, `var(${PALETTE_PROPERTY[name]})`])),
-) as Readonly<Record<PaletteTokenName, string>>
+export const PALETTE_VAR: PaletteFields = Object.freeze({
+  durabilityHigh: `var(${PALETTE_PROPERTY.durabilityHigh})`,
+  durabilityLow: `var(${PALETTE_PROPERTY.durabilityLow})`,
+  focusRing: `var(${PALETTE_PROPERTY.focusRing})`,
+  focusRingShadow: `var(${PALETTE_PROPERTY.focusRingShadow})`,
+  heart: `var(${PALETTE_PROPERTY.heart})`,
+  iconEmpty: `var(${PALETTE_PROPERTY.iconEmpty})`,
+  ink: `var(${PALETTE_PROPERTY.ink})`,
+  inkFaint: `var(${PALETTE_PROPERTY.inkFaint})`,
+  inkMuted: `var(${PALETTE_PROPERTY.inkMuted})`,
+  meterTrack: `var(${PALETTE_PROPERTY.meterTrack})`,
+  scrim: `var(${PALETTE_PROPERTY.scrim})`,
+  shank: `var(${PALETTE_PROPERTY.shank})`,
+  slotBorder: `var(${PALETTE_PROPERTY.slotBorder})`,
+  slotFill: `var(${PALETTE_PROPERTY.slotFill})`,
+  slotSelected: `var(${PALETTE_PROPERTY.slotSelected})`,
+  statusAlert: `var(${PALETTE_PROPERTY.statusAlert})`,
+  statusBusy: `var(${PALETTE_PROPERTY.statusBusy})`,
+  statusOk: `var(${PALETTE_PROPERTY.statusOk})`,
+  surface: `var(${PALETTE_PROPERTY.surface})`,
+  surfaceRaised: `var(${PALETTE_PROPERTY.surfaceRaised})`,
+  xpFill: `var(${PALETTE_PROPERTY.xpFill})`,
+  xpFillHighlight: `var(${PALETTE_PROPERTY.xpFillHighlight})`,
+  xpLevel: `var(${PALETTE_PROPERTY.xpLevel})`,
+})
 
 /**
  * Declare the whole palette on one element.

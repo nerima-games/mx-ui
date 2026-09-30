@@ -46,13 +46,13 @@ import {
   SAVE_STATUS_LABEL,
 } from '../src/application/save-indicator'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, type FakeElement } from './fake-dom'
 
 const mount = () => {
   const factory = fakeDocument()
-  const parent = factory.createElement('div') as FakeElement
+  const parent = fakeElement(factory.createElement('div'))
   const view = createSaveIndicator(factory, parent)
-  return { factory, parent, view, root: view.root as FakeElement }
+  return { factory, parent, view, root: fakeElement(view.root) }
 }
 
 const lineOf = (root: FakeElement, message: string): FakeElement | undefined =>

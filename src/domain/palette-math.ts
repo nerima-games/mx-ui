@@ -94,7 +94,7 @@ const TRITANOPIA_B_FROM_B = 0.525
 
 const SIMULATION_MATRICES: ReadonlyMap<ColorVisionMode, readonly [Rgb, Rgb, Rgb]> = new Map([
   [
-    'protanopia' as ColorVisionMode,
+    'protanopia',
     [
       [PROTANOPIA_R_FROM_R, PROTANOPIA_R_FROM_G, ZERO],
       [PROTANOPIA_G_FROM_R, PROTANOPIA_G_FROM_G, ZERO],
@@ -102,7 +102,7 @@ const SIMULATION_MATRICES: ReadonlyMap<ColorVisionMode, readonly [Rgb, Rgb, Rgb]
     ],
   ],
   [
-    'deuteranopia' as ColorVisionMode,
+    'deuteranopia',
     [
       [DEUTERANOPIA_R_FROM_R, DEUTERANOPIA_R_FROM_G, ZERO],
       [DEUTERANOPIA_G_FROM_R, DEUTERANOPIA_G_FROM_G, ZERO],
@@ -110,7 +110,7 @@ const SIMULATION_MATRICES: ReadonlyMap<ColorVisionMode, readonly [Rgb, Rgb, Rgb]
     ],
   ],
   [
-    'tritanopia' as ColorVisionMode,
+    'tritanopia',
     [
       [TRITANOPIA_R_FROM_R, TRITANOPIA_R_FROM_G, ZERO],
       [ZERO, TRITANOPIA_G_FROM_G, TRITANOPIA_G_FROM_B],

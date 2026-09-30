@@ -19,7 +19,7 @@ import {
   createMainMenuView,
   type MainMenuCallbacks,
 } from '../src/application/main-menu-view'
-import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [
   { sessionId: 'session-1', name: 'Cliff House' },
@@ -28,7 +28,7 @@ const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [
 
 const mount = (overrides: Partial<MainMenuCallbacks> = {}) => {
   const factory = fakeDocument()
-  const parent = factory.createElement('div') as FakeElement
+  const parent = fakeElement(factory.createElement('div'))
   const states: Array<MainMenuState> = []
   const creates: Array<{ readonly name: string; readonly mode: 'survival' | 'creative' }> = []
   const loads: Array<SavedWorld> = []
@@ -47,7 +47,7 @@ const mount = (overrides: Partial<MainMenuCallbacks> = {}) => {
     factory,
     parent,
     view,
-    root: view.root as FakeElement,
+    root: fakeElement(view.root),
     states,
     creates,
     loads,
@@ -225,10 +225,10 @@ describe('operable main menu', () => {
 
   it('lets a caller omit callbacks entirely and still navigate every panel', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createMainMenuView(factory, parent)
     view.render(mainMenuViewModel(initialMainMenuState))
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
 
     root.find('data-menu-entry', 'settings')?.dispatch('click')
     expect(visiblePanels(root)).toStrictEqual(['root'])
