@@ -164,17 +164,8 @@ const cycleInventoryFocus = (
   }
   const currentIndex = targets.findIndex((target) => sameInventoryTarget(target, currentFocus))
   const direction = focusStep(shiftKey)
-  // Non-null, not a `??` fallback: `currentIndex` is `-1` only when nothing in `targets` matches
-  // `currentFocus`. `direction` is always `1` or `-1`. `targets.length` here is always at least
-  // One, given the fallback above. Given all three facts, the modulo arithmetic below always
-  // Stays within `[0, targets.length)` — `noUncheckedIndexedAccess` cannot see that proof, but a
-  // `?? targets[ZERO]!` fallback here would be a branch no input can ever take, which is exactly
-  // The shape that must be proven unreachable rather than fabricated a test for.
-  const next = targets[(currentIndex + direction + targets.length) % targets.length]
-  if (typeof next === 'undefined') {
-    throw new Error('inventory focus target is missing')
-  }
-  return next
+  const nextIndex = (currentIndex + direction + targets.length) % targets.length
+  return targets.reduce((selected, target, index) => (index === nextIndex ? target : selected))
 }
 
 /** Where keyboard focus lands after a render: the crafting output, or a real slot. */
@@ -230,17 +221,11 @@ const handleTabKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): bool
   return true
 }
 
-const handleArrowKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  // Non-null: `handleArrowKeyEvent` is only ever reached through
-  // `INVENTORY_KEY_HANDLERS`, whose `matches` for this entry is
-  // `inventoryDirectionForKey(event.key) !== null` — the exact condition this
-  // Asks again. Two evaluations of the same pure function on the same
-  // `event.key` agree, so by the time this line runs the caller has already
-  // Excluded `null`.
-  const direction = inventoryDirectionForKey(event.key)
-  if (direction === null) {
-    return false
-  }
+const handleArrowKeyEvent = (
+  event: KeyboardEvent,
+  ctx: InventoryKeyContext,
+  direction: InventoryNavigationDirection,
+): boolean => {
   event.preventDefault()
   return ctx.moveInventoryFocus(direction)
 }
@@ -258,7 +243,6 @@ type KeyHandler = {
 const INVENTORY_KEY_HANDLERS: ReadonlyArray<KeyHandler> = [
   { handle: handleEscapeKey, matches: (event) => event.key === 'Escape' },
   { handle: handleTabKeyEvent, matches: (event) => event.key === 'Tab' },
-  { handle: handleArrowKeyEvent, matches: (event) => inventoryDirectionForKey(event.key) !== null },
   {
     handle: handleActivateKeyEvent,
     matches: (event) => event.key === 'Enter' || event.key === ' ',
@@ -275,6 +259,10 @@ const dispatchInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): b
   }
   if (!ctx.session.inventoryOpen) {
     return false
+  }
+  const direction = inventoryDirectionForKey(event.key)
+  if (direction !== null) {
+    return handleArrowKeyEvent(event, ctx, direction)
   }
   const handler = INVENTORY_KEY_HANDLERS.find(({ matches }) => matches(event))
   if (typeof handler === 'undefined') {

@@ -68,14 +68,6 @@ export type MenuAction = keyof typeof MENU_ACTION_LABEL
 
 export const EMPTY_SAVE_LIST_NOTE = 'No saved worlds'
 
-const requiredMapValue = <Key, Value>(map: ReadonlyMap<Key, Value>, key: Key): Value => {
-  const value = map.get(key)
-  if (typeof value === 'undefined') {
-    throw new Error('required menu binding is missing')
-  }
-  return value
-}
-
 /** @deprecated The menu now distinguishes a host-supplied empty list directly. */
 export const NO_SAVE_LIST_NOTE =
   'mc-save has not been asked. This list is unknown, which is not the same as empty.'
@@ -319,14 +311,14 @@ const createCancelButton = (
   ctx: MountContext,
   parent: DomElement,
   bindings: MenuBindings,
-  focusTarget: DomInteractiveElement,
+  focusTarget: () => DomInteractiveElement,
 ): void => {
   const cancelButton = createButton(ctx, parent, {
     label: MENU_ACTION_LABEL.cancel,
     onClick: () => {
       bindings.transition(
         backToRoot(bindings.box.state),
-        focusTarget,
+        focusTarget(),
       )
     },
     role: 'menu-action',
@@ -361,9 +353,11 @@ const createNewWorldSection = (
   ctx: MountContext,
   parent: DomElement,
   bindings: MenuBindings,
+  rootButton: () => DomInteractiveElement,
 ): NewWorldSection => {
   const worldNameInput = createWorldNameField(ctx, parent, bindings)
   const modeElements = createModeButton(ctx, parent, bindings)
+  createCancelButton(ctx, parent, bindings, rootButton)
   createConfirmButton(ctx, parent, bindings)
   return { modeElements, worldNameInput }
 }
@@ -393,24 +387,35 @@ type LoadWorldSection = {
   readonly rows: Map<string, SavedWorldRow>
   readonly savedWorldList: DomElement
   readonly firstSavedWorldButton: () => DomInteractiveElement
+  readonly setFirstSavedWorldButton: (button: DomInteractiveElement) => void
 }
 
 const createLoadWorldSection = (
   ctx: MountContext,
   parent: DomElement,
   bindings: MenuBindings,
+  rootButton: () => DomInteractiveElement,
 ): LoadWorldSection => {
   const list = createSavedWorldList(ctx, parent)
   const emptyNoteHidden = createEmptyNote(ctx, list.element)
   const rows = new Map<string, SavedWorldRow>()
 
+  const backButton = createButton(ctx, parent, {
+    label: MENU_ACTION_LABEL.back,
+    onClick: () => {
+      bindings.transition(
+        backToRoot(bindings.box.state),
+        rootButton(),
+      )
+    },
+    role: 'menu-action',
+  })
+  backButton.setAttribute('data-menu-action', 'back')
+
   const firstSavedWorldButton = (): DomInteractiveElement => {
-    const [first] = bindings.box.savedWorlds
-    if (typeof first === 'undefined') {
-      return backButton
-    }
-    return rows.get(first.sessionId)?.root ?? firstSavedWorldButton()
+    return firstSavedWorldTarget
   }
+  let firstSavedWorldTarget: DomInteractiveElement = backButton
 
   return {
     emptyNoteHidden,
@@ -418,6 +423,9 @@ const createLoadWorldSection = (
     listState: list.listState,
     rows,
     savedWorldList: list.element,
+    setFirstSavedWorldButton: (button) => {
+      firstSavedWorldTarget = button
+    },
   }
 }
 
@@ -444,6 +452,7 @@ const createSavedWorldRowLabels = (ctx: MountContext, button: DomElement): Saved
 }
 
 const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): SavedWorldRow => {
+  let row: SavedWorldRow
   const button = createButton(deps.ctx, deps.parent, {
     label: '',
     onClick: () => {
@@ -452,18 +461,14 @@ const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): Saved
       // This function and in `ensureSavedWorldRow`), never deleted — so
       // `deps.rows.get(world.sessionId)` always finds (at least) this row by
       // The time its click handler runs.
-      const current = deps.rows.get(world.sessionId)
-      if (typeof current === 'undefined') {
-        throw new Error('saved world row is missing')
-      }
-      deps.callbacks.onLoadWorld(current.current)
+      deps.callbacks.onLoadWorld(row.current)
     },
     role: 'menu-world-row',
   })
   button.setAttribute('data-session-id', world.sessionId)
   const labels = createSavedWorldRowLabels(deps.ctx, button)
 
-  const row: SavedWorldRow = {
+  row = {
     accessibleName: attributeCell(button, 'aria-label'),
     current: world,
     hidden: attributeCell(button, 'hidden'),
@@ -500,6 +505,7 @@ type RootEntryContext = {
   readonly bindings: MenuBindings
   readonly worldNameInput: DomInputElement
   readonly firstSavedWorldButton: () => DomInteractiveElement
+  readonly registerButton: (entry: RootEntry, button: DomInteractiveElement) => void
 }
 
 const createRootEntryButton = (
@@ -524,7 +530,7 @@ const createRootEntryButton = (
     role: 'menu-entry',
   })
   button.setAttribute('data-menu-entry', entry)
-  context.bindings.rootButtons.set(entry, button)
+  context.registerButton(entry, button)
 }
 
 const createRootEntryButtons = (parent: DomElement, context: RootEntryContext): void => {
@@ -558,14 +564,22 @@ const applyNewWorldSection = (newWorld: NewWorldSection, model: MainMenuViewMode
 const syncSavedWorldRows = (
   listDeps: SavedWorldListDeps,
   savedWorlds: ReadonlyArray<SavedWorld>,
+  setFirstSavedWorldButton: (button: DomInteractiveElement) => void,
 ): void => {
   const visibleSessionIds = new Set(savedWorlds.map((world) => world.sessionId))
+  let firstRow: SavedWorldRow | undefined
   for (const world of savedWorlds) {
     const row = ensureSavedWorldRow(listDeps, world)
+    if (firstRow === undefined) {
+      firstRow = row
+    }
     writeHidden(row.hidden, false)
     writeText(row.name, world.name)
     writeText(row.sessionId, world.sessionId)
     writeAttribute(row.accessibleName, `Load ${world.name} (${world.sessionId})`)
+  }
+  if (firstRow !== undefined) {
+    setFirstSavedWorldButton(firstRow.root)
   }
   for (const [sessionId, row] of listDeps.rows) {
     if (!visibleSessionIds.has(sessionId)) {
@@ -592,7 +606,11 @@ const createRenderModel =
     applyNewWorldSection(context.newWorld, model)
     writeAttribute(context.loadWorld.listState, savedWorldListState(model.savedWorlds.length))
     writeHidden(context.loadWorld.emptyNoteHidden, model.savedWorlds.length !== ZERO)
-    syncSavedWorldRows(context.listDeps, model.savedWorlds)
+    syncSavedWorldRows(
+      context.listDeps,
+      model.savedWorlds,
+      context.loadWorld.setFirstSavedWorldButton,
+    )
   }
 
 const assembleMainMenu = (
@@ -601,24 +619,43 @@ const assembleMainMenu = (
   callbacks: MainMenuCallbacks,
 ): ((model: MainMenuViewModel) => void) => {
   const box: MenuStateBox = { savedWorlds: [], state: initialMainMenuState }
-  const rootButtons = new Map<RootEntry, DomInteractiveElement>()
+  let newWorldButton: DomInteractiveElement
+  let loadWorldButton: DomInteractiveElement
   let transitionRef: MenuTransition = noop
   const bindings: MenuBindings = {
     box,
     callbacks,
-    rootButtons,
     transition: (next, target) => {
       transitionRef(next, target)
     },
   }
 
-  const newWorld = createNewWorldSection(ctx, shell.panels['new-world'].root, bindings)
-  const loadWorld = createLoadWorldSection(ctx, shell.panels['load-world'].root, bindings)
+  const newWorld = createNewWorldSection(
+    ctx,
+    shell.panels['new-world'].root,
+    bindings,
+    () => newWorldButton,
+  )
+  const loadWorld = createLoadWorldSection(
+    ctx,
+    shell.panels['load-world'].root,
+    bindings,
+    () => loadWorldButton,
+  )
 
   createRootEntryButtons(shell.panels.root.root, {
     bindings,
     ctx,
     firstSavedWorldButton: loadWorld.firstSavedWorldButton,
+    registerButton: (entry, button) => {
+      if (entry === 'new-world') {
+        newWorldButton = button
+        return
+      }
+      if (entry === 'load-world') {
+        loadWorldButton = button
+      }
+    },
     worldNameInput: newWorld.worldNameInput,
   })
 

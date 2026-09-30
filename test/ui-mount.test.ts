@@ -265,10 +265,10 @@ describe('UiMount', () => {
       kind: 'slot',
       region: 'main',
     })
-
     const focused = host.querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')
     expect(focused?.getAttribute('aria-label')).toContain('main slot 2')
     expect(document.activeElement).toBe(focused)
+    expect(runtime.moveInventoryFocus('up')).toBe(true)
   })
 
   describe('equipment actions', () => {
