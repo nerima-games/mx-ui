@@ -28,6 +28,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   renderDistance: 12,
 }
 
+const FIRST_INPUT_INDEX = 0
+
 export const DEFAULT_DEBUG_HUD_SNAPSHOT: DebugHudSnapshot = {
   chunk: { chunkX: 0, chunkZ: 0 },
   coordinates: { worldX: 0, worldY: 0, worldZ: 0 },
@@ -348,7 +350,7 @@ const wireOverlaysBehavior = (
       restoreFocus = null
     }
     dom.settingsDialog.hidden = false
-    dom.inputs[0]?.input.focus()
+    dom.inputs[FIRST_INPUT_INDEX]?.input.focus()
   }
   const closeSettings = (): void => {
     if (dom.settingsDialog.hidden) {

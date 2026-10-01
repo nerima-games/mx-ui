@@ -115,32 +115,31 @@ export const moveInventoryTarget = (
   }
 
   for (const [regionIndex, region] of regions.entries()) {
-    if (region.id !== current.region) {
-      continue
-    }
-    const columns = regionColumns(region)
-    const column = current.index % columns
+    if (region.id === current.region) {
+      const columns = regionColumns(region)
+      const column = current.index % columns
 
-    if (direction === 'left' || direction === 'right') {
-      return moveHorizontally(current, direction, columns, region.slots.length)
-    }
-    if (direction === 'up' && current.index >= columns) {
-      return { ...current, index: current.index - columns }
-    }
-    if (direction === 'down' && current.index + columns < region.slots.length) {
-      return { ...current, index: current.index + columns }
-    }
-
-    const adjacent = adjacentRegion(regions, regionIndex, direction)
-    if (adjacent !== undefined) {
-      return {
-        index: projectedIndex(adjacent, column, direction === 'up'),
-        kind: 'slot',
-        region: adjacent.id,
+      if (direction === 'left' || direction === 'right') {
+        return moveHorizontally(current, direction, columns, region.slots.length)
       }
-    }
-    if (direction === 'down' && model.crafting.kind === 'match') {
-      return { kind: 'crafting-output' }
+      if (direction === 'up' && current.index >= columns) {
+        return { ...current, index: current.index - columns }
+      }
+      if (direction === 'down' && current.index + columns < region.slots.length) {
+        return { ...current, index: current.index + columns }
+      }
+
+      const adjacent = adjacentRegion(regions, regionIndex, direction)
+      if (adjacent !== undefined) {
+        return {
+          index: projectedIndex(adjacent, column, direction === 'up'),
+          kind: 'slot',
+          region: adjacent.id,
+        }
+      }
+      if (direction === 'down' && model.crafting.kind === 'match') {
+        return { kind: 'crafting-output' }
+      }
     }
   }
   return current

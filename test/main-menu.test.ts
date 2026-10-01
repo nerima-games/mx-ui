@@ -17,6 +17,7 @@ import {
   MAIN_MENU_TITLE,
   ROOT_ENTRY_LABEL,
   createMainMenuView,
+  requireRootButton,
   type MainMenuCallbacks,
 } from '../src/application/main-menu-view'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
@@ -62,6 +63,12 @@ const visiblePanels = (root: FakeElement): ReadonlyArray<string | undefined> =>
     .map((panel) => panel.attributes.get('data-menu-panel'))
 
 describe('main menu domain', () => {
+  it('rejects navigation through a root entry that was not registered', () => {
+    expect(() => requireRootButton({}, 'new-world')).toThrow(
+      'Root menu entry is not registered: new-world',
+    )
+  })
+
   it('preserves the draft across navigation and normalizes the confirmed name', () => {
     const named = nameWorld(openPanel(initialMainMenuState, 'new-world'), '  Ravine  ')
     const creative = cycleWorldMode(named)

@@ -165,7 +165,12 @@ const cycleInventoryFocus = (
   const currentIndex = targets.findIndex((target) => sameInventoryTarget(target, currentFocus))
   const direction = focusStep(shiftKey)
   const nextIndex = (currentIndex + direction + targets.length) % targets.length
-  return targets.reduce((selected, target, index) => (index === nextIndex ? target : selected))
+  return targets.reduce((selected, target, index) => {
+    if (index === nextIndex) {
+      return target
+    }
+    return selected
+  })
 }
 
 /** Where keyboard focus lands after a render: the crafting output, or a real slot. */
@@ -253,13 +258,7 @@ const INVENTORY_KEY_HANDLERS: ReadonlyArray<KeyHandler> = [
  * `E` always toggles, everything else requires the inventory to already be
  * open — same priority order the original sequential `if` chain used.
  */
-const dispatchInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  if (event.key.toLowerCase() === 'e') {
-    return handleToggleKey(event, ctx)
-  }
-  if (!ctx.session.inventoryOpen) {
-    return false
-  }
+const dispatchOpenInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
   const direction = inventoryDirectionForKey(event.key)
   if (direction !== null) {
     return handleArrowKeyEvent(event, ctx, direction)
@@ -269,6 +268,16 @@ const dispatchInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): b
     return false
   }
   return handler.handle(event, ctx)
+}
+
+const dispatchInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
+  if (event.key.toLowerCase() === 'e') {
+    return handleToggleKey(event, ctx)
+  }
+  if (!ctx.session.inventoryOpen) {
+    return false
+  }
+  return dispatchOpenInventoryKey(event, ctx)
 }
 
 /** The mx-ui mount root's owning document, or a thrown `UiMountError`. */

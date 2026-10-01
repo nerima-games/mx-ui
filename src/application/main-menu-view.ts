@@ -307,18 +307,20 @@ const createModeButton = (
   return { accessibleName: modeAccessibleName, text: modeText }
 }
 
-const createCancelButton = (
-  ctx: MountContext,
-  parent: DomElement,
-  bindings: MenuBindings,
-  focusTarget: () => DomInteractiveElement,
-): void => {
+type MenuSectionContext = {
+  readonly ctx: MountContext
+  readonly parent: DomElement
+  readonly bindings: MenuBindings
+  readonly rootButton: () => DomInteractiveElement
+}
+
+const createCancelButton = ({ ctx, parent, bindings, rootButton }: MenuSectionContext): void => {
   const cancelButton = createButton(ctx, parent, {
     label: MENU_ACTION_LABEL.cancel,
     onClick: () => {
       bindings.transition(
         backToRoot(bindings.box.state),
-        focusTarget(),
+        rootButton(),
       )
     },
     role: 'menu-action',
@@ -349,15 +351,10 @@ type NewWorldSection = {
   readonly modeElements: ModeButtonElements
 }
 
-const createNewWorldSection = (
-  ctx: MountContext,
-  parent: DomElement,
-  bindings: MenuBindings,
-  rootButton: () => DomInteractiveElement,
-): NewWorldSection => {
+const createNewWorldSection = ({ ctx, parent, bindings, rootButton }: MenuSectionContext): NewWorldSection => {
   const worldNameInput = createWorldNameField(ctx, parent, bindings)
   const modeElements = createModeButton(ctx, parent, bindings)
-  createCancelButton(ctx, parent, bindings, rootButton)
+  createCancelButton({ bindings, ctx, parent, rootButton })
   createConfirmButton(ctx, parent, bindings)
   return { modeElements, worldNameInput }
 }
@@ -387,15 +384,10 @@ type LoadWorldSection = {
   readonly rows: Map<string, SavedWorldRow>
   readonly savedWorldList: DomElement
   readonly firstSavedWorldButton: () => DomInteractiveElement
-  readonly setFirstSavedWorldButton: (button: DomInteractiveElement | undefined) => void
+  readonly setFirstSavedWorldButton: (button: DomInteractiveElement | null) => void
 }
 
-const createLoadWorldSection = (
-  ctx: MountContext,
-  parent: DomElement,
-  bindings: MenuBindings,
-  rootButton: () => DomInteractiveElement,
-): LoadWorldSection => {
+const createLoadWorldSection = ({ ctx, parent, bindings, rootButton }: MenuSectionContext): LoadWorldSection => {
   const list = createSavedWorldList(ctx, parent)
   const emptyNoteHidden = createEmptyNote(ctx, list.element)
   const rows = new Map<string, SavedWorldRow>()
@@ -450,23 +442,16 @@ const createSavedWorldRowLabels = (ctx: MountContext, button: DomElement): Saved
 }
 
 const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): SavedWorldRow => {
-  let row: SavedWorldRow
+  let loadWorld = noop
   const button = createButton(deps.ctx, deps.parent, {
     label: '',
-    onClick: () => {
-      // Non-null: this row's own button cannot be clicked before it exists,
-      // And `deps.rows` entries are only ever added or updated (`.set` in
-      // This function and in `ensureSavedWorldRow`), never deleted — so
-      // `deps.rows.get(world.sessionId)` always finds (at least) this row by
-      // The time its click handler runs.
-      deps.callbacks.onLoadWorld(row.current)
-    },
+    onClick: () => loadWorld(),
     role: 'menu-world-row',
   })
   button.setAttribute('data-session-id', world.sessionId)
   const labels = createSavedWorldRowLabels(deps.ctx, button)
 
-  row = {
+  const row: SavedWorldRow = {
     accessibleName: attributeCell(button, 'aria-label'),
     current: world,
     hidden: attributeCell(button, 'hidden'),
@@ -474,13 +459,14 @@ const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): Saved
     root: button,
     sessionId: textCell(labels.sessionId),
   }
+  loadWorld = () => deps.callbacks.onLoadWorld(row.current)
   deps.rows.set(world.sessionId, row)
   return row
 }
 
 const ensureSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): SavedWorldRow => {
   const existing = deps.rows.get(world.sessionId)
-  if (typeof existing !== 'undefined') {
+  if (existing) {
     existing.current = world
     return existing
   }
@@ -559,29 +545,40 @@ const applyNewWorldSection = (newWorld: NewWorldSection, model: MainMenuViewMode
   writeAttribute(newWorld.modeElements.accessibleName, modeAriaLabel(model.mode))
 }
 
-const syncSavedWorldRows = (
-  listDeps: SavedWorldListDeps,
-  savedWorlds: ReadonlyArray<SavedWorld>,
-  setFirstSavedWorldButton: (button: DomInteractiveElement | undefined) => void,
+const applySavedWorldRow = (row: SavedWorldRow, world: SavedWorld): void => {
+  writeHidden(row.hidden, false)
+  writeText(row.name, world.name)
+  writeText(row.sessionId, world.sessionId)
+  writeAttribute(row.accessibleName, `Load ${world.name} (${world.sessionId})`)
+}
+
+const hideStaleSavedWorldRows = (
+  rows: Map<string, SavedWorldRow>,
+  visibleSessionIds: ReadonlySet<string>,
 ): void => {
-  const visibleSessionIds = new Set(savedWorlds.map((world) => world.sessionId))
-  let firstRow: SavedWorldRow | undefined
-  for (const world of savedWorlds) {
-    const row = ensureSavedWorldRow(listDeps, world)
-    if (firstRow === undefined) {
-      firstRow = row
-    }
-    writeHidden(row.hidden, false)
-    writeText(row.name, world.name)
-    writeText(row.sessionId, world.sessionId)
-    writeAttribute(row.accessibleName, `Load ${world.name} (${world.sessionId})`)
-  }
-  setFirstSavedWorldButton(firstRow?.root)
-  for (const [sessionId, row] of listDeps.rows) {
+  for (const [sessionId, row] of rows) {
     if (!visibleSessionIds.has(sessionId)) {
       writeHidden(row.hidden, true)
     }
   }
+}
+
+const syncSavedWorldRows = (
+  listDeps: SavedWorldListDeps,
+  savedWorlds: ReadonlyArray<SavedWorld>,
+  setFirstSavedWorldButton: (button: DomInteractiveElement | null) => void,
+): void => {
+  const visibleSessionIds = new Set(savedWorlds.map((world) => world.sessionId))
+  let firstRow: SavedWorldRow | null = null
+  for (const world of savedWorlds) {
+    const row = ensureSavedWorldRow(listDeps, world)
+    if (firstRow === null) {
+      firstRow = row
+    }
+    applySavedWorldRow(row, world)
+  }
+  setFirstSavedWorldButton(firstRow?.root ?? null)
+  hideStaleSavedWorldRows(listDeps.rows, visibleSessionIds)
 }
 
 type RenderContext = {
@@ -609,14 +606,24 @@ const createRenderModel =
     )
   }
 
+export const requireRootButton = (
+  buttons: Partial<Record<RootEntry, DomInteractiveElement>>,
+  entry: RootEntry,
+): DomInteractiveElement => {
+  const button = buttons[entry]
+  if (!button) {
+    throw new Error(`Root menu entry is not registered: ${entry}`)
+  }
+  return button
+}
+
 const assembleMainMenu = (
   ctx: MountContext,
   shell: MainMenuShell,
   callbacks: MainMenuCallbacks,
 ): ((model: MainMenuViewModel) => void) => {
   const box: MenuStateBox = { savedWorlds: [], state: initialMainMenuState }
-  let newWorldButton: DomInteractiveElement
-  let loadWorldButton: DomInteractiveElement
+  const rootButtons: Partial<Record<RootEntry, DomInteractiveElement>> = {}
   let transitionRef: MenuTransition = noop
   const bindings: MenuBindings = {
     box,
@@ -627,16 +634,10 @@ const assembleMainMenu = (
   }
 
   const newWorld = createNewWorldSection(
-    ctx,
-    shell.panels['new-world'].root,
-    bindings,
-    () => newWorldButton,
+    { bindings, ctx, parent: shell.panels['new-world'].root, rootButton: () => requireRootButton(rootButtons, 'new-world') },
   )
   const loadWorld = createLoadWorldSection(
-    ctx,
-    shell.panels['load-world'].root,
-    bindings,
-    () => loadWorldButton,
+    { bindings, ctx, parent: shell.panels['load-world'].root, rootButton: () => requireRootButton(rootButtons, 'load-world') },
   )
 
   createRootEntryButtons(shell.panels.root.root, {
@@ -644,13 +645,7 @@ const assembleMainMenu = (
     ctx,
     firstSavedWorldButton: loadWorld.firstSavedWorldButton,
     registerButton: (entry, button) => {
-      if (entry === 'new-world') {
-        newWorldButton = button
-        return
-      }
-      if (entry === 'load-world') {
-        loadWorldButton = button
-      }
+      rootButtons[entry] = button
     },
     worldNameInput: newWorld.worldNameInput,
   })
