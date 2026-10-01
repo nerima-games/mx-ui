@@ -159,8 +159,9 @@ export type UiMount = {
 
 ## 5. `index.ts` の全 export
 
-`index.ts` は 21 モジュールを `export *` している——`domain/` の 7、`stages/` の 2、
-そして **`application/` の 12**（`domain/frame-contract.ts` は**含まれない**。下記）。分類:
+`index.ts` は 44 モジュールを `export *` している——`application/` の 22、`domain/` の 20、
+`stages/` の 2（`domain/frame-contract.ts` は**含まれない**。下記）。この節は契約面と
+主要な可視 export を分類するもので、完全な実装一覧は `src/index.ts` と build 後の declaration を正とする:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
 - **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。

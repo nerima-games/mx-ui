@@ -17,9 +17,10 @@ import {
   MAIN_MENU_TITLE,
   ROOT_ENTRY_LABEL,
   createMainMenuView,
+  requireRootButton,
   type MainMenuCallbacks,
 } from '../src/application/main-menu-view'
-import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [
   { sessionId: 'session-1', name: 'Cliff House' },
@@ -28,7 +29,7 @@ const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [
 
 const mount = (overrides: Partial<MainMenuCallbacks> = {}) => {
   const factory = fakeDocument()
-  const parent = factory.createElement('div') as FakeElement
+  const parent = fakeElement(factory.createElement('div'))
   const states: Array<MainMenuState> = []
   const creates: Array<{ readonly name: string; readonly mode: 'survival' | 'creative' }> = []
   const loads: Array<SavedWorld> = []
@@ -47,7 +48,7 @@ const mount = (overrides: Partial<MainMenuCallbacks> = {}) => {
     factory,
     parent,
     view,
-    root: view.root as FakeElement,
+    root: fakeElement(view.root),
     states,
     creates,
     loads,
@@ -62,6 +63,12 @@ const visiblePanels = (root: FakeElement): ReadonlyArray<string | undefined> =>
     .map((panel) => panel.attributes.get('data-menu-panel'))
 
 describe('main menu domain', () => {
+  it('rejects navigation through a root entry that was not registered', () => {
+    expect(() => requireRootButton({}, 'new-world')).toThrow(
+      'Root menu entry is not registered: new-world',
+    )
+  })
+
   it('preserves the draft across navigation and normalizes the confirmed name', () => {
     const named = nameWorld(openPanel(initialMainMenuState, 'new-world'), '  Ravine  ')
     const creative = cycleWorldMode(named)
@@ -223,12 +230,31 @@ describe('operable main menu', () => {
     expect(keptRow?.attributes.has('hidden')).toBe(false)
   })
 
+  it('returns focus to Back when a saved-world list becomes empty', () => {
+    const mounted = mount()
+    mounted.view.render(mainMenuViewModel(initialMainMenuState, SAVED_WORLDS))
+    mounted.root.find('data-menu-entry', 'load-world')?.dispatch('click')
+
+    mounted.view.render(mainMenuViewModel(openPanel(initialMainMenuState, 'load-world'), []))
+    const backButton = mounted.root.find('data-menu-action', 'back')
+    if (backButton === undefined) {
+      throw new Error('back button was not mounted')
+    }
+
+    const before = mounted.factory.mark()
+    mounted.root.find('data-menu-entry', 'load-world')?.dispatch('click')
+
+    expect(
+      mounted.factory.since(before).some((mutation) => mutation.kind === 'focus' && mutation.target === backButton),
+    ).toBe(true)
+  })
+
   it('lets a caller omit callbacks entirely and still navigate every panel', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createMainMenuView(factory, parent)
     view.render(mainMenuViewModel(initialMainMenuState))
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
 
     root.find('data-menu-entry', 'settings')?.dispatch('click')
     expect(visiblePanels(root)).toStrictEqual(['root'])

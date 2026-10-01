@@ -4,7 +4,7 @@
 
 ## 1. 現状
 
-- **publish パイプラインが存在する（組織のツールチェーン凍結、Wave 0）。** `tsconfig.release.json` が
+- **publish パイプラインが存在する。** `tsconfig.release.json` が
   `tsc -p tsconfig.release.json` で `dist/` を emit し、`package.json` の `main` / `types` / `exports` は
   `dist/` を指す。`pnpm build` → `pnpm package:verify`（packed tarball を実際にインストールして
   `exports` を検証）→ `.github/workflows/release.yaml` の publish job（`pnpm publish --no-git-checks`）が
@@ -20,7 +20,8 @@ mx-ui の場合それは具体的に「mc-compose が `makeUiStages` を stage �
 mount 面（[public-api.md](./public-api.md) §4-1）でルート要素を渡し、
 それで実際にゲームが起動した」という事実を指す。
 
-現状 mount 面は存在すらしていないので、机上で 1.0.0 を切る根拠が無い。
+mount 面は実装済みだが、mc-compose が実際に消費してゲームを起動したという事実はまだない。
+したがって、机上で 1.0.0 を切る根拠は無い。
 
 plan.md §6 Step 3(歴史的な記録。当時の「APIロック4週間無変更」ゲートは
 その後 API_STANDARD.md §4 / RELEASE_STANDARD.md §4 により廃止され、
@@ -80,18 +81,18 @@ mx-ui は最初の消費者ではない。
 実際にこの契約を消費し、動作確認を終えたか」であり、それを踏まえて maintainer が 1.0.0 昇格の
 changeset(`major` bump)を書く運びになる。
 
-## 4. build / publish パイプラインは完成時に追加する
+## 4. build / publish パイプライン（実装済み）
 
-完成条件（[testing.md](./testing.md) §4）に到達した時点で追加する:
+`package.json` を正とする現行の出荷面は次の通り:
 
-1. `tsconfig.build.json` を emit ありに変更し、`dist/` を生成する
-2. `package.json` の `main` / `types` / `exports` を `dist/` に向ける
-3. `files` を差し替える
-4. GitHub Actions に publish job を追加する（tag push トリガ）
-5. changesets を導入する
+1. `pnpm build` が `tsconfig.release.json` で `dist/` を生成する
+2. `main` / `types` / `exports["."]` は、それぞれ `dist/index.js` / `dist/index.d.ts` を指す
+3. `files` は `dist`、`LICENSE`、`README.md` のみを含む。CSS、フォント、アイコン画像、`docs/` は含まない
+4. `pnpm package:verify` が packed tarball の root export を実行時と型空間で検証する
+5. `.github/workflows/release.yaml` の publish job が GitHub Packages へ公開する
 
-**先にやらない理由**: ビルド成果物を介すと型エラーがビルド時にしか出なくなり、
-16 リポジトリを 1 つの workspace で開発している間の DX が落ちる。
+変更時は `package.json`、`scripts/verify-package.mjs`、workflow の実装を確認し、
+この文書に現在の版数や依存版を重複して記載しない。
 
 ### mx-ui だけが抱える面倒だった話 — 決着済み、CSS ファイルは無い
 

@@ -47,7 +47,7 @@ import { createCaptionView } from '../src/application/caption-view'
 import { DeltaTimeSecs } from '@nerima-games/mc-kernel'
 import { makeUiFrameState, uiStages } from '../src/stages/registration'
 import { UI_STAGE_IDS } from '../src/stages/stage-ids'
-import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 import { FrameServicesLayer } from './frame-services'
 
 const ON: CaptionSettings = { captionsEnabled: true, audioUnlocked: false }
@@ -71,9 +71,9 @@ const queueOf = (count: number, atSecs = 0): CaptionQueue => {
 
 const mount = () => {
   const factory = fakeDocument()
-  const parent = factory.createElement('div') as FakeElement
+  const parent = fakeElement(factory.createElement('div'))
   const view = createCaptionView(factory, parent, 'reduced')
-  return { factory, view, root: view.root as FakeElement }
+  return { factory, view, root: fakeElement(view.root) }
 }
 
 /** The text of every caption line the reader would actually be given. */

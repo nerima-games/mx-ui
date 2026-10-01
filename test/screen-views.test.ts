@@ -42,7 +42,7 @@ import { createHudView } from '../src/application/hud-view'
 import { createSlotElement, updateSlotElement } from '../src/application/slot-element'
 import type { SlotView } from '../src/domain/hud-view-model'
 import { PALETTE_PROPERTY } from '../src/application/palette-css'
-import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, writeNames } from './fake-dom'
 
 const enabled = { captionsEnabled: true, audioUnlocked: false }
 
@@ -59,21 +59,21 @@ describe('captions are rendered as TEXT', () => {
     // that matters: a caption drawn on the canvas is invisible to assistive
     // technology, which is the population the feature exists for.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'full')
     view.render(captionLines(queueOf('Creeper hisses'), 0))
 
-    const line = (view.root as FakeElement).find('data-mx-ui', 'caption-text')
+    const line = fakeElement(view.root).find('data-mx-ui', 'caption-text')
     expect(line?.textContent).toBe('Creeper hisses')
-    expect((view.root as FakeElement).find('data-mx-ui', 'caption-arrow')?.textContent).toBe('←')
+    expect(fakeElement(view.root).find('data-mx-ui', 'caption-arrow')?.textContent).toBe('←')
     // A caption that appears silently is invisible to a screen reader even when
     // it is text.
-    expect((view.root as FakeElement).attributes.get('aria-live')).toBe('polite')
+    expect(fakeElement(view.root).attributes.get('aria-live')).toBe('polite')
   })
 
   it('allocates exactly MAX_VISIBLE_CAPTIONS lines and never more, however long the stream', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'full')
     const created = factory.created.length
 
@@ -81,7 +81,7 @@ describe('captions are rendered as TEXT', () => {
       view.render(captionLines(queueOf(`cue-${String(index)}`), index))
     }
     expect(factory.created.length).toBe(created)
-    expect((view.root as FakeElement).findAll('data-mx-ui', 'caption-line')).toHaveLength(
+    expect(fakeElement(view.root).findAll('data-mx-ui', 'caption-line')).toHaveLength(
       MAX_VISIBLE_CAPTIONS,
     )
   })
@@ -93,11 +93,11 @@ describe('captions are rendered as TEXT', () => {
     // to vanish, which for a player reading instead of hearing is the wrong
     // trade twice.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'reduced')
     view.render(captionLines(queueOf('Zombie groans'), 2))
 
-    const line = (view.root as FakeElement).find('data-mx-ui', 'caption-line')
+    const line = fakeElement(view.root).find('data-mx-ui', 'caption-line')
     expect(line?.style.properties.get('opacity')).toBe('1')
 
     view.setMotion('full')
@@ -106,7 +106,7 @@ describe('captions are rendered as TEXT', () => {
 
   it('re-rendering the same lines mutates nothing', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'reduced')
     const lines = captionLines(queueOf('Arrow hits'), 0)
 
@@ -141,7 +141,7 @@ describe('captions are rendered as TEXT', () => {
     // its target and the target holds the log, so deep-equalling the array on a
     // FAILURE — the only run that matters — walks a cycle and kills the runner.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'reduced')
 
     // A caption that has AGED, so that fading and not fading are different
@@ -168,11 +168,11 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // distinction is easiest to lose, because an empty grid and an absent grid
     // look almost the same in code.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     view.render(inventoryViewModel(emptyInventorySnapshot))
 
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     const armour = root.find('data-region', 'armour')
     expect(armour?.attributes.get('data-region-state')).toBe('unknown')
     expect(armour?.find('data-mx-ui', 'region-grid')?.attributes.get('hidden')).toBe('')
@@ -193,7 +193,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // rather than keep showing a stale role/label/tab-stop underneath a region
     // now flagged `unknown`.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
 
     view.render(
@@ -203,14 +203,14 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       }),
       { focused: { index: 0, kind: 'slot', region: 'armour' }, status: 'Helmet equipped' },
     )
-    const armourSlotsWhileKnown = (view.root as FakeElement)
+    const armourSlotsWhileKnown = fakeElement(view.root)
       .find('data-region', 'armour')
       ?.findAll('data-mx-ui', 'slot')
     expect(armourSlotsWhileKnown).toHaveLength(1)
     expect(armourSlotsWhileKnown?.[0]?.attributes.get('role')).toBe('button')
 
     view.render(inventoryViewModel(emptyInventorySnapshot))
-    const armour = (view.root as FakeElement).find('data-region', 'armour')
+    const armour = fakeElement(view.root).find('data-region', 'armour')
     expect(armour?.attributes.get('data-region-state')).toBe('unknown')
     const armourSlotsWhileUnknown = armour?.findAll('data-mx-ui', 'slot')
     expect(armourSlotsWhileUnknown).toHaveLength(1)
@@ -220,14 +220,14 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
 
   it('renders a known-empty offhand as a focusable slot', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     view.render(inventoryViewModel({ ...emptyInventorySnapshot, offhand: null }), {
       focused: { kind: 'slot', region: 'offhand', index: 0 },
       status: 'Offhand empty',
     })
 
-    const offhand = (view.root as FakeElement).find('data-region', 'offhand')
+    const offhand = fakeElement(view.root).find('data-region', 'offhand')
     expect(offhand?.attributes.get('data-region-state')).toBe('slots')
     expect(offhand?.findAll('data-mx-ui', 'slot')).toHaveLength(1)
     expect(offhand?.find('data-mx-ui', 'slot')?.attributes.get('role')).toBe('button')
@@ -240,11 +240,11 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // one case and 「mc-sim has not answered」 in the other, and the player cannot
     // tell those apart by looking at nothing.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     view.render(inventoryViewModel(emptyInventorySnapshot))
 
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(root.find('data-mx-ui', 'crafting-outcome')?.attributes.get('data-crafting-state')).toBe(
       'unknown',
     )
@@ -257,7 +257,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // builds, so both directions matter: a square left showing after the player
     // drops a stack is an item that looks like it is still in hand.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
 
     view.render(
@@ -267,7 +267,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       }),
     )
 
-    const carried = (view.root as FakeElement).find('data-mx-ui', 'carried')
+    const carried = fakeElement(view.root).find('data-mx-ui', 'carried')
     expect(carried?.attributes.has('hidden')).toBe(false)
     expect(carried?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stone')
 
@@ -281,7 +281,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // of 12 — so `carriedView.countLabel ?? '1'`'s fallback arm, taken only for a stack of exactly
     // one, has nothing exercising it.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
 
     view.render(
@@ -289,7 +289,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       { focused: { kind: 'crafting-output' }, status: 'Carrying stone' },
     )
 
-    const carried = (view.root as FakeElement).find('data-mx-ui', 'carried')
+    const carried = fakeElement(view.root).find('data-mx-ui', 'carried')
     expect(carried?.attributes.get('aria-label')).toBe('Carried item, stone, 1')
   })
 
@@ -299,7 +299,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // that draws nothing ever. Pinning the positive case keeps those two
     // negative states from becoming an excuse to hide every output.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
 
     view.render(
@@ -313,7 +313,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       }),
     )
 
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(root.find('data-mx-ui', 'crafting-outcome')?.attributes.get('data-crafting-state')).toBe(
       'match',
     )
@@ -357,7 +357,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
 
   it('projects host-owned inventory interaction as buttons with one roving tab stop', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     view.render(
       inventoryViewModel({
@@ -384,7 +384,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       status: 'No matching recipe',
     })
 
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     const buttons = root.findAll('role', 'button')
     expect(buttons).toHaveLength(41)
     expect(buttons.every((button) => button.attributes.has('aria-label'))).toBe(true)
@@ -411,7 +411,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
 
   it('normalizes an unavailable focus target and restores the read-only DOM contract', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     const model = inventoryViewModel(emptyInventorySnapshot)
 
@@ -420,7 +420,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       status: 'Inventory open',
     })
 
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(root.findAll('tabindex', '0')).toHaveLength(1)
     expect(root.findAll('role', 'button')).toHaveLength(36)
 
@@ -445,7 +445,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // the four corner ingredients of the recipe before it, which the player
     // reads as ingredients they still have.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
 
     const grid = (size: number) =>
@@ -459,7 +459,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       })
 
     view.render(grid(3))
-    const crafting = (view.root as FakeElement).find('data-region', 'crafting-grid')
+    const crafting = fakeElement(view.root).find('data-region', 'crafting-grid')
     expect(crafting?.findAll('data-mx-ui', 'slot')).toHaveLength(9)
 
     view.render(grid(2))
@@ -479,7 +479,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // renderer. A view model with no crafting region must not leave the last
     // one visible underneath the inventory.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
 
     const withCrafting = inventoryViewModel({
@@ -488,7 +488,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     })
 
     view.render(withCrafting)
-    const crafting = (view.root as FakeElement).find('data-region', 'crafting-grid')
+    const crafting = fakeElement(view.root).find('data-region', 'crafting-grid')
     expect(crafting?.attributes.has('hidden')).toBe(false)
 
     view.render({ ...withCrafting, regions: withCrafting.regions.filter((region) => region.id !== 'crafting-grid') })
@@ -524,15 +524,15 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     }
 
     updateSlotElement(slot, view, true)
-    expect((slot.root as FakeElement).attributes.get('data-mergeable')).toBe('')
+    expect(fakeElement(slot.root).attributes.get('data-mergeable')).toBe('')
 
     updateSlotElement(slot, view, false)
-    expect((slot.root as FakeElement).attributes.has('data-mergeable')).toBe(false)
+    expect(fakeElement(slot.root).attributes.has('data-mergeable')).toBe(false)
 
     // The unanswered case paints exactly what the definite "no" paints, which is
     // nothing — the screen says nothing rather than saying "it does not merge".
     updateSlotElement(slot, view, undefined)
-    expect((slot.root as FakeElement).attributes.has('data-mergeable')).toBe(false)
+    expect(fakeElement(slot.root).attributes.has('data-mergeable')).toBe(false)
   })
 
   it('REGRESSION: highlights no merge target, because the index mapping is not published', () => {
@@ -546,7 +546,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // This pins the ABSENCE. When `domain/inventory-view-model.ts` publishes the
     // offset, this test is the one that has to change.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     view.render(
       inventoryViewModel({
@@ -562,13 +562,13 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // appears, the reporter would walk that cycle and kill the runner rather
     // than name the element. `writeNames` in `./fake-dom` states the general
     // rule; here the count IS the claim, so there is nothing to project.
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(root.findAll('data-mergeable', '')).toHaveLength(0)
   })
 
   it('re-rendering the same snapshot mutates nothing', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     const model = inventoryViewModel(emptyInventorySnapshot)
 
@@ -585,7 +585,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // can still do that, and `outputLabel`/`carriedItemLabel` fall back to `'empty'` rather than
     // interpolating `undefined` into the string a screen reader gets.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     const base = inventoryViewModel(emptyInventorySnapshot)
     const mismatchedSlot: SlotView = {
@@ -602,7 +602,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       { focused: { kind: 'crafting-output' }, status: 'Hand-built model' },
     )
 
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     expect(root.find('data-mx-ui', 'crafting-output')?.attributes.get('aria-label')).toBe(
       'Crafting output, empty, 1',
     )
@@ -618,7 +618,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     // persisted one can. Requesting a `slot` target (rather than `crafting-output`) is what forces
     // `validFocusTarget` all the way through to the `firstRegion` search instead of returning early.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     const base = inventoryViewModel(emptyInventorySnapshot)
 
@@ -635,7 +635,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       { focused: { index: 0, kind: 'slot', region: 'main' }, status: 'No regions at all' },
     )
 
-    const output = (view.root as FakeElement).find('data-mx-ui', 'crafting-output')
+    const output = fakeElement(view.root).find('data-mx-ui', 'crafting-output')
     expect(output?.attributes.get('tabindex')).toBe('0')
   })
 })
@@ -647,7 +647,7 @@ describe('the colour-vision switch is applied to the canvas and to nothing else'
     // writing `"off"` — 「a DOM layer that removes the attribute and leaves a
     // filter behind — or the reverse — is the bug this shape prevents」.
     const factory = fakeDocument()
-    const canvas = factory.createElement('canvas') as FakeElement
+    const canvas = fakeElement(factory.createElement('canvas'))
     const cell = colorVisionCell(canvas)
 
     applyColorVision(cell, 'deuteranopia')
@@ -673,12 +673,12 @@ describe('the colour-vision switch is applied to the canvas and to nothing else'
     expect(COLOR_VISION_FILTER_TARGET).toBe('canvas')
 
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const hud = createHudView(factory, parent, 'full')
-    const canvas = factory.createElement('canvas') as FakeElement
+    const canvas = fakeElement(factory.createElement('canvas'))
     applyColorVision(colorVisionCell(canvas), 'protanopia')
 
-    for (const element of (hud.root as FakeElement).walk()) {
+    for (const element of fakeElement(hud.root).walk()) {
       expect(element.attributes.has(COLOR_VISION_ATTRIBUTE)).toBe(false)
     }
     // And the canvas carries no palette token, so no selector on the attribute

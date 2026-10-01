@@ -104,7 +104,7 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11.24.0 以上（`corepac
 > `flake.lock` はコミットされているので、`nix develop`（`.envrc` は `use flake`）は
 > 誰の手元でも同じ nixpkgs に解決される。`devenv.nix` / `devenv.lock` はもう存在しない。
 > `oxlint` と `ast-grep` は npm devDependency ではなく Nix 側（`flake.nix`）から供給される
-> ——組織のツールチェーン凍結（Wave 0）で 16 リポジトリ共通の 1 バージョンに揃えた。
+> ——組織のツールチェーン設定で 16 リポジトリ共通のバージョンを使う。
 
 ### コマンド
 
@@ -124,13 +124,10 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11.24.0 以上（`corepac
 
 ## 現状
 
-**実装前の叩き台である。** 何が無いかを正直に書く。
+**実装の現状である。** 変更頻度の高い件数や版数は、対応する実装・設定・検証コマンドを正とする。
 
-- **`effect` だけが実行時依存。** mc-sim も mc-audio も mc-kernel も `package.json` に入っていない。
-  組織のどのパッケージもまだ publish されておらず（ボトムアップの publish-then-pin、plan.md §6 Step 2）、
-  install できない依存を宣言すればビルドの通らないスケルトンが残るだけだからである。
-  `REPOSITORY_POLICY` と `test/check-dependency-whitelist.test.ts` は、依存が**存在するようになったとき**の
-  規則を先に固定してある。
+- **実行時依存と出荷面は `package.json` が正である。** 依存、`exports`、`files`、版数を本文に重複して記載しない。
+  依存境界の規則は `REPOSITORY_POLICY` と `test/check-dependency-whitelist.test.ts` が固定している。
 - **`domain/frame-contract.ts` は mc-kernel の型のローカル再掲であり、削除日が決まっている。**
   mc-kernel が publish された時点で消し、`import type { StageRegistration } from '@nerima-games/mc-kernel'` に置き換える。
   ここに再掲してよいのは frame 契約だけで、他の kernel 型を 2 つ目のコピーとして持つことは禁止
@@ -192,30 +189,21 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11.24.0 以上（`corepac
   **DOM 面は 1 メンバも広げていない**（`focus()` も `addEventListener` も足していない）。
   **まだ mc-render のものである半分**は、フォーカスを動かすキーストロークとその通知である（DN-UI-13i）。
   残る gap は **mc-sim にレシピモデルが無い**こと。このリポジトリの中では閉じられない。
-- **build / publish パイプラインは無い。** `exports` は TypeScript ソースを直接指しており `noEmit: true`。
-  `version` は `0.x` に留める（[docs/versioning.md](./docs/versioning.md)）。
-- **カバレッジ閾値は未設定。** 計測とレポートは常に動かしており、99% ゲートは完成条件到達時に有効化する
-  （`vitest.config.ts` に有効化する行がコメントで置いてある）。
+- **build / publish の出荷面は実装済みである。** `package.json`、`tsconfig.release.json`、
+  `scripts/verify-package.mjs`、`.github/workflows/release.yaml` を正とする
+  （[docs/versioning.md](./docs/versioning.md)）。
+- **カバレッジ閾値は `vitest.config.ts` が正である。** 計測は `pnpm test:coverage` で実行し、
+  `verify` には含まれない（[docs/testing.md](./docs/testing.md) §5）。
 - **`it.effect` デッドロックの規則が、それを必要とするテストより先に書いてある。**
   DOM イベントフローのテストは `it.effect` ではなくプレーン `it` + `Effect.runPromise` で書かなければならない
   （[docs/design-notes.md](./docs/design-notes.md) DN-UI-2）。まだそういうテストは 1 本も無いが、
   最初の 1 本を書く人が参照実装で確定済みの罠を踏み直さないよう、先に記録してある。
 
-### 検証（2026-07-27 実測）
+### 検証
 
-`pnpm install` と `pnpm verify` はいずれも 0 で終了する。
-
-```
-typecheck   tsc 3 プロジェクト（build / test / preview）ともエラーなし
-lint        oxlint: 48 files, 97 rules, Found 0 warnings and 0 errors
-check:deps  OK — 48 file(s) scanned, allowed direct dependencies:
-            @nerima-games/mc-audio, @nerima-games/mc-sim
-            (plus @nerima-games/mc-kernel, which every repository may import)
-api:check   OK — api-lock.md matches the public API (207 entries)
-test        vitest 3.2.7 — 12 files, 198 tests passed
-```
-
-数字はスケルトンが育つたびに動く。**再現は `pnpm verify` であり、本節はその時点のスナップショットである。**
+検証結果は実行時の `pnpm verify`、`pnpm test:coverage`、`pnpm package:verify`、
+`pnpm test:browser` の出力を正とする。テスト件数、対象ファイル数、API 件数、カバレッジは
+ドキュメントに固定値として複製しない。
 
 ## ドキュメント
 
@@ -228,7 +216,7 @@ test        vitest 3.2.7 — 12 files, 198 tests passed
 | [docs/public-api.md](./docs/public-api.md) | 公開 API。stage 登録 + 将来の mount 面、契約と「可視だが公開ではない」もの |
 | [docs/design-notes.md](./docs/design-notes.md) | **設計注意 DN-UI-1 〜 DN-UI-13。** 参照実装の `path:line` と、それを守る回帰テスト名 |
 | [docs/porting.md](./docs/porting.md) | 参照実装からの移植元と**実測 LOC**、`input/` の境界訂正、移植順序 |
-| [docs/testing.md](./docs/testing.md) | 検証ゲート、`it.effect` デッドロック、完成条件、99% ゲートの投入時期 |
+| [docs/testing.md](./docs/testing.md) | 検証ゲート、`it.effect` デッドロック、完成条件、4 指標 100% の coverage gate |
 | [docs/versioning.md](./docs/versioning.md) | 0.x → 1.0.0 方針、GitHub Packages、mx-ui だけが抱えるアセット同梱の面倒 |
 
 ## License

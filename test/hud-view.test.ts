@@ -25,13 +25,13 @@ import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../src/domain/p
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
 import { FOCUS_RING_SHADOW_WIDTH, FOCUS_RING_WIDTH } from '../src/application/slot-element'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
-import { fakeDocument, writeNames, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 
 const mount = (motion: 'full' | 'reduced' = 'full') => {
   const factory = fakeDocument()
-  const parent = factory.createElement('body') as FakeElement
+  const parent = fakeElement(factory.createElement('body'))
   const view = createHudView(factory, parent, motion)
-  return { factory, parent, view, root: view.root as FakeElement }
+  return { factory, parent, view, root: fakeElement(view.root) }
 }
 
 const damaged = (healthPoints: number): VitalsSnapshot => ({

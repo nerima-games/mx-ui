@@ -28,6 +28,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   renderDistance: 12,
 }
 
+const FIRST_INPUT_INDEX = 0
+
 export const DEFAULT_DEBUG_HUD_SNAPSHOT: DebugHudSnapshot = {
   chunk: { chunkX: 0, chunkZ: 0 },
   coordinates: { worldX: 0, worldY: 0, worldZ: 0 },
@@ -125,16 +127,10 @@ const debugHudText = (snapshot: DebugHudSnapshot): string => {
 }
 
 const applySettingsToInputs = (
-  inputs: ReadonlyMap<keyof UiSettings, HTMLInputElement>,
+  inputs: ReadonlyArray<SettingInput>,
   settings: UiSettings,
 ): void => {
-  for (const definition of SETTING_DEFINITIONS) {
-    // Non-null: the settings screen's construction loop calls
-    // `inputs.set(definition.key, ...)` for every entry of this SAME
-    // `SETTING_DEFINITIONS` array, and nothing ever deletes from `inputs` — so
-    // Every key this loop asks for is already present by the time settings
-    // Are applied.
-    const input = inputs.get(definition.key)!
+  for (const { definition, input } of inputs) {
     input.value = String(finite(settings[definition.key], DEFAULT_UI_SETTINGS[definition.key]))
   }
 }
@@ -223,16 +219,21 @@ const buildSettingInput = (
 }
 
 type SettingInputsResult = {
-  readonly inputs: ReadonlyMap<keyof UiSettings, HTMLInputElement>
+  readonly inputs: ReadonlyArray<SettingInput>
   readonly cleanups: Array<() => void>
 }
 
+type SettingInput = {
+  readonly definition: SettingDefinition
+  readonly input: HTMLInputElement
+}
+
 const buildSettingInputs = (context: SettingInputContext): SettingInputsResult => {
-  const inputs = new Map<keyof UiSettings, HTMLInputElement>()
+  const inputs: Array<SettingInput> = []
   const cleanups: Array<() => void> = []
   for (const definition of SETTING_DEFINITIONS) {
     const built = buildSettingInput(context, definition)
-    inputs.set(definition.key, built.input)
+    inputs.push({ definition, input: built.input })
     cleanups.push(built.cleanup)
   }
   return { cleanups, inputs }
@@ -252,7 +253,7 @@ type OverlaysDom = {
   readonly debugHud: HTMLElement
   readonly settingsDialog: HTMLElement
   readonly closeButton: HTMLButtonElement
-  readonly inputs: ReadonlyMap<keyof UiSettings, HTMLInputElement>
+  readonly inputs: ReadonlyArray<SettingInput>
   readonly cleanups: Array<() => void>
 }
 
@@ -349,7 +350,7 @@ const wireOverlaysBehavior = (
       restoreFocus = null
     }
     dom.settingsDialog.hidden = false
-    dom.inputs.get('mouseSensitivity')?.focus()
+    dom.inputs[FIRST_INPUT_INDEX]?.input.focus()
   }
   const closeSettings = (): void => {
     if (dom.settingsDialog.hidden) {

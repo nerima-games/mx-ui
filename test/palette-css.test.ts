@@ -29,7 +29,7 @@ import { createCaptionView } from '../src/application/caption-view'
 import { createHudView } from '../src/application/hud-view'
 import { createInventoryView } from '../src/application/inventory-view'
 import { createSaveIndicator } from '../src/application/save-indicator'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement } from './fake-dom'
 
 const isRgb = (value: unknown): value is palette.Rgb =>
   Array.isArray(value) && value.length === 3 && value.every((channel) => typeof channel === 'number')
@@ -118,7 +118,7 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
     // `GUARDED_TOKENS` and never surfaced would reopen exactly this gap one token
     // at a time, silently, because `surveyPalette` would keep reporting it green.
     const factory = fakeDocument()
-    const parent = factory.createElement('div') as FakeElement
+    const parent = fakeElement(factory.createElement('div'))
     const hud = createHudView(factory, parent, 'full')
     hud.render(hudViewModel(spawnSnapshot))
     const captions = createCaptionView(factory, parent, 'full')
@@ -130,7 +130,7 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
 
     const referenced = new Set<string>()
     for (const root of [hud.root, captions.root, inventory.root, saveIndicator.root]) {
-      for (const element of (root as FakeElement).walk()) {
+      for (const element of fakeElement(root).walk()) {
         for (const [property, value] of element.style.properties) {
           if (!property.startsWith(PALETTE_PROPERTY_PREFIX)) {
             for (const name of PALETTE_TOKEN_NAMES) {
@@ -158,7 +158,7 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
 
   it('declares the whole set on one element and writes each property exactly once', () => {
     const factory = fakeDocument()
-    const root = factory.createElement('div') as FakeElement
+    const root = fakeElement(factory.createElement('div'))
     const before = factory.mark()
     declarePalette(root)
 

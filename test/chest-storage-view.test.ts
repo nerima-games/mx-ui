@@ -5,7 +5,7 @@ import {
   chestStorageViewModel,
   type ChestStorageSlotSnapshot,
 } from '../src/domain/chest-storage-view-model'
-import { fakeDocument, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, type FakeElement } from './fake-dom'
 
 /**
  * The three region slot counts, split out of the big mount assertion below so
@@ -51,9 +51,9 @@ const expectStatusAndCloseButton = (root: FakeElement): void => {
 describe('createChestStorageView', () => {
   it('mounts all regions and projects stacks, durability, selection, and cursor without listeners', () => {
     const factory = fakeDocument()
-    const parent = factory.createElement('main') as FakeElement
+    const parent = fakeElement(factory.createElement('main'))
     const view = createChestStorageView(factory, parent)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     const chest: Array<ChestStorageSlotSnapshot> = Array.from(
       { length: CHEST_STORAGE_SLOT_COUNT },
       () => undefined,
@@ -84,7 +84,7 @@ describe('createChestStorageView', () => {
     const factory = fakeDocument()
     const parent = factory.createElement('main')
     const view = createChestStorageView(factory, parent)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
     view.render(
       chestStorageViewModel({
         chest: [],
@@ -124,7 +124,7 @@ describe('createChestStorageView', () => {
     const factory = fakeDocument()
     const parent = factory.createElement('main')
     const view = createChestStorageView(factory, parent)
-    const root = view.root as FakeElement
+    const root = fakeElement(view.root)
 
     view.render(
       chestStorageViewModel({

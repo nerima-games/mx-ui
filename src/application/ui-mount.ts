@@ -111,6 +111,22 @@ const ZERO = 0
 const FOCUS_STEP_FORWARD = 1
 const FOCUS_STEP_BACKWARD = -1
 
+type NonEmptyArray<Element> = readonly [Element, ...Element[]]
+
+const isNonEmpty = <Element>(values: readonly Element[]): values is NonEmptyArray<Element> =>
+  values.length !== ZERO
+
+export const inventoryTargetAt = (
+  targets: ReadonlyArray<InventoryInteractionTarget>,
+  index: number,
+): InventoryInteractionTarget | null => {
+  const target = targets[index]
+  if (typeof target === 'undefined') {
+    return null
+  }
+  return target
+}
+
 /** The mutable session state one `makeUiMount` call owns, gathered into one cell. */
 type UiMountSession = {
   mounted: UiMountedViews | null
@@ -159,18 +175,14 @@ const cycleInventoryFocus = (
   // Both always have a non-empty `hotbar` and `main` region.
   // But `InventoryViewModel` is host-suppliable directly.
   // So a hand-built or persisted one can leave `targets` empty.
-  if (targets.length === ZERO) {
+  if (!isNonEmpty(targets)) {
     return null
   }
   const currentIndex = targets.findIndex((target) => sameInventoryTarget(target, currentFocus))
   const direction = focusStep(shiftKey)
-  // Non-null, not a `??` fallback: `currentIndex` is `-1` only when nothing in `targets` matches
-  // `currentFocus`. `direction` is always `1` or `-1`. `targets.length` here is always at least
-  // One, given the fallback above. Given all three facts, the modulo arithmetic below always
-  // Stays within `[0, targets.length)` — `noUncheckedIndexedAccess` cannot see that proof, but a
-  // `?? targets[ZERO]!` fallback here would be a branch no input can ever take, which is exactly
-  // The shape that must be proven unreachable rather than fabricated a test for.
-  return targets[(currentIndex + direction + targets.length) % targets.length]!
+  const nextIndex = (currentIndex + direction + targets.length) % targets.length
+  // Tab is a keyboard hot path; keep the next-target lookup O(1) as the inventory grows.
+  return inventoryTargetAt(targets, nextIndex)
 }
 
 /** Where keyboard focus lands after a render: the crafting output, or a real slot. */
@@ -226,14 +238,11 @@ const handleTabKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): bool
   return true
 }
 
-const handleArrowKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  // Non-null: `handleArrowKeyEvent` is only ever reached through
-  // `INVENTORY_KEY_HANDLERS`, whose `matches` for this entry is
-  // `inventoryDirectionForKey(event.key) !== null` — the exact condition this
-  // Asks again. Two evaluations of the same pure function on the same
-  // `event.key` agree, so by the time this line runs the caller has already
-  // Excluded `null`.
-  const direction = inventoryDirectionForKey(event.key)!
+const handleArrowKeyEvent = (
+  event: KeyboardEvent,
+  ctx: InventoryKeyContext,
+  direction: InventoryNavigationDirection,
+): boolean => {
   event.preventDefault()
   return ctx.moveInventoryFocus(direction)
 }
@@ -251,7 +260,6 @@ type KeyHandler = {
 const INVENTORY_KEY_HANDLERS: ReadonlyArray<KeyHandler> = [
   { handle: handleEscapeKey, matches: (event) => event.key === 'Escape' },
   { handle: handleTabKeyEvent, matches: (event) => event.key === 'Tab' },
-  { handle: handleArrowKeyEvent, matches: (event) => inventoryDirectionForKey(event.key) !== null },
   {
     handle: handleActivateKeyEvent,
     matches: (event) => event.key === 'Enter' || event.key === ' ',
@@ -262,6 +270,18 @@ const INVENTORY_KEY_HANDLERS: ReadonlyArray<KeyHandler> = [
  * `E` always toggles, everything else requires the inventory to already be
  * open — same priority order the original sequential `if` chain used.
  */
+const dispatchOpenInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
+  const direction = inventoryDirectionForKey(event.key)
+  if (direction !== null) {
+    return handleArrowKeyEvent(event, ctx, direction)
+  }
+  const handler = INVENTORY_KEY_HANDLERS.find(({ matches }) => matches(event))
+  if (typeof handler === 'undefined') {
+    return false
+  }
+  return handler.handle(event, ctx)
+}
+
 const dispatchInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
   if (event.key.toLowerCase() === 'e') {
     return handleToggleKey(event, ctx)
@@ -269,11 +289,7 @@ const dispatchInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): b
   if (!ctx.session.inventoryOpen) {
     return false
   }
-  const handler = INVENTORY_KEY_HANDLERS.find(({ matches }) => matches(event))
-  if (typeof handler === 'undefined') {
-    return false
-  }
-  return handler.handle(event, ctx)
+  return dispatchOpenInventoryKey(event, ctx)
 }
 
 /** The mx-ui mount root's owning document, or a thrown `UiMountError`. */

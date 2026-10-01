@@ -2,7 +2,8 @@
 
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { makeUiMount } from '../src/application/ui-mount'
+import { inventoryTargetAt, makeUiMount } from '../src/application/ui-mount'
+import type { InventoryInteractionTarget } from '../src/application/inventory-view'
 import { uiModule } from '../src/stages/registration'
 import { initialMainMenuState, mainMenuViewModel, type SavedWorld } from '../src/domain/main-menu'
 import {
@@ -20,6 +21,13 @@ afterEach(() => {
 })
 
 describe('UiMount', () => {
+  it('returns null for an absent indexed inventory target without scanning the list', () => {
+    const target: InventoryInteractionTarget = { index: 0, kind: 'slot', region: 'hotbar' }
+
+    expect(inventoryTargetAt([target], 0)).toBe(target)
+    expect(inventoryTargetAt([], 0)).toBeNull()
+  })
+
   it('mounts the initial views and removes only its owned root', async () => {
     const host = document.createElement('main')
     const unrelated = document.createElement('p')
@@ -216,6 +224,34 @@ describe('UiMount', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
+  it('wraps real Tab focus from the last target to the first in both directions', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+    runtime.openInventory()
+
+    const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
+    if (inventory === null) {
+      throw new Error('The inventory view should be mounted')
+    }
+    const targets = inventory.querySelectorAll<HTMLElement>('[role="button"]')
+    expect(targets.length).toBeGreaterThan(2)
+
+    for (let step = 1; step < targets.length; step += 1) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+    }
+    expect(document.activeElement).toBe(targets.item(targets.length - 1))
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+    expect(document.activeElement).toBe(targets.item(0))
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
+    )
+    expect(document.activeElement).toBe(targets.item(targets.length - 1))
+  })
+
   it('REGRESSION: closing the inventory via a key does not throw when nothing was focused to restore', async () => {
     // `document.activeElement` is typed `Element | null` — jsdom never actually hands the keyboard
     // path a `null`, but the internal `closeInventory` closure still guards for it. Overriding the
@@ -265,10 +301,10 @@ describe('UiMount', () => {
       kind: 'slot',
       region: 'main',
     })
-
     const focused = host.querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')
     expect(focused?.getAttribute('aria-label')).toContain('main slot 2')
     expect(document.activeElement).toBe(focused)
+    expect(runtime.moveInventoryFocus('up')).toBe(true)
   })
 
   describe('equipment actions', () => {
@@ -919,7 +955,11 @@ describe('UiMount', () => {
       ...base,
       regions: base.regions.map((region) => {
         if (region.kind === 'slots' && region.id === 'offhand') {
-          return { ...region, slots: [...region.slots, { ...region.slots[0]!, index: 1 }] }
+          const [firstSlot] = region.slots
+          if (firstSlot === undefined) {
+            return region
+          }
+          return { ...region, slots: [...region.slots, { ...firstSlot, index: 1 }] }
         }
         return region
       }),
