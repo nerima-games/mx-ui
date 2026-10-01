@@ -224,6 +224,34 @@ describe('UiMount', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
+  it('wraps real Tab focus from the last target to the first in both directions', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+    runtime.openInventory()
+
+    const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
+    if (inventory === null) {
+      throw new Error('The inventory view should be mounted')
+    }
+    const targets = inventory.querySelectorAll<HTMLElement>('[role="button"]')
+    expect(targets.length).toBeGreaterThan(2)
+
+    for (let step = 1; step < targets.length; step += 1) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+    }
+    expect(document.activeElement).toBe(targets.item(targets.length - 1))
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+    expect(document.activeElement).toBe(targets.item(0))
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
+    )
+    expect(document.activeElement).toBe(targets.item(targets.length - 1))
+  })
+
   it('REGRESSION: closing the inventory via a key does not throw when nothing was focused to restore', async () => {
     // `document.activeElement` is typed `Element | null` — jsdom never actually hands the keyboard
     // path a `null`, but the internal `closeInventory` closure still guards for it. Overriding the
