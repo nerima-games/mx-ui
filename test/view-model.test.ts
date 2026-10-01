@@ -1227,7 +1227,7 @@ describe('inventory and crafting project state without interpreting it', () => {
       // instead, to prove the derivation survives a slot mc-sim itself would
       // refuse to build.
       const slots = emptyInventorySnapshot.inventory.slots.slice()
-      const firstSlot = itemStack('stone', 1)
+      const firstSlot = structuredClone(itemStack('stone', 1))
       Object.defineProperty(firstSlot, 'count', { value: Number.NaN })
       slots[0] = firstSlot
       const model = inventoryViewModel(
