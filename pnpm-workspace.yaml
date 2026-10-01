@@ -1,5 +1,7 @@
 allowBuilds:
   esbuild: true
+overrides:
+  undici: 8.10.2
 minimumReleaseAgeExclude:
   - '@nerima-games/mc-kernel@0.2.8 || 0.2.17 || 0.5.1 || 0.7.0 || 0.8.0'
   - '@nerima-games/mc-sim@0.1.24 || 0.1.39 || 0.2.1 || 0.4.1 || 0.4.2 || 0.5.0'
