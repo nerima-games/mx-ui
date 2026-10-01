@@ -1,5 +1,15 @@
 # @nerima-games/mx-ui
 
+## 0.6.0
+
+### Minor Changes
+
+- [#37](https://github.com/nerima-games/mx-ui/pull/37) [`0498eb8`](https://github.com/nerima-games/mx-ui/commit/0498eb89970fd79155cc73788db912c046468c02) Thanks [@takeokunn](https://github.com/takeokunn)! - Pin mc-kernel, mc-audio, and mc-sim to their current published minor releases.
+
+### Patch Changes
+
+- [#37](https://github.com/nerima-games/mx-ui/pull/37) [`0498eb8`](https://github.com/nerima-games/mx-ui/commit/0498eb89970fd79155cc73788db912c046468c02) Thanks [@takeokunn](https://github.com/takeokunn)! - Enforce the no-type-assertion rule as an error and align the documented package surface with the implementation.
+
 ## 0.5.4
 
 ### Patch Changes
