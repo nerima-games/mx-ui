@@ -216,7 +216,7 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11.24.0 以上（`corepac
 | [docs/public-api.md](./docs/public-api.md) | 公開 API。stage 登録 + 将来の mount 面、契約と「可視だが公開ではない」もの |
 | [docs/design-notes.md](./docs/design-notes.md) | **設計注意 DN-UI-1 〜 DN-UI-13。** 参照実装の `path:line` と、それを守る回帰テスト名 |
 | [docs/porting.md](./docs/porting.md) | 参照実装からの移植元と**実測 LOC**、`input/` の境界訂正、移植順序 |
-| [docs/testing.md](./docs/testing.md) | 検証ゲート、`it.effect` デッドロック、完成条件、99% ゲートの投入時期 |
+| [docs/testing.md](./docs/testing.md) | 検証ゲート、`it.effect` デッドロック、完成条件、4 指標 100% の coverage gate |
 | [docs/versioning.md](./docs/versioning.md) | 0.x → 1.0.0 方針、GitHub Packages、mx-ui だけが抱えるアセット同梱の面倒 |
 
 ## License

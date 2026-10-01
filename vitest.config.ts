@@ -42,7 +42,7 @@ const config: ReturnType<typeof defineConfig> = defineConfig({
       exclude: ['**/*.d.ts', '**/*.config.ts', '**/*.test.ts', '**/*.spec.ts'],
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // The 100% gate is the repository's verification contract. See `docs/testing.md` §5-6.
+      // The 100% gate is the repository's verification contract. See `docs/testing.md` §5.
       //
       // THE `exclude` LIST HAS FOUR ENTRIES AND ALL FOUR ARE FILE PATTERNS, not
       // source files. Nothing in `domain/`, `application/` or `stages/` is

@@ -2,7 +2,8 @@
 
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { makeUiMount } from '../src/application/ui-mount'
+import { inventoryTargetAt, makeUiMount } from '../src/application/ui-mount'
+import type { InventoryInteractionTarget } from '../src/application/inventory-view'
 import { uiModule } from '../src/stages/registration'
 import { initialMainMenuState, mainMenuViewModel, type SavedWorld } from '../src/domain/main-menu'
 import {
@@ -20,6 +21,13 @@ afterEach(() => {
 })
 
 describe('UiMount', () => {
+  it('returns null for an absent indexed inventory target without scanning the list', () => {
+    const target: InventoryInteractionTarget = { index: 0, kind: 'slot', region: 'hotbar' }
+
+    expect(inventoryTargetAt([target], 0)).toBe(target)
+    expect(inventoryTargetAt([], 0)).toBeNull()
+  })
+
   it('mounts the initial views and removes only its owned root', async () => {
     const host = document.createElement('main')
     const unrelated = document.createElement('p')

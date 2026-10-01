@@ -111,6 +111,22 @@ const ZERO = 0
 const FOCUS_STEP_FORWARD = 1
 const FOCUS_STEP_BACKWARD = -1
 
+type NonEmptyArray<Element> = readonly [Element, ...Element[]]
+
+const isNonEmpty = <Element>(values: readonly Element[]): values is NonEmptyArray<Element> =>
+  values.length !== ZERO
+
+export const inventoryTargetAt = (
+  targets: ReadonlyArray<InventoryInteractionTarget>,
+  index: number,
+): InventoryInteractionTarget | null => {
+  const target = targets[index]
+  if (typeof target === 'undefined') {
+    return null
+  }
+  return target
+}
+
 /** The mutable session state one `makeUiMount` call owns, gathered into one cell. */
 type UiMountSession = {
   mounted: UiMountedViews | null
@@ -159,18 +175,14 @@ const cycleInventoryFocus = (
   // Both always have a non-empty `hotbar` and `main` region.
   // But `InventoryViewModel` is host-suppliable directly.
   // So a hand-built or persisted one can leave `targets` empty.
-  if (targets.length === ZERO) {
+  if (!isNonEmpty(targets)) {
     return null
   }
   const currentIndex = targets.findIndex((target) => sameInventoryTarget(target, currentFocus))
   const direction = focusStep(shiftKey)
   const nextIndex = (currentIndex + direction + targets.length) % targets.length
-  return targets.reduce((selected, target, index) => {
-    if (index === nextIndex) {
-      return target
-    }
-    return selected
-  })
+  // Tab is a keyboard hot path; keep the next-target lookup O(1) as the inventory grows.
+  return inventoryTargetAt(targets, nextIndex)
 }
 
 /** Where keyboard focus lands after a render: the crafting output, or a real slot. */
