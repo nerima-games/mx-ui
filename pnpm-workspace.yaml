@@ -1,6 +1,10 @@
 allowBuilds:
   esbuild: true
 overrides:
+  '@vitest/mocker': 4.1.12
+  launch-editor: 2.14.2
+  shell-quote: 1.11.0
+  source-map-js: 1.2.2
   undici: 8.10.2
 minimumReleaseAgeExclude:
   - '@nerima-games/mc-kernel@0.2.8 || 0.2.17 || 0.5.1 || 0.7.0 || 0.8.0'
@@ -10,3 +14,6 @@ minimumReleaseAgeExclude:
   - '@nerima-games/mc-worldgen@0.1.14 || 0.2.0 || 0.3.1 || 0.3.2 || 0.5.0'
   - '@nerima-games/mc-audio@0.2.7 || 0.2.8 || 0.3.0'
   - '@nerima-games/mc-save@0.3.0 || 0.4.1 || 0.5.0'
+  # pnpm blocks releases published within 24 hours by default.
+  # This entry exempts Vite 8.3.5 from that check.
+  - vite@8.3.5

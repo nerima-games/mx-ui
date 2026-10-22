@@ -48,9 +48,11 @@ plan.md §8 のリスク表も同じことを別角度から:
 }
 ```
 
-`.npmrc` に `@nerima-games:registry=https://npm.pkg.github.com` の行がある。認証トークンは
-CI では `pnpm config set --location=user //npm.pkg.github.com/:_authToken` で、ローカルでは
-`NODE_AUTH_TOKEN=$(gh auth token)` で渡す。
+`.npmrc` に `@nerima-games:registry=https://npm.pkg.github.com` の行がある。認証トークンは、
+CI では workflow の `GITHUB_TOKEN` を `NODE_AUTH_TOKEN` として渡し、次のコマンドで設定する。
+`pnpm config set --location=global //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"`
+ローカルでは GitHub Packages 用トークンを `~/.npmrc` の
+`//npm.pkg.github.com/:_authToken` に設定する。
 
 ### 構築順（plan.md §6 Step 2）
 

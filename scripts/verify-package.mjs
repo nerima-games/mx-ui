@@ -160,8 +160,8 @@ try {
   // resolves @nerima-games/mc-kernel, @nerima-games/mc-sim and
   // @nerima-games/mc-audio — all real `dependencies` of the packed tarball —
   // from GitHub Packages. A plain `npm install` in this temp directory has no
-  // token of its own (CI's `pnpm config set --location=user` step only
-  // configures pnpm's user-level config, which this npm subprocess does not
+  // token of its own (CI's `pnpm config set --location=global` step only
+  // configures pnpm's global config, which this npm subprocess does not
   // read), so it must be given one explicitly. `${NODE_AUTH_TOKEN}` is the
   // literal npm placeholder syntax, expanded by npm itself from its own
   // process environment at install time — the token value is never written to

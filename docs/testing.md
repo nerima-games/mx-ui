@@ -27,7 +27,7 @@ $ pnpm test:browser    # Playwright。verify には含まれない
 `pnpm verify` はプレビューを*実行*しないが、型検査・lint・壁時計禁止はすべて適用される。
 「dev アプリだから検査しない」にすると、依存を 1 つ足すのに最も抵抗の少ない場所ができてしまう。
 
-`pnpm` は Nix の devShell が `packageManager`（`package.json`）のバージョンで解決する（11.24.0）。
+Nix の devShell では、Corepack が `package.json` の `packageManager` を参照して `pnpm` のバージョンを解決する（12.14.0）。
 oxlint と ast-grep は npm devDependency ではなく `flake.nix` の `pkgs.oxlint` / `pkgs.ast-grep` から供給される。
 
 壁時計の直読み禁止が oxlint ではなく `ast-grep` の仕事なのは、oxlint が該当ルール

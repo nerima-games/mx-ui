@@ -89,16 +89,17 @@ roving tabindex とスクリーンリーダー向けラベルは同期したま�
 
 ### セットアップ
 
+`@nerima-games/*`（mc-kernel / mc-sim / mc-audio）はGitHub Packagesから取得する。公開パッケージでも認証が必要。
+ローカルではGitHubの personal access token (classic) に `read:packages` スコープを付け、[GitHub Docsの認証手順](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-with-a-personal-access-token)に沿って `~/.npmrc` の `//npm.pkg.github.com/:_authToken` に設定する。
+
 ```console
-$ direnv allow          # flake.nix の devShell で nodejs_24 + corepack_24 + oxlint + ast-grep が入る
-$ NODE_AUTH_TOKEN=$(gh auth token) pnpm install
+$ direnv allow          # flake.nix の devShell で nodejs_26 + corepack_24 + oxlint + ast-grep が入る
+$ pnpm install
 ```
 
 Nix を使わない場合は Node.js 24 以上と pnpm 11.24.0 以上（`corepack` 推奨）、
 `oxlint` 1.75.0、`ast-grep` を別途用意する。
-
-`NODE_AUTH_TOKEN` が要るのは、`@nerima-games/*`（mc-kernel / mc-sim / mc-audio）を GitHub Packages
-から解決するため（`.npmrc` の `@nerima-games:registry=`）。公開リポジトリの読み取りでも認証は要る。
+Corepack は `package.json` の `packageManager` を参照して pnpm 12.14.0 を使う。
 
 > **注意**: ツールチェーンは `devenv.nix` から `flake.nix` + `flake.lock` に移行済みである。
 > `flake.lock` はコミットされているので、`nix develop`（`.envrc` は `use flake`）は
