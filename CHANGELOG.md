@@ -1,5 +1,13 @@
 # @nerima-games/mx-ui
 
+## 0.7.0
+
+### Minor Changes
+
+- Align the published dependency APIs with Effect 4, mc-kernel 0.14, mc-sim 0.7, and mc-render 0.9.
+
+- Align the UI with mc-sim 0.7.1, including the powered hopper cooldown fix.
+
 ## 0.6.0
 
 ### Minor Changes
