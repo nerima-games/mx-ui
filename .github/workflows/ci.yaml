@@ -115,6 +115,8 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:d65108d1a8095d8b0c4a5e32bf1807a40a5ce90ff0c78473e1116b1c243235e8
     timeout-minutes: 30
 
+    # The pinned Playwright container cannot use the runner-temp executable path from nix-installer-action.
+    # setup-node and setup-pnpm provide the Node toolchain for this browser-only job.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -131,22 +133,16 @@ jobs:
           node-version: "26"
           cache: "pnpm"
 
-      - name: Set up Nix
-        uses: ./.github/actions/nix-setup
-        with:
-          cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
       - name: Configure GitHub Packages authentication
         run: pnpm config set --location=global //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: nix develop --command pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Browser tests
-        run: nix develop --command pnpm test:browser
+        run: pnpm test:browser
 
       - name: Upload Playwright failure output
         if: failure()

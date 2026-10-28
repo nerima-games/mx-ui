@@ -20,6 +20,7 @@ export const AchievementToastEventBusLayer: ReturnType<typeof domainEventBusLaye
 
 export type AchievementToastSubscription = Readonly<{
   close: Effect.Effect<void>
+  join: Effect.Effect<void, Schema.SchemaError>
 }>
 
 export const startAchievementToastSubscriber: (
@@ -27,14 +28,15 @@ export const startAchievementToastSubscriber: (
 ) => Effect.Effect<AchievementToastSubscription, never, DomainEventBus | Scope.Scope> = (onToast) =>
   Effect.gen(function* subscribeToAchievementEvents() {
     const bus = yield* DomainEventBus
-    const fiber = yield* Stream.runForEach(bus.events, (event) => {
-      const toast = achievementToastFromEvent(event)
-      if (toast === null) {
-        return Effect.void
-      }
+    const fiber = yield* Stream.runForEach(bus.events, (event) =>
+      Effect.flatMap(achievementToastFromEvent(event), (toast) => {
+        if (toast === null) {
+          return Effect.void
+        }
 
-      return Effect.sync(() => onToast(toast))
-    }).pipe(Effect.forkScoped({ startImmediately: true }))
+        return Effect.sync(() => onToast(toast))
+      }),
+    ).pipe(Effect.forkScoped({ startImmediately: true }))
 
-    return { close: Fiber.interrupt(fiber) }
+    return { close: Fiber.interrupt(fiber), join: Fiber.join(fiber) }
   })

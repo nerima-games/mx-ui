@@ -1,8 +1,9 @@
-import { DeltaTimeSecs, DomainEventSchema, type DomainEvent } from '@nerima-games/mc-kernel'
+import { DeltaTimeSecs, DomainEventSchema } from '@nerima-games/mc-kernel'
 import { BrandError } from 'effect/Brand'
-import { Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import fc from 'fast-check'
 import { describe, it, expect } from 'vitest'
+import { achievementEventFromLegacySim } from './helpers/achievement-event'
 import {
   AchievementToastIconSchema,
   AchievementToastSchema,
@@ -15,23 +16,8 @@ import {
   type DebugOverlaySnapshot,
 } from '../src/domain/debug-overlay'
 
-type AchievementUnlockedEvent = Extract<DomainEvent, { readonly _tag: 'AchievementUnlocked' }>
-
-const achievementEvent = (achievement: string): AchievementUnlockedEvent => {
-  const event = Schema.decodeUnknownSync(DomainEventSchema)({
-    _tag: 'AchievementUnlocked',
-    tick: 7,
-    player: 'player:property-test',
-    achievement,
-  })
-  if (event['_tag'] !== 'AchievementUnlocked') {
-    throw new Error('expected an achievement event')
-  }
-  return event
-}
-
 const toastPayload = {
-  achievement: 'example:achievement',
+  achievement: 'minecraft:story/mine_stone',
   icon: 'minecraft:nether_star',
   player: 'player:property-test',
   tick: 7,
@@ -96,13 +82,16 @@ describe('D domain properties', () => {
     )
   })
 
-  it('does not project generated achievement IDs without display metadata', () => {
+  it('returns SchemaError for generated IDs outside the kernel catalog', () => {
     fc.assert(
       fc.property(fc.string({ minLength: 1 }), (suffix) => {
-        const achievement = `example:${suffix}`
-        const projected = achievementToastFromEvent(achievementEvent(achievement))
+        const event = achievementEventFromLegacySim(`example:${suffix}`)
+        const result = Effect.runSync(Effect.result(achievementToastFromEvent(event)))
 
-        expect(projected).toBeNull()
+        expect(Result.isFailure(result)).toBe(true)
+        if (Result.isFailure(result)) {
+          expect(result.failure).toBeInstanceOf(Schema.SchemaError)
+        }
       }),
     )
   })
@@ -115,7 +104,7 @@ describe('D domain properties', () => {
             _tag: `example:${suffix}`,
             tick: 7,
             player: 'player:property-test',
-            achievement: 'example:achievement',
+            achievement: 'minecraft:story/mine_stone',
           }),
         ).toThrow(Schema.SchemaError)
       }),
@@ -130,7 +119,7 @@ describe('D domain properties', () => {
             _tag: 'AchievementUnlocked',
             tick,
             player: 'player:property-test',
-            achievement: 'example:achievement',
+            achievement: 'minecraft:story/mine_stone',
           }),
         ).toThrow(Schema.SchemaError)
       }),

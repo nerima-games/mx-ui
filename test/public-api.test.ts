@@ -187,6 +187,7 @@ describe('public API surface', () => {
         AchievementToast,
         AchievementToastIcon,
         AchievementToastSubscription,
+        AchievementToastSubscription['join'],
         AchievementToastTitle,
         AchievementToastView,
         BrewingBottleView,

@@ -1,6 +1,6 @@
-// Vanilla Java Edition title and advancement ID reference: https://minecraft.wiki/w/Advancement
-import { DomainEventSchema, type DomainEvent } from '@nerima-games/mc-kernel'
-import { Schema } from 'effect'
+// Vanilla Java advancement IDs, titles, and icons: the 26.3-snapshot-1 assets.
+import { DomainEventSchema } from '@nerima-games/mc-kernel'
+import { Effect, Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
   AchievementToastIconSchema,
@@ -8,26 +8,12 @@ import {
   AchievementToastTitleSchema,
   achievementToastFromEvent,
 } from '../src/domain/achievement-toast'
-
-type AchievementUnlockedEvent = Extract<DomainEvent, { readonly _tag: 'AchievementUnlocked' }>
-
-const achievementEvent = (achievement: string): AchievementUnlockedEvent => {
-  const event = Schema.decodeUnknownSync(DomainEventSchema)({
-    _tag: 'AchievementUnlocked',
-    tick: 7,
-    player: 'player:one',
-    achievement,
-  })
-  if (event['_tag'] !== 'AchievementUnlocked') {
-    throw new Error('expected an achievement event')
-  }
-  return event
-}
+import { achievementEventFromLegacySim } from './helpers/achievement-event'
 
 describe('achievement toast projection', () => {
-  it('uses a vanilla Java advancement title and item icon', () => {
-    const event = achievementEvent('minecraft:story/mine_stone')
-    const toast = achievementToastFromEvent(event)
+  it('uses the vanilla advancement title and item icon', () => {
+    const event = achievementEventFromLegacySim('minecraft:story/mine_stone')
+    const toast = Effect.runSync(Effect.orDie(achievementToastFromEvent(event)))
 
     expect(
       Schema.decodeUnknownSync(AchievementToastSchema, { onExcessProperty: 'error' })(toast),
@@ -40,10 +26,14 @@ describe('achievement toast projection', () => {
     })
   })
 
-  it('does not produce a toast for an ID without display metadata', () => {
-    const event = achievementEvent('example:custom/achievement')
+  it('returns a typed schema failure for an ID outside the kernel catalog', () => {
+    const event = achievementEventFromLegacySim('example:custom/achievement')
+    const result = Effect.runSync(Effect.result(achievementToastFromEvent(event)))
 
-    expect(achievementToastFromEvent(event)).toBeNull()
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toBeInstanceOf(Schema.SchemaError)
+    }
   })
 
   it('ignores non-achievement domain events', () => {
@@ -54,8 +44,11 @@ describe('achievement toast projection', () => {
       position: { dimension: 'overworld', x: 0, y: 64, z: 0 },
       level: 1,
     })
+    if (event['_tag'] !== 'LevelUp') {
+      throw new Error('expected a level-up event')
+    }
 
-    expect(achievementToastFromEvent(event)).toBeNull()
+    expect(Effect.runSync(Effect.orDie(achievementToastFromEvent(event)))).toBeNull()
   })
 
   it('rejects empty, null, and missing toast display values', () => {
@@ -112,5 +105,4 @@ describe('achievement toast projection', () => {
       Schema.decodeUnknownSync(DomainEventSchema)({ _tag: 'UnknownAchievement', tick: 1 }),
     ).toThrow(Schema.SchemaError)
   })
-
 })
