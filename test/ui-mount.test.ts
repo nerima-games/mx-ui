@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 
-import { Effect, Result } from 'effect'
+import { Effect, Exit, Result, Schema } from 'effect'
+import * as Scope from 'effect/Scope'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { inventoryTargetAt, makeUiMount } from '../src/application/ui-mount'
+import {
+  AchievementToastEventBusLayer,
+} from '../src/application/achievement-toast-subscriber'
+import {
+  inventoryTargetAt,
+  makeUiMount as makeRawUiMount,
+  UiMountError,
+  type UiMountOptions,
+} from '../src/application/ui-mount'
 import type { InventoryInteractionTarget } from '../src/application/inventory-view'
 import { uiModule } from '../src/stages/registration'
 import { initialMainMenuState, mainMenuViewModel, type SavedWorld } from '../src/domain/main-menu'
@@ -11,7 +20,23 @@ import {
   inventoryViewModel,
   type InventoryViewModel,
 } from '../src/domain/inventory-view-model'
-import { itemStack as makeItemStack } from '@nerima-games/mc-sim'
+import { DomainEventBus, itemStack as makeItemStack } from '@nerima-games/mc-sim'
+import { achievementEventFromLegacySim } from './helpers/achievement-event'
+
+const testScopes: Array<Scope.Closeable> = []
+
+const makeUiMount = (options: UiMountOptions) => {
+  const runtime = makeRawUiMount(options)
+  const scope = Scope.makeUnsafe()
+  testScopes.push(scope)
+  return {
+    ...runtime,
+    start: runtime.start.pipe(
+      Effect.provideService(Scope.Scope, scope),
+      Effect.provide(AchievementToastEventBusLayer),
+    ),
+  }
+}
 
 const testItemStack = (
   item: Parameters<typeof makeItemStack>[0],
@@ -25,7 +50,9 @@ const testItemStack = (
 }
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [{ sessionId: 'session-1', name: 'Cliff House' }]
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(testScopes.map((scope) => Effect.runPromise(Scope.close(scope, Exit.void))))
+  testScopes.length = 0
   document.body.replaceChildren()
   vi.restoreAllMocks()
 })
@@ -45,7 +72,10 @@ describe('UiMount', () => {
     document.body.appendChild(host)
     const runtime = makeUiMount({ motion: 'reduced', root: host })
 
-    await expect(Effect.runPromise(runtime.start)).resolves.toBe(uiModule)
+    const moduleInstance = await Effect.runPromise(runtime.start)
+    expect(moduleInstance).not.toBe(uiModule)
+    expect(moduleInstance.frameStages).toBe(uiModule.frameStages)
+    expect(moduleInstance.qa).not.toBe(uiModule.qa)
 
     const mounted = runtime.current()
     expect(mounted?.root.parentElement).toBe(host)
@@ -59,6 +89,132 @@ describe('UiMount', () => {
     expect(runtime.current()).toBeUndefined()
     expect(host.contains(unrelated)).toBe(true)
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('renders achievement events from the mounted subscriber and closes it on stop', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          const moduleInstance = yield* runtime.start
+
+          const mounted = runtime.current()
+          expect(mounted).toBeDefined()
+          const toastView = mounted!.achievementToast
+          const toastRoot = host.querySelector<HTMLElement>('[data-mx-ui="achievement-toast"]')
+          expect(toastRoot).not.toBeNull()
+          expect(toastRoot?.hidden).toBe(true)
+          const render = vi.spyOn(toastView, 'render')
+
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(toastRoot?.hidden).toBe(false)
+          expect(host.querySelector('[data-mx-ui="achievement-toast-title"]')?.textContent).toBe('Stone Age')
+          expect(render).toHaveBeenCalledOnce()
+          const qaState = yield* moduleInstance.qa.observe.state.run({})
+          expect(qaState.achievementToast).toMatchObject({
+            achievement: 'minecraft:story/mine_stone',
+            title: 'Stone Age',
+          })
+
+          yield* runtime.stop
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(render).toHaveBeenCalledOnce()
+          expect(host.querySelector('[data-mx-ui="achievement-toast"]')).toBeNull()
+          const stoppedQaState = yield* moduleInstance.qa.observe.state.run({})
+          expect(stoppedQaState.achievementToast).toBeNull()
+        }),
+      ).pipe(Effect.provide(AchievementToastEventBusLayer)),
+    )
+  })
+
+  it('closes the achievement subscriber when its parent scope closes', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          const parentScope = yield* Scope.make()
+          yield* runtime.start.pipe(Effect.provideService(Scope.Scope, parentScope))
+
+          const mounted = runtime.current()
+          expect(mounted).toBeDefined()
+          const render = vi.spyOn(mounted!.achievementToast, 'render')
+
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(render).toHaveBeenCalledOnce()
+
+          yield* Scope.close(parentScope, Exit.void)
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(render).toHaveBeenCalledOnce()
+
+          yield* runtime.stop
+          expect(runtime.current()).toBeUndefined()
+          expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+        }).pipe(Effect.provide(AchievementToastEventBusLayer)),
+      ),
+    )
+  })
+
+  it('returns an unsupported achievement id as a SchemaError when stopping the mount', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    const failure = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          yield* runtime.start
+          yield* bus.publish(achievementEventFromLegacySim('example:custom/achievement'))
+          yield* Effect.yieldNow
+          return yield* Effect.flip(runtime.stop)
+        }).pipe(Effect.provide(AchievementToastEventBusLayer)),
+      ),
+    )
+
+    expect(failure).toBeInstanceOf(Schema.SchemaError)
+    expect(runtime.current()).toBeUndefined()
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('reports subscriber and view cleanup failures together', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    const failure = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          yield* runtime.start
+
+          const mounted = runtime.current()
+          expect(mounted).toBeDefined()
+          vi.spyOn(mounted!.overlays, 'destroy').mockImplementation(() => {
+            throw new Error('view destroy failed')
+          })
+
+          yield* bus.publish(achievementEventFromLegacySim('example:custom/achievement'))
+          yield* Effect.yieldNow
+          return yield* Effect.flip(runtime.stop)
+        }).pipe(Effect.provide(AchievementToastEventBusLayer)),
+      ),
+    )
+
+    expect(failure).toBeInstanceOf(UiMountError)
+    expect(failure.cause).toMatchObject({
+      subscriptionError: expect.any(Schema.SchemaError),
+      viewsError: expect.objectContaining({
+        message: 'Failed to stop mx-ui',
+      }),
+    })
   })
 
   it('remounts cleanly and detaches listeners from the previous menu', async () => {

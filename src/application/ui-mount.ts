@@ -1,3 +1,9 @@
+import * as Scope from 'effect/Scope'
+import {
+  type AchievementToastSubscription,
+  startAchievementToastSubscriber,
+} from './achievement-toast-subscriber.js'
+import { type AchievementToastView, createAchievementToastView } from './achievement-toast-view.js'
 import {
   DEFAULT_DEBUG_HUD_SNAPSHOT,
   DEFAULT_UI_SETTINGS,
@@ -7,6 +13,7 @@ import {
   type UiSettingsCallbacks,
   createSessionOverlays,
 } from './session-overlays.js'
+import { Effect, Exit, Result, Schema } from 'effect'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../domain/hud-view-model.js'
 import { type HudView, createHudView } from './hud-view.js'
 import {
@@ -38,8 +45,11 @@ import {
   createMainMenuView,
 } from './main-menu-view.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
-import { Effect } from 'effect'
+import type { AchievementToast } from '../domain/achievement-toast.js'
+import { DomainEventBus } from '@nerima-games/mc-sim'
 import type { MotionPreference } from '../domain/accessibility.js'
+import type { UiQaSnapshot } from '../domain/ui-qa.js'
+import { createUiModuleInstance } from './ui-module-instance.js'
 import { uiModule } from '../stages/registration.js'
 
 const HOTBAR_START_INDEX = 0
@@ -51,6 +61,7 @@ export type UiMountedViews = {
   readonly inventory: InventoryView
   readonly mainMenu: MainMenuView
   readonly overlays: SessionOverlays
+  readonly achievementToast: AchievementToastView
 }
 
 export type UiMountOptions = {
@@ -67,8 +78,12 @@ export type UiMountOptions = {
 /** The browser-session shape consumed by mc-compose, without a package cycle. */
 export type UiMount = {
   readonly name: string
-  readonly start: Effect.Effect<typeof uiModule, UiMountError>
-  readonly stop: Effect.Effect<void, UiMountError>
+  readonly start: Effect.Effect<
+    typeof uiModule,
+    UiMountError | Schema.SchemaError,
+    DomainEventBus | Scope.Scope
+  >
+  readonly stop: Effect.Effect<void, UiMountError | Schema.SchemaError>
   readonly current: () => UiMountedViews | undefined
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
   readonly updateSettings: (settings: UiSettings) => void
@@ -135,6 +150,7 @@ export const inventoryTargetAt = (
 
 /** The mutable session state one `makeUiMount` call owns, gathered into one cell. */
 type UiMountSession = {
+  achievementToast?: AchievementToast
   mounted: UiMountedViews | null
   settings: UiSettings
   debugSnapshot: DebugHudSnapshot
@@ -143,6 +159,8 @@ type UiMountSession = {
   inventoryFocus: InventoryInteractionTarget
   inventoryActionState: InventoryActionState
   inventoryRestoreFocus: HTMLElement | null
+  toastScope: Scope.Closeable | null
+  toastSubscription: AchievementToastSubscription | null
 }
 
 /** `document.activeElement` narrowed to something focus-restorable, or nothing. */
@@ -347,6 +365,91 @@ const buildMenuCallbacks = (
   onStateChange: (state) => callbacks?.onStateChange(state),
 })
 
+const removeUiMountedViews = (
+  previous: UiMountedViews | null,
+  message: string,
+): Effect.Effect<void, UiMountError> =>
+  Effect.try({
+    catch: (cause) => new UiMountError(message, { cause }),
+    try: () => {
+      previous?.mainMenu.destroy()
+      previous?.overlays.destroy()
+      previous?.root.remove()
+    },
+  })
+
+const finishUiMountCleanup = (
+  message: string,
+  subscriptionResult: Result.Result<void, Schema.SchemaError>,
+  viewsResult: Result.Result<void, UiMountError>,
+): Effect.Effect<void, UiMountError | Schema.SchemaError> => {
+  if (Result.isFailure(subscriptionResult) && Result.isFailure(viewsResult)) {
+    return Effect.fail(
+      new UiMountError(message, {
+        cause: {
+          subscriptionError: subscriptionResult.failure,
+          viewsError: viewsResult.failure,
+        },
+      }),
+    )
+  }
+  if (Result.isFailure(viewsResult)) {
+    return Effect.fail(viewsResult.failure)
+  }
+  if (Result.isFailure(subscriptionResult)) {
+    return Effect.fail(subscriptionResult.failure)
+  }
+  return Effect.void
+}
+
+const createAchievementToastLifecycle = (session: UiMountSession) => {
+  const close = (): Effect.Effect<void, Schema.SchemaError> => {
+    const subscription = session.toastSubscription
+    const scope = session.toastScope
+    session.toastScope = null
+    session.toastSubscription = null
+
+    return Effect.gen(function* closeToast() {
+      const subscriptionResult = yield* Effect.result(subscription?.close ?? Effect.void)
+      if (scope !== null) {
+        yield* Scope.close(scope, Exit.void)
+      }
+      delete session.achievementToast
+      if (Result.isFailure(subscriptionResult)) {
+        return yield* Effect.fail(subscriptionResult.failure)
+      }
+    })
+  }
+
+  const read = (): UiQaSnapshot => {
+    const { achievementToast } = session
+    if (typeof achievementToast === 'undefined') {
+      return {}
+    }
+    return { achievementToast }
+  }
+
+  const start = (
+    mounted: UiMountedViews,
+  ): Effect.Effect<void, never, DomainEventBus | Scope.Scope> =>
+    Effect.gen(function* startToastSubscription() {
+      const parentScope = yield* Scope.Scope
+      const scope = yield* Scope.make()
+      yield* Scope.addFinalizer(parentScope, Scope.close(scope, Exit.void))
+      session.toastScope = scope
+      const subscription = yield* startAchievementToastSubscriber((toast) => {
+        session.achievementToast = toast
+        mounted.achievementToast.render(toast)
+      }).pipe(
+        Effect.provideService(Scope.Scope, scope),
+        Effect.onInterrupt(() => Scope.close(scope, Exit.void)),
+      )
+      session.toastSubscription = subscription
+    })
+
+  return { close, read, start }
+}
+
 export const makeUiMount = (options: UiMountOptions): UiMount => {
   const session: UiMountSession = {
     debugSnapshot: options.initialDebugSnapshot ?? DEFAULT_DEBUG_HUD_SNAPSHOT,
@@ -357,7 +460,10 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     inventoryRestoreFocus: null,
     mounted: null,
     settings: options.initialSettings ?? DEFAULT_UI_SETTINGS,
+    toastScope: null,
+    toastSubscription: null,
   }
+  const toastLifecycle = createAchievementToastLifecycle(session)
 
   const renderInventory = (view: InventoryView, focus = false): void => {
     const targets = inventoryTargets(session.inventoryModel)
@@ -415,19 +521,19 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     return true
   }
 
-  const unmount = (): void => {
-    const previous = session.mounted
-    session.mounted = null
-    if (previous === null) {
-      return
-    }
+  const unmount = (
+    message = 'Failed to stop mx-ui',
+  ): Effect.Effect<void, UiMountError | Schema.SchemaError> =>
+    Effect.gen(function* closeMount() {
+      const previous = session.mounted
+      session.mounted = null
+      session.inventoryOpen = false
+      session.inventoryRestoreFocus = null
 
-    previous.mainMenu.destroy()
-    previous.overlays.destroy()
-    previous.root.remove()
-    session.inventoryOpen = false
-    session.inventoryRestoreFocus = null
-  }
+      const subscriptionResult = yield* Effect.result(toastLifecycle.close())
+      const viewsResult = yield* Effect.result(removeUiMountedViews(previous, message))
+      return yield* finishUiMountCleanup(message, subscriptionResult, viewsResult)
+    })
 
   const createBaseViews = (
     document: Document,
@@ -497,6 +603,8 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
         catch: (cause) => new UiMountError('Failed to mount mx-ui', { cause }),
         try: () => {
           const { handleInventoryKey, hud, inventory } = createBaseViews(document, ownedRoot)
+          const achievementToast = createAchievementToastView(document, ownedRoot)
+          achievementToast.render()
           const overlays = createSessionOverlays(document, ownedRoot, {
             callbacks: options.settingsCallbacks,
             delegateKeyDown: handleInventoryKey,
@@ -511,7 +619,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
           )
           partial.mainMenu = mainMenu
           mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
-          return { hud, inventory, mainMenu, overlays, root: ownedRoot }
+          return { achievementToast, hud, inventory, mainMenu, overlays, root: ownedRoot }
         },
       })
       return yield* Effect.catch(mount, (mountError) =>
@@ -567,17 +675,13 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     },
     openSettings: () => session.mounted?.overlays.openSettings(),
     start: Effect.gen(function* start() {
-      yield* Effect.try({
-        catch: (cause) => new UiMountError('Failed to unmount previous mx-ui views', { cause }),
-        try: unmount,
-      })
-      session.mounted = yield* buildMountedViews()
-      return uiModule
+      yield* unmount('Failed to unmount previous mx-ui views')
+      const mounted = yield* buildMountedViews()
+      session.mounted = mounted
+      yield* toastLifecycle.start(mounted)
+      return createUiModuleInstance(uiModule.frameStages, toastLifecycle.read)
     }),
-    stop: Effect.try({
-      catch: (cause) => new UiMountError('Failed to stop mx-ui', { cause }),
-      try: unmount,
-    }),
+    stop: Effect.suspend(unmount),
     updateDebug: (snapshot) => {
       session.debugSnapshot = snapshot
       session.mounted?.overlays.updateDebug(snapshot)

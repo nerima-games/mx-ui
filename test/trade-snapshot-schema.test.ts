@@ -5,6 +5,7 @@ import {
   TradeSnapshotSchema,
   type TradeSnapshot,
 } from '../src/domain/trade-snapshot.js'
+import { TradeSnapshotSchema as PublicTradeSnapshotSchema } from '../src/index.js'
 
 const VALID_OFFER = {
   available: true,
@@ -97,6 +98,12 @@ describe('TradeSnapshot schema', () => {
       const decodedSnapshot: TradeSnapshot = decoderResult.success
       expect(schemaSnapshot).toStrictEqual(VALID_RAW_SNAPSHOT)
       expect(decodedSnapshot).toStrictEqual(schemaSnapshot)
+
+      const encodedResult = Schema.encodeUnknownResult(PublicTradeSnapshotSchema)(schemaSnapshot)
+      expect(Result.isSuccess(encodedResult)).toBe(true)
+      if (Result.isSuccess(encodedResult)) {
+        expect(encodedResult.success).toStrictEqual(VALID_RAW_SNAPSHOT)
+      }
     }
   })
 
@@ -114,6 +121,7 @@ describe('TradeSnapshot schema', () => {
 
   it.each(EXTRA_KEY_CASES)('rejects an extra key at $label', ({ input }) => {
     expectSchemaFailure(decodeTradeSnapshot(input))
+    expectSchemaFailure(Schema.decodeUnknownResult(PublicTradeSnapshotSchema)(input))
   })
 
   it('rejects an unknown profession', () => {

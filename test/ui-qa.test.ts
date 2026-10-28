@@ -73,7 +73,10 @@ describe('UI QA namespace', () => {
     let reads = 0
     const namespace = createUiQaNamespace(() => {
       reads += 1
-      return { achievementToast: undefined, debugOverlay: currentDebugOverlay }
+      if (typeof currentDebugOverlay === 'undefined') {
+        return {}
+      }
+      return { debugOverlay: currentDebugOverlay }
     })
 
     expect(namespace.name).toBe('ui')
@@ -81,7 +84,7 @@ describe('UI QA namespace', () => {
     expect(Object.keys(namespace.command)).toStrictEqual([])
     await expect(Effect.runPromise(namespace.observe.state.run({}))).resolves.toStrictEqual({
       achievementToast: null,
-      debugOverlay: uiQaStateFromSnapshot({ achievementToast: undefined, debugOverlay }).debugOverlay,
+      debugOverlay: uiQaStateFromSnapshot({ debugOverlay }).debugOverlay,
     })
 
     currentDebugOverlay = undefined
@@ -102,7 +105,6 @@ describe('UI QA namespace', () => {
     const malformedToast = { ...toast, unexpected: true }
     const namespace = createUiQaNamespace(() => ({
       achievementToast: malformedToast,
-      debugOverlay: undefined,
     }))
     const failure = await Effect.runPromise(Effect.flip(namespace.observe.state.run({})))
 
@@ -139,7 +141,7 @@ describe('UI QA namespace', () => {
     expect(() =>
       strictDecode({
         achievementToast: null,
-        debugOverlay: { ...uiQaStateFromSnapshot({ achievementToast: undefined, debugOverlay }).debugOverlay, fps: undefined },
+        debugOverlay: { ...uiQaStateFromSnapshot({ debugOverlay }).debugOverlay, fps: undefined },
       }),
     ).toThrow(Schema.SchemaError)
   })

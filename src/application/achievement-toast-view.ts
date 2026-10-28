@@ -10,7 +10,7 @@ import type { AchievementToast } from '../domain/achievement-toast.js'
 import { declarePalette } from './palette-css.js'
 
 export type AchievementToastView = Readonly<{
-  render: (toast: AchievementToast | undefined) => void
+  render: (toast?: AchievementToast) => void
   root: DomElement
 }>
 

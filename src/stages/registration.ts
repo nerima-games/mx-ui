@@ -23,8 +23,8 @@
  * see vitest.config.ts, and docs/testing.md for the `it.effect` + `Deferred`
  * deadlock the DOM suite has to avoid when it arrives.
  */
-import { type Brand, Effect, Layer, Ref, Schema } from 'effect'
-import { type DeltaTimeSecs, type GameModule, type StageRegistration } from '@nerima-games/mc-kernel'
+import { type Brand, Effect, Ref, Schema } from 'effect'
+import { type DeltaTimeSecs, type StageRegistration } from '@nerima-games/mc-kernel'
 import {
   type FpsCounter,
   advanceFpsCounter,
@@ -39,8 +39,10 @@ import {
 } from '../domain/hud-view-model.js'
 import { type ModalStack, emptyModalStack } from '../domain/modal-stack.js'
 import { UI_STAGE_IDS, UPSTREAM_STAGE_IDS } from './stage-ids.js'
+import { type UiGameModule, createUiModuleInstance } from '../application/ui-module-instance.js'
 import { type CaptionEvent } from '../domain/caption.js'
 import { type InventoryCarriedSlot } from '@nerima-games/mc-sim'
+import { type UiQaSnapshot } from '../domain/ui-qa.js'
 import { emptyInventorySnapshot } from '../domain/inventory-view-model.js'
 
 /** `elapsedSecs` starts at zero and only ever accumulates `dt`. */
@@ -155,6 +157,8 @@ export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>> = Eff
   uiStages,
 )
 
+const EMPTY_UI_QA_SNAPSHOT: UiQaSnapshot = {}
+
 /**
  * Mx-ui as a `GameModule` (plan.md §4.1).
  *
@@ -173,7 +177,7 @@ export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>> = Eff
  * opened, those services are acquired in `frameStages` — the `RRegister`
  * parameter — because this repository builds nothing they have to supply.
  */
-export const uiModule: GameModule<never, never, never> = {
-  frameStages: makeUiStages,
-  layers: Layer.empty,
-}
+export const uiModule: UiGameModule = createUiModuleInstance(
+  makeUiStages,
+  () => EMPTY_UI_QA_SNAPSHOT,
+)

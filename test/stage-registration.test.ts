@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Ref, Schema } from 'effect'
+import * as publicUi from '../src/index'
 import {
   DeltaTimeSecs,
   EntityHealthPoints,
@@ -33,6 +34,15 @@ import {
   UPSTREAM_STAGE_IDS,
 } from '../src/stages/stage-ids'
 import { FrameServicesLayer } from './frame-services'
+import { debugOverlayModel } from '../src/domain/debug-overlay'
+import type { UiQaSnapshot } from '../src/domain/ui-qa'
+import { createUiModuleInstance } from '../src/application/ui-module-instance'
+
+const QA_WORLD_Y = 64
+const QA_WORLD_Z = -2
+const QA_FRAME_DELTA_SECS = 0.5
+const FIRST_QA_WORLD_X = 6
+const SECOND_QA_WORLD_X = 7
 
 const allAfterEdges = (stages: ReadonlyArray<StageRegistration>): ReadonlyArray<string> =>
   stages.flatMap((stage) => [...(stage.after ?? [])])
@@ -316,6 +326,73 @@ describe('the module contract has caught up with this file’s shape', () => {
       const first = yield* uiModule.frameStages
       const second = yield* uiModule.frameStages
       expect(first).not.toBe(second)
+    }),
+  )
+
+  it.effect('exposes the QA state operation through the public module and keeps its reader live', () =>
+    Effect.gen(function* () {
+      const publicModule = publicUi.uiModule
+      const publicNamespace = publicModule.qa
+      expect(publicNamespace).toBeDefined()
+      if (publicNamespace === undefined) {
+        return
+      }
+
+      expect(publicNamespace.name).toBe('ui')
+      expect(publicNamespace.observe.state.name).toBe('state')
+      const publicState = yield* publicNamespace.observe.state.run({})
+      expect(publicState).toStrictEqual({ achievementToast: null, debugOverlay: null })
+      expect(
+        Schema.decodeUnknownSync(publicNamespace.observe.state.output, {
+          onExcessProperty: 'error',
+        })(publicState),
+      ).toStrictEqual(publicState)
+
+      const debugOverlayAt = (worldX: number) =>
+        debugOverlayModel({
+          cameraPose: undefined,
+          dimension: undefined,
+          frame: {
+            cameraPosition: {
+              worldX,
+              worldY: QA_WORLD_Y,
+              worldZ: QA_WORLD_Z,
+            },
+            deltaSecs: DeltaTimeSecs(QA_FRAME_DELTA_SECS),
+          },
+          gpuTimingSupported: undefined,
+          latestGpuTimeMs: undefined,
+          qualityPreset: undefined,
+          worldTime: undefined,
+        })
+
+      let liveSnapshot: UiQaSnapshot = {
+        debugOverlay: debugOverlayAt(FIRST_QA_WORLD_X),
+      }
+      const moduleInstance = createUiModuleInstance(uiModule.frameStages, () => liveSnapshot)
+      const instanceNamespace = moduleInstance.qa
+      expect(instanceNamespace).toBeDefined()
+      if (instanceNamespace === undefined) {
+        return
+      }
+
+      const firstState = yield* instanceNamespace.observe.state.run({})
+      expect(firstState.debugOverlay?.coordinates).toStrictEqual({
+        worldX: FIRST_QA_WORLD_X,
+        worldY: QA_WORLD_Y,
+        worldZ: QA_WORLD_Z,
+      })
+
+      liveSnapshot = {
+        ...liveSnapshot,
+        debugOverlay: debugOverlayAt(SECOND_QA_WORLD_X),
+      }
+      const updatedState = yield* instanceNamespace.observe.state.run({})
+      expect(updatedState.debugOverlay?.coordinates).toStrictEqual({
+        worldX: SECOND_QA_WORLD_X,
+        worldY: QA_WORLD_Y,
+        worldZ: QA_WORLD_Z,
+      })
     }),
   )
 

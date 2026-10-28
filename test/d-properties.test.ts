@@ -126,6 +126,28 @@ describe('D domain properties', () => {
     )
   })
 
+  it('accepts the fixed tick lower bound of zero', () => {
+    const event = Schema.decodeUnknownSync(DomainEventSchema)({
+      _tag: 'AchievementUnlocked',
+      tick: 0,
+      player: 'player:property-test',
+      achievement: 'minecraft:story/mine_stone',
+    })
+
+    expect(event.tick).toBe(0)
+  })
+
+  it('rejects the fixed tick value immediately below the lower bound', () => {
+    expect(() =>
+      Schema.decodeUnknownSync(DomainEventSchema)({
+        _tag: 'AchievementUnlocked',
+        tick: -1,
+        player: 'player:property-test',
+        achievement: 'minecraft:story/mine_stone',
+      }),
+    ).toThrow(Schema.SchemaError)
+  })
+
   it('covers zero and the finite frame-delta boundaries', () => {
     fc.assert(
       fc.property(fc.constantFrom(0, Number.MIN_VALUE, Number.MAX_VALUE), (deltaSecs) => {

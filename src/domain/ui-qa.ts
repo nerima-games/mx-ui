@@ -100,8 +100,8 @@ const DebugOverlayStateSchema: Schema.Codec<UiQaDebugOverlayState, unknown> = st
 })
 
 export type UiQaSnapshot = Readonly<{
-  achievementToast: AchievementToast | undefined
-  debugOverlay: DebugOverlayModel | undefined
+  achievementToast?: AchievementToast
+  debugOverlay?: DebugOverlayModel
 }>
 
 export type UiQaState = Readonly<{

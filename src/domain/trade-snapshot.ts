@@ -1,4 +1,4 @@
-import { type Brand, type Result, Schema } from 'effect'
+import { type Brand, type Result, Schema, SchemaParser } from 'effect'
 import type { IntentPayload } from '@nerima-games/mc-sim'
 
 type TradeVillagerIntent = Extract<IntentPayload, { readonly _tag: 'TradeVillager' }>
@@ -61,9 +61,16 @@ const TradeSnapshotSchemaImpl: Schema.Codec<TradeSnapshot, unknown, never, never
   villager: EntityIdSchema,
 }).pipe(Schema.brand('TradeSnapshot'))
 
-export const TradeSnapshotSchema: Schema.Codec<TradeSnapshot, unknown, never, never> = TradeSnapshotSchemaImpl
+const decodeStrictTradeSnapshot = SchemaParser.decodeUnknownEffect(TradeSnapshotSchemaImpl)
+
+export const TradeSnapshotSchema: Schema.Codec<TradeSnapshot, unknown, never, never> =
+  Schema.declareConstructor<TradeSnapshot, unknown>()(
+    [],
+    () => (input, _ast, options) =>
+      decodeStrictTradeSnapshot(input, { ...options, onExcessProperty: 'error' }),
+  )
 
 const decodeTradeSnapshotImpl: (input: unknown) => Result.Result<TradeSnapshot, Schema.SchemaError> =
-  (input) => Schema.decodeUnknownResult(TradeSnapshotSchema, { onExcessProperty: 'error' })(input)
+  (input) => Schema.decodeUnknownResult(TradeSnapshotSchema)(input)
 
 export const decodeTradeSnapshot: typeof decodeTradeSnapshotImpl = decodeTradeSnapshotImpl
