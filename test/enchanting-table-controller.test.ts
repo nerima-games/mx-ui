@@ -1,155 +1,416 @@
+import { Result, Schema } from 'effect'
+import * as fc from 'fast-check'
+import {
+  ItemStackFailureSchema,
+  ItemStackSchema,
+  itemStack,
+  maxStackCountForItem,
+} from '@nerima-games/mc-sim'
 import { describe, expect, it } from 'vitest'
 import { createEnchantingTableView } from '../src/application/enchanting-table-view'
 import {
   applyEnchantmentOffer,
   enchantingOffers,
   enchantingTableSnapshotOf,
-  type EnchantingRules,
   type EnchantingTableState,
 } from '../src/domain/enchanting-table-controller'
 import { enchantingTableViewModel } from '../src/domain/enchanting-table-view-model'
 import { fakeDocument, fakeElement } from './fake-dom'
 
-const RULES: EnchantingRules = {
-  enchantments: [
-    { allowedItemIds: ['sword'], enchantmentId: 'sharpness', incompatibleWith: ['smite'], levelCost: 4, maxLevel: 5 },
-    { allowedItemIds: ['sword'], enchantmentId: 'smite', incompatibleWith: [], levelCost: 5, maxLevel: 5 },
-    { allowedItemIds: ['sword'], enchantmentId: 'unbreaking', incompatibleWith: [], levelCost: 3, maxLevel: 3 },
-    { allowedItemIds: ['sword'], enchantmentId: 'mending', incompatibleWith: [], levelCost: 2, maxLevel: 1 },
-  ],
-}
-
-const readyState = (): EnchantingTableState => ({
+const readyState = (
+  overrides: Partial<EnchantingTableState> = {},
+): EnchantingTableState => ({
+  bookshelfCount: 15,
   experienceLevel: 30,
-  item: { count: 1, enchantments: [], itemId: 'sword' },
+  item: { count: 1, itemId: 'diamond_sword' },
   lapisCount: 3,
-  seed: 42,
+  seed: 11,
+  ...overrides,
 })
 
 describe('enchanting table controller', () => {
-  it('derives three stable, distinct candidates from the seed and filters incompatibilities', () => {
+  it('returns offers from the sim API as a typed Result and projects its costs', () => {
+    const result = enchantingOffers(readyState())
+    expect(Result.isSuccess(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      throw new Error('valid enchanting input must produce offers')
+    }
+    expect(result.success).toHaveLength(3)
+    expect(result.success.map((offer) => offer?.lapisCost)).toStrictEqual([1, 2, 3])
+    expect(result.success.every((offer) => offer !== undefined)).toBe(true)
+    expect(
+      result.success.every(
+        (offer) => offer?.rejectionReason === 'mc-sim plan-fragment API is not available',
+      ),
+    ).toBe(true)
+  })
+
+  it('returns itemStack failures instead of defaulting invalid item counts', () => {
+    const result = enchantingOffers(readyState({ item: { itemId: 'diamond_sword', count: 0 } }))
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isSuccess(result)) {
+      throw new Error('invalid item count must fail stack construction')
+    }
+    expect(result.failure._tag).toBe('BrandError')
+  })
+
+  it('returns invalid seed failures without normalizing them', () => {
+    for (const seed of [1.5, -1, 2 ** 32]) {
+      const result = enchantingOffers(readyState({ seed }))
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isSuccess(result)) {
+        throw new Error('invalid seed must fail')
+      }
+      expect(result.failure).toStrictEqual({
+        _tag: 'EnchantingSeedFailure',
+        reason: 'expected-unsigned-32-bit-integer',
+        seed,
+      })
+    }
+  })
+
+  it('propagates the sim API failure for invalid bookshelf counts', () => {
+    const result = enchantingOffers(readyState({ bookshelfCount: 1.5 }))
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isSuccess(result)) {
+      throw new Error('invalid bookshelf count must fail offer generation')
+    }
+    expect(result.failure).toMatchObject({
+      _tag: 'EnchantmentTableFailure',
+      reason: 'invalid-bookshelf-count',
+    })
+  })
+
+  it('returns a typed projection failure when a sim offer contains multiple enchantments', () => {
+    const cases = [
+      { offerId: 'offer-1', seed: 0 },
+      { offerId: 'offer-2', seed: 7 },
+      { offerId: 'offer-3', seed: 1 },
+    ] as const
+    for (const { offerId, seed } of cases) {
+      const result = enchantingOffers(readyState({ seed }))
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isSuccess(result)) {
+        throw new Error('multiple enchantments cannot be represented by the current snapshot')
+      }
+      expect(result.failure).toMatchObject({
+        _tag: 'EnchantingOfferProjectionFailure',
+        offerId,
+      })
+    }
+  })
+
+  it('projects empty sim candidates as empty slots and preserves snapshot data', () => {
+    const state = readyState({
+      bookshelfCount: 0,
+      item: { itemId: 'fishing_rod', count: 1 },
+      seed: 0,
+    })
+    const offers = enchantingOffers(state)
+    expect(Result.isSuccess(offers)).toBe(true)
+    if (Result.isFailure(offers)) {
+      throw new Error('valid fishing rod input must produce an offer result')
+    }
+    expect(offers.success[0]).toBeUndefined()
+    expect(offers.success[1]?.enchantmentId).toBe('unbreaking')
+
+    const snapshot = enchantingTableSnapshotOf(state)
+    expect(Result.isSuccess(snapshot)).toBe(true)
+    if (Result.isFailure(snapshot)) {
+      throw new Error('valid table state must produce a snapshot')
+    }
+    expect(snapshot.success.item).toBe(state.item)
+    expect(snapshot.success.lapis).toStrictEqual({
+      count: 3,
+      itemId: 'minecraft:lapis_lazuli',
+    })
+    expect(snapshot.success.offers).toStrictEqual(offers.success)
+  })
+
+  it('preserves snapshot failure and hides the lapis slot when none is loaded', () => {
+    const invalid = enchantingTableSnapshotOf(
+      readyState({ item: { itemId: 'diamond_sword', count: 0 } }),
+    )
+    expect(Result.isFailure(invalid)).toBe(true)
+    if (Result.isSuccess(invalid)) {
+      throw new Error('invalid stack must fail snapshot projection')
+    }
+    expect(invalid.failure._tag).toBe('BrandError')
+
+    const noLapis = enchantingTableSnapshotOf(readyState({ lapisCount: 0 }))
+    expect(Result.isSuccess(noLapis)).toBe(true)
+    if (Result.isFailure(noLapis)) {
+      throw new Error('valid table state must produce a snapshot')
+    }
+    expect(noLapis.success.lapis).toBeUndefined()
+  })
+
+  it('returns a typed unsupported result for local offer application', () => {
     const state = readyState()
-    expect(enchantingOffers(state, RULES)).toStrictEqual(enchantingOffers(state, RULES))
-    const ids = enchantingOffers(state, RULES).map((offer) => offer?.enchantmentId)
-    expect(new Set(ids).size).toBe(3)
-
-    const { item } = state
-    if (item === undefined) {
-      throw new Error('test state must contain an item')
+    const result = applyEnchantmentOffer(state, 'offer-1')
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isSuccess(result)) {
+      throw new Error('local enchanting application must remain unsupported')
     }
-    const enchanted: EnchantingTableState = {
-      ...state,
-      item: { ...item, enchantments: [{ enchantmentId: 'sharpness', level: 1 }] },
-    }
-    expect(enchantingOffers(enchanted, RULES).some((offer) => offer?.enchantmentId === 'smite')).toBe(false)
+    expect(result.failure).toStrictEqual({
+      _tag: 'EnchantingApplyUnsupported',
+      offerId: 'offer-1',
+      reason: 'mc-sim plan-fragment API is not available',
+    })
+    expect(state.item?.count).toBe(1)
+    expect(state.lapisCount).toBe(3)
+    expect(state.experienceLevel).toBe(30)
+    expect(state.seed).toBe(11)
   })
 
-  it('rejects insufficient lapis or levels atomically', () => {
-    const noLapis = { ...readyState(), lapisCount: 0 }
-    const lapisResult = applyEnchantmentOffer(noLapis, 'offer-1', RULES)
-    expect(lapisResult.state).toBe(noLapis)
-    expect(lapisResult).toMatchObject({ applied: false, reason: 'Requires 1 lapis' })
-
-    const noLevels = { ...readyState(), experienceLevel: 0 }
-    const levelResult = applyEnchantmentOffer(noLevels, 'offer-1', RULES)
-    expect(levelResult.state).toBe(noLevels)
-    expect(levelResult.applied).toBe(false)
-  })
-
-  it('connects an offer click to atomic item mutation, resource consumption, and seed refresh', () => {
+  it('keeps an offer click connected to the typed unsupported result without mutation', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
-    let state = readyState()
-    const initialSeed = state.seed
-    const initialOffer = enchantingOffers(state, RULES).find((offer) => offer !== undefined)
-    if (initialOffer === undefined) {
-      throw new Error('test state must contain an enchantment offer')
-    }
+    const state = readyState()
+    let application: ReturnType<typeof applyEnchantmentOffer> | undefined
     const view = createEnchantingTableView(factory, host, {
       onActivate: (target) => {
         if (target === 'offer-1' || target === 'offer-2' || target === 'offer-3') {
-          ({ state } = applyEnchantmentOffer(state, target, RULES))
+          application = applyEnchantmentOffer(state, target)
         }
       },
     })
-    view.render(enchantingTableViewModel(enchantingTableSnapshotOf(state, RULES)))
+    const snapshot = enchantingTableSnapshotOf(state)
+    expect(Result.isSuccess(snapshot)).toBe(true)
+    if (Result.isFailure(snapshot)) {
+      throw new Error('valid table state must produce a snapshot')
+    }
+    view.render(enchantingTableViewModel(snapshot.success))
     const button = fakeElement(view.root).find('data-operation-target', 'offer-1')
+    expect(button).toBeDefined()
     button?.dispatch('click')
 
-    expect(state.item?.enchantments).toContainEqual({
-      enchantmentId: initialOffer.enchantmentId,
-      level: initialOffer.enchantmentLevel,
-    })
-    expect(state.experienceLevel).toBe(30 - initialOffer.levelCost)
-    expect(state.lapisCount).toBe(3 - initialOffer.lapisCost)
-    expect(state.seed).not.toBe(initialSeed)
+    expect(application).toBeDefined()
+    if (typeof application === 'undefined') {
+      throw new Error('click must reach the controller')
+    }
+    expect(Result.isFailure(application)).toBe(true)
+    expect(state).toStrictEqual(readyState())
     expect(button?.listeners).toStrictEqual(['click'])
   })
 
-  it('offers nothing when no item is placed in the table', () => {
-    const empty: EnchantingTableState = { experienceLevel: 30, item: undefined, lapisCount: 3, seed: 42 }
-    expect(enchantingOffers(empty, RULES)).toStrictEqual([undefined, undefined, undefined])
+  it('projects undefined sim offers as empty slots', () => {
+    const result = enchantingOffers(
+      readyState({ item: { itemId: 'stone', count: 1 } }),
+    )
+    expect(Result.isSuccess(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      throw new Error('valid non-enchantable item must produce an offer result')
+    }
+    expect(result.success).toStrictEqual([undefined, undefined, undefined])
   })
 
-  it('rejects applying an offer when no item is placed, preserving state identity', () => {
-    const empty: EnchantingTableState = { experienceLevel: 30, item: undefined, lapisCount: 3, seed: 42 }
-    const result = applyEnchantmentOffer(empty, 'offer-1', RULES)
-    expect(result).toStrictEqual({ applied: false, reason: 'No compatible enchantment', state: empty })
-    expect(result.state).toBe(empty)
+  it('returns no offers when the table has no item', () => {
+    const result = enchantingOffers(readyState({ item: undefined }))
+    expect(Result.isSuccess(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      throw new Error('an empty table has no offer generation failure')
+    }
+    expect(result.success).toStrictEqual([undefined, undefined, undefined])
   })
 
-  it('shows no lapis slot when the table has no lapis loaded', () => {
-    const noLapis = { ...readyState(), lapisCount: 0 }
-    expect(enchantingTableSnapshotOf(noLapis, RULES).lapis).toBeUndefined()
-  })
 
-  it('SECOND ANGLE — property: an offer never costs fewer levels than its own slot lapis cost', () => {
-    // Independently-computed invariant, not a value read back from the function
-    // under test: vanilla's 1/2/3-lapis slots cost AT LEAST 1/2/3 levels even
-    // when the drawn enchantment's own levelCost (RULES: 2-5) is cheaper than
-    // the slot it lands in — `mending` (levelCost 4 -> trunc 2 here, RULES
-    // above) landing in the 3-lapis slot is exactly this case. A mutant that
-    // swapped `Math.max(lapisCost, ...)` for `Math.min(...)` would let a cheap
-    // enchantment undercut its own slot, and the seed sweep below reaches that
-    // arrangement without needing to know in advance which seed produces it.
-    const SEED_SWEEP_SIZE = 64
-    let sawLapisCostBindTheFloor = false
-    for (let seed = 0; seed < SEED_SWEEP_SIZE; seed += 1) {
-      const state = { ...readyState(), seed }
-      for (const offer of enchantingOffers(state, RULES)) {
-        if (typeof offer !== 'undefined') {
-          expect(offer.levelCost).toBeGreaterThanOrEqual(offer.lapisCost)
-          if (offer.levelCost === offer.lapisCost) {
-            sawLapisCostBindTheFloor = true
-          }
-        }
+  it('accepts fixed itemStack boundaries and decodes typed failures with owner schemas', () => {
+    const maximum = Number(maxStackCountForItem('stone'))
+    expect(maximum).toBe(64)
+    const decodeStack = Schema.decodeUnknownResult(ItemStackSchema, {
+      onExcessProperty: 'error',
+    })
+    const decodeFailure = Schema.decodeUnknownResult(ItemStackFailureSchema, {
+      onExcessProperty: 'error',
+    })
+    const cases = [
+      { count: 1, succeeds: true },
+      { count: maximum, succeeds: true },
+      { count: 0, succeeds: false },
+      { count: maximum + 1, succeeds: false },
+    ] as const
+
+    for (const { count, succeeds } of cases) {
+      const result = itemStack('stone', count)
+      expect(Result.isSuccess(result)).toBe(succeeds)
+      if (Result.isSuccess(result)) {
+        expect(result.success.count).toBe(count)
+        expect(Result.isSuccess(decodeStack(result.success))).toBe(true)
+      } else {
+        expect(Result.isSuccess(decodeFailure(result.failure))).toBe(true)
       }
     }
-    // If the floor never binds across 64 seeds, the property above is
-    // vacuously true for every draw and proves nothing — this is the
-    // non-empty-input check the invariant needs to mean something.
-    expect(sawLapisCostBindTheFloor).toBe(true)
   })
 
-  it('excludes an offer whose OWN incompatibleWith lists an enchantment already on the item (forward direction)', () => {
-    // `sharpness`'s incompatibleWith is ['smite']; `smite`'s is []. The other
-    // test above (enchanted with sharpness -> smite excluded) exercises the
-    // REVERSE direction only (looking up the EXISTING enchantment's own
-    // incompatibleWith list). This drives the opposite case: the item already
-    // has `smite` and the CANDIDATE (`sharpness`) is the one whose own list
-    // names it. Only the forward `definition.incompatibleWith.every(...)`
-    // filter can catch this — the reverse lookup finds nothing, because
-    // `smite.incompatibleWith` is empty.
-    const { item } = readyState()
-    if (item === undefined) {
-      throw new Error('test state must contain an item')
+  it('property: validates itemStack edges and generated interior counts', () => {
+    const maximum = Number(maxStackCountForItem('stone'))
+    const decodeStack = Schema.decodeUnknownResult(ItemStackSchema, {
+      onExcessProperty: 'error',
+    })
+    const decodeFailure = Schema.decodeUnknownResult(ItemStackFailureSchema, {
+      onExcessProperty: 'error',
+    })
+    const assertCount = (count: number) => {
+      const result = itemStack('stone', count)
+      const succeeds = count >= 1 && count <= maximum
+      expect(Result.isSuccess(result)).toBe(succeeds)
+      if (Result.isSuccess(result)) {
+        expect(result.success.count).toBe(count)
+        expect(Result.isSuccess(decodeStack(result.success))).toBe(true)
+      } else {
+        expect(Result.isSuccess(decodeFailure(result.failure))).toBe(true)
+      }
     }
-    const state: EnchantingTableState = {
-      ...readyState(),
-      item: { ...item, enchantments: [{ enchantmentId: 'smite', level: 1 }] },
+
+    fc.assert(
+      fc.property(fc.constantFrom(0, 1, maximum, maximum + 1), assertCount),
+    )
+    fc.assert(
+      fc.property(fc.integer({ min: 2, max: maximum - 1 }), assertCount),
+    )
+  })
+
+  it('strictly decodes ItemStackFailure and rejects malformed tagged payloads', () => {
+    const maximum = Number(maxStackCountForItem('stone'))
+    const outOfRange = itemStack('stone', maximum + 1)
+    if (Result.isSuccess(outOfRange)) {
+      throw new Error('count above the item stack limit must fail')
     }
-    const ids = enchantingOffers(state, RULES).map((offer) => offer?.enchantmentId)
-    expect(ids).not.toContain('sharpness')
-    expect(ids).not.toContain('smite')
+    const failure = Object.fromEntries(Object.entries(outOfRange.failure as object))
+    expect(failure._tag).toBe('ItemValidationFailure')
+
+    const decodeFailure = Schema.decodeUnknownResult(ItemStackFailureSchema, {
+      onExcessProperty: 'error',
+    })
+    expect(Result.isSuccess(decodeFailure(failure))).toBe(true)
+
+    const without = (field: string) =>
+      Object.fromEntries(Object.entries(failure).filter(([key]) => key !== field))
+    const malformed: ReadonlyArray<unknown> = [
+      without('_tag'),
+      without('field'),
+      null,
+      { ...failure, message: null },
+      { ...failure, unexpected: true },
+      { ...failure, _tag: 'UnknownItemStackFailure' },
+    ]
+    for (const input of malformed) {
+      expect(Result.isFailure(decodeFailure(input))).toBe(true)
+    }
+    fc.assert(
+      fc.property(fc.constant(malformed), (inputs) => {
+        for (const input of inputs) {
+          expect(Result.isFailure(decodeFailure(input))).toBe(true)
+        }
+      }),
+    )
+  })
+
+  it('accepts uint32 seed boundaries and rejects values just outside them', () => {
+    const nonEnchantable = { itemId: 'stone', count: 1 } as const
+    for (const seed of [0, 0xffff_ffff]) {
+      const result = enchantingOffers(readyState({ item: nonEnchantable, seed }))
+      expect(Result.isSuccess(result)).toBe(true)
+      if (Result.isFailure(result)) {
+        throw new Error('uint32 boundary seed must be accepted')
+      }
+      expect(result.success).toStrictEqual([undefined, undefined, undefined])
+    }
+    for (const seed of [-1, 0x1_0000_0000]) {
+      const result = enchantingOffers(readyState({ item: nonEnchantable, seed }))
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isSuccess(result)) {
+        throw new Error('seed outside uint32 must fail')
+      }
+      expect(result.failure).toStrictEqual({
+        _tag: 'EnchantingSeedFailure',
+        reason: 'expected-unsigned-32-bit-integer',
+        seed,
+      })
+    }
+  })
+
+  it('property: accepts uint32 edges and generated interior seeds', () => {
+    const item = { itemId: 'stone', count: 1 } as const
+    const assertSeed = (seed: number) => {
+      const result = enchantingOffers(readyState({ item, seed }))
+      const valid = Number.isInteger(seed) && seed >= 0 && seed <= 0xffff_ffff
+      expect(Result.isSuccess(result)).toBe(valid)
+      if (Result.isSuccess(result)) {
+        expect(result.success).toStrictEqual([undefined, undefined, undefined])
+      } else {
+        expect(result.failure).toStrictEqual({
+          _tag: 'EnchantingSeedFailure',
+          reason: 'expected-unsigned-32-bit-integer',
+          seed,
+        })
+      }
+    }
+
+    fc.assert(
+      fc.property(
+        fc.constantFrom(-1, 0, 0xffff_ffff, 0x1_0000_0000),
+        assertSeed,
+      ),
+    )
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 0xffff_fffe }), assertSeed),
+    )
+  })
+
+  it('property: projects generated valid offers or reports a typed projection failure', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 0xffff_ffff }), (seed) => {
+        const result = enchantingOffers(readyState({ seed }))
+        if (Result.isSuccess(result)) {
+          expect(result.success).toHaveLength(3)
+          for (const offer of result.success) {
+            if (offer === undefined) {
+              continue
+            }
+            expect(offer.enchantmentId.length).toBeGreaterThan(0)
+            expect([1, 2, 3]).toContain(offer.lapisCost)
+            expect(Number.isInteger(offer.levelCost)).toBe(true)
+          }
+          return
+        }
+
+        expect(result.failure._tag).toBe('EnchantingOfferProjectionFailure')
+        if (result.failure._tag !== 'EnchantingOfferProjectionFailure') {
+          throw new Error('valid offer inputs may only fail during projection')
+        }
+        expect(['offer-1', 'offer-2', 'offer-3']).toContain(result.failure.offerId)
+        expect(result.failure.offer.enchantments.length).toBeGreaterThan(1)
+      }),
+    )
+  })
+
+  it('property: keeps applying generated valid offers typed unsupported and unchanged', () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          experienceLevel: fc.integer({ min: 0, max: 100 }),
+          lapisCount: fc.integer({ min: 0, max: 64 }),
+          offerId: fc.constantFrom('offer-1', 'offer-2', 'offer-3'),
+          seed: fc.integer({ min: 0, max: 0xffff_ffff }),
+        }),
+        ({ experienceLevel, lapisCount, offerId, seed }) => {
+          const state = readyState({ experienceLevel, lapisCount, seed })
+          const before = structuredClone(state)
+          const result = applyEnchantmentOffer(state, offerId)
+          expect(Result.isFailure(result)).toBe(true)
+          if (Result.isSuccess(result)) {
+            throw new Error('enchantment apply must remain unsupported')
+          }
+          expect(result.failure).toStrictEqual({
+            _tag: 'EnchantingApplyUnsupported',
+            offerId,
+            reason: 'mc-sim plan-fragment API is not available',
+          })
+          expect(state).toStrictEqual(before)
+        },
+      ),
+    )
   })
 })

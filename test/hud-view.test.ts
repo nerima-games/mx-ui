@@ -13,13 +13,25 @@
  * third answer: neither A nor B, because a renderer written against a narrow
  * surface does not need an environment at all.
  */
+import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { EntityHealthPoints, StackCount, itemStack, type ItemType } from '@nerima-games/mc-kernel'
+import { Result, Schema } from 'effect'
 import {
   DEFAULT_MAX_HEALTH_POINTS,
   DEFAULT_MAX_HUNGER_POINTS,
-  hudViewModel,
-  spawnSnapshot,
-  type VitalsSnapshot,
+  HOTBAR_SIZE,
+  InventoryCarriedSlotSchema,
+  SPAWN_VITALS,
+  VitalsSchema,
+  type InventoryCarriedSlot,
+  type Vitals,
+} from '@nerima-games/mc-sim'
+import {
+  HEALTH_POINTS_PER_HEART,
+  hotbarSlotIndex,
+  hudViewModel as projectHudViewModel,
+  slotView,
 } from '../src/domain/hud-view-model'
 import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../src/domain/palette'
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
@@ -34,10 +46,123 @@ const mount = (motion: 'full' | 'reduced' = 'full') => {
   return { factory, parent, view, root: fakeElement(view.root) }
 }
 
-const damaged = (healthPoints: number): VitalsSnapshot => ({
-  ...spawnSnapshot,
-  healthPoints,
+const emptyHotbar = Array.from(
+  { length: HOTBAR_SIZE },
+  (): InventoryCarriedSlot => undefined,
+)
+
+const hudViewModel = (
+  vitals: Vitals = SPAWN_VITALS,
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot> = emptyHotbar,
+  selectedHotbarSlot = 0,
+) => projectHudViewModel(vitals, hotbarSlots, selectedHotbarSlot)
+
+const damaged = (healthPoints: number): Vitals => ({
+  ...SPAWN_VITALS,
+  healthPoints: EntityHealthPoints(healthPoints),
 })
+
+const EXPANDED_MAX_HEALTH_POINTS = 30
+
+const maxedVitals = (): Vitals => ({
+  ...SPAWN_VITALS,
+  healthPoints: EntityHealthPoints(EXPANDED_MAX_HEALTH_POINTS),
+  maxHealthPoints: EntityHealthPoints(EXPANDED_MAX_HEALTH_POINTS),
+})
+
+const carriedSlot = (
+  item: ItemType,
+  count: number,
+  durability: { readonly current: number; readonly max: number },
+): InventoryCarriedSlot => {
+  const result = itemStack(item, StackCount(count))
+  if (Result.isFailure(result)) {
+    throw new Error('test item stack must be valid')
+  }
+  return { ...result.success, durability }
+}
+
+const decodeOwnerVitals = Schema.decodeUnknownResult(VitalsSchema, {
+  onExcessProperty: 'error',
+})
+
+const decodeOwnerCarriedSlot = Schema.decodeUnknownResult(InventoryCarriedSlotSchema, {
+  onExcessProperty: 'error',
+})
+
+const decodeOwnerVitalsOrThrow = (input: unknown): Vitals => {
+  const decoded = decodeOwnerVitals(input)
+  if (Result.isFailure(decoded)) {
+    throw decoded.failure
+  }
+  return decoded.success
+}
+
+const assertOwnerCarriedSlot = (slot: InventoryCarriedSlot): InventoryCarriedSlot => {
+  const decoded = decodeOwnerCarriedSlot(slot)
+  if (Result.isFailure(decoded)) {
+    throw decoded.failure
+  }
+  return slot
+}
+
+const expectOwnerSchemaFailure = <A>(
+  decoded: Result.Result<A, Schema.SchemaError>,
+): void => {
+  expect(Result.isFailure(decoded)).toBe(true)
+  if (Result.isFailure(decoded)) {
+    expect(decoded.failure).toBeInstanceOf(Schema.SchemaError)
+  }
+}
+
+const ownerCarriedSlotForCount = (count: number): InventoryCarriedSlot => {
+  const stack = itemStack('stone' as ItemType, StackCount(count))
+  if (Result.isFailure(stack)) {
+    throw stack.failure
+  }
+  return assertOwnerCarriedSlot(stack.success)
+}
+
+const validOwnerVitalsArbitrary = fc
+  .record({
+    maxHealthPoints: fc.integer({ min: 1, max: 40 }),
+    healthOffset: fc.integer({ min: 0, max: 40 }),
+    maxHungerPoints: fc.integer({ min: 0, max: 40 }),
+    hungerOffset: fc.integer({ min: 0, max: 40 }),
+    saturationOffset: fc.integer({ min: 0, max: 40 }),
+    exhaustion: fc.double({ min: 0, max: 3.999, noNaN: true }),
+    foodTimerSecs: fc.double({ min: 0, max: 3.999, noNaN: true }),
+    totalExperience: fc.integer({ min: 0, max: 10_000 }),
+    lastDamageCause: fc.option(fc.string({ maxLength: 12 }), { nil: undefined }),
+  })
+  .map(
+    ({
+      maxHealthPoints,
+      healthOffset,
+      maxHungerPoints,
+      hungerOffset,
+      saturationOffset,
+      ...rest
+    }) => {
+      const hungerPoints = Math.min(hungerOffset, maxHungerPoints)
+      return {
+        ...rest,
+        healthPoints: Math.min(healthOffset, maxHealthPoints),
+        maxHealthPoints,
+        hungerPoints,
+        maxHungerPoints,
+        saturation: Math.min(saturationOffset, hungerPoints),
+      }
+    },
+  )
+
+const validHotbarCountsArbitrary = fc.array(
+  fc.option(fc.integer({ min: 1, max: 64 }), { nil: undefined }),
+  { minLength: 0, maxLength: HOTBAR_SIZE },
+)
+
+const pointsShownByIcons = (icons: ReadonlyArray<'full' | 'half' | 'empty'>): number =>
+  icons.reduce((total, icon) => total + (icon === 'full' ? 2 : icon === 'half' ? 1 : 0), 0)
 
 describe('the HUD renderer applies the palette', () => {
   it('declares every token as a custom property on its own root, and nowhere else', () => {
@@ -67,7 +192,7 @@ describe('the HUD renderer applies the palette', () => {
 
   it('references tokens by name everywhere else — no element carries a colour literal', () => {
     const { view, root } = mount()
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(SPAWN_VITALS))
 
     for (const element of root.walk()) {
       for (const [property, value] of element.style.properties) {
@@ -98,7 +223,8 @@ describe('the HUD renderer applies the palette', () => {
     view.render(hudViewModel(damaged(19)))
 
     const hearts = root.findAll('data-icon', 'heart')
-    expect(hearts).toHaveLength(DEFAULT_MAX_HEALTH_POINTS / 2)
+    const fullHeartCount = DEFAULT_MAX_HEALTH_POINTS / HEALTH_POINTS_PER_HEART
+    expect(hearts).toHaveLength(fullHeartCount)
 
     const glyphs = hearts.map((icon) => [icon.children[0]?.textContent, icon.children[1]?.children[0]?.textContent])
     // Hollow behind, solid in front — two different characters, on every icon.
@@ -107,9 +233,9 @@ describe('the HUD renderer applies the palette', () => {
     const widths = hearts.map((icon) => icon.children[1]?.style.properties.get('width'))
     // Nine full, one half — DN-UI-6's 「A player on half a heart needs to see
     // half a heart」, expressed as a clip rather than as a colour.
-    expect(widths).toStrictEqual([...Array<string>(9).fill('100%'), '50%'])
+    expect(widths).toStrictEqual([...Array<string>(fullHeartCount - 1).fill('100%'), '50%'])
     expect(hearts.map((icon) => icon.attributes.get('data-icon-state'))).toStrictEqual([
-      ...Array<string>(9).fill('full'),
+      ...Array<string>(fullHeartCount - 1).fill('full'),
       'half',
     ])
   })
@@ -119,7 +245,7 @@ describe('the HUD renderer applies the palette', () => {
     // CHROMA, 「which is the channel dichromacy compresses hardest」. The palette
     // says outright that the shapes are 「most of the signal」 for this pair.
     const { view, root } = mount()
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(SPAWN_VITALS))
 
     const heart = root.find('data-icon', 'heart')
     const shank = root.find('data-icon', 'shank')
@@ -174,12 +300,13 @@ describe('the HUD renderer is idempotent', () => {
       'attribute:data-icon-state',
       'style:width',
     ])
-    expect(root.findAll('data-icon', 'heart')[9]?.attributes.get('data-icon-state')).toBe('half')
+    const hearts = root.findAll('data-icon', 'heart')
+    expect(hearts[DEFAULT_MAX_HEALTH_POINTS / HEALTH_POINTS_PER_HEART - 1]?.attributes.get('data-icon-state')).toBe('half')
   })
 
   it('creates no element on a steady frame, and grows the row only when the maximum does', () => {
     const { factory, view } = mount()
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(SPAWN_VITALS))
     const created = factory.created.length
 
     for (let frame = 0; frame < 16; frame += 1) {
@@ -188,24 +315,23 @@ describe('the HUD renderer is idempotent', () => {
     expect(factory.created.length).toBe(created)
 
     view.render(
-      hudViewModel({ ...spawnSnapshot, healthPoints: 30, maxHealthPoints: 30 }),
+      hudViewModel(maxedVitals()),
     )
-    // Five more hearts. `safeMaxPoints` deliberately does not bound the maximum,
-    // so pre-allocating is not an option; growing on a max-health change is.
+    // Owner supplied max health expands the projected row from ten hearts to fifteen.
     expect(factory.created.length).toBeGreaterThan(created)
   })
 
   it('hides a surplus icon rather than removing it, and stops writing once hidden', () => {
     const { factory, view, root } = mount()
-    view.render(hudViewModel({ ...spawnSnapshot, healthPoints: 30, maxHealthPoints: 30 }))
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(maxedVitals()))
+    view.render(hudViewModel(SPAWN_VITALS))
 
     const hearts = root.findAll('data-icon', 'heart')
-    expect(hearts).toHaveLength(15)
+    expect(hearts).toHaveLength(EXPANDED_MAX_HEALTH_POINTS / HEALTH_POINTS_PER_HEART)
     expect(hearts[14]?.attributes.get('hidden')).toBe('')
 
     const before = factory.mark()
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(SPAWN_VITALS))
     expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 })
@@ -229,7 +355,6 @@ describe('the HUD renderer honours reduced motion', () => {
       `width ${String(EXPERIENCE_TRANSITION_MS)}ms linear`,
     )
   })
-
   it('removes it when the preference flips at runtime, and puts it back', () => {
     const { view, root } = mount('full')
     const fill = root.find('data-mx-ui', 'experience-fill')
@@ -259,7 +384,7 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
 
     expect(slots.map((slot) => slot.attributes.get('tabindex'))).toStrictEqual([
       '0',
-      ...Array<string>(8).fill('-1'),
+      ...Array<string>(HOTBAR_SIZE - 1).fill('-1'),
     ])
     // And the group has a name. DN-UI-1c: 「the visible label is a sibling
     // `<span>`, so a screen reader would otherwise announce this only as "edit
@@ -293,14 +418,14 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     // both at once」. This is that sentence, expressed as two elements that can
     // be lit on two different slots at the same moment.
     const { root, view } = mount()
-    view.render(hudViewModel({ ...spawnSnapshot, selectedHotbarIndex: 1 }))
-    view.setKeyboardFocus(7)
+    view.render(hudViewModel(SPAWN_VITALS, emptyHotbar, 1))
+    view.setKeyboardFocus(HOTBAR_SIZE - 2)
 
     const slots = root.findAll('data-mx-ui', 'slot')
     expect(slots[1]?.style.properties.get('border-color')).toBe(PALETTE_VAR.slotSelected)
     expect(ringOf(slots[1])?.attributes.get('hidden')).toBe('')
-    expect(slots[7]?.style.properties.get('border-color')).toBe(PALETTE_VAR.slotBorder)
-    expect(ringOf(slots[7])?.attributes.has('hidden')).toBe(false)
+    expect(slots[HOTBAR_SIZE - 2]?.style.properties.get('border-color')).toBe(PALETTE_VAR.slotBorder)
+    expect(ringOf(slots[HOTBAR_SIZE - 2])?.attributes.has('hidden')).toBe(false)
   })
 
   it('carries the ring on WEIGHT as well as colour, as two real widths (palette G3)', () => {
@@ -329,14 +454,14 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
   })
 
   it('clamps a told index through the SAME derivation the selection uses (DN-UI-7a)', () => {
-    // Both indices arrive from across a boundary and both can be `9`, `-1` or
+    // Both indices arrive from across a boundary and both can be `HOTBAR_SIZE`, `-1` or
     // `NaN`. A HUD that loses its selection and a ring that vanishes are the same
     // bug twice, so there is one `hotbarSlotIndex` and not two copies of it.
     const { root, view } = mount()
     const slots = root.findAll('data-mx-ui', 'slot')
 
-    view.setKeyboardFocus(9)
-    expect(slots[8]?.attributes.get('tabindex')).toBe('0')
+    view.setKeyboardFocus(HOTBAR_SIZE)
+    expect(slots[HOTBAR_SIZE - 1]?.attributes.get('tabindex')).toBe('0')
     view.setKeyboardFocus(-1)
     expect(slots[0]?.attributes.get('tabindex')).toBe('0')
     view.setKeyboardFocus(Number.NaN)
@@ -358,7 +483,7 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     // observe focus) and no `focus()` (so nothing can move it), and both
     // absences are what keep the Escape decision single (DN-UI-4/DN-UI-13c).
     const { view, root, parent } = mount()
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(SPAWN_VITALS))
     view.setKeyboardFocus(2)
 
     expect(root.listenersInTree()).toStrictEqual([])
@@ -379,7 +504,7 @@ describe('the HUD renderer owns no keys', () => {
     // `application/dom-surface.ts` does not declare it, precisely so that this
     // is an observation about the renderer rather than about the fake.
     const { view, root, parent } = mount()
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(SPAWN_VITALS))
     view.setMotion('reduced')
 
     expect(root.listenersInTree()).toStrictEqual([])
@@ -432,29 +557,42 @@ describe('the HUD renderer is a dumb projection', () => {
     // (「フィールドがあれば描く」), so the derivation's `empty` guard is the only
     // thing between a broken tool and a bar under an empty square.
     const { view, root } = mount()
-    view.render(
-      hudViewModel({
-        ...spawnSnapshot,
-        hotbar: [{ itemId: 'pickaxe', count: 0, durability: 0.5 }],
-      }),
-    )
+    view.render(hudViewModel(SPAWN_VITALS, [undefined]))
 
     const [slot] = root.findAll('data-mx-ui', 'slot')
     expect(slot?.attributes.get('data-empty')).toBe('')
     expect(slot?.find('data-mx-ui', 'slot-durability')?.attributes.get('hidden')).toBe('')
   })
 
+  it('does not show durability for an owner slot without durability metadata', () => {
+    const stack = itemStack('stone', StackCount(1))
+    if (Result.isFailure(stack)) {
+      throw new Error('test item stack must be valid')
+    }
+
+    const { view, root } = mount()
+    view.render(hudViewModel(SPAWN_VITALS, [stack.success]))
+
+    const [slot] = root.findAll('data-mx-ui', 'slot')
+    expect(slot?.find('data-mx-ui', 'slot-durability')?.attributes.get('hidden')).toBe('')
+  })
+
+  it('keeps shared screen slots on their local durability projection', () => {
+    expect(slotView({ itemId: 'stone', count: 1, durability: 0.25 }, 0, 0).durabilityPercent).toBe(25)
+    expect(slotView({ itemId: 'stone', count: 1 }, 0, 0).durabilityPercent).toBeUndefined()
+  })
+
   it('switches the durability bar to the alert token below the threshold, and widens the border on selection', () => {
     const { view, root } = mount()
     view.render(
-      hudViewModel({
-        ...spawnSnapshot,
-        hotbar: [
-          { itemId: 'pickaxe', count: 1, durability: 0.8 },
-          { itemId: 'axe', count: 1, durability: 0.1 },
+      hudViewModel(
+        SPAWN_VITALS,
+        [
+          carriedSlot('iron_pickaxe', 1, { current: 80, max: 100 }),
+          carriedSlot('iron_sword', 1, { current: 10, max: 100 }),
         ],
-        selectedHotbarIndex: 1,
-      }),
+        1,
+      ),
     )
 
     const slots = root.findAll('data-mx-ui', 'slot')
@@ -474,11 +612,8 @@ describe('the HUD renderer is a dumb projection', () => {
   })
 
   it('REGRESSION: a shorter hotbar than the DOM leaves the surplus slot elements untouched', () => {
-    // HudViewModel is a published type (docs/public-api.md) with no canonical
-    // constructor site other than `hudViewModel`, which always returns exactly
-    // HOTBAR_SLOT_COUNT (9) hotbar entries via `Array.from({ length:
-    // HOTBAR_SLOT_COUNT })` — a consumer assembling one by hand, which is what a
-    // published view model is for, can hand over fewer.
+    // A caller may hand the renderer a shorter projection than the simulation's
+    // usual hotbar, and surplus DOM slots remain stable.
     const { view, root } = mount()
     expect(() =>
       view.render({
@@ -490,6 +625,158 @@ describe('the HUD renderer is a dumb projection', () => {
         shanks: [],
       }),
     ).not.toThrow()
-    expect(root.findAll('data-mx-ui', 'slot')).toHaveLength(9)
+    expect(root.findAll('data-mx-ui', 'slot')).toHaveLength(HOTBAR_SIZE)
+  })
+})
+
+describe('HUD owner projection contracts', () => {
+  it('accepts fixed owner boundaries and reports typed failures just outside them', () => {
+    for (const points of [0, 1, 2, 19, 20]) {
+      const vitals = decodeOwnerVitalsOrThrow({
+        ...SPAWN_VITALS,
+        healthPoints: points,
+        hungerPoints: points,
+        saturation: points,
+      })
+      const model = projectHudViewModel(vitals, [], 0)
+
+      expect(model.hearts).toHaveLength(Math.ceil(DEFAULT_MAX_HEALTH_POINTS / HEALTH_POINTS_PER_HEART))
+      expect(pointsShownByIcons(model.hearts)).toBe(points)
+      expect(model.shanks).toHaveLength(Math.ceil(DEFAULT_MAX_HUNGER_POINTS / HEALTH_POINTS_PER_HEART))
+      expect(pointsShownByIcons(model.shanks)).toBe(points)
+    }
+
+    const noHunger = decodeOwnerVitalsOrThrow({
+      ...SPAWN_VITALS,
+      maxHungerPoints: 0,
+      hungerPoints: 0,
+      saturation: 0,
+    })
+    expect(projectHudViewModel(noHunger, [], 0).shanks).toStrictEqual([])
+
+    const outOfRangeVitals: ReadonlyArray<unknown> = [
+      { ...SPAWN_VITALS, maxHealthPoints: 0 },
+      { ...SPAWN_VITALS, healthPoints: -1 },
+      { ...SPAWN_VITALS, healthPoints: DEFAULT_MAX_HEALTH_POINTS + 1 },
+      { ...SPAWN_VITALS, maxHungerPoints: 0, hungerPoints: 1, saturation: 0 },
+      { ...SPAWN_VITALS, hungerPoints: -1, saturation: 0 },
+      { ...SPAWN_VITALS, hungerPoints: DEFAULT_MAX_HUNGER_POINTS + 1 },
+      { ...SPAWN_VITALS, hungerPoints: 5, saturation: 6 },
+      { ...SPAWN_VITALS, exhaustion: 4 },
+      { ...SPAWN_VITALS, foodTimerSecs: 4 },
+    ]
+    for (const input of outOfRangeVitals) {
+      expectOwnerSchemaFailure(decodeOwnerVitals(input))
+    }
+
+    const missingHealth: Record<string, unknown> = { ...SPAWN_VITALS }
+    delete missingHealth['healthPoints']
+    expectOwnerSchemaFailure(decodeOwnerVitals(missingHealth))
+    expectOwnerSchemaFailure(
+      decodeOwnerVitals({ ...SPAWN_VITALS, healthPoints: null }),
+    )
+    expectOwnerSchemaFailure(
+      decodeOwnerVitals({ ...SPAWN_VITALS, mxUiOnly: true }),
+    )
+
+    const validSlot = ownerCarriedSlotForCount(1)
+    assertOwnerCarriedSlot(undefined)
+    expectOwnerSchemaFailure(decodeOwnerCarriedSlot(null))
+    expectOwnerSchemaFailure(
+      decodeOwnerCarriedSlot({ item: validSlot.item, count: validSlot.count }),
+    )
+    expectOwnerSchemaFailure(decodeOwnerCarriedSlot({ ...validSlot, count: 0 }))
+    expectOwnerSchemaFailure(
+      decodeOwnerCarriedSlot({ ...validSlot, item: 'unknown-owner-item' }),
+    )
+  })
+
+  it('projects generated strict-schema vitals and owner hotbar slots', () => {
+    const validSlot = ownerCarriedSlotForCount(1)
+    const missingHealth: Record<string, unknown> = { ...SPAWN_VITALS }
+    delete missingHealth['healthPoints']
+    const fixedSchemaCases = {
+      acceptedPoints: [0, 1, 2, 19, 20],
+      malformedVitals: [
+        { ...SPAWN_VITALS, maxHealthPoints: 0 },
+        { ...SPAWN_VITALS, healthPoints: -1 },
+        { ...SPAWN_VITALS, healthPoints: DEFAULT_MAX_HEALTH_POINTS + 1 },
+        { ...SPAWN_VITALS, maxHungerPoints: 0, hungerPoints: 1, saturation: 0 },
+        { ...SPAWN_VITALS, hungerPoints: -1, saturation: 0 },
+        { ...SPAWN_VITALS, hungerPoints: DEFAULT_MAX_HUNGER_POINTS + 1 },
+        { ...SPAWN_VITALS, hungerPoints: 5, saturation: 6 },
+        { ...SPAWN_VITALS, exhaustion: 4 },
+        { ...SPAWN_VITALS, foodTimerSecs: 4 },
+        missingHealth,
+        { ...SPAWN_VITALS, healthPoints: null },
+        { ...SPAWN_VITALS, mxUiOnly: true },
+      ],
+      malformedSlots: [
+        null,
+        { item: validSlot.item, count: validSlot.count },
+        { ...validSlot, count: 0 },
+        { ...validSlot, item: 'unknown-owner-item' },
+      ],
+    }
+
+    fc.assert(
+      fc.property(
+        validOwnerVitalsArbitrary,
+        validHotbarCountsArbitrary,
+        fc.integer({ min: -20, max: 20 }),
+        fc.constant(fixedSchemaCases),
+        (rawVitals, counts, selectedHotbarSlot, schemaCases) => {
+          const vitals = decodeOwnerVitalsOrThrow(rawVitals)
+          const slots = counts.map((count) =>
+            count === undefined
+              ? assertOwnerCarriedSlot(undefined)
+              : ownerCarriedSlotForCount(count),
+          )
+          const model = projectHudViewModel(vitals, slots, selectedHotbarSlot)
+          const selectedIndex = hotbarSlotIndex(selectedHotbarSlot)
+          const expectedHotbar = slots.map((slot, index) => ({
+            countLabel:
+              slot === undefined || slot.count <= 1 ? undefined : String(slot.count),
+            durabilityPercent: undefined,
+            empty: slot === undefined,
+            index,
+            itemId: slot?.item,
+            selected: index === selectedIndex,
+          }))
+
+          expect(model.hearts).toHaveLength(
+            Math.ceil(rawVitals.maxHealthPoints / HEALTH_POINTS_PER_HEART),
+          )
+          expect(pointsShownByIcons(model.hearts)).toBe(rawVitals.healthPoints)
+          expect(model.shanks).toHaveLength(
+            Math.ceil(rawVitals.maxHungerPoints / HEALTH_POINTS_PER_HEART),
+          )
+          expect(pointsShownByIcons(model.shanks)).toBe(rawVitals.hungerPoints)
+          expect(model.hotbar).toStrictEqual(expectedHotbar)
+          expect(model.dead).toBe(rawVitals.healthPoints === 0)
+
+          for (const points of schemaCases.acceptedPoints) {
+            const boundaryVitals = decodeOwnerVitalsOrThrow({
+              ...SPAWN_VITALS,
+              healthPoints: points,
+              hungerPoints: points,
+              saturation: points,
+            })
+            const boundaryModel = projectHudViewModel(boundaryVitals, [], 0)
+
+            expect(pointsShownByIcons(boundaryModel.hearts)).toBe(points)
+            expect(pointsShownByIcons(boundaryModel.shanks)).toBe(points)
+          }
+
+          for (const input of schemaCases.malformedVitals) {
+            expectOwnerSchemaFailure(decodeOwnerVitals(input))
+          }
+          for (const input of schemaCases.malformedSlots) {
+            expectOwnerSchemaFailure(decodeOwnerCarriedSlot(input))
+          }
+        },
+      ),
+      { numRuns: 100 },
+    )
   })
 })
