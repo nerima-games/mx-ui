@@ -1,15 +1,15 @@
-import {
-  QaNamespaceNameSchema,
-  QaOperationNameSchema,
-  type QaNamespace,
-  type QaOperation,
-} from '@nerima-games/mc-kernel'
 import { Effect, Schema } from 'effect'
 import {
+  type QaNamespace,
+  QaNamespaceNameSchema,
+  type QaOperation,
+  QaOperationNameSchema,
+} from '@nerima-games/mc-kernel'
+import {
+  type UiQaSnapshot,
   UiQaStateInputSchema,
   UiQaStateSchema,
   uiQaStateFromSnapshot,
-  type UiQaSnapshot,
 } from '../domain/ui-qa.js'
 
 export const UI_QA_NAMESPACE_NAME: Schema.Schema.Type<typeof QaNamespaceNameSchema> =
@@ -28,16 +28,16 @@ export type UiQaNamespace = QaNamespace<
   Readonly<Record<never, never>>
 >
 
-const decodeStrict = <S extends Schema.Codec<unknown>>(
-  schema: S,
+const decodeStrict = <CodecType extends Schema.Codec<unknown>>(
+  schema: CodecType,
   input: unknown,
-): Effect.Effect<S['Type'], Schema.SchemaError, S['DecodingServices']> =>
+): Effect.Effect<CodecType['Type'], Schema.SchemaError, CodecType['DecodingServices']> =>
   Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })(input)
 
 export const createUiQaNamespace = (read: () => UiQaSnapshot): UiQaNamespace => {
   const state: UiQaStateOperation = {
-    name: UI_QA_STATE_OPERATION_NAME,
     input: UiQaStateInputSchema,
+    name: UI_QA_STATE_OPERATION_NAME,
     output: UiQaStateSchema,
     run: (input) =>
       decodeStrict(UiQaStateInputSchema, input).pipe(
@@ -48,8 +48,8 @@ export const createUiQaNamespace = (read: () => UiQaSnapshot): UiQaNamespace => 
   }
 
   return {
+    command: {},
     name: UI_QA_NAMESPACE_NAME,
     observe: { state },
-    command: {},
   }
 }

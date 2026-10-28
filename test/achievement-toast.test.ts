@@ -18,7 +18,7 @@ const achievementEvent = (achievement: string): AchievementUnlockedEvent => {
     player: 'player:one',
     achievement,
   })
-  if (event._tag !== 'AchievementUnlocked') {
+  if (event['_tag'] !== 'AchievementUnlocked') {
     throw new Error('expected an achievement event')
   }
   return event
@@ -58,7 +58,7 @@ describe('achievement toast projection', () => {
       level: 1,
     })
 
-    expect(achievementToastFromEvent(event)).toBeUndefined()
+    expect(achievementToastFromEvent(event)).toBeNull()
   })
 
   it('rejects empty, null, and missing toast display values', () => {

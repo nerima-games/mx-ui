@@ -1,14 +1,13 @@
-import { Result } from 'effect'
+import { Result, Schema } from 'effect'
 import { DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
-import type { ProductionFrame } from '@nerima-games/mc-render'
 import {
   INITIAL_PLAYER_POSE,
   cameraPoseOf,
 } from '@nerima-games/mc-sim'
 import { describe, expect, it } from 'vitest'
-import { Schema } from 'effect'
 import {
   FramesPerSecondSchema,
+  GpuTimeMillisecondsSchema,
   type DebugOverlayModel,
   type DebugOverlaySnapshot,
 } from '../src/domain/debug-overlay'
@@ -42,14 +41,14 @@ const facing = (yawRadians: number, pitchRadians: number): NonNullable<DebugOver
 const populatedModel: DebugOverlayModel = {
   fps: Schema.decodeUnknownSync(FramesPerSecondSchema)(0),
   coordinates: { worldX: 0, worldY: 64, worldZ: -0.5 },
-  chunk: undefined,
+  chunk: null,
   facing: facing(0, -0.25),
   dimension: 'overworld',
-  biome: undefined,
+  biome: null,
   worldTime: { ticks: 0, dayLengthTicks: 24_000 },
   frameDeltaSecs: DeltaTimeSecs(0),
   gpuTimingSupported: false,
-  latestGpuTimeMs: 0,
+  latestGpuTimeMs: Schema.decodeUnknownSync(GpuTimeMillisecondsSchema)(0),
   qualityPreset: 'low',
 }
 
@@ -111,8 +110,7 @@ describe('createDebugOverlayView', () => {
     const parent = factory.createElement('main')
     const view = createDebugOverlayView(factory, parent)
     const root = fakeElement(view.root)
-    const frame: ProductionFrame = {
-      elapsedSecs: 2,
+    const frame: NonNullable<DebugOverlaySnapshot['frame']> = {
       deltaSecs: DeltaTimeSecs(0.25),
       cameraPosition: { worldX: -1, worldY: 0, worldZ: 3 },
     }

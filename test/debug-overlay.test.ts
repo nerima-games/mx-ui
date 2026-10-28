@@ -1,5 +1,4 @@
-import { Result } from 'effect'
-import { Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
@@ -9,7 +8,6 @@ import {
   type PlayerServiceApi,
   type TimeServiceApi,
 } from '@nerima-games/mc-sim'
-import type { ProductionFrame } from '@nerima-games/mc-render'
 import {
   debugOverlayModel,
   FramesPerSecondSchema,
@@ -31,8 +29,7 @@ const cameraPose = (yawRadians: number, pitchRadians: number): EffectValue<Playe
   throw new Error('expected camera pose to be valid')
 }
 
-const frame = (deltaSecs: number): ProductionFrame => ({
-  elapsedSecs: 10,
+const frame = (deltaSecs: number): NonNullable<DebugOverlaySnapshot['frame']> => ({
   deltaSecs: DeltaTimeSecs(deltaSecs),
   cameraPosition: { worldX: 0, worldY: 64, worldZ: -0.5 },
 })
@@ -67,19 +64,19 @@ describe('debugOverlayModel', () => {
     )
   })
 
-  it('preserves unavailable values as undefined', () => {
+  it('preserves unavailable values as null', () => {
     expect(debugOverlayModel(emptySnapshot())).toStrictEqual({
-      fps: undefined,
-      coordinates: undefined,
-      chunk: undefined,
-      facing: undefined,
-      dimension: undefined,
-      biome: undefined,
-      worldTime: undefined,
-      frameDeltaSecs: undefined,
-      gpuTimingSupported: undefined,
-      latestGpuTimeMs: undefined,
-      qualityPreset: undefined,
+      biome: null,
+      chunk: null,
+      coordinates: null,
+      dimension: null,
+      facing: null,
+      fps: null,
+      frameDeltaSecs: null,
+      gpuTimingSupported: null,
+      latestGpuTimeMs: null,
+      qualityPreset: null,
+      worldTime: null,
     })
   })
 
@@ -96,17 +93,17 @@ describe('debugOverlayModel', () => {
     }
 
     expect(debugOverlayModel(snapshot)).toStrictEqual({
-      fps: 2,
+      biome: null,
+      chunk: null,
       coordinates: { worldX: 0, worldY: 64, worldZ: -0.5 },
-      chunk: undefined,
-      facing: { yawRadians: -1.25, pitchRadians: 0 },
       dimension: INITIAL_PLAYER_DIMENSION,
-      biome: undefined,
-      worldTime,
+      facing: { pitchRadians: 0, yawRadians: -1.25 },
+      fps: 2,
       frameDeltaSecs: 0.5,
       gpuTimingSupported: false,
       latestGpuTimeMs: 0,
       qualityPreset: 'high',
+      worldTime,
     })
   })
 
@@ -117,7 +114,7 @@ describe('debugOverlayModel', () => {
     }
 
     expect(debugOverlayModel(snapshot)).toMatchObject({
-      fps: undefined,
+      fps: null,
       coordinates: { worldX: 0, worldY: 64, worldZ: -0.5 },
       frameDeltaSecs: 0,
     })
@@ -130,7 +127,7 @@ describe('debugOverlayModel', () => {
     }
 
     expect(debugOverlayModel(snapshot)).toMatchObject({
-      fps: undefined,
+      fps: null,
       frameDeltaSecs: Number.MIN_VALUE,
     })
   })
@@ -145,8 +142,8 @@ describe('debugOverlayModel', () => {
 
     expect(debugOverlayModel(snapshot)).toMatchObject({
       fps: 4,
-      facing: undefined,
-      dimension: undefined,
+      facing: null,
+      dimension: null,
       gpuTimingSupported: true,
       qualityPreset: 'medium',
     })

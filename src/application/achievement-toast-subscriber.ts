@@ -1,13 +1,20 @@
-import { DomainEventBus, DomainEventBusLayer, EventSubscriberCapacitySchema } from '@nerima-games/mc-sim'
-import { Effect, Fiber, Schema, Stream } from 'effect'
 import type * as Scope from 'effect/Scope'
-import { achievementToastFromEvent, type AchievementToast } from '../domain/achievement-toast.js'
+import { type AchievementToast, achievementToastFromEvent } from '../domain/achievement-toast.js'
+import {
+  DomainEventBus,
+  EventSubscriberCapacitySchema,
+  DomainEventBusLayer as domainEventBusLayer,
+} from '@nerima-games/mc-sim'
+import { Effect, Fiber, Schema, Stream } from 'effect'
+
+const { decodeUnknownSync } = Schema
+const TOAST_EVENT_SUBSCRIBER_CAPACITY = 64
 
 export const ACHIEVEMENT_TOAST_EVENT_SUBSCRIBER_CAPACITY: Schema.Schema.Type<
   typeof EventSubscriberCapacitySchema
-> = Schema.decodeUnknownSync(EventSubscriberCapacitySchema)(64)
+> = decodeUnknownSync(EventSubscriberCapacitySchema)(TOAST_EVENT_SUBSCRIBER_CAPACITY)
 
-export const AchievementToastEventBusLayer: ReturnType<typeof DomainEventBusLayer> = DomainEventBusLayer(
+export const AchievementToastEventBusLayer: ReturnType<typeof domainEventBusLayer> = domainEventBusLayer(
   ACHIEVEMENT_TOAST_EVENT_SUBSCRIBER_CAPACITY,
 )
 
@@ -18,11 +25,15 @@ export type AchievementToastSubscription = Readonly<{
 export const startAchievementToastSubscriber: (
   onToast: (toast: AchievementToast) => void,
 ) => Effect.Effect<AchievementToastSubscription, never, DomainEventBus | Scope.Scope> = (onToast) =>
-  Effect.gen(function* () {
+  Effect.gen(function* subscribeToAchievementEvents() {
     const bus = yield* DomainEventBus
     const fiber = yield* Stream.runForEach(bus.events, (event) => {
       const toast = achievementToastFromEvent(event)
-      return typeof toast === 'undefined' ? Effect.void : Effect.sync(() => onToast(toast))
+      if (toast === null) {
+        return Effect.void
+      }
+
+      return Effect.sync(() => onToast(toast))
     }).pipe(Effect.forkScoped({ startImmediately: true }))
 
     return { close: Fiber.interrupt(fiber) }

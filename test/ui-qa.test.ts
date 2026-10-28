@@ -14,7 +14,11 @@ import {
   AchievementToastTitleSchema,
   type AchievementToast,
 } from '../src/domain/achievement-toast.js'
-import { FramesPerSecondSchema, type DebugOverlayModel } from '../src/domain/debug-overlay.js'
+import {
+  FramesPerSecondSchema,
+  GpuTimeMillisecondsSchema,
+  type DebugOverlayModel,
+} from '../src/domain/debug-overlay.js'
 import { UiQaStateInputSchema, UiQaStateSchema, uiQaStateFromSnapshot } from '../src/domain/ui-qa.js'
 import { createUiQaNamespace } from '../src/application/ui-qa.js'
 
@@ -29,16 +33,16 @@ const toast: AchievementToast = {
 }
 
 const debugOverlay: DebugOverlayModel = {
-  biome: undefined,
-  chunk: undefined,
+  biome: null,
+  chunk: null,
   coordinates: { worldX: 0, worldY: 64, worldZ: 0 },
   dimension: Schema.decodeUnknownSync(DimensionIdSchema)('overworld'),
   facing: { yawRadians: AngleRadians(-1.25), pitchRadians: AngleRadians(0) },
   fps: Schema.decodeUnknownSync(FramesPerSecondSchema)(60),
   frameDeltaSecs: DeltaTimeSecs(0),
   gpuTimingSupported: false,
-  latestGpuTimeMs: 0,
-  qualityPreset: undefined,
+  latestGpuTimeMs: Schema.decodeUnknownSync(GpuTimeMillisecondsSchema)(0),
+  qualityPreset: null,
   worldTime: { dayLengthTicks: 24_000, ticks: 0 },
 }
 

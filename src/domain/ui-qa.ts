@@ -1,31 +1,42 @@
 import {
+  type AchievementToast,
+  AchievementToastSchema,
+} from './achievement-toast.js'
+import {
   AngleRadians,
   DeltaTimeSecs,
   DimensionIdSchema,
 } from '@nerima-games/mc-kernel'
-import { Schema } from 'effect'
 import {
-  AchievementToastSchema,
-  type AchievementToast,
-} from './achievement-toast.js'
-import type { DebugOverlayModel } from './debug-overlay.js'
-import { FramesPerSecondSchema } from './debug-overlay.js'
+  type DebugOverlayModel,
+  FramesPerSecondSchema,
+  GpuTimeMillisecondsSchema,
+} from './debug-overlay.js'
+import { Schema } from 'effect'
 
-const MaybeFiniteSchema: Schema.Codec<number | null, unknown> = Schema.NullOr(Schema.Finite)
-const MaybeBooleanSchema: Schema.Codec<boolean | null, unknown> = Schema.NullOr(Schema.Boolean)
+const literals = Schema.Literals
+const nullOr = Schema.NullOr
+const record = Schema.Record
+const struct = Schema.Struct
+
+const MaybeBooleanSchema: Schema.Codec<boolean | null, unknown> = nullOr(Schema.Boolean)
+const MaybeGpuTimeMillisecondsSchema: Schema.Codec<
+  Exclude<DebugOverlayModel['latestGpuTimeMs'], null> | null,
+  unknown
+> = nullOr(GpuTimeMillisecondsSchema)
 const MaybeDimensionSchema: Schema.Codec<
   Schema.Schema.Type<typeof DimensionIdSchema> | null,
   unknown
-> = Schema.NullOr(DimensionIdSchema)
+> = nullOr(DimensionIdSchema)
 const MaybeQualityPresetSchema: Schema.Codec<
   Exclude<DebugOverlayModel['qualityPreset'], undefined> | null,
   unknown
-> = Schema.NullOr(Schema.Literals(['low', 'medium', 'high', 'ultra']))
+> = nullOr(literals(['low', 'medium', 'high', 'ultra']))
 
 const DebugCoordinatesSchema: Schema.Codec<
   NonNullable<DebugOverlayModel['coordinates']>,
   unknown
-> = Schema.Struct({
+> = struct({
   worldX: Schema.Finite,
   worldY: Schema.Finite,
   worldZ: Schema.Finite,
@@ -34,22 +45,22 @@ const DebugCoordinatesSchema: Schema.Codec<
 const MaybeDebugCoordinatesSchema: Schema.Codec<
   NonNullable<DebugOverlayModel['coordinates']> | null,
   unknown
-> = Schema.NullOr(DebugCoordinatesSchema)
+> = nullOr(DebugCoordinatesSchema)
 
-const DebugFacingSchema: Schema.Codec<NonNullable<DebugOverlayModel['facing']>, unknown> = Schema.Struct({
-  yawRadians: Schema.fromBrand('AngleRadians', AngleRadians)(Schema.Finite),
+const DebugFacingSchema: Schema.Codec<NonNullable<DebugOverlayModel['facing']>, unknown> = struct({
   pitchRadians: Schema.fromBrand('AngleRadians', AngleRadians)(Schema.Finite),
+  yawRadians: Schema.fromBrand('AngleRadians', AngleRadians)(Schema.Finite),
 })
 
 const MaybeDebugFacingSchema: Schema.Codec<
   NonNullable<DebugOverlayModel['facing']> | null,
   unknown
-> = Schema.NullOr(DebugFacingSchema)
+> = nullOr(DebugFacingSchema)
 
 const DebugWorldTimeSchema: Schema.Codec<
   NonNullable<DebugOverlayModel['worldTime']>,
   unknown
-> = Schema.Struct({
+> = struct({
   dayLengthTicks: Schema.Finite,
   ticks: Schema.Finite,
 })
@@ -57,7 +68,7 @@ const DebugWorldTimeSchema: Schema.Codec<
 const MaybeDebugWorldTimeSchema: Schema.Codec<
   NonNullable<DebugOverlayModel['worldTime']> | null,
   unknown
-> = Schema.NullOr(DebugWorldTimeSchema)
+> = nullOr(DebugWorldTimeSchema)
 
 const DebugDeltaTimeSecsSchema: Schema.Codec<
   NonNullable<DebugOverlayModel['frameDeltaSecs']>,
@@ -66,7 +77,7 @@ const DebugDeltaTimeSecsSchema: Schema.Codec<
 const MaybeDebugDeltaTimeSecsSchema: Schema.Codec<
   NonNullable<DebugOverlayModel['frameDeltaSecs']> | null,
   unknown
-> = Schema.NullOr(DebugDeltaTimeSecsSchema)
+> = nullOr(DebugDeltaTimeSecsSchema)
 
 type NullWhenUnavailable<Value> = Exclude<Value, undefined> | null
 
@@ -74,16 +85,16 @@ export type UiQaDebugOverlayState = Readonly<{
   [Key in keyof DebugOverlayModel]: NullWhenUnavailable<DebugOverlayModel[Key]>
 }>
 
-const DebugOverlayStateSchema: Schema.Codec<UiQaDebugOverlayState, unknown> = Schema.Struct({
+const DebugOverlayStateSchema: Schema.Codec<UiQaDebugOverlayState, unknown> = struct({
   biome: Schema.Null,
   chunk: Schema.Null,
   coordinates: MaybeDebugCoordinatesSchema,
   dimension: MaybeDimensionSchema,
   facing: MaybeDebugFacingSchema,
-  fps: Schema.NullOr(FramesPerSecondSchema),
+  fps: nullOr(FramesPerSecondSchema),
   frameDeltaSecs: MaybeDebugDeltaTimeSecsSchema,
   gpuTimingSupported: MaybeBooleanSchema,
-  latestGpuTimeMs: MaybeFiniteSchema,
+  latestGpuTimeMs: MaybeGpuTimeMillisecondsSchema,
   qualityPreset: MaybeQualityPresetSchema,
   worldTime: MaybeDebugWorldTimeSchema,
 })
@@ -99,14 +110,14 @@ export type UiQaState = Readonly<{
 }>
 
 export const UiQaStateInputSchema: Schema.Codec<Readonly<Record<string, never>>, unknown> =
-  Schema.Record(Schema.String, Schema.Never)
+  record(Schema.String, Schema.Never)
 
-export const UiQaStateSchema: Schema.Codec<UiQaState, unknown> = Schema.Struct({
-  achievementToast: Schema.NullOr(AchievementToastSchema),
-  debugOverlay: Schema.NullOr(DebugOverlayStateSchema),
+export const UiQaStateSchema: Schema.Codec<UiQaState, unknown> = struct({
+  achievementToast: nullOr(AchievementToastSchema),
+  debugOverlay: nullOr(DebugOverlayStateSchema),
 })
 
-const nullable = <A>(value: A | undefined): A | null => value ?? null
+const nullable = <Value>(value: Value | undefined): Value | null => value ?? null
 
 const debugOverlayStateFromModel = (model: DebugOverlayModel): UiQaDebugOverlayState => ({
   biome: null,
@@ -122,10 +133,17 @@ const debugOverlayStateFromModel = (model: DebugOverlayModel): UiQaDebugOverlayS
   worldTime: nullable(model.worldTime),
 })
 
+const debugOverlayStateFromOptionalModel = (
+  model: DebugOverlayModel | undefined,
+): UiQaDebugOverlayState | null => {
+  if (!model) {
+    return null
+  }
+
+  return debugOverlayStateFromModel(model)
+}
+
 export const uiQaStateFromSnapshot = (snapshot: UiQaSnapshot): UiQaState => ({
   achievementToast: nullable(snapshot.achievementToast),
-  debugOverlay:
-    typeof snapshot.debugOverlay === 'undefined'
-      ? null
-      : debugOverlayStateFromModel(snapshot.debugOverlay),
+  debugOverlay: debugOverlayStateFromOptionalModel(snapshot.debugOverlay),
 })
