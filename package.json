@@ -62,7 +62,7 @@
     "@nerima-games/mc-audio": "0.3.0",
     "@nerima-games/mc-kernel": "0.14.0",
     "@nerima-games/mc-render": "0.9.0",
-    "@nerima-games/mc-sim": "0.7.0",
+    "@nerima-games/mc-sim": "0.7.1",
     "effect": "4.0.5"
   },
   "devDependencies": {
