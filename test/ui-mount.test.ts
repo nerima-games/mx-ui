@@ -120,6 +120,61 @@ describe('UiMount', () => {
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
+  it('reports an owned-root attachment failure through the Effect error channel', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    vi.spyOn(host, 'appendChild').mockImplementation(() => {
+      throw new Error('attach failed')
+    })
+    const runtime = makeUiMount({ root: host })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to mount mx-ui' })
+    expect(failure.cause).toHaveProperty('message', 'attach failed')
+    expect(runtime.current()).toBeUndefined()
+  })
+
+  it('reports a partial-mount cleanup failure with both mount and cleanup causes', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const originalSetAttribute = HTMLElement.prototype.setAttribute
+    const originalRemove = HTMLElement.prototype.remove
+    vi.spyOn(HTMLElement.prototype, 'setAttribute').mockImplementation(function (
+      this: HTMLElement,
+      name,
+      value,
+    ) {
+      if (name === 'data-menu-showing') {
+        throw new Error('render failed')
+      }
+      return originalSetAttribute.call(this, name, value)
+    })
+    vi.spyOn(HTMLElement.prototype, 'remove').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('data-mx-ui') === 'mount-root') {
+        throw new Error('cleanup failed')
+      }
+      return originalRemove.call(this)
+    })
+    const runtime = makeUiMount({ root: host })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'Failed to mount mx-ui',
+      cause: {
+        cleanupError: {
+          _tag: 'UiMountError',
+          message: 'Failed to clean up partial mx-ui mount',
+          cause: { message: 'cleanup failed' },
+        },
+        mountError: { _tag: 'UiMountError', cause: { message: 'render failed' } },
+      },
+    })
+    expect(runtime.current()).toBeUndefined()
+  })
+
   it('toggles the debug HUD and updates it from a typed snapshot', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
@@ -643,6 +698,30 @@ describe('UiMount', () => {
 
     expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to stop mx-ui' })
     expect(failure.cause).toHaveProperty('message', 'destroy failed')
+  })
+
+  it('rejects start when tearing down the previous mount throws', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const mounted = runtime.current()
+    if (typeof mounted === 'undefined') {
+      throw new Error('expected a mounted session')
+    }
+    vi.spyOn(mounted.overlays, 'destroy').mockImplementation(() => {
+      throw new Error('destroy failed')
+    })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'Failed to unmount previous mx-ui views',
+    })
+    expect(failure.cause).toHaveProperty('message', 'destroy failed')
+    expect(runtime.current()).toBeUndefined()
   })
 
   it('recognizes all four arrow keys, not just the one the other navigation test happens to use', async () => {

@@ -478,7 +478,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
   }
 
   const buildMountedViews = (): Effect.Effect<UiMountedViews, UiMountError> =>
-    Effect.gen(function* buildMountedViews() {
+    Effect.gen(function* run() {
       const { document, ownedRoot } = yield* requireOwnedRoot(options.root)
       const partial: PartialMount = { mainMenu: null, overlays: null, ownedRoot }
       const mount = Effect.try({
@@ -507,7 +507,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
           Effect.catch(destroyPartialMount(partial), (cleanupError) =>
             Effect.fail(
               new UiMountError('Failed to mount mx-ui', {
-                cause: { mountError, cleanupError },
+                cause: { cleanupError, mountError },
               }),
             ),
           ),
