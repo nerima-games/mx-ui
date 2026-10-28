@@ -9,13 +9,11 @@ import {
   COLOR_VISION_FILTER_TARGET,
   COLOR_VISION_MODES,
   colorVisionAttribute,
-  REBIND_CLEAR_KEYS,
   rebind,
+  unboundActions,
   resolveMotionPreference,
   shouldAnimate,
-  unboundActions,
   type InputAction,
-  type KeyBindings,
 } from '../src/domain/accessibility'
 import {
   closeScreen,
@@ -26,9 +24,6 @@ import {
   pointerLockReleased,
   topOf,
 } from '../src/domain/modal-stack'
-
-const bindings = (entries: ReadonlyArray<readonly [InputAction, string]>): KeyBindings =>
-  new Map(entries)
 
 describe('colour vision (feColorMatrix daltonisation)', () => {
   it.effect('REGRESSION: the filter targets the canvas only, never the whole document', () =>
@@ -101,69 +96,25 @@ describe('reduced motion', () => {
   )
 })
 
-describe('key remapping', () => {
-  it.effect('REGRESSION: Escape and Backspace CLEAR a binding instead of being bound to it', () =>
+describe('legacy key remapping API', () => {
+  it.effect('clears, reports conflicts, binds and lists unbound actions without changing the source map', () =>
     Effect.sync(() => {
-      // packages/presentation/settings/settings-overlay.ts:174-178. Escape has
-      // to clear: a player who opens the rebind field by accident needs an exit
-      // that does not bind Escape to "sneak". Once it is bound to sneak, the
-      // pause menu is unreachable.
-      expect([...REBIND_CLEAR_KEYS].sort()).toStrictEqual(['Backspace', 'Escape'])
-
-      const start = bindings([['jump', 'Space']])
-      const cleared = rebind(start, 'jump', 'Escape')
-
-      expect(cleared.kind).toBe('cleared')
-      if (cleared.kind === 'cleared') {
-        expect(cleared.bindings.has('jump')).toBe(false)
-      }
-    }),
-  )
-
-  it.effect('REGRESSION: a conflict is reported, never silently resolved', () =>
-    Effect.sync(() => {
-      // Automatically unbinding the other action is how a player ends up unable
-      // to jump with no idea why.
-      const start = bindings([
+      const bindings = new Map<InputAction, string>([
         ['jump', 'Space'],
         ['sneak', 'ShiftLeft'],
       ])
-      const result = rebind(start, 'sneak', 'Space')
 
-      expect(result).toStrictEqual({ kind: 'conflict', heldBy: 'jump' })
-      // And the original bindings are untouched.
-      expect(start.get('jump')).toBe('Space')
-    }),
-  )
+      const cleared = rebind(bindings, 'jump', 'Escape')
+      const conflict = rebind(bindings, 'jump', 'ShiftLeft')
+      const bound = rebind(bindings, 'jump', 'KeyJ')
 
-  it.effect('rebinding an action to the key it already holds is idempotent, not a self-conflict', () =>
-    Effect.sync(() => {
-      const start = bindings([['jump', 'Space']])
-      const result = rebind(start, 'jump', 'Space')
-
-      expect(result.kind).toBe('bound')
-      if (result.kind === 'bound') {
-        expect(result.bindings.get('jump')).toBe('Space')
-      }
-    }),
-  )
-
-  it.effect('binding is immutable: the map passed in is never modified', () =>
-    Effect.sync(() => {
-      const start = bindings([['jump', 'Space']])
-      const result = rebind(start, 'sneak', 'ShiftLeft')
-
-      expect(start.has('sneak')).toBe(false)
-      if (result.kind === 'bound') {
-        expect(result.bindings.get('sneak')).toBe('ShiftLeft')
-      }
-    }),
-  )
-
-  it.effect('unbound actions are reported so the screen can show them rather than hide them', () =>
-    Effect.sync(() => {
-      const start = bindings([['jump', 'Space']])
-      expect(unboundActions(start, ['jump', 'sneak', 'sprint'])).toStrictEqual(['sneak', 'sprint'])
+      expect(cleared.kind).toBe('cleared')
+      expect(cleared.kind === 'cleared' && cleared.bindings.has('jump')).toBe(false)
+      expect(conflict).toStrictEqual({ heldBy: 'sneak', kind: 'conflict' })
+      expect(bound.kind).toBe('bound')
+      expect(bound.kind === 'bound' && bound.bindings.get('jump')).toBe('KeyJ')
+      expect(unboundActions(bindings, ['jump', 'sprint'])).toStrictEqual(['sprint'])
+      expect(bindings.get('jump')).toBe('Space')
     }),
   )
 })

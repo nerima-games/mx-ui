@@ -4,16 +4,15 @@
  * 「アクセシビリティ資産を引き継ぐ: 色覚モード(feColorMatrix ダルトナイゼーション、
  * canvasのみに適用)、reduced-motion、キーリマッピングUI、サウンド字幕」
  *
- * Captions live in `domain/caption.ts`; the other three are here. All four were
- * built and shipped in the reference implementation, and the point of listing
- * them in the plan is that they are cheap to keep and expensive to retrofit —
- * reduced-motion in particular has to be threaded through every animation the
- * moment the first animation is written.
+ * Captions live in `domain/caption.ts`. This module owns the pure color and
+ * motion projections; the action and key-code vocabulary comes from mc-render,
+ * while settings values and persistence live in mc-sim.
  *
  * This module is pure. Nothing here touches `document`; the accessors below
  * return the ATTRIBUTE VALUES and DURATIONS a DOM layer should apply, which is
  * what keeps them testable under `environment: 'node'`.
  */
+import type { Settings } from '@nerima-games/mc-sim'
 
 // ---------------------------------------------------------------------------
 // Colour vision
@@ -27,7 +26,7 @@
  * literal of exactly these four values. Keeping the set identical means the
  * reference's saved settings remain readable.
  */
-export type ColorVisionMode = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia'
+export type ColorVisionMode = Settings['colorVisionCorrection']
 
 const ZERO = 0
 
@@ -289,7 +288,7 @@ export const applyColorVisionMatrix = (
 // ---------------------------------------------------------------------------
 
 /** What the player chose. `system` defers to the OS preference. */
-export type MotionSetting = 'system' | 'full' | 'reduced'
+export type MotionSetting = Settings['reducedMotion']
 
 /** What the UI actually does. */
 export type MotionPreference = 'full' | 'reduced'
@@ -338,15 +337,7 @@ export const shouldAnimate = (motion: MotionPreference): boolean => motion === '
 // Key remapping
 // ---------------------------------------------------------------------------
 
-/**
- * A game action a key can be bound to.
- *
- * PROVISIONAL and short: the authoritative action list belongs with the runtime
- * input service, which plan.md §2.3-2 puts in mc-render. mx-ui owns the SCREEN
- * for rebinding, not the bindings themselves. This type exists so the screen's
- * logic is testable before mc-render is published, and is replaced by
- * mc-render's action type when it is.
- */
+/** The original accessibility preview's action names, retained for compatibility. */
 export type InputAction =
   | 'moveForward'
   | 'moveBack'
@@ -359,37 +350,16 @@ export type InputAction =
   | 'drop'
   | 'chat'
 
-/** `KeyboardEvent.code` values, e.g. `KeyW`, `Space`, `ShiftLeft`. */
 export type KeyBindings = ReadonlyMap<InputAction, string>
 
 export type RebindResult =
   | { readonly kind: 'bound'; readonly bindings: KeyBindings }
   | { readonly kind: 'cleared'; readonly bindings: KeyBindings }
-  /** The key is already taken. The screen shows which action holds it. */
   | { readonly kind: 'conflict'; readonly heldBy: InputAction }
 
-/**
- * Keys that clear a binding instead of being bound to it.
- *
- * Straight from the reference's rebinding input handler
- * (`packages/presentation/settings/settings-overlay.ts:174-178`): Escape and
- * Backspace both unbind. Escape has to, because a player who opens the rebind
- * field by accident needs a way out that does not bind Escape to "sneak" — and
- * once Escape is bound to sneak, the pause menu is unreachable and the only fix
- * is deleting the save.
- */
 export const REBIND_CLEAR_KEYS: ReadonlySet<string> = new Set(['Escape', 'Backspace'])
 
-/**
- * Bind `code` to `action`, or clear it, or report the conflict.
- *
- * Rebinding an action to the key it already has is idempotent rather than a
- * conflict with itself — an easy off-by-one that makes the UI refuse to accept
- * what the player just pressed.
- *
- * Conflicts are REPORTED, never silently resolved. Automatically unbinding the
- * other action is how a player ends up unable to jump and with no idea why.
- */
+/** Preserved for consumers of the original pure accessibility API. */
 export const rebind = (
   bindings: KeyBindings,
   action: InputAction,
@@ -410,8 +380,9 @@ export const rebind = (
   return { bindings: new Map(bindings).set(action, code), kind: 'bound' }
 }
 
-/** Actions with no key bound. The screen must make these visible, not hide them. */
+/** Actions with no binding in a legacy key map. */
 export const unboundActions = (
   bindings: KeyBindings,
   actions: ReadonlyArray<InputAction>,
 ): ReadonlyArray<InputAction> => actions.filter((action) => !bindings.has(action))
+
