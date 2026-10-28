@@ -111,8 +111,10 @@ describe('UiMount', () => {
     })
     const runtime = makeUiMount({ root: host })
 
-    await expect(Effect.runPromise(runtime.start)).rejects.toThrow('Failed to mount mx-ui')
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
 
+    expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to mount mx-ui' })
+    expect(failure.cause).toHaveProperty('message', 'render failed')
     expect(runtime.current()).toBeUndefined()
     expect(host.contains(unrelated)).toBe(true)
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
@@ -637,7 +639,10 @@ describe('UiMount', () => {
       throw new Error('destroy failed')
     })
 
-    await expect(Effect.runPromise(runtime.stop)).rejects.toThrow('destroy failed')
+    const failure = await Effect.runPromise(Effect.flip(runtime.stop))
+
+    expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to stop mx-ui' })
+    expect(failure.cause).toHaveProperty('message', 'destroy failed')
   })
 
   it('recognizes all four arrow keys, not just the one the other navigation test happens to use', async () => {
@@ -737,9 +742,12 @@ describe('UiMount', () => {
     Object.defineProperty(host, 'ownerDocument', { value: null })
     const runtime = makeUiMount({ root: host })
 
-    await expect(Effect.runPromise(runtime.start)).rejects.toThrow(
-      'The mx-ui mount root has no ownerDocument',
-    )
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'The mx-ui mount root has no ownerDocument',
+    })
   })
 
   it('does not emit a drag action while the inventory is closed', async () => {

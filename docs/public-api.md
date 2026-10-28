@@ -127,8 +127,8 @@ main menu を初期描画する:
 ```typescript
 export type UiMount = {
   readonly name: string
-  readonly start: Effect.Effect<typeof uiModule, unknown>
-  readonly stop: Effect.Effect<void, unknown>
+  readonly start: Effect.Effect<typeof uiModule, UiMountError>
+  readonly stop: Effect.Effect<void, UiMountError>
   readonly current: () => UiMountedViews | undefined
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
   readonly updateSettings: (settings: UiSettings) => void
@@ -140,7 +140,18 @@ export type UiMount = {
   readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
   readonly activateInventoryFocus: () => boolean
 }
+
+export class UiMountError {
+  readonly _tag: 'UiMountError'
+  readonly name: 'UiMountError'
+  readonly message: string
+  readonly cause: unknown
+  constructor(message: string, options?: ErrorOptions)
+}
 ```
+
+`start` と `stop` の失敗は Effect の error channel に `UiMountError` として返る。この tagged error value は
+`_tag`、`name`、`message`、`cause` を持ち、native `Error` は継承しない。
 
 設計上の制約は次の通り:
 

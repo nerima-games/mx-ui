@@ -13,7 +13,6 @@ import {
   type MainMenuState,
   type MainMenuViewModel,
   type MenuPanel,
-  ROOT_ENTRIES,
   type RootEntry,
   type SavedWorld,
   backToRoot,
@@ -489,14 +488,13 @@ type RootEntryContext = {
   readonly bindings: MenuBindings
   readonly worldNameInput: DomInputElement
   readonly firstSavedWorldButton: () => DomInteractiveElement
-  readonly registerButton: (entry: RootEntry, button: DomInteractiveElement) => void
 }
 
 const createRootEntryButton = (
   parent: DomElement,
   entry: RootEntry,
   context: RootEntryContext,
-): void => {
+): DomInteractiveElement => {
   const button = createButton(context.ctx, parent, {
     label: ROOT_ENTRY_LABEL[entry],
     onClick: () => {
@@ -514,14 +512,17 @@ const createRootEntryButton = (
     role: 'menu-entry',
   })
   button.setAttribute('data-menu-entry', entry)
-  context.registerButton(entry, button)
+  return button
 }
 
-const createRootEntryButtons = (parent: DomElement, context: RootEntryContext): void => {
-  for (const entry of ROOT_ENTRIES) {
-    createRootEntryButton(parent, entry, context)
-  }
-}
+const createRootEntryButtons = (
+  parent: DomElement,
+  context: RootEntryContext,
+): Readonly<Record<RootEntry, DomInteractiveElement>> => ({
+  'new-world': createRootEntryButton(parent, 'new-world', context),
+  'load-world': createRootEntryButton(parent, 'load-world', context),
+  settings: createRootEntryButton(parent, 'settings', context),
+})
 
 const applyModelState = (box: MenuStateBox, model: MainMenuViewModel): void => {
   box.state = modelState(model)
@@ -607,15 +608,9 @@ const createRenderModel =
   }
 
 export const requireRootButton = (
-  buttons: Partial<Record<RootEntry, DomInteractiveElement>>,
+  buttons: Readonly<Record<RootEntry, DomInteractiveElement>>,
   entry: RootEntry,
-): DomInteractiveElement => {
-  const button = buttons[entry]
-  if (!button) {
-    throw new Error(`Root menu entry is not registered: ${entry}`)
-  }
-  return button
-}
+): DomInteractiveElement => buttons[entry]
 
 const assembleMainMenu = (
   ctx: MountContext,
@@ -623,7 +618,7 @@ const assembleMainMenu = (
   callbacks: MainMenuCallbacks,
 ): ((model: MainMenuViewModel) => void) => {
   const box: MenuStateBox = { savedWorlds: [], state: initialMainMenuState }
-  const rootButtons: Partial<Record<RootEntry, DomInteractiveElement>> = {}
+  let rootButtons: Readonly<Record<RootEntry, DomInteractiveElement>>
   let transitionRef: MenuTransition = noop
   const bindings: MenuBindings = {
     box,
@@ -640,13 +635,10 @@ const assembleMainMenu = (
     { bindings, ctx, parent: shell.panels['load-world'].root, rootButton: () => requireRootButton(rootButtons, 'load-world') },
   )
 
-  createRootEntryButtons(shell.panels.root.root, {
+  rootButtons = createRootEntryButtons(shell.panels.root.root, {
     bindings,
     ctx,
     firstSavedWorldButton: loadWorld.firstSavedWorldButton,
-    registerButton: (entry, button) => {
-      rootButtons[entry] = button
-    },
     worldNameInput: newWorld.worldNameInput,
   })
 
