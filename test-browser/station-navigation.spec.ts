@@ -2,9 +2,8 @@ import { expect, test } from '@playwright/test'
 import { Schema } from 'effect'
 import { fileURLToPath } from 'node:url'
 import { BrewingStateSchema, IntentPayloadSchema } from '@nerima-games/mc-sim'
+import { decodeTradeSnapshot, type TradeSnapshot } from '../src/domain/trade-snapshot'
 import { openHarness } from './harness'
-
-type TradeSnapshot = Parameters<typeof import('../src/domain/trade-view-model').tradeViewModel>[0]
 
 const brewingViewModule = `/@fs${fileURLToPath(
   new URL('../src/application/brewing-view.ts', import.meta.url),
@@ -15,9 +14,6 @@ const brewingViewModelModule = `/@fs${fileURLToPath(
 
 const tradeViewModule = `/@fs${fileURLToPath(
   new URL('../src/application/trade-view.ts', import.meta.url),
-)}`
-const tradeViewModelModule = `/@fs${fileURLToPath(
-  new URL('../src/domain/trade-view-model.ts', import.meta.url),
 )}`
 
 const BREWING_SNAPSHOT = Schema.decodeUnknownSync(BrewingStateSchema)({
@@ -44,7 +40,7 @@ const tradeIntent = (offerId: string) => {
 const availableTrade = tradeIntent('farmer-offer-1')
 const unavailableTrade = tradeIntent('farmer-offer-2')
 
-const SNAPSHOT: TradeSnapshot = {
+const SNAPSHOT = {
   actor: availableTrade.actor,
   villager: availableTrade.villager,
   profession: 'farmer',
@@ -70,18 +66,19 @@ const SNAPSHOT: TradeSnapshot = {
 }
 
 test('trade offers follow native tab order and expose polite status in a real document', async ({ page }) => {
+  const decoded = decodeTradeSnapshot(SNAPSHOT)
+  if (decoded['_tag'] === 'Failure') {
+    throw decoded.failure
+  }
+
   await openHarness(page, { screen: 'crosshair' })
 
   await page.evaluate(
-    async ({ viewPath, modelPath, snapshot }: {
+    async ({ viewPath, snapshot }: {
       readonly viewPath: string
-      readonly modelPath: string
       readonly snapshot: TradeSnapshot
     }) => {
-      const [{ createTradeView }, { tradeViewModel }] = await Promise.all([
-        import(viewPath) as Promise<typeof import('../src/application/trade-view')>,
-        import(modelPath) as Promise<typeof import('../src/domain/trade-view-model')>,
-      ])
+      const { createTradeView } = await import(viewPath) as typeof import('../src/application/trade-view')
       const host = document.createElement('main')
       host.setAttribute('data-trade-browser-host', '')
       document.body.appendChild(host)
@@ -91,9 +88,9 @@ test('trade offers follow native tab order and expose polite status in a real do
           throw new Error(`Unexpected trade intent during navigation test: ${intent['_tag']}`)
         },
       })
-      view.render(tradeViewModel(snapshot))
+      view.render(snapshot)
     },
-    { viewPath: tradeViewModule, modelPath: tradeViewModelModule, snapshot: SNAPSHOT },
+    { viewPath: tradeViewModule, snapshot: decoded.success },
   )
 
   const trade = page.locator('[data-trade-browser-host] [data-mx-ui="trade"]')

@@ -1,11 +1,10 @@
-import { Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { IntentPayloadSchema } from '@nerima-games/mc-sim'
 import { describe, expect, it } from 'vitest'
 import { createTradeView } from '../src/application/trade-view'
-import { tradeViewModel, type TradeViewIntent } from '../src/domain/trade-view-model'
+import { decodeTradeSnapshot, type TradeSnapshot } from '../src/domain/trade-snapshot'
+import { type TradeViewIntent } from '../src/domain/trade-view-model'
 import { fakeDocument, fakeElement } from './fake-dom'
-
-type TradeSnapshot = Parameters<typeof tradeViewModel>[0]
 
 const tradeIntent = (actor: string, villager: string, offerId: string) => {
   const intent = Schema.decodeUnknownSync(IntentPayloadSchema)({
@@ -20,11 +19,19 @@ const tradeIntent = (actor: string, villager: string, offerId: string) => {
   return intent
 }
 
+const decodeSnapshot = (input: unknown): TradeSnapshot => {
+  const result = decodeTradeSnapshot(input)
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
+
 const FARMER_TRADE = tradeIntent('player-1', 'farmer-1', 'farmer-offer-1')
 const UNAVAILABLE_TRADE = tradeIntent('player-1', 'farmer-1', 'farmer-offer-2')
 const TOOLSMITH_TRADE = tradeIntent('player-2', 'toolsmith-1', 'toolsmith-offer-1')
 
-const FARMER_SNAPSHOT: TradeSnapshot = {
+const FARMER_SNAPSHOT = decodeSnapshot({
   actor: FARMER_TRADE.actor,
   villager: FARMER_TRADE.villager,
   profession: 'farmer',
@@ -47,9 +54,9 @@ const FARMER_SNAPSHOT: TradeSnapshot = {
     },
   ],
   status: 'Choose a trade',
-}
+})
 
-const TOOLSMITH_SNAPSHOT: TradeSnapshot = {
+const TOOLSMITH_SNAPSHOT = decodeSnapshot({
   actor: TOOLSMITH_TRADE.actor,
   villager: TOOLSMITH_TRADE.villager,
   profession: 'toolsmith',
@@ -64,7 +71,7 @@ const TOOLSMITH_SNAPSHOT: TradeSnapshot = {
     },
   ],
   status: 'Trade ready',
-}
+})
 
 describe('createTradeView', () => {
   it('renders native offer and close buttons in DOM order and emits typed intents', () => {
@@ -78,7 +85,7 @@ describe('createTradeView', () => {
     })
     const root = fakeElement(view.root)
 
-    view.render(tradeViewModel(FARMER_SNAPSHOT))
+    view.render(FARMER_SNAPSHOT)
 
     const offers = root.findAll('data-mx-ui', 'trade-offer')
     const status = root.find('data-mx-ui', 'trade-status')
@@ -125,11 +132,11 @@ describe('createTradeView', () => {
     })
     const root = fakeElement(view.root)
 
-    view.render(tradeViewModel(FARMER_SNAPSHOT))
+    view.render(FARMER_SNAPSHOT)
     const list = root.find('data-mx-ui', 'trade-offers')
     const firstOffer = list?.children[0]
     const surplusOffer = list?.children[1]
-    view.render(tradeViewModel(TOOLSMITH_SNAPSHOT))
+    view.render(TOOLSMITH_SNAPSHOT)
 
     expect(list?.children[0]).toBe(firstOffer)
     expect(list?.children[1]).toBe(surplusOffer)

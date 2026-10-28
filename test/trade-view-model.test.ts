@@ -1,9 +1,8 @@
-import { Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { IntentPayloadSchema } from '@nerima-games/mc-sim'
 import { describe, expect, it } from 'vitest'
+import { decodeTradeSnapshot, type TradeSnapshot } from '../src/domain/trade-snapshot'
 import { tradeViewModel } from '../src/domain/trade-view-model'
-
-type TradeSnapshot = Parameters<typeof tradeViewModel>[0]
 
 const tradeIntent = (offerId: string) => {
   const intent = Schema.decodeUnknownSync(IntentPayloadSchema)({
@@ -18,10 +17,18 @@ const tradeIntent = (offerId: string) => {
   return intent
 }
 
+const decodeSnapshot = (input: unknown): TradeSnapshot => {
+  const result = decodeTradeSnapshot(input)
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
+
 const FIRST_INTENT = tradeIntent('farmer-offer-1')
 const SECOND_INTENT = tradeIntent('farmer-offer-2')
 
-const SNAPSHOT: TradeSnapshot = {
+const SNAPSHOT = decodeSnapshot({
   actor: FIRST_INTENT.actor,
   villager: FIRST_INTENT.villager,
   profession: 'farmer',
@@ -44,7 +51,7 @@ const SNAPSHOT: TradeSnapshot = {
     },
   ],
   status: 'Choose a trade',
-}
+})
 
 describe('tradeViewModel', () => {
   it('projects profession, ordered offers, item counts, use counts, and owner availability', () => {
@@ -75,7 +82,7 @@ describe('tradeViewModel', () => {
   })
 
   it('projects toolsmith and an empty offer list', () => {
-    const model = tradeViewModel({ ...SNAPSHOT, profession: 'toolsmith', offers: [] })
+    const model = tradeViewModel(decodeSnapshot({ ...SNAPSHOT, profession: 'toolsmith', offers: [] }))
 
     expect(model.professionLabel).toBe('Toolsmith')
     expect(model.offers).toStrictEqual([])

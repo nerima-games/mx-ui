@@ -1,31 +1,8 @@
+import type { TradeProfession, TradeSnapshot } from './trade-snapshot.js'
 import type { IntentPayload } from '@nerima-games/mc-sim'
 
 type TradeVillagerIntent = Extract<IntentPayload, { readonly _tag: 'TradeVillager' }>
-
-export type TradeProfession = 'farmer' | 'toolsmith'
-
-type TradeOfferSnapshot = {
-  readonly available: boolean
-  readonly id: TradeVillagerIntent['offerId']
-  readonly input: {
-    readonly count: number
-    readonly item: string
-  }
-  readonly output: {
-    readonly count: number
-    readonly item: string
-  }
-  readonly uses: number
-  readonly maxUses: number
-}
-
-type TradeSnapshot = {
-  readonly actor: TradeVillagerIntent['actor']
-  readonly villager: TradeVillagerIntent['villager']
-  readonly profession: TradeProfession
-  readonly offers: ReadonlyArray<TradeOfferSnapshot>
-  readonly status: string
-}
+type TradeOfferSnapshot = TradeSnapshot['offers'][number]
 
 type TradeOfferView = {
   readonly id: TradeVillagerIntent['offerId']

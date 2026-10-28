@@ -13,12 +13,13 @@ import {
   type TradeViewIntent,
   tradeViewModel,
 } from '../domain/trade-view-model.js'
+import type { TradeSnapshot } from '../domain/trade-snapshot.js'
 
 type TradeViewModel = ReturnType<typeof tradeViewModel>
 
 export type TradeView = {
   readonly root: DomElement
-  readonly render: (model: TradeViewModel) => void
+  readonly render: (snapshot: TradeSnapshot) => void
 }
 
 type TradeOfferElement = {
@@ -151,7 +152,8 @@ export const createTradeView = (
   const offers: Array<TradeOfferElement> = []
 
   return {
-    render: (model: TradeViewModel): void => {
+    render: (snapshot: TradeSnapshot): void => {
+      const model = tradeViewModel(snapshot)
       writeText(profession, model.professionLabel)
       writeText(status, model.status)
 
