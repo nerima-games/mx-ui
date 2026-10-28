@@ -433,7 +433,8 @@ void paletteValue
           target: "ES2022",
           module: "NodeNext",
           moduleResolution: "NodeNext",
-          lib: ["ES2024", "DOM", "DOM.Iterable"],
+          // Effect 4 declarations reference Disposable and AsyncDisposable.
+          lib: ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"],
           noEmit: true,
           skipLibCheck: false,
         },

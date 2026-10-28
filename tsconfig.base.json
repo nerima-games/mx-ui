@@ -12,7 +12,8 @@
     // (plan.md §3.13). "WebWorker" (that is mc-render's business) and Node
     // types via `types: []` remain absent — mx-ui runs in a browser, so a
     // `process.env` read must not typecheck.
-    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    // Effect 4 declarations reference Disposable and AsyncDisposable.
+    "lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"],
     "types": [],
 
     "allowJs": false,
