@@ -49,6 +49,24 @@ const project = (input: unknown): SettingsViewModel => {
   throw new Error('Expected a valid Settings snapshot')
 }
 
+const NUMERIC_SETTING_RANGES = [
+  { field: 'fovDegrees', maximum: 110, minimum: 30 },
+  { field: 'uiScale', maximum: 1.5, minimum: 0.75 },
+  { field: 'mouseSensitivity', maximum: 3, minimum: 0.1 },
+  { field: 'masterVolume', maximum: 1, minimum: 0 },
+  { field: 'sfxVolume', maximum: 1, minimum: 0 },
+] as const
+
+const NON_FINITE_VALUES = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]
+
+const numericSettingCases = NUMERIC_SETTING_RANGES.flatMap(({ field, maximum, minimum }) => [
+  { expectedSuccess: true, field, value: minimum },
+  { expectedSuccess: true, field, value: maximum },
+  { expectedSuccess: false, field, value: minimum - 0.001 },
+  { expectedSuccess: false, field, value: maximum + 0.001 },
+  ...NON_FINITE_VALUES.map((value) => ({ expectedSuccess: false, field, value })),
+])
+
 describe('settingsViewModel', () => {
   it('projects mc-sim values and render-owned binding rows without a local settings shape', () => {
     const model = project(SNAPSHOT)
@@ -96,6 +114,23 @@ describe('settingsViewModel', () => {
         )
       }),
       { numRuns: 200, seed: 20261028 },
+    )
+  })
+
+  it('property: owner numeric boundaries accept endpoints and reject adjacent and non-finite values', () => {
+    const allNumericCases = fc.shuffledSubarray(numericSettingCases, {
+      maxLength: numericSettingCases.length,
+      minLength: numericSettingCases.length,
+    })
+
+    fc.assert(
+      fc.property(allNumericCases, (cases) =>
+        cases.every(({ expectedSuccess, field, value }) => {
+          const result = makeModelResult({ ...SNAPSHOT, [field]: value })
+          return Result.isSuccess(result) === expectedSuccess
+        }),
+      ),
+      { numRuns: 20, seed: 20261029 },
     )
   })
 
@@ -168,43 +203,4 @@ describe('settingsViewModel', () => {
     expect(Object.isFrozen(model.uiScale)).toBe(true)
   })
 
-  it.each([
-    ['fovDegrees', 30, 110],
-    ['uiScale', 0.75, 1.5],
-    ['mouseSensitivity', 0.1, 3],
-    ['masterVolume', 0, 1],
-    ['sfxVolume', 0, 1],
-  ] as const)('%s accepts both owner endpoints and rejects values immediately outside them', (field, minimum, maximum) => {
-    const atMinimum = { ...SNAPSHOT, [field]: minimum }
-    const atMaximum = { ...SNAPSHOT, [field]: maximum }
-    const belowMinimum = { ...SNAPSHOT, [field]: minimum - 0.001 }
-    const aboveMaximum = { ...SNAPSHOT, [field]: maximum + 0.001 }
-
-    expect(Result.isSuccess(makeModelResult(atMinimum))).toBe(true)
-    expect(Result.isSuccess(makeModelResult(atMaximum))).toBe(true)
-    expect(Result.isFailure(makeModelResult(belowMinimum))).toBe(true)
-    expect(Result.isFailure(makeModelResult(aboveMaximum))).toBe(true)
-  })
-
-  it.each([
-    ['fovDegrees', Number.NaN],
-    ['fovDegrees', Number.POSITIVE_INFINITY],
-    ['fovDegrees', Number.NEGATIVE_INFINITY],
-    ['uiScale', Number.NaN],
-    ['uiScale', Number.POSITIVE_INFINITY],
-    ['uiScale', Number.NEGATIVE_INFINITY],
-    ['mouseSensitivity', Number.NaN],
-    ['mouseSensitivity', Number.POSITIVE_INFINITY],
-    ['mouseSensitivity', Number.NEGATIVE_INFINITY],
-    ['masterVolume', Number.NaN],
-    ['masterVolume', Number.POSITIVE_INFINITY],
-    ['masterVolume', Number.NEGATIVE_INFINITY],
-    ['sfxVolume', Number.NaN],
-    ['sfxVolume', Number.POSITIVE_INFINITY],
-    ['sfxVolume', Number.NEGATIVE_INFINITY],
-  ] as const)('%s rejects non-finite values (%s)', (field, value) => {
-    const malformed = { ...SNAPSHOT, [field]: value }
-
-    expect(Result.isFailure(makeModelResult(malformed))).toBe(true)
-  })
 })

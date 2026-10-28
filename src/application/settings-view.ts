@@ -18,8 +18,8 @@ import {
   type SettingsViewModel,
 } from '../domain/settings-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement } from './dom-surface.js'
+import { KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
-import { InputAction as inputAction, KeyCode } from '@nerima-games/mc-kernel/domain/settings'
 import { type SettingsServiceApi, isValidSettings } from '@nerima-games/mc-sim'
 import { Effect } from 'effect'
 

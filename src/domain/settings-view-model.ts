@@ -11,7 +11,7 @@ import {
   type Settings,
   isValidSettings,
 } from '@nerima-games/mc-sim'
-import { InputAction as inputAction, type KeyCode } from '@nerima-games/mc-kernel/domain/settings'
+import { type KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { Result } from 'effect'
 
 const UI_SCALE_MIN = 0.75
