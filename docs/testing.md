@@ -7,7 +7,7 @@
 ゲート構成は各コマンドと設定ファイルが正である。
 
 ```console
-$ pnpm verify          # typecheck && lint && test。CI と同じ内容
+$ pnpm verify          # typecheck && lint && test。CI の Verify job に対応
 $ pnpm test:coverage   # カバレッジ計測 + 100% ゲート。verify には含まれない
 $ pnpm package:verify  # build && dist/ の実体検証。verify には含まれない
 $ pnpm test:browser    # Playwright。verify には含まれない
@@ -78,9 +78,9 @@ API は `@effect/vitest` の `it.effect` + `Effect.sync`。
 理由は現状の `domain/` が全て純粋な導出だからで、jsdom を入れると**何も得ずに**毎回数秒が乗る。
 現状 409 ms の suite が jsdom で数秒になると、保存するたびに走らせる価値が消える。
 
-`tsconfig.base.json` が `"lib": ["ES2024", "DOM"]` を宣言していることと矛盾しない。
-lib は「DOM の型を書いてよい」であり、`environment` は「実行時に document があるか」である。
-現状は前者だけが必要で、後者はまだ必要ない。
+This does not conflict with `tsconfig.base.json` declaring `"lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"]`.
+The `lib` option makes DOM types available; `environment` determines whether `document` exists at runtime.
+`ESNext.Disposable` supplies types referenced by Effect 4 declarations. The DOM types are needed here, while a runtime `document` is not.
 
 ## 3. **最重要**: DOM フローのテストは `it.effect` で書かない
 
@@ -167,9 +167,9 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | # | 条件 | 状態 |
 | --- | --- | --- |
 | 1 | `pnpm verify` が green | ✅ |
-| 2 | 参照実装の DOM テスト資産（63 ファイル / 10,862 LOC、`input/` 除く）をオラクルとして移植 | ⚠️ **63 ファイル全部を triage 済み**（[dom-oracle-triage.md](./dom-oracle-triage.md)）。**移植すべきは 63 ファイルではない** — 25 ファイル / 203 本（45%）は所有者が別か、mx-ui が構造的に別の答えを出している。今日書けるのは 8 ファイル / 71 本で、うち 5 ファイル分は既存オラクルが持っている。**未着手は NEEDS-SCREEN の 29 ファイル / 176 本**で、これは画面の残作業そのものである |
+| 2 | 参照実装の DOM テストを mx-ui の oracle として整理 | ⚠️ [dom-oracle-triage.md](./dom-oracle-triage.md) に所有者と未実装画面のケースを記録している。mx-ui が所有する DOM 契約のテストだけを移植する |
 | 3 | **各画面のプレビューが単体で起動し操作できる** | ✅（`apps/preview-screens/`、下記） |
-| 4 | アクセシビリティ資産 4 つが目視で確認済み | ✅ **ブラウザで測った**（`pnpm test:browser` の 18 本、§8）。残っていた 2 点は「ブラウザにしか答えられない」で正しかったが、**それは誰も作っていないというだけだった**。測ったら**欠陥が 2 件出た**（スロットに寸法が無い / ホットバーが 1 列に並ばない）——両方とも直してある |
+| 4 | アクセシビリティ資産をブラウザで確認 | ✅ **ブラウザで測った**（`pnpm test:browser`、§8）。スロット寸法と hotbar 配置の欠陥を見つけ、修正してある |
 | 5 | 100% カバレッジゲートが有効 | ✅（`vitest.config.ts` の `thresholds` + CI の `Coverage` ステップ。§5） |
 
 ### プレビューの条件（満たしている）
@@ -178,85 +178,22 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 
 - **各画面が単体で起動する。** 背後にゲームは要らない（`--screen hud | inventory | settings | captions`）。
 - **mc-playground-kit を使っていない**（DN-UI-5、plan.md §3.13:「kit 不要」）。依存は 0 個である。
-- 置き場は `apps/preview-screens/`（plan.md §4.1）。`index.ts` から export されず、`pnpm verify` は実行しない。
+- 置き場は `apps/preview-screens/`（plan.md §4.1）。`index.ts` から export されず、`pnpm verify` は起動しない。ソースは型検査・lint の対象である。
 - 状態はモックである（`apps/preview-screens/state.ts`）。
   「リテラルを渡せば HUD が出る」ようにビューモデルが純粋関数であることがこれを可能にしている。
 
 `ui:overlay-sync` が mc-sim の状態を一切読まないのは、この条件のための構造である
 （[responsibility.md](./responsibility.md) §1）。
 
-#### なぜ端末レンダラなのか（DOM プレビューではなく）
+#### 端末プレビューとブラウザ検証の役割
 
-mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だからブラウザプレビューが自明に見えるが、
-**今日の時点では違う**。理由は 4 つあり、詳細は `apps/preview-screens/main.ts` の冒頭にある。要約:
+`apps/preview-screens/` は純粋な view model をモック状態から描画する端末プレビューである。
+状態の組み立てやテキスト出力を素早く確かめられるが、実 DOM のレイアウトは検証しない。
+ブラウザ側は `apps/browser-harness/` と `test-browser/` で実 DOM mount、ピクセル、レイアウトを確認する。
+4 種類の端末プレビュー（HUD、inventory、settings、captions）と、ブラウザで mount する画面群は別の対象である。
 
-1. **プレビューすべき DOM コードが無い。** `domain/` に `document` は 1 度も現れない。
-   ブラウザプレビューはまず DOM 層を書くことを要求し、それを `apps/` に書けば
-   出荷されないコードのプレビューになる。
-2. **検証対象のビューモデルは純粋関数である。** 端末レンダラはその**もう 1 つの独立した射影**であり、
-   モデルについて分かったことはブラウザにそのまま移る。
-3. ブラウザプレビューはバンドラとブラウザを要求し、対価は**どのビューモデルも主張していない**レイアウト忠実度である。
-   `--once --ascii` の出力は pipe でき diff でき issue に貼れる。
-4. **アクセシビリティは端末のほうが測れる。** コントラスト比も色覚シミュレーションも RGB 上の算術であり、
-   `--stats` が「どのモードでどの色対が潰れるか」の表を出す。
-
-**失うものは実在する**: レイアウト崩れ、重なり、フォーカスリング、スクリーンリーダーの読み上げ。
-どれも DOM の問いであり、最初の画面が書かれたときブラウザプレビューは**これの代わりではなく隣に**置く。
-
-**既存の保証は弱めていない。** `tsconfig.build.json` は `types: []` を継承し続けており、
-プレビューは専用の `tsconfig.preview.json`（`types: ["node"]`）で型検査する。
-「画面の中で `process.env` を読むと落ちる」は以前と同じ範囲でそのまま成立している。
-
-#### プレビューが実際に何を見つけたか
-
-`pnpm preview --stats` は数値レポートを出す。レポートは 2 つのリストを持つ。
-
-- **finding** — **実行時の測定**であり、記録された期待値は 1 つも無い。直せば自動的に消える。
-- **gap** — **無いもの**。走らせて測れないので、消えたことを検出できるのはピン留めしたテストだけである。
-
-**この区別が要るのは、finding を直しても件数が減らないレポートは読まれなくなるからである。**
-
-初回実行の finding は 4 件で、**4 件とも直して `test/view-model.test.ts` の assertion にした**。
-現在の finding は 0 件である。全文は
-[`apps/preview-screens/README.md`](../apps/preview-screens/README.md) にある。要約:
-
-- **空スロットが `durabilityPercent` を報告し続けていた（F1）。** `empty` ガードが `itemId` と
-  `countLabel` は消すのに `durabilityPercent` は消していなかった。「フィールドがあれば描く」と書いた
-  DOM 層は空スロットの下に耐久バーを描く。道具が壊れた直後に到達する。→ DN-UI-7c
-- **NaN 体力が「空のハート列 + `dead: false`」になっていた（F2/F3）。** `clamp` が
-  `Math.min`/`Math.max` なので NaN を素通しし、列は「体力ゼロ」と言い、フラグは「生存」と言っていた。
-  同じ穴が `selectedHotbarIndex`・`count`・`experienceLevel` にもあり、
-  `maxHealthPoints: Infinity` に至っては **`RangeError` を投げていた**——
-  DN-UI-7 が唯一許していない結果である。→ DN-UI-7a / DN-UI-7b
-- **XP バーが 1 レベル早く 100% になっていた（F4）。** `Math.round(0.999)` が `1`。→ DN-UI-7d
-
-**4 件とも既存の 20 本のビューモデルテストが捕まえていなかった。**
-どれも「境界を越えて来る値」に関するもので、テストは妥当な入力を渡すからである。
-**プレビューが値の妥当さを仮定しないのは、それが検査手段の仕事だからである。**
-
-**gap は 2 件から 1 件になり、その 1 件は前より狭い。**
-「無い」ことを assert していた describe
-`gaps the preview found that are recorded rather than filled` は消えた。
-埋まった以上、そこにあるべきなのは**何を保証するか**の assertion である。
-
-#### 埋めた 2 件
-
-- **旧 G1: mx-ui が色を 1 つも定義していない → `domain/palette.ts`。**
-  トークンは参照実装から掘った（各定数に `<reference-impl>/path:line`）。
-  ただし取ってから測り、**2 つは動かした**——`HEART` は最悪世界ピクセル上で 2.61:1 しか無く
-  アイコンの下限 3:1 に届かず、`ICON_EMPTY` は 1.10:1 で明るい地面の上では見えない。
-  **そして調査は実際の欠陥を 1 つ見つけた**: 参照実装の自動保存インジケータは
-  成功 `#d7f7c2`（`index.html:159`）と**失敗** `#ffd6d2`（`:212`）が
-  protanopia で 12、deuteranopia で 22 しか離れておらず（閾値 24）、
-  赤緑色覚特性のプレイヤーは**保存の成否を区別できない**。
-  参照実装の e2e ゲートは構造上これを見られない（テキストノードを自分の背景とだけ比べるので、
-  ある状態と別の状態を比べない）。詳細と保証の定義は DN-UI-11。
-- **旧 G2: インベントリ／クラフトにビューモデルが無い → `domain/inventory-view-model.ts`。**
-  保留の論（mc-sim の形が publish されていない）は正しいが**この事例に固有ではなく**、
-  組織の全ミラーの論である——そして `VitalsSnapshot` は最初のカットから同じことをしている。
-  さらに mc-sim の形は「未知」ではなく「未 publish」で、
-  `mc-sim/domain/inventory.ts` と mc-sim 自身の `api-lock.md` に載っている。
-  ミラーは provisional と明記し、`test/inventory-mirror.test.ts` が双方向で pin する。詳細は DN-UI-12。
+`pnpm verify` は `tsconfig.build.json`、`tsconfig.test.json`、`tsconfig.preview.json` を型検査し、
+`apps/preview-screens/` の lint も行う。プレビューを実行するわけではない。
 
 #### 保証はどこまで証明されたか（正確に）
 
@@ -284,7 +221,7 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
     ホットバーが roving `tabindex` の 1 タブストップになった。
     **DOM 面は 1 メンバも広げていない**——`focus()` も `addEventListener` も足していない。
 
-**2 点とも証明された（2026-07-28、`pnpm test:browser`）。** 以下は**何が分かったか**であって、
+**2 点とも `pnpm test:browser` で検証済みである。** 以下は**何が分かったか**であって、
 もう「未証明」の一覧ではない。詳細は §8。
 
 1. **幾何は測った——そして 2 件の欠陥が出た。** 「レイアウトはブラウザが要る」は正しかったが、
@@ -335,8 +272,8 @@ mx-ui は 16 リポジトリ中で唯一 `lib` に "DOM" を持つ。だから�
   **それは正しい挙動であって仮置きではない**が、mc-sim がレシピを所有するまで
   本物のクラフト結果は出せない。レシピ照合は plan.md §2.3-1 で mc-sim のものであり、
   ここで発明することがこのリポジトリのしてはならないことである。
-- **保存イベントを供給する相手もまだいない。** `domain/save-status.ts` は `SaveStatus` を受け取る形で、
-  それを作るのは「フレームを駆動する誰か」である——`VitalsSnapshot` が最初のカットからそうであるのと同じ位置である。
+- **保存イベントの producer はまだいない。** `domain/save-status.ts` と `application/save-indicator.ts` は status の変換と表示を実装しているが、
+  `SaveStatus` を作って UI に渡すフレーム駆動側は未接続である。これは `VitalsSnapshot` の供給境界と同じ位置にある。
   字幕と違って**刈り取るキューが無い**（値が 1 つで、失効は読み取り時の引き算）ので、
   `ui:overlay-sync` に足す仕事は無く、stage は変えていない。
 
@@ -494,22 +431,23 @@ plan.md §8 のリスク表:
 
 ## 8. ブラウザゲート（`pnpm test:browser`）
 
-**18 本 / 3 ファイル、実測 3.1 秒。`pnpm verify` には入っていない。**
+実 DOM mount、実測ピクセル、レイアウトを検証する。`pnpm verify` には含まれず、CI の browser job で実行する。
 
 ```console
 $ pnpm test:browser       # playwright test。webServer が pnpm preview:browser を 5182 で立てる
 $ pnpm preview:browser    # ハーネスだけを立てて目で見る
 ```
 
-| ファイル | 本数 | 何を測るか |
-| --- | ---: | --- |
-| `test-browser/dom-surface.spec.ts` | 4 | **実 `Document` への mount**。7 画面が渡されたホストに建つこと / 木が最後まで建つこと / DN-UI-4（リスナ皆無）/ カスタムプロパティが root にあり `document` に漏れないこと |
-| `test-browser/palette-pixels.spec.ts` | 4 | **実測ピクセル**。カスケードがトークンのチャンネルに解決すること / アルファ 2 つ / **合成が sRGB であって線形でないこと** / **survey の最悪値が実際に下限であること** |
-| `test-browser/geometry.spec.ts` | 10 | **レイアウト**。320 / 390px でホットバーが 1 列 24px 以上 / フォーカスリングに面積があること / `weight` が実ピクセルであること / **reduced-motion でヒットの太さが残ること** / セーフエリア内に収まること / 照準が中央に留まること |
+| ファイル | 何を測るか |
+| --- | --- |
+| `test-browser/dom-surface.spec.ts` | 実 `Document` への mount、木の構築、listener 境界、palette custom property の配置 |
+| `test-browser/furnace-view.spec.ts` | Furnace view を実 DOM に描画したときの表示 |
+| `test-browser/palette-pixels.spec.ts` | トークンの CSS 解決、alpha、sRGB 合成、palette survey の下限 |
+| `test-browser/geometry.spec.ts` | viewport のレイアウト、focus ring、bar weight、reduced-motion、safe area、crosshair 配置 |
 
 ### 8-1. なぜ `verify` に入れないか
 
-`pnpm verify` は **「CI と同じ内容」**（§1）であり、CI にブラウザバイナリが無い。
+`pnpm verify` は CI の Verify job に対応するが、CI 全体とは異なる。Browser job は別にあり、そこで Chromium を install して suite を実行する。
 入れると、このリポジトリの看板ゲートが 180MB のダウンロードと動く Chromium に依存し、
 **「`playwright install` を走らせていない」という平凡な失敗が、コードについて何も言わない赤いビルドになる。**
 
@@ -534,7 +472,7 @@ const factory: DomElementFactory = document
 
 `test/fixtures/dom-surface.ts` が `lib.dom.d.ts` に対して証明していた
 「構造型は実 DOM の部分集合である」が、**型ではなく実行で回収された**。
-7 画面・445 要素が建ち、キャストは 1 つも要らなかった。
+ブラウザハーネスは実 DOM を構造型として受け取り、キャストなしで画面を mount する。
 
 **1 つだけコンパイルしなかったものがあり、それは欠陥ではなく制約である。**
 `const page: DomElement = document.createElement('div')` と書いてから
@@ -572,37 +510,7 @@ DN-UI-4 の保証は「面に動詞が無いのでリスナを付けられない
 張る理由は**カウンタがリスナを見られることを先に示すため**である——
 一度も 1 を見たことのないガードが 0 を報告するのは §5-3 が出荷を拒んだ形である。
 
-### 8-5. mutation（11 変異、10 が 1 本以上を殺した）
-
-| # | 壊したもの | 殺した本数 |
-| --- | --- | ---: |
-| 1 | スロットの `min-width` / `min-height` を削除 | 3 |
-| 2 | ホットバーの `display: grid` を削除 | 2 |
-| 3 | スロットの `position: relative` を削除（リングの包含ブロック） | 1 |
-| 4 | `PALETTE_ALPHA` から scrim を削除（アルファを落とす） | 2 |
-| 5 | **`compositeOver` を線形光合成に変える** | 1 |
-| 6 | `worstCaseContrastOnScrim` を `Math.min` → `Math.max`（下限を偽る） | 1 |
-| 7 | `declarePalette(root)` を削除 | 5 |
-| 8 | crosshair の `translate(-50%, -50%)` を削除 | 2 |
-| 9 | `parent.appendChild(root)` を削除 | 13 |
-| 10 | `aria-label` を行から削除 | **0（設計どおり）** |
-| 11 | ヒットの太さを `animates` で条件付けする（reduced-motion で信号を落とす） | 1 |
-
-**11 は `application/crosshair-view.ts` が冒頭で警告している当の間違いである** ——
-参照実装の凍ったローディングバーと同じ形で、**アクセシブルな経路が情報を静かに失う**。
-書かれた文字列としては偽 document も見られるが、
-**実ピクセルで 4px が 2px に落ちること**を見られるのはブラウザだけである。
-
-**5 が一番価値のある変異である。** `domain/palette.ts` がコメントで断言していた
-「ブラウザもガンマ正しくない」を実際に反証可能にしているのがこの 1 本で、
-前提が逆だったら赤くなる。
-
-**10 は生存し、それは穴ではない。** アクセシブル名は
-`test/accessibility-gate.test.ts` の持ち物であり、ブラウザ側で二重化していない。
-**属性は偽 document が完全に観測できるもの**なので、ブラウザに持っていく理由が無い
-（§3 の「C が A/B より優れているのは速度ではなく、答えられる問いの種類である」の裏返しである）。
-
-### 8-6. カバレッジの責任範囲
+### 8-5. カバレッジの責任範囲
 
 ブラウザ suite は vitest の coverage 計測には含めないが、`coverage.include` に含まれる
 `domain/`、`application/`、`stages/` のソースは 4 指標すべて 100% を要求する。

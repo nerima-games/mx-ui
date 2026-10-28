@@ -1,7 +1,5 @@
 # 公開 API
 
-出典: plan.md §4.1（モジュール契約）、§4.2（標準 stage 順序）、§2.3-3（全順序の所有者）。
-
 ## 1. mx-ui の公開面は他の 2 つより 1 つ広い
 
 mx-gameplay と mx-redstone が mc-compose に対して公開するのは **stage 登録だけ**である
@@ -95,9 +93,6 @@ mx-ui 自身の正しさが要求しているのは「HUD が**このフレー�
 
 ## 4. `GameModule` を実装した（`uiModule`）
 
-ここには長らく「`GameModule` はまだ実装していない。`RIn` は mc-sim と mc-audio の公開 API が
-存在するまで名前を付けられないから」と書いてあった。**Layer は障害ではなかった。**
-
 mx-ui はフレーム契約を通じてサービスを公開しない。UI を mount させる面は別の、意図的に小さい面である
 （§4-1）。だから `layers` は空であり、最初から空だった。
 
@@ -150,8 +145,10 @@ export class UiMountError {
 }
 ```
 
-`start` と `stop` の失敗は Effect の error channel に `UiMountError` として返る。この tagged error value は
-`_tag`、`name`、`message`、`cause` を持ち、native `Error` は継承しない。
+The host passes a real `HTMLElement` as the mount root. mx-ui uses the structural `DomElementFactory` and `DomElement` types only for the child elements it creates inside that root.
+
+Failures from `start` and `stop` are returned in Effect's error channel as `UiMountError`.
+This tagged value has `_tag`, `name`, `message`, and `cause`; it does not extend native `Error`.
 
 設計上の制約は次の通り:
 
@@ -168,10 +165,9 @@ export class UiMountError {
    `moveInventoryFocus` / `activateInventoryFocus` に意味上のコマンドを渡す。矢印キーも同じ移動関数を使い、
    region の列数、未知 region のスキップ、crafting output への遷移を一貫させる。
 
-## 5. `index.ts` の全 export
+## 5. `index.ts` の主な可視 export
 
-`index.ts` は 44 モジュールを `export *` している——`application/` の 22、`domain/` の 20、
-`stages/` の 2（`domain/frame-contract.ts` は**含まれない**。下記）。この節は契約面と
+`index.ts` は `application/`、`domain/`、`stages/` から export する（`domain/frame-contract.ts` は**含まれない**。下記）。この節は契約面と
 主要な可視 export を分類するもので、完全な実装一覧は `src/index.ts` と build 後の declaration を正とする:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
@@ -231,20 +227,12 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 | `domain/inventory-view-model.ts` のミラー | 本リポジトリの純粋関数の**引数型** | **載せる** | mc-compose は `inventoryViewModel` を呼ばない → §5 の表で MINOR |
 | `VitalsSnapshot` | 同上（最初のカットから載っている） | **載っている** | 同上 |
 
-つまり**「他人の語彙を再公開するな」であって「他人の形を写すな」ではない**。
-`VitalsSnapshot` が最初から後者をやっていて誰も問題視しなかったのは、
-それが mx-ui の関数が「何を渡してほしいか」の表明だからである。インベントリのミラーも同じ位置にいる。
-
-`test/inventory-mirror.test.ts` の
-`REGRESSION: the mirror is published as a PARAMETER, not as mc-sim’s vocabulary` が
-この 2 方向（ミラーは載る / `StageId` と `DeltaTimeSecs` は載らない）を 1 本で固定している。
-詳細は [design-notes.md](./design-notes.md) DN-UI-12。
-
 `FrameServices = never` は意図的な乖離である。kernel は `ClockPort` の別名にしているが、
 ここで `ClockPort` を再掲すると kernel と同じ文字列 ID を持つ**別の** `Context.Tag` ができてしまう。
 見分けがつかない 2 つのタグは、狭すぎる型よりはるかに悪い。
 `Effect<void, never, never>` は `Effect<void, never, ClockPort>` が欲しい場所に代入できるので、
 このファイルに対して書かれた stage は kernel の import に差し替えても型検査を通り続ける。
+これは型環境の互換性であり、mx-ui が runtime の `ClockPort` を提供するという意味ではない。
 
 ### `domain/hud-view-model.ts` — すべて内部(可視)
 
@@ -323,7 +311,9 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 
 ### なぜ `HTMLElement` ではなく構造型なのか
 
-`tsconfig.base.json` は 16 リポジトリで唯一 `"lib": ["ES2024", "DOM"]` を宣言しており、
+`tsconfig.base.json` is the only one of the 16 repositories whose `lib` includes `DOM`.
+It also includes `ESNext.Disposable` for `Disposable` and `AsyncDisposable`, which Effect 4 declarations reference.
+Consumers who specify `lib` explicitly must include `ESNext.Disposable` too.
 **`HTMLElement` は書ける**。それでも `application/dom-surface.ts` がある理由は 2 つで、
 mc-render の理由（DOM lib が無い）とは**別物**である。
 
@@ -332,8 +322,10 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
    `as unknown as HTMLElement` を書いた偽物を使うかしないとテストできない。
    後者のほうが悪い——キャストこそが型安全を失う場所であり、しかもそれがテスト側にあるので
    偽物が実物からずれても誰も気づけない。
-2. **リスナを配らないため。** この面には `addEventListener` が**無い**。
-   だから DN-UI-4 の「Escape の所有者は 1 つ」は規律ではなく**語彙の問題**になる。
+2. **一般要素にイベント登録口を配らないため。** `DomElement` に `addEventListener` は無い。
+   native button/input の `DomInteractiveElement` / `DomInputElement` には click/input 用の登録口があり、
+   session key listener は mount adapter が root の `ownerDocument` に登録する。
+   その境界を分けることで、一般 renderer が独自の keyboard handler を持たない。
    `test/public-api.test.ts` の
    `REGRESSION: exports no way for a renderer to take a key (DN-UI-4)` が
    バレル側からもこれを固定している。
@@ -395,17 +387,11 @@ export されているのに公開 API ではない、というのは矛盾に�
 - **公開 API ではない理由**: mc-compose はこれらを使わない。使わないものを変えても mc-compose は壊れない。
   だから `iconRow` の戻り値を変えても **MINOR bump で済む**（[versioning.md](./versioning.md) §5）。
 
-`test/public-api.test.ts` は 3 つのブロックに分けてこの区別を記録している —
-`re-exports the stage registration contract — the part mc-compose actually consumes`（契約）、
-`REGRESSION: every accessibility asset plan.md §3.13 asks to carry over is still exported`（消えたら困る資産）、
-`re-exports the view-model domain and the modal stack, which the per-screen previews drive`（プレビューが駆動するもの）。
-
-4 つ目は**不在**を固定するブロックである —
+別の回帰テストは**不在**を固定する —
 `REGRESSION: does not republish mc-kernel’s vocabulary as its own` が
 `StageId` と `DeltaTimeSecs` がバレルに現れないことを assert する。
 「見えるが公開ではない」の管理はドキュメントでできるが、
 「所有していないものを公開する」はドキュメントでは止められない——消えるのが約束だからである。
 
-2 つ目のブロックは分類ではなく**存在保証**である。
-plan.md §3.13 が「引き継ぐ」と言っているアクセシビリティ資産は、
-引き継がれた後に静かに落とされると引き継がれなかったのと区別がつかない。名前で列挙してあるのはそのためである。
+plan.md §3.13 が「引き継ぐ」と言っているアクセシビリティ資産は、公開 export として維持する。
+別の回帰テストがその存在を固定する。
