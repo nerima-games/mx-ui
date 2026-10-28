@@ -22,6 +22,9 @@ const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url))
 
 const config: ReturnType<typeof defineConfig> = defineConfig({
   root: here,
+  optimizeDeps: {
+    include: ['@nerima-games/mc-kernel/domain/game-mode', '@nerima-games/mc-kernel/domain/settings', 'effect'],
+  },
   server: {
     // 5182, and the two numbers it is avoiding are both real.
     //
