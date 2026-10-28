@@ -676,10 +676,15 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     openSettings: () => session.mounted?.overlays.openSettings(),
     start: Effect.gen(function* start() {
       yield* unmount('Failed to unmount previous mx-ui views')
-      const mounted = yield* buildMountedViews()
-      session.mounted = mounted
-      yield* toastLifecycle.start(mounted)
-      return createUiModuleInstance(uiModule.frameStages, toastLifecycle.read)
+      return yield* Effect.onInterrupt(
+        Effect.gen(function* completeStartup() {
+          const mounted = yield* buildMountedViews()
+          session.mounted = mounted
+          yield* toastLifecycle.start(mounted)
+          return createUiModuleInstance(uiModule.frameStages, toastLifecycle.read)
+        }),
+        () => unmount('Failed to roll back interrupted mx-ui startup'),
+      )
     }),
     stop: Effect.suspend(unmount),
     updateDebug: (snapshot) => {

@@ -24,7 +24,8 @@ describe('UiMount startup interruption', () => {
 
     try {
       const { makeUiMount } = await import('../src/application/ui-mount.js')
-      const runtime = makeUiMount({ root: document.createElement('main') })
+      const root = document.createElement('main')
+      const runtime = makeUiMount({ root })
 
       await Effect.runPromise(
         Effect.scoped(
@@ -33,6 +34,8 @@ describe('UiMount startup interruption', () => {
             yield* Deferred.await(subscriberEntered)
             yield* Fiber.interrupt(fiber)
             expect(toastScope?.state[SCOPE_STATE_TAG]).toBe('Closed')
+            expect(runtime.current()).toBeUndefined()
+            expect(root.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
             yield* runtime.stop
           }).pipe(Effect.provide(DomainEventBusLayer(TOAST_BUS_CAPACITY))),
         ),
