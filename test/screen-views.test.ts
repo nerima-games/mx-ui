@@ -31,10 +31,13 @@
  * its display half moved.
  */
 import { describe, expect, it } from 'vitest'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import type { CaptionEvent } from '@nerima-games/mc-audio'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
-import { captionLines, emptyCaptionQueue, receiveCaption, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
+import { captionLines, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
 import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
-import { itemStack } from '@nerima-games/mc-sim'
+import { itemStack as makeItemStack } from '@nerima-games/mc-sim'
+import { Result } from 'effect'
 import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
 import { createCaptionView } from '../src/application/caption-view'
 import { createInventoryView } from '../src/application/inventory-view'
@@ -44,14 +47,29 @@ import type { SlotView } from '../src/domain/hud-view-model'
 import { PALETTE_PROPERTY } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames } from './fake-dom'
 
-const enabled = { captionsEnabled: true, audioUnlocked: false }
+const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
+  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
+  MonotonicTimeSecs(seconds)
 
-const queueOf = (...texts: ReadonlyArray<string>) =>
-  texts.reduce(
-    (queue, text, index) =>
-      receiveCaption(queue, { cueId: text, text, direction: 'left', atSecs: index }, enabled),
-    emptyCaptionQueue,
-  )
+const queueOf = (...texts: ReadonlyArray<string>): ReadonlyArray<CaptionEvent> =>
+  texts.map((text, index): CaptionEvent => ({
+    cueId: text,
+    text,
+    pan: -1,
+    atSecs: captionTime(index),
+    reason: 'audible',
+  }))
+
+const testItemStack = (
+  item: Parameters<typeof makeItemStack>[0],
+  count: Parameters<typeof makeItemStack>[1],
+) => {
+  const result = makeItemStack(item, count)
+  if (Result.isSuccess(result)) {
+    return result.success
+  }
+  expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
+}
 
 describe('captions are rendered as TEXT', () => {
   it('puts the caption in textContent, where a screen reader can reach it', () => {
@@ -61,7 +79,7 @@ describe('captions are rendered as TEXT', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'full')
-    view.render(captionLines(queueOf('Creeper hisses'), 0))
+    view.render(captionLines(queueOf('Creeper hisses'), captionTime(0)))
 
     const line = fakeElement(view.root).find('data-mx-ui', 'caption-text')
     expect(line?.textContent).toBe('Creeper hisses')
@@ -78,7 +96,7 @@ describe('captions are rendered as TEXT', () => {
     const created = factory.created.length
 
     for (let index = 0; index < 40; index += 1) {
-      view.render(captionLines(queueOf(`cue-${String(index)}`), index))
+      view.render(captionLines(queueOf(`cue-${String(index)}`), captionTime(index)))
     }
     expect(factory.created.length).toBe(created)
     expect(fakeElement(view.root).findAll('data-mx-ui', 'caption-line')).toHaveLength(
@@ -95,7 +113,7 @@ describe('captions are rendered as TEXT', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'reduced')
-    view.render(captionLines(queueOf('Zombie groans'), 2))
+    view.render(captionLines(queueOf('Zombie groans'), captionTime(2)))
 
     const line = fakeElement(view.root).find('data-mx-ui', 'caption-line')
     expect(line?.style.properties.get('opacity')).toBe('1')
@@ -108,7 +126,7 @@ describe('captions are rendered as TEXT', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
     const view = createCaptionView(factory, parent, 'reduced')
-    const lines = captionLines(queueOf('Arrow hits'), 0)
+    const lines = captionLines(queueOf('Arrow hits'), captionTime(0))
 
     view.render(lines)
     const before = factory.mark()
@@ -147,7 +165,7 @@ describe('captions are rendered as TEXT', () => {
     // A caption that has AGED, so that fading and not fading are different
     // opacities. A fresh line reads 1 either way, and against it this test would
     // pass with the early return deleted.
-    view.render(captionLines(queueOf('Zombie groans'), 2))
+    view.render(captionLines(queueOf('Zombie groans'), captionTime(2)))
 
     const before = factory.mark()
     view.setMotion('reduced')
@@ -199,7 +217,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     view.render(
       inventoryViewModel({
         ...emptyInventorySnapshot,
-        armour: [itemStack('iron_helmet', 1)],
+        armour: [testItemStack('iron_helmet', 1)],
       }),
       { focused: { index: 0, kind: 'slot', region: 'armour' }, status: 'Helmet equipped' },
     )
@@ -263,7 +281,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     view.render(
       inventoryViewModel({
         ...emptyInventorySnapshot,
-        carried: itemStack('stone', 12),
+        carried: testItemStack('stone', 12),
       }),
     )
 
@@ -285,7 +303,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const view = createInventoryView(factory, parent)
 
     view.render(
-      inventoryViewModel({ ...emptyInventorySnapshot, carried: itemStack('stone', 1) }),
+      inventoryViewModel({ ...emptyInventorySnapshot, carried: testItemStack('stone', 1) }),
       { focused: { kind: 'crafting-output' }, status: 'Carrying stone' },
     )
 
@@ -308,7 +326,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
@@ -331,7 +349,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
       { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
@@ -347,7 +365,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 1) },
+          result: { _tag: 'Match', output: testItemStack('stick', 1) },
         },
       }),
       { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
@@ -365,13 +383,13 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      carried: itemStack('stone', 12),
+      carried: testItemStack('stone', 12),
       crafting: {
         gridWidth: 2,
         grid: [undefined, undefined, undefined, undefined],
@@ -453,7 +471,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         ...emptyInventorySnapshot,
         crafting: {
           gridWidth: size,
-          grid: Array.from({ length: size * size }, () => itemStack('stone', 1)),
+          grid: Array.from({ length: size * size }, () => testItemStack('stone', 1)),
           result: { _tag: 'NoMatch' },
         },
       })

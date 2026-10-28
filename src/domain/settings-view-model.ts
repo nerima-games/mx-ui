@@ -1,117 +1,150 @@
-/**
- * The settings screen's presentation state — projection only.
- *
- * Wave 1 (W1-L3') lowers mc-compose's `apps/web/settings.ts` /
- * `settings-view.ts` monolith. The VALUE RULES (sensitivity/volume ranges,
- * rebind conflict resolution, persistence) do NOT land here: mc-kernel's
- * `settings.ts` does not yet cover this shape (a separate kernel PR), and
- * mc-sim is named for settings STATE elsewhere in `docs/responsibility.md`'s
- * non-scope table — which of the two actually owns it is that PR's question to
- * settle, not this module's. This file and `application/settings-view.ts`
- * carry only the SCREEN half, the same split the responsibility table already
- * draws for every other row ("record is $owner, screen is ui"), and the exact
- * reason `test/screen-views.test.ts`'s header gives for why a settings screen
- * was deliberately absent until now: rebind's central behaviour is a
- * `KeyboardEvent.code`, which needs a listener, and
- * `application/dom-surface.ts` has none (DN-UI-4). This module and its DOM
- * layer never attach one — see `application/settings-view.ts`'s header for
- * what stays with the host instead.
- *
- * The input is a narrow, host-owned snapshot rather than mc-kernel's
- * `Settings` type: kernel's existing shape (renderDistance / fov /
- * graphicsQuality / musicVolume) does not cover compose's fields (sensitivity /
- * bindings / captions), so importing it here would either publish a type this
- * repository does not own or invent one that later disagrees with the kernel
- * PR's actual shape. `SettingsSnapshot` is replaced once that PR lands and
- * publishes.
- */
-import type { InputAction, KeyBindings } from './accessibility.js'
+/** Presentation projection for the settings owned and held by mc-sim. */
+import { DIFFICULTIES, type Difficulty } from '@nerima-games/mc-kernel/domain/game-mode'
+import {
+  GRAPHICS_QUALITIES,
+  MAX_FOV_DEGREES,
+  MAX_MOUSE_SENSITIVITY,
+  MAX_VOLUME,
+  MIN_FOV_DEGREES,
+  MIN_MOUSE_SENSITIVITY,
+  MIN_VOLUME,
+  type Settings,
+  isValidSettings,
+} from '@nerima-games/mc-sim'
+import { type KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
+import { Result } from 'effect'
 
-const ZERO_PERCENT = 0
+const UI_SCALE_MIN = 0.75
+const UI_SCALE_MAX = 1.5
+const FOV_STEP = 1
+const VOLUME_STEP = 0.01
+const SENSITIVITY_STEP = 0.1
+const UI_SCALE_STEP = 0.05
 const PERCENT_SCALE = 100
 
-/**
- * Defensive formatting only, not policy: guards NaN/Infinity/negative inputs
- * so a stale or malformed host snapshot cannot crash a render. The actual
- * range a value is allowed to hold (0-1 for a volume, 0.1-3 for sensitivity)
- * is the kernel PR's normalisation, not this repository's.
- */
-const percentOf = (unit: number): number => {
-  if (!Number.isFinite(unit)) {
-    return ZERO_PERCENT
-  }
-  return Math.max(ZERO_PERCENT, Math.round(unit * PERCENT_SCALE))
+const FOV_BOUNDS = { maximum: MAX_FOV_DEGREES, minimum: MIN_FOV_DEGREES, step: FOV_STEP }
+const VOLUME_BOUNDS = { maximum: MAX_VOLUME, minimum: MIN_VOLUME, step: VOLUME_STEP }
+const SENSITIVITY_BOUNDS = {
+  maximum: MAX_MOUSE_SENSITIVITY,
+  minimum: MIN_MOUSE_SENSITIVITY,
+  step: SENSITIVITY_STEP,
 }
+const UI_SCALE_BOUNDS = { maximum: UI_SCALE_MAX, minimum: UI_SCALE_MIN, step: UI_SCALE_STEP }
 
-/**
- * The actions the rebinding rows list.
- *
- * Mirrors `apps/preview-screens/state.ts`'s `PREVIEW_ACTIONS` order — both
- * read `domain/accessibility.ts`'s `InputAction`, which that module's own
- * header calls PROVISIONAL until mc-render's input service publishes. Two
- * lists rather than one shared export because `apps/` is not published API
- * and cannot be imported from `src/`.
- */
-export const SETTINGS_BINDABLE_ACTIONS: ReadonlyArray<InputAction> = [
-  'moveForward',
-  'moveBack',
-  'moveLeft',
-  'moveRight',
-  'jump',
-  'sneak',
-  'sprint',
-  'inventory',
-  'drop',
-  'chat',
-]
+export type SettingsSnapshot = Settings
+export type GraphicsPreset = Settings['graphicsPreset']
+export type ReducedMotionSetting = Settings['reducedMotion']
+export type ColorVisionCorrection = Settings['colorVisionCorrection']
 
-/** A host-owned snapshot of the settings this screen shows. Not mc-kernel's `Settings` — see header. */
-export type SettingsSnapshot = {
-  readonly sensitivity: number
-  readonly masterVolume: number
-  readonly sfxVolume: number
-  readonly audioEnabled: boolean
-  readonly captionsEnabled: boolean
-  readonly bindings: KeyBindings
-}
-
-export type SettingsFieldView = {
-  readonly percent: number
+export type NumericSettingView = {
+  readonly value: number
+  readonly minimum: number
+  readonly maximum: number
+  readonly step: number
   readonly label: string
 }
 
-/** No label here — labels are English display strings, and belong with the DOM layer (`application/settings-view.ts`'s `ACTION_LABEL`), matching where `anvil-view.ts` keeps `SLOT_LABEL`. */
-export type SettingsBindingRow = {
-  readonly action: InputAction
-  readonly code: string | undefined
+export type SettingChoice<Value extends string> = {
+  readonly value: Value
+  readonly label: string
 }
 
-export type SettingsViewModel = {
-  readonly sensitivity: SettingsFieldView
-  readonly masterVolume: SettingsFieldView
-  readonly sfxVolume: SettingsFieldView
+export type SettingsBindingRow<Action extends string = string> = {
+  readonly action: Action
+  readonly code: KeyCode | undefined
+}
+
+export type SettingsViewModel<Action extends string = string> = {
+  readonly difficulty: Difficulty
+  readonly graphicsPreset: GraphicsPreset
+  readonly reducedMotion: ReducedMotionSetting
+  readonly colorVisionCorrection: ColorVisionCorrection
+  readonly mouseSensitivity: NumericSettingView
+  readonly masterVolume: NumericSettingView
+  readonly sfxVolume: NumericSettingView
+  readonly fovDegrees: NumericSettingView
+  readonly uiScale: NumericSettingView
   readonly audioEnabled: boolean
   readonly captionsEnabled: boolean
-  readonly bindingRows: ReadonlyArray<SettingsBindingRow>
+  readonly bindingRows: ReadonlyArray<SettingsBindingRow<Action>>
 }
 
-const fieldView = (unit: number): SettingsFieldView => {
-  const percent = percentOf(unit)
-  return Object.freeze({ label: `${String(percent)}%`, percent })
+export type SettingsViewModelFailure = {
+  readonly _tag: 'InvalidSettingsSnapshot'
 }
 
-const bindingRow = (action: InputAction, bindings: KeyBindings): SettingsBindingRow =>
-  Object.freeze({ action, code: bindings.get(action) })
+const REDUCED_MOTION_SETTINGS: ReadonlyArray<ReducedMotionSetting> = ['system', 'full', 'reduced']
+const COLOR_VISION_CORRECTIONS: ReadonlyArray<ColorVisionCorrection> = [
+  'off',
+  'protanopia',
+  'deuteranopia',
+  'tritanopia',
+]
+const titleLabel = (value: string): string => value.replace(/^./u, (firstCharacter) => firstCharacter.toUpperCase())
 
-/** Purely derives the immutable presentation state for the settings screen. */
-export const settingsViewModel = (snapshot: SettingsSnapshot): SettingsViewModel =>
-  Object.freeze({
-    audioEnabled: snapshot.audioEnabled,
-    bindingRows: Object.freeze(
-      SETTINGS_BINDABLE_ACTIONS.map((action) => bindingRow(action, snapshot.bindings)),
-    ),
-    captionsEnabled: snapshot.captionsEnabled,
-    masterVolume: fieldView(snapshot.masterVolume),
-    sensitivity: fieldView(snapshot.sensitivity),
-    sfxVolume: fieldView(snapshot.sfxVolume),
+export const DIFFICULTY_CHOICES: ReadonlyArray<SettingChoice<Difficulty>> = DIFFICULTIES.map(
+  (value) => Object.freeze({ label: titleLabel(value), value }),
+)
+
+export const GRAPHICS_PRESET_CHOICES: ReadonlyArray<SettingChoice<GraphicsPreset>> = GRAPHICS_QUALITIES.map(
+  (value) => Object.freeze({ label: titleLabel(value), value }),
+)
+
+export const REDUCED_MOTION_CHOICES: ReadonlyArray<SettingChoice<ReducedMotionSetting>> =
+  REDUCED_MOTION_SETTINGS.map((value) => Object.freeze({ label: value, value }))
+
+export const COLOR_VISION_CHOICES: ReadonlyArray<SettingChoice<ColorVisionCorrection>> =
+  COLOR_VISION_CORRECTIONS.map((value) => Object.freeze({ label: value, value }))
+
+const numericField = (
+  value: number,
+  bounds: { readonly minimum: number; readonly maximum: number; readonly step: number },
+  format: (value: number) => string,
+): NumericSettingView => Object.freeze({ label: format(value), ...bounds, value })
+
+const percentLabel = (value: number): string => `${String(Math.round(value * PERCENT_SCALE))}%`
+
+const bindingRow = <Action extends string>(
+  settings: Settings,
+  defaultBindings: Readonly<Record<Action, KeyCode>>,
+  action: Action,
+): SettingsBindingRow<Action> => {
+  let code = defaultBindings[action]
+  if (inputAction.is(action)) {
+    code = settings.keyBindings[action] ?? code
+  }
+  return Object.freeze({
+    action,
+    code,
   })
+}
+
+/** Rejects malformed snapshots with the sim-owned validator; no fallback or normalization is applied. */
+export const settingsViewModel = <Action extends string>(
+  input: unknown,
+  defaultBindings: Readonly<Record<Action, KeyCode>>,
+  bindableActions: ReadonlyArray<Action>,
+): Result.Result<SettingsViewModel<Action>, SettingsViewModelFailure> => {
+  if (!isValidSettings(input)) {
+    return Result.fail({ _tag: 'InvalidSettingsSnapshot' })
+  }
+
+  return Result.succeed(
+    Object.freeze({
+      audioEnabled: input.audioEnabled,
+      bindingRows: Object.freeze(
+        bindableActions.map((action) => bindingRow(input, defaultBindings, action)),
+      ),
+      captionsEnabled: input.captionsEnabled,
+      colorVisionCorrection: input.colorVisionCorrection,
+      difficulty: input.difficulty,
+      fovDegrees: numericField(input.fovDegrees, FOV_BOUNDS, (value) => `${String(value)}°`),
+      graphicsPreset: input.graphicsPreset,
+      masterVolume: numericField(input.masterVolume, VOLUME_BOUNDS, percentLabel),
+      mouseSensitivity: numericField(input.mouseSensitivity, SENSITIVITY_BOUNDS, (value) => `${String(value)}×`),
+      reducedMotion: input.reducedMotion,
+      sfxVolume: numericField(input.sfxVolume, VOLUME_BOUNDS, percentLabel),
+      uiScale: numericField(input.uiScale, UI_SCALE_BOUNDS, (value) => `${String(value)}×`),
+    }),
+  )
+}

@@ -1,5 +1,6 @@
 /* eslint-disable max-params, max-statements, no-magic-numbers, no-ternary, no-undefined -- Geometry is clearer with direct index arithmetic and absent-region checks. */
 import type { InventoryViewModel, SlotRegion } from '../domain/inventory-view-model.js'
+import type { FocusTarget } from '@nerima-games/mc-render'
 import type { InventoryInteractionTarget } from './inventory-view.js'
 
 export type InventoryNavigationDirection = 'down' | 'left' | 'right' | 'up'
@@ -14,6 +15,97 @@ const navigableRegions = (model: InventoryViewModel): ReadonlyArray<NavigableReg
     (region): region is NavigableRegion =>
       region.kind === 'slots' && region.slots.length > FIRST_INDEX,
   )
+
+
+const INVENTORY_SELECTOR = '[data-mx-ui="inventory"]'
+const REGION_SELECTOR = '[data-mx-ui="region"]'
+const SLOT_SELECTOR = '[data-mx-ui="slot"]'
+const HOTBAR_SELECTOR = '[data-mx-ui="hotbar"]'
+const CRAFTING_OUTPUT_SELECTOR = '[data-mx-ui="crafting-output"]'
+const CRAFTING_OUTCOME_SELECTOR = '[data-mx-ui="crafting-outcome"]'
+const REGION_ATTRIBUTE = 'data-region'
+const REGION_STATE_ATTRIBUTE = 'data-region-state'
+const SLOT_INDEX_ATTRIBUTE = 'data-slot-index'
+const CRAFTING_OUTPUT_FOCUS_GROUP = 'crafting-output'
+const ELEMENT_NODE_TYPE = 1
+
+const isElement = (target: unknown): target is Element =>
+  typeof target === 'object' &&
+  target !== null &&
+  'nodeType' in target &&
+  target.nodeType === ELEMENT_NODE_TYPE &&
+  'closest' in target &&
+  typeof target.closest === 'function'
+
+const focusIndexForSlot = (slot: Element): number | undefined => {
+  if (slot.hasAttribute('hidden')) {
+    return undefined
+  }
+  const value = slot.getAttribute(SLOT_INDEX_ATTRIBUTE)
+  if (value === null || !/^(?:0|[1-9]\d*)$/.test(value)) {
+    return undefined
+  }
+  const index = Number(value)
+  return Number.isSafeInteger(index) ? index : undefined
+}
+
+const focusTargetForSlot = (slot: Element, index: number) => {
+  if (slot.closest(HOTBAR_SELECTOR) !== null) {
+    return { group: 'hotbar', index }
+  }
+
+  const region = slot.closest(REGION_SELECTOR)
+  const inventory = slot.closest(INVENTORY_SELECTOR)
+  if (
+    region === null ||
+    inventory === null ||
+    region.closest(INVENTORY_SELECTOR) !== inventory ||
+    region.getAttribute(REGION_STATE_ATTRIBUTE) !== 'slots'
+  ) {
+    return undefined
+  }
+
+  const group = region.getAttribute(REGION_ATTRIBUTE)
+  if (group === null || group.length === 0) {
+    return undefined
+  }
+  return { group, index }
+}
+
+const focusTargetForCraftingOutput = (element: Element) => {
+  const output = element.closest(CRAFTING_OUTPUT_SELECTOR)
+  if (output === null || output.hasAttribute('hidden')) {
+    return undefined
+  }
+
+  const inventory = output.closest(INVENTORY_SELECTOR)
+  const outcome = output.closest(CRAFTING_OUTCOME_SELECTOR)
+  if (
+    inventory === null ||
+    outcome === null ||
+    outcome.closest(INVENTORY_SELECTOR) !== inventory ||
+    outcome.getAttribute('data-crafting-state') !== 'match'
+  ) {
+    return undefined
+  }
+  return { group: CRAFTING_OUTPUT_FOCUS_GROUP, index: FIRST_INDEX }
+}
+
+/** Resolve only focusable members marked by mx-ui's inventory and hotbar DOM. */
+export const inventoryFocusTargetForElement = (
+  target: unknown,
+): FocusTarget | undefined => {
+  if (!isElement(target)) {
+    return undefined
+  }
+
+  const slot = target.closest(SLOT_SELECTOR)
+  if (slot !== null) {
+    const index = focusIndexForSlot(slot)
+    return index === undefined ? undefined : focusTargetForSlot(slot, index)
+  }
+  return focusTargetForCraftingOutput(target)
+}
 
 export const inventoryTargets = (
   model: InventoryViewModel,

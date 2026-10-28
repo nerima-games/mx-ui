@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 
-import { Effect } from 'effect'
+import { Effect, Exit, Result, Schema } from 'effect'
+import * as Scope from 'effect/Scope'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { inventoryTargetAt, makeUiMount } from '../src/application/ui-mount'
+import {
+  AchievementToastEventBusLayer,
+} from '../src/application/achievement-toast-subscriber'
+import {
+  inventoryTargetAt,
+  makeUiMount as makeRawUiMount,
+  UiMountError,
+  type UiMountOptions,
+} from '../src/application/ui-mount'
 import type { InventoryInteractionTarget } from '../src/application/inventory-view'
 import { uiModule } from '../src/stages/registration'
 import { initialMainMenuState, mainMenuViewModel, type SavedWorld } from '../src/domain/main-menu'
@@ -11,11 +20,39 @@ import {
   inventoryViewModel,
   type InventoryViewModel,
 } from '../src/domain/inventory-view-model'
-import { itemStack } from '@nerima-games/mc-sim'
+import { DomainEventBus, itemStack as makeItemStack } from '@nerima-games/mc-sim'
+import { achievementEventFromLegacySim } from './helpers/achievement-event'
 
+const testScopes: Array<Scope.Closeable> = []
+
+const makeUiMount = (options: UiMountOptions) => {
+  const runtime = makeRawUiMount(options)
+  const scope = Scope.makeUnsafe()
+  testScopes.push(scope)
+  return {
+    ...runtime,
+    start: runtime.start.pipe(
+      Effect.provideService(Scope.Scope, scope),
+      Effect.provide(AchievementToastEventBusLayer),
+    ),
+  }
+}
+
+const testItemStack = (
+  item: Parameters<typeof makeItemStack>[0],
+  count: Parameters<typeof makeItemStack>[1],
+) => {
+  const result = makeItemStack(item, count)
+  if (Result.isSuccess(result)) {
+    return result.success
+  }
+  expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
+}
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [{ sessionId: 'session-1', name: 'Cliff House' }]
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(testScopes.map((scope) => Effect.runPromise(Scope.close(scope, Exit.void))))
+  testScopes.length = 0
   document.body.replaceChildren()
   vi.restoreAllMocks()
 })
@@ -35,7 +72,10 @@ describe('UiMount', () => {
     document.body.appendChild(host)
     const runtime = makeUiMount({ motion: 'reduced', root: host })
 
-    await expect(Effect.runPromise(runtime.start)).resolves.toBe(uiModule)
+    const moduleInstance = await Effect.runPromise(runtime.start)
+    expect(moduleInstance).not.toBe(uiModule)
+    expect(moduleInstance.frameStages).toBe(uiModule.frameStages)
+    expect(moduleInstance.qa).not.toBe(uiModule.qa)
 
     const mounted = runtime.current()
     expect(mounted?.root.parentElement).toBe(host)
@@ -49,6 +89,138 @@ describe('UiMount', () => {
     expect(runtime.current()).toBeUndefined()
     expect(host.contains(unrelated)).toBe(true)
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('renders achievement events from the mounted subscriber and closes it on stop', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          const moduleInstance = yield* runtime.start
+
+          const mounted = runtime.current()
+          if (mounted === undefined) {
+            throw new Error('Expected the UI mount to be active')
+          }
+          const toastView = mounted.achievementToast
+          const toastRoot = host.querySelector<HTMLElement>('[data-mx-ui="achievement-toast"]')
+          expect(toastRoot).not.toBeNull()
+          expect(toastRoot?.hidden).toBe(true)
+          const render = vi.spyOn(toastView, 'render')
+
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(toastRoot?.hidden).toBe(false)
+          expect(host.querySelector('[data-mx-ui="achievement-toast-title"]')?.textContent).toBe('Stone Age')
+          expect(render).toHaveBeenCalledOnce()
+          const qaState = yield* moduleInstance.qa.observe.state.run({})
+          expect(qaState.achievementToast).toMatchObject({
+            achievement: 'minecraft:story/mine_stone',
+            title: 'Stone Age',
+          })
+
+          yield* runtime.stop
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(render).toHaveBeenCalledOnce()
+          expect(host.querySelector('[data-mx-ui="achievement-toast"]')).toBeNull()
+          const stoppedQaState = yield* moduleInstance.qa.observe.state.run({})
+          expect(stoppedQaState.achievementToast).toBeNull()
+        }),
+      ).pipe(Effect.provide(AchievementToastEventBusLayer)),
+    )
+  })
+
+  it('closes the achievement subscriber when its parent scope closes', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          const parentScope = yield* Scope.make()
+          yield* runtime.start.pipe(Effect.provideService(Scope.Scope, parentScope))
+
+          const mounted = runtime.current()
+          if (mounted === undefined) {
+            throw new Error('Expected the UI mount to be active')
+          }
+          const render = vi.spyOn(mounted.achievementToast, 'render')
+
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(render).toHaveBeenCalledOnce()
+
+          yield* Scope.close(parentScope, Exit.void)
+          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          expect(render).toHaveBeenCalledOnce()
+
+          yield* runtime.stop
+          expect(runtime.current()).toBeUndefined()
+          expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+        }).pipe(Effect.provide(AchievementToastEventBusLayer)),
+      ),
+    )
+  })
+
+  it('returns an unsupported achievement id as a SchemaError when stopping the mount', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    const failure = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          yield* runtime.start
+          yield* bus.publish(achievementEventFromLegacySim('example:custom/achievement'))
+          yield* Effect.yieldNow
+          return yield* Effect.flip(runtime.stop)
+        }).pipe(Effect.provide(AchievementToastEventBusLayer)),
+      ),
+    )
+
+    expect(failure).toBeInstanceOf(Schema.SchemaError)
+    expect(runtime.current()).toBeUndefined()
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('reports subscriber and view cleanup failures together', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeRawUiMount({ root: host })
+
+    const failure = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bus = yield* DomainEventBus
+          yield* runtime.start
+
+          const mounted = runtime.current()
+          if (mounted === undefined) {
+            throw new Error('Expected the UI mount to be active')
+          }
+          vi.spyOn(mounted.overlays, 'destroy').mockImplementation(() => {
+            throw new Error('view destroy failed')
+          })
+
+          yield* bus.publish(achievementEventFromLegacySim('example:custom/achievement'))
+          yield* Effect.yieldNow
+          return yield* Effect.flip(runtime.stop)
+        }).pipe(Effect.provide(AchievementToastEventBusLayer)),
+      ),
+    )
+
+    expect(failure).toBeInstanceOf(UiMountError)
+    expect(failure.cause).toMatchObject({
+      subscriptionError: expect.any(Schema.SchemaError),
+      viewsError: expect.objectContaining({
+        message: 'Failed to stop mx-ui',
+      }),
+    })
   })
 
   it('remounts cleanly and detaches listeners from the previous menu', async () => {
@@ -101,11 +273,68 @@ describe('UiMount', () => {
     })
     const runtime = makeUiMount({ root: host })
 
-    await expect(Effect.runPromise(runtime.start)).rejects.toThrow('Failed to mount mx-ui')
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
 
+    expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to mount mx-ui' })
+    expect(failure.cause).toHaveProperty('message', 'render failed')
     expect(runtime.current()).toBeUndefined()
     expect(host.contains(unrelated)).toBe(true)
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('reports an owned-root attachment failure through the Effect error channel', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    vi.spyOn(host, 'appendChild').mockImplementation(() => {
+      throw new Error('attach failed')
+    })
+    const runtime = makeUiMount({ root: host })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to mount mx-ui' })
+    expect(failure.cause).toHaveProperty('message', 'attach failed')
+    expect(runtime.current()).toBeUndefined()
+  })
+
+  it('reports a partial-mount cleanup failure with both mount and cleanup causes', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const originalSetAttribute = HTMLElement.prototype.setAttribute
+    const originalRemove = HTMLElement.prototype.remove
+    vi.spyOn(HTMLElement.prototype, 'setAttribute').mockImplementation(function (
+      this: HTMLElement,
+      name,
+      value,
+    ) {
+      if (name === 'data-menu-showing') {
+        throw new Error('render failed')
+      }
+      return originalSetAttribute.call(this, name, value)
+    })
+    vi.spyOn(HTMLElement.prototype, 'remove').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('data-mx-ui') === 'mount-root') {
+        throw new Error('cleanup failed')
+      }
+      return originalRemove.call(this)
+    })
+    const runtime = makeUiMount({ root: host })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'Failed to mount mx-ui',
+      cause: {
+        cleanupError: {
+          _tag: 'UiMountError',
+          message: 'Failed to clean up partial mx-ui mount',
+          cause: { message: 'cleanup failed' },
+        },
+        mountError: { _tag: 'UiMountError', cause: { message: 'render failed' } },
+      },
+    })
+    expect(runtime.current()).toBeUndefined()
   })
 
   it('toggles the debug HUD and updates it from a typed snapshot', async () => {
@@ -557,7 +786,7 @@ describe('UiMount', () => {
 
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [itemStack('torch', 3)] },
+      inventory: { slots: [testItemStack('torch', 3)] },
     })
 
     runtime.updateInventory(model)
@@ -571,7 +800,7 @@ describe('UiMount', () => {
     runtime.openInventory()
     const other = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [itemStack('coal', 5)] },
+      inventory: { slots: [testItemStack('coal', 5)] },
     })
     runtime.updateInventory(other)
     expect(hotbarFirstSlot()?.querySelector('[data-mx-ui="slot-item"]')?.textContent).toBe(
@@ -627,7 +856,34 @@ describe('UiMount', () => {
       throw new Error('destroy failed')
     })
 
-    await expect(Effect.runPromise(runtime.stop)).rejects.toThrow('destroy failed')
+    const failure = await Effect.runPromise(Effect.flip(runtime.stop))
+
+    expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to stop mx-ui' })
+    expect(failure.cause).toHaveProperty('message', 'destroy failed')
+  })
+
+  it('rejects start when tearing down the previous mount throws', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const mounted = runtime.current()
+    if (typeof mounted === 'undefined') {
+      throw new Error('expected a mounted session')
+    }
+    vi.spyOn(mounted.overlays, 'destroy').mockImplementation(() => {
+      throw new Error('destroy failed')
+    })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'Failed to unmount previous mx-ui views',
+    })
+    expect(failure.cause).toHaveProperty('message', 'destroy failed')
+    expect(runtime.current()).toBeUndefined()
   })
 
   it('recognizes all four arrow keys, not just the one the other navigation test happens to use', async () => {
@@ -692,7 +948,7 @@ describe('UiMount', () => {
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
@@ -727,9 +983,12 @@ describe('UiMount', () => {
     Object.defineProperty(host, 'ownerDocument', { value: null })
     const runtime = makeUiMount({ root: host })
 
-    await expect(Effect.runPromise(runtime.start)).rejects.toThrow(
-      'The mx-ui mount root has no ownerDocument',
-    )
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'The mx-ui mount root has no ownerDocument',
+    })
   })
 
   it('does not emit a drag action while the inventory is closed', async () => {
@@ -820,7 +1079,7 @@ describe('UiMount', () => {
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
@@ -844,7 +1103,7 @@ describe('UiMount', () => {
 
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [itemStack('diamond', 1)] },
+      inventory: { slots: [testItemStack('diamond', 1)] },
     })
     runtime.openInventory(model)
     const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
@@ -949,7 +1208,7 @@ describe('UiMount', () => {
 
     const base = inventoryViewModel({
       ...emptyInventorySnapshot,
-      offhand: itemStack('shield', 1),
+      offhand: testItemStack('shield', 1),
     })
     const widenedOffhand: InventoryViewModel = {
       ...base,

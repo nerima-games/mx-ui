@@ -8,14 +8,14 @@
  * ---------------------------------------------------------------------------
  *
  * Everything a caption does is a function of TIME, and the module was written so
- * that time is a parameter (`domain/caption.ts:25-35`). So the preview owns the
- * clock and can step it: a caption's three-second life can be walked through in
+ * that time is a parameter (`domain/caption.ts`). So the preview owns the
+ * clock and can step it: a caption's 2.5-second life can be walked through in
  * quarter-second increments, and the freshness value that becomes an opacity in
  * the browser is printed as a number here.
  *
  * A browser preview would show the fade and hide the number. This one shows the
- * number and cannot show the fade. For a queue whose entire behaviour is
- * "which entries exist, and how old is each", the number is the part under test.
+ * number and cannot show the fade. For an event list whose visible projection
+ * depends on "which entries exist, and how old is each", the number is the part under test.
  *
  * ---------------------------------------------------------------------------
  * Reduced motion is applied HERE, and that is the point
@@ -33,9 +33,9 @@ import {
   captionLines,
   CAPTION_LIFETIME_SECS,
   MAX_VISIBLE_CAPTIONS,
-  type CaptionQueue,
-  type CaptionSettings,
+  type CaptionEvent,
 } from '../../src/domain/caption'
+import { captionAtTime, type PreviewCaptionSettings } from './state'
 import { mix, padEnd, type Style } from './ansi'
 import { FAINT, GOOD, INK, MUTED, WARN } from './palette'
 
@@ -44,12 +44,12 @@ export const CAPTION_FADE_MS = 240
 
 export const renderCaptions = (
   style: Style,
-  queue: CaptionQueue,
-  settings: CaptionSettings,
+  events: ReadonlyArray<CaptionEvent>,
+  settings: PreviewCaptionSettings,
   nowSecs: number,
   motion: MotionPreference,
 ): ReadonlyArray<string> => {
-  const lines = captionLines(queue, nowSecs)
+  const lines = captionLines(events, captionAtTime(nowSecs))
   const animate = shouldAnimate(motion)
   const fadeMs = animationDurationMs(CAPTION_FADE_MS, motion)
 
@@ -72,11 +72,11 @@ export const renderCaptions = (
     '',
     ...body,
     '',
-    style.dim(`  queue holds ${String(queue.visible.length)}/${String(MAX_VISIBLE_CAPTIONS)}, lifetime ${String(CAPTION_LIFETIME_SECS)}s, t = ${nowSecs.toFixed(2)}s`),
+    style.dim(`  ${String(lines.length)}/${String(MAX_VISIBLE_CAPTIONS)} visible, lifetime ${String(CAPTION_LIFETIME_SECS)}s, t = ${nowSecs.toFixed(2)}s`),
     style.dim(`  fade duration under ${motion} motion: ${String(fadeMs)}ms  (base ${String(CAPTION_FADE_MS)}ms)`),
     '',
     `  ${style.paint('captionsEnabled', MUTED)} ${style.paint(String(settings.captionsEnabled), settings.captionsEnabled ? GOOD : WARN)}   ${style.dim('the player’s choice — this one gates')}`,
-    `  ${style.paint('audioUnlocked  ', MUTED)} ${style.paint(String(settings.audioUnlocked), INK)}   ${style.dim('deliberately NOT read by receiveCaption')}`,
+    `  ${style.paint('audioUnlocked  ', MUTED)} ${style.paint(String(settings.audioUnlocked), INK)}   ${style.dim('deliberately not read when events are appended')}`,
     '',
     style.dim('  plan.md §3.6: captions fire BEFORE the audio gate. A deaf player who has not clicked'),
     style.dim('  anything yet, or who has muted the game, must still see them. Press u and watch nothing'),

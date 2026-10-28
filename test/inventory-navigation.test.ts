@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
+
 /* eslint-disable no-undefined -- SlotView uses undefined for absent item data. */
 import { describe, expect, it } from 'vitest'
 import {
+  inventoryFocusTargetForElement,
   inventoryTargets,
   moveInventoryTarget,
 } from '../src/application/inventory-navigation'
@@ -43,7 +46,134 @@ const model: InventoryViewModel = {
   ],
 }
 
+const createInventoryRegion = (regionId: string) => {
+  const inventory = document.createElement('div')
+  inventory.setAttribute('data-mx-ui', 'inventory')
+
+  const region = document.createElement('div')
+  region.setAttribute('data-mx-ui', 'region')
+  region.setAttribute('data-region', regionId)
+  region.setAttribute('data-region-state', 'slots')
+  inventory.append(region)
+
+  return { inventory, region }
+}
+
+const createSlot = (index: string) => {
+  const slot = document.createElement('button')
+  slot.setAttribute('data-mx-ui', 'slot')
+  slot.setAttribute('data-slot-index', index)
+  return slot
+}
+
 describe('inventory controller navigation', () => {
+  it('resolves registered inventory, hotbar, and crafting-output members', () => {
+    const { region } = createInventoryRegion('main')
+    const slot = createSlot('4')
+    const descendant = document.createElement('span')
+    slot.append(descendant)
+    region.append(slot)
+    expect(inventoryFocusTargetForElement(descendant)).toStrictEqual({ group: 'main', index: 4 })
+
+    const hotbar = document.createElement('div')
+    hotbar.setAttribute('data-mx-ui', 'hotbar')
+    const firstHotbarSlot = createSlot('0')
+    const lastHotbarSlot = createSlot('8')
+    hotbar.append(firstHotbarSlot, lastHotbarSlot)
+    expect(inventoryFocusTargetForElement(firstHotbarSlot)).toStrictEqual({
+      group: 'hotbar',
+      index: 0,
+    })
+    expect(inventoryFocusTargetForElement(lastHotbarSlot)).toStrictEqual({
+      group: 'hotbar',
+      index: 8,
+    })
+
+    const { inventory } = createInventoryRegion('main')
+    const outcome = document.createElement('div')
+    outcome.setAttribute('data-mx-ui', 'crafting-outcome')
+    outcome.setAttribute('data-crafting-state', 'match')
+    const output = document.createElement('button')
+    output.setAttribute('data-mx-ui', 'crafting-output')
+    const outputDescendant = document.createElement('span')
+    output.append(outputDescendant)
+    outcome.append(output)
+    inventory.append(outcome)
+    expect(inventoryFocusTargetForElement(outputDescendant)).toStrictEqual({
+      group: 'crafting-output',
+      index: FIRST_INDEX,
+    })
+  })
+
+  it('ignores foreign and unknown DOM targets', () => {
+    expect(inventoryFocusTargetForElement(undefined)).toBeUndefined()
+    expect(inventoryFocusTargetForElement(null)).toBeUndefined()
+    expect(inventoryFocusTargetForElement({})).toBeUndefined()
+    expect(inventoryFocusTargetForElement(42)).toBeUndefined()
+    expect(inventoryFocusTargetForElement(document.createElement('div'))).toBeUndefined()
+
+    const foreignSlot = createSlot('0')
+    expect(inventoryFocusTargetForElement(foreignSlot)).toBeUndefined()
+
+    const region = document.createElement('div')
+    region.setAttribute('data-mx-ui', 'region')
+    region.setAttribute('data-region', 'main')
+    region.setAttribute('data-region-state', 'slots')
+    region.append(createSlot('0'))
+    expect(inventoryFocusTargetForElement(region.firstElementChild)).toBeUndefined()
+  })
+
+  it('does not resolve empty, unknown, or malformed inventory groups', () => {
+    const { inventory, region } = createInventoryRegion('')
+    expect(inventoryFocusTargetForElement(region)).toBeUndefined()
+
+    const { region: missingGroupRegion } = createInventoryRegion('main')
+    missingGroupRegion.removeAttribute('data-region')
+    const missingGroupSlot = createSlot('0')
+    missingGroupRegion.append(missingGroupSlot)
+    expect(inventoryFocusTargetForElement(missingGroupSlot)).toBeUndefined()
+
+    const unknownRegion = document.createElement('div')
+    unknownRegion.setAttribute('data-mx-ui', 'region')
+    unknownRegion.setAttribute('data-region', 'armour')
+    unknownRegion.setAttribute('data-region-state', 'unknown')
+    const unknownSlot = createSlot('0')
+    unknownRegion.append(unknownSlot)
+    inventory.append(unknownRegion)
+    expect(inventoryFocusTargetForElement(unknownSlot)).toBeUndefined()
+
+    region.setAttribute('data-region', 'main')
+    const malformedSlot = createSlot('01')
+    region.append(malformedSlot)
+    expect(inventoryFocusTargetForElement(malformedSlot)).toBeUndefined()
+
+    const hiddenSlot = createSlot('0')
+    hiddenSlot.setAttribute('hidden', '')
+    region.append(hiddenSlot)
+    expect(inventoryFocusTargetForElement(hiddenSlot)).toBeUndefined()
+
+    const { inventory: outputInventory } = createInventoryRegion('main')
+    const outcome = document.createElement('div')
+    outcome.setAttribute('data-mx-ui', 'crafting-outcome')
+    outcome.setAttribute('data-crafting-state', 'unknown')
+    const output = document.createElement('button')
+    output.setAttribute('data-mx-ui', 'crafting-output')
+    outcome.append(output)
+    outputInventory.append(outcome)
+    expect(inventoryFocusTargetForElement(output)).toBeUndefined()
+  })
+
+  it('does not resolve slots without an index or with an unsafe index', () => {
+    const { region } = createInventoryRegion('main')
+    const missingIndexSlot = document.createElement('button')
+    missingIndexSlot.setAttribute('data-mx-ui', 'slot')
+    const unsafeIndexSlot = createSlot('9007199254740992')
+    region.append(missingIndexSlot, unsafeIndexSlot)
+
+    expect(inventoryFocusTargetForElement(missingIndexSlot)).toBeUndefined()
+    expect(inventoryFocusTargetForElement(unsafeIndexSlot)).toBeUndefined()
+  })
+
   it('publishes only concrete slots and a concrete crafting output', () => {
     expect(inventoryTargets(model)).toStrictEqual([
       { index: 0, kind: 'slot', region: 'main' },

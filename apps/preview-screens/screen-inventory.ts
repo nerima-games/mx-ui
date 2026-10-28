@@ -40,24 +40,30 @@ import {
   type ScreenId,
 } from '../../src/domain/modal-stack'
 import { itemStack } from '@nerima-games/mc-sim'
+import { Result } from 'effect'
 import { padEnd, type Style } from './ansi'
 import { BAD, FAINT, GOOD, INK, MUTED, SLOT_SELECTED, WARN } from './palette'
 
 /** A mocked container, in the shape mc-sim's `snapshot` Effect resolves to. */
-export const SAMPLE_INVENTORY: InventorySnapshot = {
+export const SAMPLE_INVENTORY = (
+  diamondPickaxe: NonNullable<InventorySnapshot['inventory']['slots'][number]>,
+  torch: NonNullable<InventorySnapshot['inventory']['slots'][number]>,
+  cobblestone: NonNullable<InventorySnapshot['inventory']['slots'][number]>,
+  bread: NonNullable<InventorySnapshot['inventory']['slots'][number]>,
+): InventorySnapshot => ({
   inventory: {
     slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => {
       if (index === 0) {
-        return itemStack('diamond_pickaxe', 1)
+        return diamondPickaxe
       }
       if (index === 2) {
-        return itemStack('torch', 64)
+        return torch
       }
       if (index === 11) {
-        return itemStack('cobblestone', 48)
+        return cobblestone
       }
       if (index === 19) {
-        return itemStack('bread', 3)
+        return bread
       }
       return undefined
     }),
@@ -71,7 +77,7 @@ export const SAMPLE_INVENTORY: InventorySnapshot = {
   offhand: undefined,
   crafting: { gridWidth: 2, grid: Array.from({ length: 4 }), result: undefined },
   mergeableSlotIndices: undefined,
-}
+})
 
 const slotCell = (style: Style, label: string, selected: boolean, empty: boolean): string =>
   style.paint(
@@ -151,13 +157,35 @@ const unknownLines = (style: Style, model: InventoryViewModel): ReadonlyArray<st
   )}`,
 ]
 
+const itemStackFailureLines = (style: Style, item: string, failure: unknown): ReadonlyArray<string> => [
+  style.bold('inventory / crafting'),
+  style.paint(`mc-sim itemStack(${item}) failed: ${JSON.stringify(failure)}`, BAD),
+]
 export const renderInventory = (
   style: Style,
   stack: ModalStack,
   escapeLog: ReadonlyArray<string>,
   candidates: ReadonlyArray<ScreenId>,
 ): ReadonlyArray<string> => {
-  const model = inventoryViewModel(SAMPLE_INVENTORY)
+  const diamondPickaxe = itemStack('diamond_pickaxe', 1)
+  if (!Result.isSuccess(diamondPickaxe)) {
+    return itemStackFailureLines(style, 'diamond_pickaxe', diamondPickaxe.failure)
+  }
+  const torch = itemStack('torch', 64)
+  if (!Result.isSuccess(torch)) {
+    return itemStackFailureLines(style, 'torch', torch.failure)
+  }
+  const cobblestone = itemStack('cobblestone', 48)
+  if (!Result.isSuccess(cobblestone)) {
+    return itemStackFailureLines(style, 'cobblestone', cobblestone.failure)
+  }
+  const bread = itemStack('bread', 3)
+  if (!Result.isSuccess(bread)) {
+    return itemStackFailureLines(style, 'bread', bread.failure)
+  }
+  const model = inventoryViewModel(
+    SAMPLE_INVENTORY(diamondPickaxe.success, torch.success, cobblestone.success, bread.success),
+  )
   const top = topOf(stack)
 
   const stackLines =

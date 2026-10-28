@@ -10,7 +10,7 @@
  * because a UI has to be MOUNTED: mc-compose needs to hand it a root element and
  * to know when a screen wants to be opened. That surface is deliberately small
  * and is described in docs/public-api.md; everything else here — view models,
- * caption queues, the modal stack — is internal, exported for this repository's
+ * caption events, the modal stack — is internal, exported for this repository's
  * own previews and tests.
  *
  * ---------------------------------------------------------------------------
@@ -23,21 +23,15 @@
  * see vitest.config.ts, and docs/testing.md for the `it.effect` + `Deferred`
  * deadlock the DOM suite has to avoid when it arrives.
  */
-import {
-  type CaptionQueue,
-  type CaptionSettings,
-  applyCaptionSettings,
-  emptyCaptionQueue,
-  expireCaptions,
-} from '../domain/caption.js'
-import type { DeltaTimeSecs, GameModule, StageRegistration } from '@nerima-games/mc-kernel'
-import { Effect, Layer, Ref } from 'effect'
+import { type Brand, Effect, Ref, Schema } from 'effect'
+import { type DeltaTimeSecs, type StageRegistration } from '@nerima-games/mc-kernel'
 import {
   type FpsCounter,
   advanceFpsCounter,
   emptyFpsCounter,
 } from '../domain/fps-counter.js'
 import {
+  HOTBAR_SLOT_COUNT,
   type HudViewModel,
   type VitalsSnapshot,
   hudViewModel,
@@ -45,16 +39,26 @@ import {
 } from '../domain/hud-view-model.js'
 import { type ModalStack, emptyModalStack } from '../domain/modal-stack.js'
 import { UI_STAGE_IDS, UPSTREAM_STAGE_IDS } from './stage-ids.js'
+import { type UiGameModule, createUiModuleInstance } from '../application/ui-module-instance.js'
+import { type CaptionEvent } from '../domain/caption.js'
+import { type InventoryCarriedSlot } from '@nerima-games/mc-sim'
+import { type UiQaSnapshot } from '../domain/ui-qa.js'
+import { emptyInventorySnapshot } from '../domain/inventory-view-model.js'
 
 /** `elapsedSecs` starts at zero and only ever accumulates `dt`. */
 const INITIAL_ELAPSED_SECS = 0
+const FIRST_HOTBAR_SLOT = 0
+const ONE = 1
+const LAST_HOTBAR_SLOT = HOTBAR_SLOT_COUNT - ONE
+const INITIAL_SELECTED_HOTBAR_SLOT = FIRST_HOTBAR_SLOT
+const HOTBAR_START_INDEX = 0
+const EMPTY_HOTBAR_SLOTS: ReadonlyArray<InventoryCarriedSlot> =
+  emptyInventorySnapshot.inventory.slots.slice(HOTBAR_START_INDEX, HOTBAR_SLOT_COUNT)
 
-export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
-  // Starts false because the browser's autoplay gate has not been satisfied on
-  // The first frame. Captions appear anyway — see domain/caption.ts.
-  audioUnlocked: false,
-  captionsEnabled: true,
-}
+export type SelectedHotbarSlot = number & Brand.Brand<'SelectedHotbarSlot'>
+export const SelectedHotbarSlotSchema: Schema.Codec<SelectedHotbarSlot, number> = Schema.Int.check(
+  Schema.isBetween({ maximum: LAST_HOTBAR_SLOT, minimum: FIRST_HOTBAR_SLOT }),
+).pipe(Schema.brand('SelectedHotbarSlot'))
 
 export type UiFrameState = {
   /**
@@ -67,18 +71,11 @@ export type UiFrameState = {
    * stops having an answer.
    */
   readonly snapshot: Ref.Ref<VitalsSnapshot>
+  readonly hotbarSlots: Ref.Ref<ReadonlyArray<InventoryCarriedSlot>>
+  readonly selectedHotbarSlot: Ref.Ref<SelectedHotbarSlot>
   readonly hud: Ref.Ref<HudViewModel>
-  readonly captions: Ref.Ref<CaptionQueue>
-  /**
-   * The player's caption choice, held so that `ui:overlay-sync` can ENFORCE it.
-   *
-   * It is a `Ref` rather than a constructor argument because it changes while
-   * the session runs — that is the whole point of a settings screen — and
-   * because the frame is the only place that can notice the change. Holding it
-   * as a constant would reproduce exactly the defect
-   * `applyCaptionSettings` exists to fix: a flag nobody re-reads.
-   */
-  readonly captionSettings: Ref.Ref<CaptionSettings>
+  /** Events from mc-audio; captionLines applies the owner's visibility policy. */
+  readonly captions: Ref.Ref<ReadonlyArray<CaptionEvent>>
   readonly modals: Ref.Ref<ModalStack>
   /** Monotonic seconds, accumulated from `dt`. Never read from a global. */
   readonly elapsedSecs: Ref.Ref<number>
@@ -93,14 +90,28 @@ export type UiFrameState = {
  */
 export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function*  makeUiFrameState() {
   const snapshot = yield* Ref.make<VitalsSnapshot>(spawnSnapshot)
-  const hud = yield* Ref.make<HudViewModel>(hudViewModel(spawnSnapshot))
-  const captions = yield* Ref.make<CaptionQueue>(emptyCaptionQueue)
-  const captionSettings = yield* Ref.make<CaptionSettings>(DEFAULT_CAPTION_SETTINGS)
+  const hotbarSlots = yield* Ref.make(EMPTY_HOTBAR_SLOTS)
+  const selectedHotbarSlot = yield* Ref.make(
+    Schema.decodeUnknownSync(SelectedHotbarSlotSchema)(INITIAL_SELECTED_HOTBAR_SLOT),
+  )
+  const hud = yield* Ref.make<HudViewModel>(
+    hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, INITIAL_SELECTED_HOTBAR_SLOT),
+  )
+  const captions = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
   const modals = yield* Ref.make<ModalStack>(emptyModalStack)
   const elapsedSecs = yield* Ref.make(INITIAL_ELAPSED_SECS)
   const fpsCounter = yield* Ref.make<FpsCounter>(emptyFpsCounter)
 
-  return { captionSettings, captions, elapsedSecs, fpsCounter, hud, modals, snapshot }
+  return {
+    captions,
+    elapsedSecs,
+    fpsCounter,
+    hotbarSlots,
+    hud,
+    modals,
+    selectedHotbarSlot,
+    snapshot,
+  }
 })
 
 /**
@@ -115,12 +126,11 @@ export const uiStages = (state: UiFrameState): ReadonlyArray<StageRegistration> 
     id: UI_STAGE_IDS.hudSync,
     run: () =>
       Effect.gen(function*  run() {
-        // FIRST CUT: the snapshot is written into `state.snapshot` by whoever
-        // Drives the frame. When mc-sim is published this stage reads its
-        // Services directly and the Ref becomes an implementation detail of the
-        // Previews.
-        const snapshot = yield* Ref.get(state.snapshot)
-        yield* Ref.set(state.hud, hudViewModel(snapshot))
+        // The owner state is written by whoever drives the frame.
+        const vitals = yield* Ref.get(state.snapshot)
+        const hotbarSlots = yield* Ref.get(state.hotbarSlots)
+        const selectedHotbarSlot = yield* Ref.get(state.selectedHotbarSlot)
+        yield* Ref.set(state.hud, hudViewModel(vitals, hotbarSlots, selectedHotbarSlot))
       }),
   },
   {
@@ -131,17 +141,8 @@ export const uiStages = (state: UiFrameState): ReadonlyArray<StageRegistration> 
         // Time comes from `dt`, which the frame supplies. plan.md §4.3 bans
         // Reading a global clock, and `pnpm check:deps` enforces it — so a
         // Caption's age is an accumulation, not a reading.
-        const nowSecs = yield* Ref.updateAndGet(state.elapsedSecs, (elapsed) => elapsed + dt)
+        yield* Ref.update(state.elapsedSecs, (elapsed) => elapsed + dt)
         yield* Ref.update(state.fpsCounter, (counter) => advanceFpsCounter(counter, dt))
-        // SETTINGS FIRST, then age. `receiveCaption` gates admission and cannot
-        // Reach a caption that is already up, so turning captions off would
-        // Otherwise leave the visible ones to drain through `expireCaptions` —
-        // For the rest of their lifetime, and forever if `dt` stops arriving.
-        // See `applyCaptionSettings`.
-        const settings = yield* Ref.get(state.captionSettings)
-        yield* Ref.update(state.captions, (queue) =>
-          expireCaptions(applyCaptionSettings(queue, settings), nowSecs),
-        )
       }),
   },
 ]
@@ -155,6 +156,8 @@ export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>> = Eff
   makeUiFrameState,
   uiStages,
 )
+
+const EMPTY_UI_QA_SNAPSHOT: UiQaSnapshot = {}
 
 /**
  * Mx-ui as a `GameModule` (plan.md §4.1).
@@ -174,7 +177,7 @@ export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>> = Eff
  * opened, those services are acquired in `frameStages` — the `RRegister`
  * parameter — because this repository builds nothing they have to supply.
  */
-export const uiModule: GameModule<never, never, never> = {
-  frameStages: makeUiStages,
-  layers: Layer.empty,
-}
+export const uiModule: UiGameModule = createUiModuleInstance(
+  makeUiStages,
+  () => EMPTY_UI_QA_SNAPSHOT,
+)

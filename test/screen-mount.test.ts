@@ -23,6 +23,7 @@
  * by coincidence and would have kept passing if the token moved.
  */
 import { describe, expect, it } from 'vitest'
+import { EntityHealthPoints } from '@nerima-games/mc-kernel'
 import {
   HOTBAR_SLOT_COUNT,
   hudViewModel,
@@ -45,6 +46,8 @@ import { fakeDocument, fakeElement, type FakeElement } from './fake-dom'
 /** What a host has had mounted into it, by name and in order. */
 const mounted = (parent: FakeElement): ReadonlyArray<string | undefined> =>
   parent.children.map((child) => child.attributes.get('data-mx-ui'))
+
+const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
 describe('a screen is built into the parent it was handed', () => {
   it('REGRESSION: every view appends its root to the host, and finds it nowhere else', () => {
@@ -86,8 +89,14 @@ describe('a screen is built into the parent it was handed', () => {
 
     const one = createHudView(factory, left, 'full')
     const other = createHudView(factory, right, 'full')
-    one.render(hudViewModel({ ...spawnSnapshot, healthPoints: 4 }))
-    other.render(hudViewModel(spawnSnapshot))
+    one.render(
+      hudViewModel(
+        { ...spawnSnapshot, healthPoints: EntityHealthPoints(4) },
+        EMPTY_HOTBAR_SLOTS,
+        0,
+      ),
+    )
+    other.render(hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, 0))
 
     const stateOf = (view: { readonly root: unknown }): ReadonlyArray<string | undefined> =>
       fakeElement(view.root)
@@ -168,7 +177,7 @@ describe('the hotbar shows the slot it was told is selected', () => {
       const factory = fakeDocument()
       const parent = fakeElement(factory.createElement('div'))
       const view = createHudView(factory, parent, 'full')
-      view.render(hudViewModel({ ...spawnSnapshot, selectedHotbarIndex: index }))
+      view.render(hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, index))
 
       const slots = fakeElement(view.root).findAll('data-mx-ui', 'slot')
       expect(slots).toHaveLength(HOTBAR_SLOT_COUNT)
@@ -200,7 +209,7 @@ describe('the hotbar shows the slot it was told is selected', () => {
     const view = createHudView(factory, parent, 'full')
 
     view.setKeyboardFocus(6)
-    view.render(hudViewModel({ ...spawnSnapshot, selectedHotbarIndex: 2 }))
+    view.render(hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, 2))
 
     const slots = fakeElement(view.root).findAll('data-mx-ui', 'slot')
     const ringVisible = (at: number): boolean =>

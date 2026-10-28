@@ -56,7 +56,7 @@ DOM プレビューのほうは「ビューモデルが NaN をどう畳むか�
 | 画面 | 駆動しているもの | 見えるもの |
 | --- | --- | --- |
 | `hud` | `hudViewModel` | ハート/肉/XP/ホットバー。**下に生のビューモデル値**（full/half/empty の個数、`dead`、選択 index） |
-| `captions` | `receiveCaption` / `expireCaptions` / `captionLines` | 字幕行、方向矢印、`freshness`、仮想時計。`captionsEnabled` と `audioUnlocked` の非対称 |
+| `captions` | caption event list / `captionLines(events, nowSecs)` | 字幕行、方向矢印、`freshness`、仮想時計。`captionsEnabled` と `audioUnlocked` の非対称 |
 | `settings` | `domain/accessibility.ts` 全部 | 色覚モードと `data-color-vision` 属性、フィルタ適用範囲、**色対のコントラスト表**、reduced-motion の解決、キーリマップ（衝突報告つき） |
 | `inventory` | `domain/inventory-view-model.ts` + `domain/modal-stack.ts` | ホットバー / メイングリッド / クラフトグリッドの射影、**mc-sim が答えていないものが `unknown` として出ること**（防具・オフハンド・レシピ結果・合体可能スロット）、モーダルスタック、Escape の単一ハンドラ |
 

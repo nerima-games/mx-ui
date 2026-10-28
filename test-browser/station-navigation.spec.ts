@@ -1,0 +1,203 @@
+import { expect, test } from '@playwright/test'
+import { Schema } from 'effect'
+import { fileURLToPath } from 'node:url'
+import { BrewingStateSchema, IntentPayloadSchema } from '@nerima-games/mc-sim'
+import { decodeTradeSnapshot, type TradeSnapshot } from '../src/domain/trade-snapshot'
+import { openHarness } from './harness'
+
+const brewingViewModule = `/@fs${fileURLToPath(
+  new URL('../src/application/brewing-view.ts', import.meta.url),
+)}`
+const brewingViewModelModule = `/@fs${fileURLToPath(
+  new URL('../src/domain/brewing-view-model.ts', import.meta.url),
+)}`
+
+const tradeViewModule = `/@fs${fileURLToPath(
+  new URL('../src/application/trade-view.ts', import.meta.url),
+)}`
+
+const BREWING_SNAPSHOT = Schema.decodeUnknownSync(BrewingStateSchema)({
+  bottles: [undefined, undefined, undefined],
+  ingredient: undefined,
+  fuel: undefined,
+  fuelCharges: 0,
+  brewProgressSecs: 0,
+})
+
+const tradeIntent = (offerId: string) => {
+  const intent = Schema.decodeUnknownSync(IntentPayloadSchema)({
+    _tag: 'TradeVillager',
+    actor: 'player-1',
+    villager: 'farmer-1',
+    offerId,
+  })
+  if (intent['_tag'] !== 'TradeVillager') {
+    throw new Error('The owner schema decoded a different intent tag')
+  }
+  return intent
+}
+
+const availableTrade = tradeIntent('farmer-offer-1')
+const unavailableTrade = tradeIntent('farmer-offer-2')
+
+const SNAPSHOT = {
+  actor: availableTrade.actor,
+  villager: availableTrade.villager,
+  profession: 'farmer',
+  offers: [
+    {
+      available: true,
+      id: availableTrade.offerId,
+      input: { count: 4, item: 'minecraft:wheat' },
+      output: { count: 1, item: 'minecraft:emerald' },
+      uses: 2,
+      maxUses: 7,
+    },
+    {
+      available: false,
+      id: unavailableTrade.offerId,
+      input: { count: 3, item: 'minecraft:potato' },
+      output: { count: 1, item: 'minecraft:emerald' },
+      uses: 6,
+      maxUses: 7,
+    },
+  ],
+  status: 'Choose a trade',
+}
+
+test('trade offers follow native tab order and emit offers from Enter and Space', async ({ page }) => {
+  const decoded = decodeTradeSnapshot(SNAPSHOT)
+  if (decoded['_tag'] === 'Failure') {
+    throw decoded.failure
+  }
+
+  await openHarness(page, { screen: 'crosshair' })
+
+  await page.evaluate(
+    async ({ viewPath, snapshot }: {
+      readonly viewPath: string
+      readonly snapshot: TradeSnapshot
+    }) => {
+      const { createTradeView } = await import(viewPath) as typeof import('../src/application/trade-view')
+      const host = document.createElement('main')
+      host.setAttribute('data-trade-browser-host', '')
+      document.body.appendChild(host)
+
+      const view = createTradeView(document, host, {
+        onIntent: (intent) => {
+          host.setAttribute('data-trade-host-intent', JSON.stringify(intent))
+          const previousCount = Number(host.getAttribute('data-trade-host-intent-count') ?? '0')
+          host.setAttribute('data-trade-host-intent-count', String(previousCount + 1))
+        },
+      })
+      view.render(snapshot)
+    },
+    { viewPath: tradeViewModule, snapshot: decoded.success },
+  )
+
+  const trade = page.locator('[data-trade-browser-host] [data-mx-ui="trade"]')
+  const host = page.locator('[data-trade-browser-host]')
+  const availableOffer = trade.getByRole('button', {
+    name: '4 minecraft:wheat -> 1 minecraft:emerald (2/7)',
+  })
+  const unavailableOffer = trade.getByRole('button', {
+    name: '3 minecraft:potato -> 1 minecraft:emerald (6/7)',
+  })
+  const close = trade.getByRole('button', { name: 'Close' })
+  const status = trade.getByRole('status')
+
+  await expect(availableOffer).toBeEnabled()
+  await expect(unavailableOffer).toBeDisabled()
+  await expect(status).toHaveCount(1)
+  await expect(status).toHaveAttribute('aria-live', 'polite')
+  await expect(status).toHaveText('Choose a trade')
+
+  await page.keyboard.press('Tab')
+  await expect(availableOffer).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+
+  await page.keyboard.press('Shift+Tab')
+  await expect(availableOffer).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute(
+    'data-trade-host-intent',
+    JSON.stringify({
+      _tag: 'TradeVillager',
+      actor: availableTrade.actor,
+      offerId: availableTrade.offerId,
+      villager: availableTrade.villager,
+    }),
+  )
+  await expect(host).toHaveAttribute('data-trade-host-intent-count', '1')
+
+  await page.keyboard.press('Space')
+  await expect(host).toHaveAttribute('data-trade-host-intent-count', '2')
+})
+
+test('brewing actions are enabled, keyboard reachable, and emit their intents', async ({ page }) => {
+  await openHarness(page, { screen: 'crosshair' })
+
+  await page.evaluate(
+    async ({ viewPath, modelPath, snapshotJson }: {
+      readonly viewPath: string
+      readonly modelPath: string
+      readonly snapshotJson: string
+    }) => {
+      const [{ createBrewingView }, { brewingViewModel }] = await Promise.all([
+        import(viewPath) as Promise<typeof import('../src/application/brewing-view')>,
+        import(modelPath) as Promise<typeof import('../src/domain/brewing-view-model')>,
+      ])
+      const host = document.createElement('main')
+      host.setAttribute('data-brewing-browser-host', '')
+      document.body.appendChild(host)
+
+      const view = createBrewingView(document, host, {
+        onIntent: (intent) => {
+          host.setAttribute('data-brewing-last-intent', intent['_tag'])
+        },
+      })
+      const snapshot = JSON.parse(snapshotJson, (_key, value) => (value === null ? undefined : value))
+      view.render(brewingViewModel(snapshot))
+    },
+    {
+      viewPath: brewingViewModule,
+      modelPath: brewingViewModelModule,
+      snapshotJson: JSON.stringify(BREWING_SNAPSHOT),
+    },
+  )
+
+  const brewing = page.locator('[data-brewing-browser-host] [data-mx-ui="brewing"]')
+  const host = page.locator('[data-brewing-browser-host]')
+  const controls = brewing.locator('[data-mx-ui="brewing-control"]')
+  const insert = brewing.locator('[data-brewing-operation="insert-selected-item"]')
+  const collect = brewing.locator('[data-brewing-operation="collect-bottle"]')
+  const drink = brewing.locator('[data-brewing-operation="drink-potion"]')
+  const close = brewing.getByRole('button', { name: 'Close' })
+
+  await expect(controls).toHaveCount(4)
+  await expect(insert).toBeEnabled()
+  await expect(collect).toBeEnabled()
+  await expect(drink).toBeEnabled()
+  await expect(close).toBeEnabled()
+
+  await page.keyboard.press('Tab')
+  await expect(insert).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'InsertSelectedItem')
+
+  await page.keyboard.press('Tab')
+  await expect(collect).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'CollectBottle')
+
+  await page.keyboard.press('Tab')
+  await expect(drink).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'DrinkPotion')
+
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'Close')
+})

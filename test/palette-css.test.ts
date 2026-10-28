@@ -11,6 +11,8 @@
  * sweep stays, because closing it once is not the same as keeping it closed.
  */
 import { describe, expect, it } from 'vitest'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import type { CaptionEvent } from '@nerima-games/mc-audio'
 import * as palette from '../src/domain/palette'
 import {
   PALETTE_PROPERTY,
@@ -21,8 +23,8 @@ import {
   PALETTE_VAR,
   declarePalette,
 } from '../src/application/palette-css'
-import { captionLines, emptyCaptionQueue } from '../src/domain/caption'
-import { hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
+import { captionLines } from '../src/domain/caption'
+import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
 import { saveStatus, saveStatusMessage } from '../src/domain/save-status'
 import { createCaptionView } from '../src/application/caption-view'
@@ -43,6 +45,12 @@ const isRgb = (value: unknown): value is palette.Rgb =>
  * of a bound into a stylesheet as if they were colours somebody could use.
  */
 const NON_TOKEN_RGB_EXPORTS = new Set(['SCRIM_OVER_DARKEST_WORLD', 'SCRIM_OVER_BRIGHTEST_WORLD'])
+
+const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
+  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
+  MonotonicTimeSecs(seconds)
+
+const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
 describe('every colour in domain/palette.ts reaches the DOM', () => {
   it('REGRESSION: no exported token is missing a custom property', () => {
@@ -120,9 +128,9 @@ describe('every colour in domain/palette.ts reaches the DOM', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
     const hud = createHudView(factory, parent, 'full')
-    hud.render(hudViewModel(spawnSnapshot))
+    hud.render(hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, 0))
     const captions = createCaptionView(factory, parent, 'full')
-    captions.render(captionLines(emptyCaptionQueue, 0))
+    captions.render(captionLines([], captionTime(0)))
     const inventory = createInventoryView(factory, parent)
     inventory.render(inventoryViewModel(emptyInventorySnapshot))
     const saveIndicator = createSaveIndicator(factory, parent)

@@ -13,7 +13,6 @@ import {
   type MainMenuState,
   type MainMenuViewModel,
   type MenuPanel,
-  ROOT_ENTRIES,
   type RootEntry,
   type SavedWorld,
   backToRoot,
@@ -178,7 +177,7 @@ const createPanel = (
 type ButtonSpec = {
   readonly role: string
   readonly label: string
-  readonly onClick: () => void
+  readonly onClick?: () => void
 }
 
 const createButton = (
@@ -190,7 +189,9 @@ const createButton = (
   setAttributes(button, { 'aria-label': spec.label, 'data-mx-ui': spec.role, type: 'button' })
   button.style.setProperty('color', PALETTE_VAR.ink)
   button.textContent = spec.label
-  addManagedListener(ctx, button, { handler: spec.onClick, type: 'click' })
+  if (spec.onClick) {
+    addManagedListener(ctx, button, { handler: spec.onClick, type: 'click' })
+  }
   parent.appendChild(button)
   return button
 }
@@ -489,17 +490,43 @@ type RootEntryContext = {
   readonly bindings: MenuBindings
   readonly worldNameInput: DomInputElement
   readonly firstSavedWorldButton: () => DomInteractiveElement
-  readonly registerButton: (entry: RootEntry, button: DomInteractiveElement) => void
 }
 
 const createRootEntryButton = (
   parent: DomElement,
   entry: RootEntry,
+  ctx: MountContext,
+): DomInteractiveElement => {
+  const button = createButton(ctx, parent, {
+    label: ROOT_ENTRY_LABEL[entry],
+    role: 'menu-entry',
+  })
+  button.setAttribute('data-menu-entry', entry)
+  return button
+}
+
+const createRootEntryButtons = (
+  parent: DomElement,
+  ctx: MountContext,
+): Readonly<Record<RootEntry, DomInteractiveElement>> => {
+  const newWorldButton = createRootEntryButton(parent, 'new-world', ctx)
+  const loadWorldButton = createRootEntryButton(parent, 'load-world', ctx)
+  const settingsButton = createRootEntryButton(parent, 'settings', ctx)
+
+  return {
+    'load-world': loadWorldButton,
+    'new-world': newWorldButton,
+    settings: settingsButton,
+  }
+}
+
+const bindRootEntryButton = (
+  button: DomInteractiveElement,
+  entry: RootEntry,
   context: RootEntryContext,
 ): void => {
-  const button = createButton(context.ctx, parent, {
-    label: ROOT_ENTRY_LABEL[entry],
-    onClick: () => {
+  addManagedListener(context.ctx, button, {
+    handler: () => {
       if (entry === 'settings') {
         context.bindings.callbacks.onOpenSettings()
         return
@@ -511,16 +538,17 @@ const createRootEntryButton = (
       )
       context.bindings.transition(openPanel(context.bindings.box.state, entry), target)
     },
-    role: 'menu-entry',
+    type: 'click',
   })
-  button.setAttribute('data-menu-entry', entry)
-  context.registerButton(entry, button)
 }
 
-const createRootEntryButtons = (parent: DomElement, context: RootEntryContext): void => {
-  for (const entry of ROOT_ENTRIES) {
-    createRootEntryButton(parent, entry, context)
-  }
+const bindRootEntryButtons = (
+  buttons: Readonly<Record<RootEntry, DomInteractiveElement>>,
+  context: RootEntryContext,
+): void => {
+  bindRootEntryButton(buttons['new-world'], 'new-world', context)
+  bindRootEntryButton(buttons['load-world'], 'load-world', context)
+  bindRootEntryButton(buttons.settings, 'settings', context)
 }
 
 const applyModelState = (box: MenuStateBox, model: MainMenuViewModel): void => {
@@ -607,15 +635,9 @@ const createRenderModel =
   }
 
 export const requireRootButton = (
-  buttons: Partial<Record<RootEntry, DomInteractiveElement>>,
+  buttons: Readonly<Record<RootEntry, DomInteractiveElement>>,
   entry: RootEntry,
-): DomInteractiveElement => {
-  const button = buttons[entry]
-  if (!button) {
-    throw new Error(`Root menu entry is not registered: ${entry}`)
-  }
-  return button
-}
+): DomInteractiveElement => buttons[entry]
 
 const assembleMainMenu = (
   ctx: MountContext,
@@ -623,7 +645,6 @@ const assembleMainMenu = (
   callbacks: MainMenuCallbacks,
 ): ((model: MainMenuViewModel) => void) => {
   const box: MenuStateBox = { savedWorlds: [], state: initialMainMenuState }
-  const rootButtons: Partial<Record<RootEntry, DomInteractiveElement>> = {}
   let transitionRef: MenuTransition = noop
   const bindings: MenuBindings = {
     box,
@@ -632,6 +653,7 @@ const assembleMainMenu = (
       transitionRef(next, target)
     },
   }
+  const rootButtons = createRootEntryButtons(shell.panels.root.root, ctx)
 
   const newWorld = createNewWorldSection(
     { bindings, ctx, parent: shell.panels['new-world'].root, rootButton: () => requireRootButton(rootButtons, 'new-world') },
@@ -640,13 +662,10 @@ const assembleMainMenu = (
     { bindings, ctx, parent: shell.panels['load-world'].root, rootButton: () => requireRootButton(rootButtons, 'load-world') },
   )
 
-  createRootEntryButtons(shell.panels.root.root, {
+  bindRootEntryButtons(rootButtons, {
     bindings,
     ctx,
     firstSavedWorldButton: loadWorld.firstSavedWorldButton,
-    registerButton: (entry, button) => {
-      rootButtons[entry] = button
-    },
     worldNameInput: newWorld.worldNameInput,
   })
 

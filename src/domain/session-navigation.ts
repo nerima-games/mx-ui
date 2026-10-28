@@ -22,6 +22,7 @@
  * to put in it.
  */
 import type { CreateWorldRequest } from './main-menu.js'
+import { Result } from 'effect'
 
 const SESSION_ID_ATTEMPTS = 32
 const SESSION_ID_SLUG_MAX_LENGTH = 40
@@ -29,6 +30,11 @@ const SLUG_START = 0
 const ZERO_LENGTH = 0
 const ATTEMPT_START = 0
 const ATTEMPT_STEP = 1
+
+export type SessionIdAllocationFailure = {
+  readonly _tag: 'SessionIdAllocationFailure'
+  readonly attempts: number
+}
 
 const sessionNameSlug = (name: string): string => {
   const slug = name
@@ -68,20 +74,21 @@ export const createSessionHref = (sessionId: string, request: CreateWorldRequest
  * comfortably under mc-compose's `readSessionId` 128-character ceiling and its
  * `^[a-z0-9][a-z0-9-]*$` pattern — `test/session-navigation.test.ts` asserts
  * this across a spread of world names, so the two repositories' independently
- * held constants cannot silently drift apart.
+ * held constants cannot silently drift apart. If all 32 candidates collide,
+ * the result carries a typed allocation failure.
  */
 export const createUniqueSessionId = (
   worldName: string,
   existingIds: Iterable<string>,
   randomId: () => string = () => crypto.randomUUID(),
-): string => {
+): Result.Result<string, SessionIdAllocationFailure> => {
   const existing = new Set(existingIds)
   const prefix = sessionNameSlug(worldName)
   for (let attempt = ATTEMPT_START; attempt < SESSION_ID_ATTEMPTS; attempt += ATTEMPT_STEP) {
     const candidate = `${prefix}-${randomId()}`
     if (!existing.has(candidate)) {
-      return candidate
+      return Result.succeed(candidate)
     }
   }
-  throw new Error('Could not allocate a unique session id')
+  return Result.fail({ _tag: 'SessionIdAllocationFailure', attempts: SESSION_ID_ATTEMPTS })
 }

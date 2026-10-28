@@ -63,10 +63,17 @@ const visiblePanels = (root: FakeElement): ReadonlyArray<string | undefined> =>
     .map((panel) => panel.attributes.get('data-menu-panel'))
 
 describe('main menu domain', () => {
-  it('rejects navigation through a root entry that was not registered', () => {
-    expect(() => requireRootButton({}, 'new-world')).toThrow(
-      'Root menu entry is not registered: new-world',
-    )
+  it('resolves root buttons through the complete entry registry', () => {
+    const factory = fakeDocument()
+    const buttons = {
+      'new-world': factory.createElement('button'),
+      'load-world': factory.createElement('button'),
+      settings: factory.createElement('button'),
+    }
+
+    expect(requireRootButton(buttons, 'new-world')).toBe(buttons['new-world'])
+    expect(requireRootButton(buttons, 'load-world')).toBe(buttons['load-world'])
+    expect(requireRootButton(buttons, 'settings')).toBe(buttons.settings)
   })
 
   it('preserves the draft across navigation and normalizes the confirmed name', () => {

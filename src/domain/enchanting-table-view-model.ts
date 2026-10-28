@@ -22,7 +22,7 @@ export type EnchantingOfferSnapshot = {
   readonly enchantmentLevel: number
   readonly levelCost: number
   readonly lapisCost: number
-  readonly rejectionReason: string | undefined
+  readonly rejectionReason?: string | undefined
 }
 
 export type EnchantingTableSnapshot = {

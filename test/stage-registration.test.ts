@@ -7,14 +7,23 @@
  * `../src/stages/stage-ids.ts`.
  */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Ref } from 'effect'
-import { DeltaTimeSecs, StageId, type GameModule, type StageRegistration } from '@nerima-games/mc-kernel'
-import { CAPTION_LIFETIME_SECS, receiveCaption } from '../src/domain/caption'
-import { hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
+import { Effect, Ref, Schema } from 'effect'
+import * as publicUi from '../src/index'
 import {
-  DEFAULT_CAPTION_SETTINGS,
+  DeltaTimeSecs,
+  EntityHealthPoints,
+  MonotonicTimeSecs,
+  StageId,
+  type GameModule,
+  type StageRegistration,
+} from '@nerima-games/mc-kernel'
+import { CAPTION_LIFETIME_SECS, captionLines } from '../src/domain/caption'
+import type { CaptionEvent } from '@nerima-games/mc-audio'
+import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
+import {
   makeUiFrameState,
   makeUiStages,
+  SelectedHotbarSlotSchema,
   uiModule,
   uiStages,
 } from '../src/stages/registration'
@@ -25,9 +34,36 @@ import {
   UPSTREAM_STAGE_IDS,
 } from '../src/stages/stage-ids'
 import { FrameServicesLayer } from './frame-services'
+import { debugOverlayModel } from '../src/domain/debug-overlay'
+import type { UiQaSnapshot } from '../src/domain/ui-qa'
+import { createUiModuleInstance } from '../src/application/ui-module-instance'
+
+const QA_WORLD_Y = 64
+const QA_WORLD_Z = -2
+const QA_FRAME_DELTA_SECS = 0.5
+const FIRST_QA_WORLD_X = 6
+const SECOND_QA_WORLD_X = 7
 
 const allAfterEdges = (stages: ReadonlyArray<StageRegistration>): ReadonlyArray<string> =>
   stages.flatMap((stage) => [...(stage.after ?? [])])
+
+const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
+  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
+  MonotonicTimeSecs(seconds)
+
+const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
+
+describe('selected hotbar slot boundary', () => {
+  it.effect('accepts every display slot and rejects invalid indices', () =>
+    Effect.sync(() => {
+      const isSelectedHotbarSlot = Schema.is(SelectedHotbarSlotSchema)
+      expect(Array.from({ length: HOTBAR_SLOT_COUNT }, (_slot, index) => isSelectedHotbarSlot(index))).toStrictEqual(
+        Array.from({ length: HOTBAR_SLOT_COUNT }, () => true),
+      )
+      expect([-1, HOTBAR_SLOT_COUNT, 1.5, Number.NaN].some(isSelectedHotbarSlot)).toBe(false)
+    }),
+  )
+})
 
 describe('§2.3-1 zero edges between experience modules', () => {
   it.effect(
@@ -113,7 +149,10 @@ describe('stage behaviour', () => {
       const state = yield* makeUiFrameState
       const hudSync = uiStages(state).find((stage) => stage.id === UI_STAGE_IDS.hudSync)
 
-      yield* Ref.set(state.snapshot, { ...spawnSnapshot, healthPoints: 1 })
+      yield* Ref.set(state.snapshot, {
+        ...spawnSnapshot,
+        healthPoints: EntityHealthPoints(1),
+      })
       yield* hudSync?.run(DeltaTimeSecs(0.016)) ?? Effect.void
 
       const model = yield* Ref.get(state.hud)
@@ -130,30 +169,24 @@ describe('stage behaviour', () => {
       const state = yield* makeUiFrameState
       const overlaySync = uiStages(state).find((stage) => stage.id === UI_STAGE_IDS.overlaySync)
 
-      yield* Ref.update(state.captions, (queue) =>
-        receiveCaption(
-          queue,
-          { cueId: 'creeper.primed', text: 'Creeper hisses', direction: 'left', atSecs: 0 },
-          DEFAULT_CAPTION_SETTINGS,
-        ),
-      )
-      expect((yield* Ref.get(state.captions)).visible).toHaveLength(1)
+      const events: ReadonlyArray<CaptionEvent> = [
+        {
+          cueId: 'creeper.primed',
+          text: 'Creeper hisses',
+          pan: -1,
+          atSecs: captionTime(0),
+          reason: 'audible',
+        },
+      ]
+      yield* Ref.set(state.captions, events)
+      expect(captionLines(events, captionTime(0))).toHaveLength(1)
 
       yield* overlaySync?.run(DeltaTimeSecs(CAPTION_LIFETIME_SECS / 2)) ?? Effect.void
-      expect((yield* Ref.get(state.captions)).visible).toHaveLength(1)
+      expect(captionLines(events, captionTime(yield* Ref.get(state.elapsedSecs)))).toHaveLength(1)
 
       yield* overlaySync?.run(DeltaTimeSecs(CAPTION_LIFETIME_SECS / 2)) ?? Effect.void
-      expect((yield* Ref.get(state.captions)).visible).toHaveLength(0)
+      expect(captionLines(events, captionTime(yield* Ref.get(state.elapsedSecs)))).toHaveLength(0)
     }).pipe(Effect.provide(FrameServicesLayer)),
-  )
-
-  it.effect('REGRESSION: the default caption settings have audio LOCKED, and captions still work', () =>
-    Effect.sync(() => {
-      // The first frame happens before the browser's autoplay gate is
-      // satisfied. That must not be the frame on which captions are lost.
-      expect(DEFAULT_CAPTION_SETTINGS.audioUnlocked).toBe(false)
-      expect(DEFAULT_CAPTION_SETTINGS.captionsEnabled).toBe(true)
-    }),
   )
 
   it.effect('every stage tolerates dt = 0', () =>
@@ -166,7 +199,9 @@ describe('stage behaviour', () => {
         fps: 0,
         frameCount: 0,
       })
-      expect(yield* Ref.get(state.hud)).toStrictEqual(hudViewModel(spawnSnapshot))
+      expect(yield* Ref.get(state.hud)).toStrictEqual(
+        hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, 0),
+      )
     }).pipe(Effect.provide(FrameServicesLayer)),
   )
 
@@ -199,7 +234,10 @@ describe('stage behaviour', () => {
       const first = yield* makeUiFrameState
       const second = yield* makeUiFrameState
 
-      yield* Ref.set(first.snapshot, { ...spawnSnapshot, healthPoints: 3 })
+      yield* Ref.set(first.snapshot, {
+        ...spawnSnapshot,
+        healthPoints: EntityHealthPoints(3),
+      })
 
       expect((yield* Ref.get(first.snapshot)).healthPoints).toBe(3)
       expect((yield* Ref.get(second.snapshot)).healthPoints).toBe(spawnSnapshot.healthPoints)
@@ -288,6 +326,73 @@ describe('the module contract has caught up with this file’s shape', () => {
       const first = yield* uiModule.frameStages
       const second = yield* uiModule.frameStages
       expect(first).not.toBe(second)
+    }),
+  )
+
+  it.effect('exposes the QA state operation through the public module and keeps its reader live', () =>
+    Effect.gen(function* () {
+      const publicModule = publicUi.uiModule
+      const publicNamespace = publicModule.qa
+      expect(publicNamespace).toBeDefined()
+      if (publicNamespace === undefined) {
+        return
+      }
+
+      expect(publicNamespace.name).toBe('ui')
+      expect(publicNamespace.observe.state.name).toBe('state')
+      const publicState = yield* publicNamespace.observe.state.run({})
+      expect(publicState).toStrictEqual({ achievementToast: null, debugOverlay: null })
+      expect(
+        Schema.decodeUnknownSync(publicNamespace.observe.state.output, {
+          onExcessProperty: 'error',
+        })(publicState),
+      ).toStrictEqual(publicState)
+
+      const debugOverlayAt = (worldX: number) =>
+        debugOverlayModel({
+          cameraPose: undefined,
+          dimension: undefined,
+          frame: {
+            cameraPosition: {
+              worldX,
+              worldY: QA_WORLD_Y,
+              worldZ: QA_WORLD_Z,
+            },
+            deltaSecs: DeltaTimeSecs(QA_FRAME_DELTA_SECS),
+          },
+          gpuTimingSupported: undefined,
+          latestGpuTimeMs: undefined,
+          qualityPreset: undefined,
+          worldTime: undefined,
+        })
+
+      let liveSnapshot: UiQaSnapshot = {
+        debugOverlay: debugOverlayAt(FIRST_QA_WORLD_X),
+      }
+      const moduleInstance = createUiModuleInstance(uiModule.frameStages, () => liveSnapshot)
+      const instanceNamespace = moduleInstance.qa
+      expect(instanceNamespace).toBeDefined()
+      if (instanceNamespace === undefined) {
+        return
+      }
+
+      const firstState = yield* instanceNamespace.observe.state.run({})
+      expect(firstState.debugOverlay?.coordinates).toStrictEqual({
+        worldX: FIRST_QA_WORLD_X,
+        worldY: QA_WORLD_Y,
+        worldZ: QA_WORLD_Z,
+      })
+
+      liveSnapshot = {
+        ...liveSnapshot,
+        debugOverlay: debugOverlayAt(SECOND_QA_WORLD_X),
+      }
+      const updatedState = yield* instanceNamespace.observe.state.run({})
+      expect(updatedState.debugOverlay?.coordinates).toStrictEqual({
+        worldX: SECOND_QA_WORLD_X,
+        worldY: QA_WORLD_Y,
+        worldZ: QA_WORLD_Z,
+      })
     }),
   )
 

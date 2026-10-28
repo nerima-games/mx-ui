@@ -7,8 +7,8 @@
  * What is actually on screen here
  * ---------------------------------------------------------------------------
  *
- * `hudViewModel(snapshot)` and nothing else. Every icon, every label and every
- * percentage below is read straight off the returned `HudViewModel` — the
+ * `hudViewModel(vitals, hotbarSlots, selectedHotbarSlot)` and nothing else.
+ * Every icon, every label and every percentage below is read straight off the returned `HudViewModel` — the
  * renderer computes no game state, exactly as the DOM layer must not
  * (`domain/hud-view-model.ts:16-25`: 「The DOM layer becomes a dumb projection of
  * this type, so a rendering bug and a derivation bug are never the same bug」).
@@ -23,7 +23,8 @@
  * unfalsifiable on its own, and "19 health is nine full hearts and one half" is
  * a claim you can only check against a number.
  */
-import { hudViewModel, type HudViewModel, type IconState, type VitalsSnapshot } from '../../src/domain/hud-view-model'
+import { hudViewModel, type HudViewModel, type IconState } from '../../src/domain/hud-view-model'
+import type { InventoryCarriedSlot, Vitals } from '@nerima-games/mc-sim'
 import { mix, padEnd, padStart, type Rgb, type Style } from './ansi'
 import {
   BAD,
@@ -130,56 +131,15 @@ const hotbarSlot = (
   ]
 }
 
-/**
- * Fields that disagree with each other, called out under the picture.
- *
- * Not a general validator — two specific disagreements the preview found, kept
- * here so that reproducing them is a keystroke rather than a memory. Both are in
- * this directory's README.md with the reasoning.
- */
-const describeSlotAnomalies = (style: Style, view: HudViewModel): ReadonlyArray<string> => {
-  const lines: Array<string> = []
-
-  const ghostBars = view.hotbar.filter((slot) => slot.empty && slot.durabilityPercent !== undefined)
-  for (const slot of ghostBars) {
-    lines.push(
-      style.paint(
-        `  ! slot ${String(slot.index + 1)} is empty and still reports durabilityPercent ${String(slot.durabilityPercent)} — a bar under an empty slot`,
-        BAD,
-      ),
-    )
-  }
-
-  const noneSelected = !view.hotbar.some((slot) => slot.selected)
-  if (noneSelected) {
-    lines.push(
-      style.paint(
-        '  ! no slot is selected — selectedHotbarIndex was clamped, and the clamp let a NaN through',
-        BAD,
-      ),
-    )
-  }
-
-  const emptyRow = view.hearts.every((icon) => icon === 'empty')
-  if (emptyRow && !view.dead) {
-    lines.push(
-      style.paint(
-        '  ! every heart is empty but dead is false — the row was clamped and the flag was not',
-        BAD,
-      ),
-    )
-  }
-
-  return lines
-}
-
 export const renderHud = (
   style: Style,
-  snapshot: VitalsSnapshot,
+  vitals: Vitals,
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot>,
+  selectedHotbarSlot: number,
   glyphs: IconGlyphs,
   columns: number,
 ): ReadonlyArray<string> => {
-  const view = hudViewModel(snapshot)
+  const view = hudViewModel(vitals, hotbarSlots, selectedHotbarSlot)
   const icons = glyphs
 
   const hearts = iconRowLine(style, view.hearts, icons, {
@@ -210,13 +170,13 @@ export const renderHud = (
   return [
     style.bold('HUD'),
     '',
-    `${style.paint(padEnd('health', 8), MUTED)}${hearts}   ${style.paint(`${String(snapshot.healthPoints)}/${String(snapshot.maxHealthPoints)} points`, INK)}${view.dead ? style.paint('   DEAD', BAD) : ''}`,
-    `${style.paint(padEnd('hunger', 8), MUTED)}${shanks}   ${style.paint(`${String(snapshot.hungerPoints)}/${String(snapshot.maxHungerPoints)} points`, INK)}`,
+    `${style.paint(padEnd('health', 8), MUTED)}${hearts}   ${style.paint(`${String(vitals.healthPoints)}/${String(vitals.maxHealthPoints)} points`, INK)}${view.dead ? style.paint('   DEAD', BAD) : ''}`,
+    `${style.paint(padEnd('hunger', 8), MUTED)}${shanks}   ${style.paint(`${String(vitals.hungerPoints)}/${String(vitals.maxHungerPoints)} points`, INK)}`,
     `${style.paint(padEnd('xp', 8), MUTED)}${xpBar}  ${style.paint(view.experienceLevelLabel, XP_LEVEL)}  ${style.paint(`${String(view.experiencePercent)}%`, MUTED)}`,
     '',
     ...hotbarLines,
     '',
-    style.dim('view model as returned by hudViewModel(snapshot) — the picture above draws only this'),
+    style.dim('view model as returned by hudViewModel(vitals, hotbarSlots, selectedHotbarSlot) — the picture above draws only this'),
     style.dim(
       `  hearts  full ${String(countIcons(view.hearts, 'full'))}  half ${String(countIcons(view.hearts, 'half'))}  empty ${String(countIcons(view.hearts, 'empty'))}   (${String(view.hearts.length)} icons)`,
     ),
@@ -227,6 +187,5 @@ export const renderHud = (
       `  xp      level "${view.experienceLevelLabel}"  percent ${String(view.experiencePercent)}   dead ${String(view.dead)}`,
     ),
     style.dim(`  selected slot index ${String(view.hotbar.findIndex((slot) => slot.selected))}`),
-    ...describeSlotAnomalies(style, view),
   ]
 }

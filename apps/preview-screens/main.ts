@@ -80,6 +80,7 @@ import { renderHud } from './screen-hud'
 import { renderInventory } from './screen-inventory'
 import { renderSettings } from './screen-settings'
 import { buildStatsReport } from './stats'
+import { EntityHealthPoints, HungerPoints } from '@nerima-games/mc-sim'
 import {
   adjustExperience,
   adjustHealth,
@@ -163,7 +164,7 @@ const header = (state: PreviewState, style: Style): ReadonlyArray<string> => {
 
 const body = (state: PreviewState, style: Style, columns: number): ReadonlyArray<string> => {
   if (state.screen === 'hud') {
-    return renderHud(style, state.vitals, icons, columns)
+    return renderHud(style, state.vitals, state.hotbarSlots, state.selectedHotbarSlot, icons, columns)
   }
   if (state.screen === 'captions') {
     return renderCaptions(
@@ -422,7 +423,11 @@ const main = (): number => {
 
   const state = makeState()
   state.screen = options.screen
-  state.vitals = { ...state.vitals, healthPoints: options.health, hungerPoints: options.hunger }
+  state.vitals = {
+    ...state.vitals,
+    healthPoints: EntityHealthPoints(options.health),
+    hungerPoints: HungerPoints(options.hunger),
+  }
   state.colorVision = options.colorVision
   state.simulate = options.simulate
   state.systemPrefersReducedMotion = options.reducedMotion

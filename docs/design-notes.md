@@ -14,14 +14,9 @@ plan.md §3.13:
 > アクセシビリティ資産を引き継ぐ: 色覚モード(feColorMatrix ダルトナイゼーション、canvasのみに適用)、
 > reduced-motion、キーリマッピングUI、サウンド字幕
 
-4 つとも参照実装で**作って出荷済み**である。plan.md がわざわざ列挙しているのは、
+これらは参照実装で**作って出荷済み**である。plan.md がわざわざ列挙しているのは、
 **維持は安く、後付けは高い**からである。reduced-motion は特にそうで、
 最初のアニメーションを書いた瞬間から全アニメーションに通しておかないと後から通せない。
-
-`test/public-api.test.ts` の
-`REGRESSION: every accessibility asset plan.md §3.13 asks to carry over is still exported`
-が 4 資産 15 個の export を名前で列挙している。
-**引き継いだ後に静かに落とすのは、引き継がなかったのと区別がつかない。** だから名前で固定する。
 
 ### DN-UI-1a 色覚モード — 4 値ちょうど、canvas だけ
 
@@ -410,9 +405,6 @@ kit を `dependencies` に入れると出荷ビルドから入力処理が消え
 
 **体力 1 点のプレイヤーには半分のハートが見えなければならない。**
 
-切り捨てれば空の列を見せることになり、切り上げれば満タンの列を見せることになる。
-**どちらも嘘であり、真実が最も重要な瞬間についた嘘である。**
-
 `domain/hud-view-model.ts` の `iconRow` が割り算ではなく関数である理由がこれである。規則:
 
 | 残り点数 | アイコン |
@@ -605,7 +597,7 @@ plan.md §3.8 が参照実装の最大級のバグ源として記録している
 
 > **ゲームループ・自動保存は `forkDaemon`**(スコープ非依存)+ 明示 `stop()`。
 > 参照実装では2周目ワールドのデッドロック/やり残しfiberが最大級のバグ源だった。
-> アプリスコープのシングルトンは**再入可能な初期化**を最初から
+> アプリスコープのシングルトンは**再入可能な初期化**を最初から…
 
 `stages/registration.ts` の `makeUiFrameState` は `Effect.Effect<UiFrameState>` であり、定数ではない。
 呼ぶたびに独立した `Ref` 一式ができる。
@@ -637,7 +629,7 @@ plan.md §4.3:
 | --- | --- |
 | 字幕の失効 | `expireCaptions(queue, nowSecs, lifetimeSecs)` の `nowSecs` 引数 |
 | トーストのフェード | `captionLines(queue, nowSecs)` が返す `freshness` |
-| 自動保存インジケータ | フレームが供給する `dt`（未実装） |
+| 自動保存インジケータ | `saveStatusMessage` は `nowSecs` を受け取る。現在は `SaveStatus` producer と UI への接続が未実装 |
 | FPS カウンタ | 同上（参照実装は `packages/presentation/fps-counter.ts`、53 LOC） |
 
 **全部が時刻をパラメータとして取る。** `domain/caption.ts` の冒頭がこの選択を説明している:
@@ -886,9 +878,9 @@ never the other way round」。`test/dom-surface.test.ts` の
 
 ### DN-UI-13a なぜ `HTMLElement` を直接書かないのか — mc-render とは別の理由
 
-mc-render の `application/dom-surface.ts` は**書けないから**存在する（build プロジェクトに DOM lib が無い）。
-ここは違う。`tsconfig.base.json` は最初から `"lib": ["ES2024", "DOM"]` であり、
-`HTMLElement` は `domain/` でも書ける。**この非対称は事実として認めた上で、面はやはり要る。**
+mc-render's `application/dom-surface.ts` exists because its build project has no DOM lib.
+mx-ui differs: `tsconfig.base.json` includes `"lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"]`,
+so `HTMLElement` is available in `domain/` too. This asymmetry is real; the DOM surface is still necessary.
 
 1. **`environment: 'node'` を守るため。** `docs/testing.md` §2 はこれを既定ではなく判断として書いている。
    `HTMLElement` に対して書かれたレンダラは jsdom を要求するか、
@@ -927,8 +919,8 @@ mc-render の代償は「イベントのフィールドを全部 optional にす
 
 DN-UI-4 は「閉じる責務はフレーム側単一ハンドラ」と言う。従来これは**規律**だった。
 
-`application/dom-surface.ts` に `addEventListener` が無いので、いまは**構造**である。
-この面に対して書かれたレンダラはリスナを付けられない——動詞が語彙に無い。
+一般の `DomElement` に `addEventListener` が無いので、レンダラが任意の keyboard listener を付けることは**型で制限される**。
+native button/input の structural type には click/input 用の listener があり、mount adapter の session key listener は root の `ownerDocument` に付く。
 3 方向から固定してある:
 
 - `test/dom-surface.test.ts` — 面のソースに宣言が現れないこと。
@@ -937,9 +929,9 @@ DN-UI-4 は「閉じる責務はフレーム側単一ハンドラ」と言う。
   これは「偽物に記録できなかった」ではなく「レンダラが付けなかった」の観測である。
 - `test/public-api.test.ts` の `REGRESSION: exports no way for a renderer to take a key (DN-UI-4)`。
 
-**設定画面を作らなかったのはこの帰結である。** キーリマップは `KeyboardEvent.code` を要求し、
+**キーリマップ UI を作らなかったのはこの帰結である。** キーリマップは `KeyboardEvent.code` を要求し、
 入力サービスは mc-render のもの（plan.md §2.3-2）である。
-ラベルの一覧だけ描いて「設定画面ができた」と言えば、**中心の挙動が到達不能で検査不能な画面**が
+ラベルの一覧だけ描いて「キーリマップ UI ができた」と言えば、**中心の挙動が到達不能で検査不能な画面**が
 このリポジトリに残る——DN-UI-1a が 1 段落かけて拒否した「後ろに何も無いフック」そのものである。
 
 ### DN-UI-13d 描画は差分である — セルという単位
@@ -1038,6 +1030,7 @@ DN-UI-13f は「属性では満たせない」と書いている。したがっ�
 ```
 
 の 3 行が**それぞれ独立した要素**として mount 時に建ち、描画は `hidden` の付け外しだけになる。買えるもの:
+`⟳` は静止グリフとして表示し、回転アニメーションは付けない。
 
 1. **フレーム経路で色を 1 度も書かない。** hud-view が許している「どの `var()` を持つかの差し替え」すら起きない。
 2. **テキストも書かない。** `textContent = x` は同じ値でもテキストノードを作り直す（DN-UI-13d）。
@@ -1079,7 +1072,7 @@ N 秒で諦めるスピナは「書き込みは終わった」と嘘をつく—
 deuteranopia でのコントラストは **1.11:1**。つまり `heart full / shank full` と同じく**彩度で分かれている**対であり、
 グリフは飾りではなく信号の大半である。
 
-回帰テスト（`test/save-indicator.test.ts`、15 本）。中核はこの 1 本:
+回帰テストは `test/save-indicator.test.ts` にあり、中核は次のケースである:
 
 - `names the reference’s two values, shows they collapse, and shows the screen does not depend on them`
   — `#d7f7c2` / `#ffd6d2` を**そのまま書いて**潰れることを assert し、

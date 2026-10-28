@@ -57,6 +57,11 @@ jobs:
       - name: Install dependencies
         run: nix develop --command pnpm install --frozen-lockfile
 
+      - name: Check shared ast-grep conformance
+        uses: nerima-games/.github/conformance/ast-grep@f594176eb568341ab31babbfef16a260979f75f2
+        with:
+          public-api-baseline: .ast-grep/public-api-baseline.json
+
       # verify covers typecheck, lint, and the unit suite (3 stages).
       - name: Verify
         run: nix develop --command pnpm verify
@@ -102,9 +107,16 @@ jobs:
   # `pnpm verify` (CI has no browser binary otherwise; this job supplies one
   # explicitly instead of making the headline gate depend on it).
   test-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container:
+      # Pin the OS userland, Playwright browsers, fontconfig and fonts used by
+      # exact screenshot comparisons. This amd64 manifest is the image digest
+      # for Playwright 1.64.1 on Ubuntu 24.04.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:d65108d1a8095d8b0c4a5e32bf1807a40a5ce90ff0c78473e1116b1c243235e8
     timeout-minutes: 30
 
+    # The pinned Playwright container cannot use the runner-temp executable path from nix-installer-action.
+    # setup-node and setup-pnpm provide the Node toolchain for this browser-only job.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,22 +133,21 @@ jobs:
           node-version: "26"
           cache: "pnpm"
 
-      - name: Set up Nix
-        uses: ./.github/actions/nix-setup
-        with:
-          cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
       - name: Configure GitHub Packages authentication
         run: pnpm config set --location=global //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: nix develop --command pnpm install --frozen-lockfile
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: pnpm install --frozen-lockfile
 
       - name: Browser tests
-        run: nix develop --command pnpm test:browser
+        run: pnpm test:browser
+
+      - name: Upload Playwright failure output
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-output
+          path: test-results/
+          retention-days: 7

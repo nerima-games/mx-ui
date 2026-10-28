@@ -1,22 +1,16 @@
 # 公開 API
 
-出典: plan.md §4.1（モジュール契約）、§4.2（標準 stage 順序）、§2.3-3（全順序の所有者）。
+## 1. mx-ui には stage 登録とは別に mount 面が要る
 
-## 1. mx-ui の公開面は他の 2 つより 1 つ広い
+stage を登録するだけでは UI を表示できない。ホストの mc-compose が次のことを行う:
 
-mx-gameplay と mx-redstone が mc-compose に対して公開するのは **stage 登録だけ**である
-（plan.md §3.12 は mx-redstone について明示: 「主要な公開API: stage登録のみ(電力グラフは内部実装)」）。
-
-mx-ui にはもう 1 つ要る。**UI は mount されなければならないから**である:
-
-1. mc-compose がルート要素を渡せなければならない。DOM に依存しない他の体験モジュールにはこの問題が無い。
-2. mc-compose が画面を開けなければならない。セッションライフサイクル（タイトル⇄ゲーム）は mc-compose の資産であり
-   （plan.md §3.15）、「今はタイトル画面を出す」は mc-compose の判断である。
+1. UI が描画する DOM ルートを渡す。
+2. セッションの状態に応じて、どの画面を開くか決める。
 
 この mount 面は `makeUiMount` として実装済みである。`mc-compose` の browser session が要求する
 `name` / `start` / `stop` と構造互換であり、循環依存を作らずにそのまま runtime module として渡せる。
 
-## 2. `StageRegistration` 契約（plan.md §4.1 逐語）
+## 2. `StageRegistration` 契約
 
 ```typescript
 interface StageRegistration {
@@ -31,13 +25,9 @@ interface GameModule<ROut, E, RIn, RRegister = never> {
 }
 ```
 
-`domain/frame-contract.ts` はこれを**逐語で**再掲している。`type` ではなく `interface` のままなのも意図的で、
-そのために `.oxlintrc.json` は `@typescript-eslint/consistent-type-definitions` の例外を明記している
-（「Keeping the spec and the code character-identical is worth more than local style consistency」）。
+mx-ui は `GameModule` と `StageRegistration` を mc-kernel から直接 import する。上の型は契約の関連部分を示している。
 
-このファイルは mc-kernel が publish された時点で削除される（[versioning.md](./versioning.md) §6）。
-
-### 2-1. 全順序は mc-compose だけが解決する（plan.md §2.3-3）
+### 2-1. 全順序は mc-compose だけが解決する
 
 **モジュールは `after` 制約を宣言するだけで、それ以外は何も言わない。**
 
@@ -54,7 +44,7 @@ mc-sim の stage モジュールを import せずに表現できる。
   （`test/public-api.test.ts`）— `sortStages` / `stageOrder` / `totalOrder` / `framePipeline` / `runFrame`
   のいずれも export していないことを検査する。全順序を解ける道具を配らない。
 
-## 3. 標準 stage 順序と、mx-ui が埋める枠（plan.md §4.2）
+## 3. 標準 stage 順序と、mx-ui が埋める枠
 
 ```
 input
@@ -68,7 +58,7 @@ input
 
 | 枠 | 埋める人 |
 | --- | --- |
-| `input` | `mc-render`（実行時入力サービス、plan.md §2.3-2） |
+| `input` | `mc-render`（実行時入力サービス） |
 | `simulation` の physics / entities / time | `mc-sim` |
 | `simulation` の interactions / fluids | `mx-gameplay` |
 | `simulation` の redstone | `mx-redstone` |
@@ -76,7 +66,7 @@ input
 | **`hud-sync`** | **`mx-ui`** |
 
 **そして、この骨格自体は誰も宣言しない。** これは mc-compose が所有する全順序の形であって、
-どのモジュールの資産でもない（plan.md §2.3-3）。
+どの体験モジュールも全順序を宣言しない。
 
 ### 3-1. `after: [render:post-fx]` を宣言しない理由
 
@@ -95,15 +85,9 @@ mx-ui 自身の正しさが要求しているのは「HUD が**このフレー�
 
 ## 4. `GameModule` を実装した（`uiModule`）
 
-ここには長らく「`GameModule` はまだ実装していない。`RIn` は mc-sim と mc-audio の公開 API が
-存在するまで名前を付けられないから」と書いてあった。**Layer は障害ではなかった。**
+mx-ui はフレーム契約を通じてサービスを公開しない。UI の mount 面は別にあり、`layers` は空である。
 
-mx-ui はフレーム契約を通じてサービスを公開しない。UI を mount させる面は別の、意図的に小さい面である
-（§4-1）。だから `layers` は空であり、最初から空だった。
-
-本当の障害は **`frameStages` が配列だったこと**である。本リポジトリの stage は Effect の中で確保した
-`Ref` から組み立てられるので、`ReadonlyArray` 型のフィールドに入れる方法が無かった。
-縦切りスパイクが `frameStages` を Effect にしたことで、このファイルが既に取っていた形が契約になった。
+stage の状態には per-mount の `Ref` が必要なので、`makeUiStages` は状態を作成して stage 配列を返す Effect である。
 
 ```typescript
 export const makeUiStages: Effect.Effect<ReadonlyArray<StageRegistration>>
@@ -114,10 +98,10 @@ export const uiModule: GameModule<never, never, never> = {
 }
 ```
 
-`RIn` は `never` のままである。`ui:hud-sync` が mc-sim を読み、`ui:overlay-sync` が
-mc-audio に autoplay ゲートの状態を尋ねるようになったとき、それらは `frameStages` の中で —
-つまり `RRegister` パラメータで — 取得される。本リポジトリはそれらが供給しなければならないものを
-何も構築しないからである。
+`UiFrameState.selectedHotbarSlot` は `SelectedHotbarSlot` 型である。`SelectedHotbarSlotSchema` は値を 0〜8 の整数に制限し、`makeUiFrameState` は初期値をこの schema で decode する。type と schema は `src/stages/registration.ts` から root barrel に export される。
+
+現在の `uiModule` は `RIn` と `RRegister` がともに `never` で、frame stage に外部 service は不要である。
+将来 stage が service を要求する場合、その要求は `frameStages` の `RRegister` に現れる。mx-ui はその service を `layers` で提供しない。
 
 ### 4-1. mount 面
 
@@ -127,8 +111,8 @@ main menu を初期描画する:
 ```typescript
 export type UiMount = {
   readonly name: string
-  readonly start: Effect.Effect<typeof uiModule, unknown>
-  readonly stop: Effect.Effect<void, unknown>
+  readonly start: Effect.Effect<typeof uiModule, UiMountError>
+  readonly stop: Effect.Effect<void, UiMountError>
   readonly current: () => UiMountedViews | undefined
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
   readonly updateSettings: (settings: UiSettings) => void
@@ -140,7 +124,20 @@ export type UiMount = {
   readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
   readonly activateInventoryFocus: () => boolean
 }
+
+export class UiMountError {
+  readonly _tag: 'UiMountError'
+  readonly name: 'UiMountError'
+  readonly message: string
+  readonly cause: unknown
+  constructor(message: string, options?: ErrorOptions)
+}
 ```
+
+The host passes a real `HTMLElement` as the mount root. mx-ui uses the structural `DomElementFactory` and `DomElement` types only for the child elements it creates inside that root.
+
+Failures from `start` and `stop` are returned in Effect's error channel as `UiMountError`.
+This tagged value has `_tag`, `name`, `message`, and `cause`; it does not extend native `Error`.
 
 設計上の制約は次の通り:
 
@@ -157,10 +154,9 @@ export type UiMount = {
    `moveInventoryFocus` / `activateInventoryFocus` に意味上のコマンドを渡す。矢印キーも同じ移動関数を使い、
    region の列数、未知 region のスキップ、crafting output への遷移を一貫させる。
 
-## 5. `index.ts` の全 export
+## 5. `index.ts` の主な可視 export
 
-`index.ts` は 44 モジュールを `export *` している——`application/` の 22、`domain/` の 20、
-`stages/` の 2（`domain/frame-contract.ts` は**含まれない**。下記）。この節は契約面と
+`index.ts` は `application/`、`domain/`、`stages/` から export する。この節は契約面と
 主要な可視 export を分類するもので、完全な実装一覧は `src/index.ts` と build 後の declaration を正とする:
 
 - **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
@@ -173,7 +169,9 @@ export type UiMount = {
 | --- | --- | --- |
 | `uiStages` | `(state) => ReadonlyArray<StageRegistration>` | **契約** |
 | `makeUiStages` | `Effect<ReadonlyArray<StageRegistration>>` | **契約** |
-| `makeUiFrameState` | `Effect<UiFrameState>` | **契約**（再入可能な初期化、DN-UI-9） |
+| `makeUiFrameState` | `Effect<UiFrameState>` | **契約**（呼び出しごとに独立した state を作る） |
+| `SelectedHotbarSlot` | type | **契約** |
+| `SelectedHotbarSlotSchema` | schema（0〜8 を検証） | **契約** |
 | `UiFrameState` | type | 内部(可視) |
 | `DEFAULT_CAPTION_SETTINGS` | `CaptionSettings` | 内部(可視) |
 
@@ -186,25 +184,11 @@ export type UiMount = {
 | `EXPERIENCE_MODULE_STAGE_PREFIXES` | `readonly string[]` | 内部(可視)（回帰テスト用） |
 | `OWN_STAGE_PREFIX` | `'ui:'` | 内部(可視)（回帰テスト用） |
 
-### `domain/frame-contract.ts` — **バレルには載せない**
+### Kernel-owned stage vocabulary
 
-`index.ts` はこのファイルを `export *` **しない**。末尾のコメントが存在と削除予定を記すだけである。
-
-| export | 種別 | 分類 |
-| --- | --- | --- |
-| `StageId` | type + `Brand.refined` | **非公開**（所有者は mc-kernel） |
-| `DeltaTimeSecs` | type + `Brand.refined` | **非公開**（所有者は mc-kernel） |
-| `StageRegistration` | interface | **非公開**（所有者は mc-kernel）。`makeUiStages` の**戻り値の形**としてだけ観測される |
-| `FrameServices` | type（現状 `never`） | **非公開**（所有者は mc-kernel） |
-
-**re-export しない理由。** このファイルは mc-kernel が publish された時点でまるごと消える
-（[versioning.md](./versioning.md) §6）。バレルに載せると `StageId` / `DeltaTimeSecs` /
-`StageRegistration` が**所有していないパッケージの公開 API** になり、
-約束済みの削除がすべての消費者にとっての破壊的変更に化ける。
-消費者はこの語彙を kernel から取る。型は構造的に同一なので、
-kernel から import した消費者は `makeUiStages` の戻り値に対してそのまま型検査を通る。
-mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしており、mx-gameplay / mx-redstone も同じである。
-固定しているテスト: `REGRESSION: does not republish mc-kernel’s vocabulary as its own`。
+`src/stages/registration.ts` は `StageId`、`DeltaTimeSecs`、`GameModule`、`StageRegistration` を
+mc-kernel から import する。mx-ui の root barrel はこれらを再 export しないため、利用側も型の owner である
+`@nerima-games/mc-kernel` から import する。`test/public-api.test.ts` が再 export されないことを検査する。
 
 ### 5-1. ではなぜインベントリのミラーは**載せる**のか
 
@@ -215,25 +199,9 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 
 | ミラー | 指しているもの | バレル | 削除・置換のコスト |
 | --- | --- | --- | --- |
-| `domain/frame-contract.ts` | mc-kernel の**契約**。mc-compose が消費する | 載せない | 載せれば約束済みの削除が MAJOR に化ける |
 | `mx-gameplay/domain/chunk-store-port.ts` | mc-worldgen の**サービス**（`Context.Tag`） | 載せない | 他リポジトリのサービスの再公開。タグキー衝突という実害もある |
 | `domain/inventory-view-model.ts` のミラー | 本リポジトリの純粋関数の**引数型** | **載せる** | mc-compose は `inventoryViewModel` を呼ばない → §5 の表で MINOR |
-| `VitalsSnapshot` | 同上（最初のカットから載っている） | **載っている** | 同上 |
-
-つまり**「他人の語彙を再公開するな」であって「他人の形を写すな」ではない**。
-`VitalsSnapshot` が最初から後者をやっていて誰も問題視しなかったのは、
-それが mx-ui の関数が「何を渡してほしいか」の表明だからである。インベントリのミラーも同じ位置にいる。
-
-`test/inventory-mirror.test.ts` の
-`REGRESSION: the mirror is published as a PARAMETER, not as mc-sim’s vocabulary` が
-この 2 方向（ミラーは載る / `StageId` と `DeltaTimeSecs` は載らない）を 1 本で固定している。
-詳細は [design-notes.md](./design-notes.md) DN-UI-12。
-
-`FrameServices = never` は意図的な乖離である。kernel は `ClockPort` の別名にしているが、
-ここで `ClockPort` を再掲すると kernel と同じ文字列 ID を持つ**別の** `Context.Tag` ができてしまう。
-見分けがつかない 2 つのタグは、狭すぎる型よりはるかに悪い。
-`Effect<void, never, never>` は `Effect<void, never, ClockPort>` が欲しい場所に代入できるので、
-このファイルに対して書かれた stage は kernel の import に差し替えても型検査を通り続ける。
+| `VitalsSnapshot` | 同上 | **載っている** | 同上 |
 
 ### `domain/hud-view-model.ts` — すべて内部(可視)
 
@@ -244,17 +212,7 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 | `iconRow` / `hudViewModel` / `slotView` / `hotbarSlotIndex` | 純粋関数 |
 | `spawnSnapshot` | プレビュー・テスト用のリテラル |
 
-`hotbarSlotIndex` は `hudViewModel` の中のローカル式だった。export したのは
-**同じ問いが 2 つになった**からである——mc-sim の `selectedHotbarIndex` と、
-入力の所有者が言う「キーボードはどのスロットにいるか」（`HudView.setKeyboardFocus`、DN-UI-13i）。
-どちらも境界を越えて来る index で、どちらも `9` / `-1` / `NaN` になりうる（DN-UI-7a）。
-**選択を見失う HUD と消えるフォーカスリングは同じバグ 2 回**なので、導出は 1 つである。
-
-`SlotView` は以前 `HotbarSlotView` という名前だった。改名したのは
-`domain/inventory-view-model.ts` が**同じ型と同じ射影関数**を使うようになったからで、
-「ホットバーの」と名乗る型が 36 スロットのインベントリにも出てくるのは誤りである。
-`slotView` を export したのも同じ理由（DN-UI-7c / DN-UI-12）。
-どちらもビューモデルの型なので [versioning.md](./versioning.md) §5 では**破壊的変更ではない**。
+`hotbarSlotIndex` は mc-sim の `clampHotbarIndex` を再 export し、HUD の選択位置とキーボード focus に同じ規則を使う。`slotView` は inventory と hotbar の slot を同じ view type に変換する。これらの view model export は内部(可視)なので、変更は [versioning.md](./versioning.md) §5 の破壊的変更に分類しない。
 
 ### `domain/inventory-view-model.ts` — すべて内部(可視)
 
@@ -283,9 +241,7 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 | `SCRIM_OVER_DARKEST_WORLD` / `SCRIM_OVER_BRIGHTEST_WORLD` | 合成の両端 |
 
 **このモジュールはスタイルシートではない。** 値と、値を検査する算術だけである。
-`document` を触らないので、宣言している保証（DN-UI-11）が主張ではなくテストになっている。
-`simulateColorVision` が**シミュレーション**であって `domain/accessibility.ts` の
-`colorVisionMatrix`（**補正**）ではないことは DN-UI-1a / DN-UI-11d を参照。
+`document` を触らないので、palette math は Node environment でテストできる。`simulateColorVision` は補正の効果を予測し、`domain/accessibility.ts` の `colorVisionMatrix` は DOM に適用する補正行列を作る。
 
 ### `application/**` — DOM 層。**契約(暫定)** と 内部(可視) が混在する
 
@@ -305,14 +261,30 @@ mc-sim / mc-render / mc-playground-kit のバレルが同じ判断をしてお�
 | `application/slot-element.ts` | `SlotElement` / `createSlotElement` / `updateSlotElement` / `setSlotHidden` / `hideSlotElementAtMount` / `setSlotTabStop` / `setSlotKeyboardFocus` / `DURABILITY_LOW_PERCENT` / `FOCUS_RING_WIDTH` / `FOCUS_RING_SHADOW_WIDTH` | type + 関数 + 定数 | 内部(可視) |
 | `application/icon-element.ts` | `IconKind` / `IconElement` / `createIconElement` / `updateIconElement` / `retireIconElement` | type + 関数 | 内部(可視) |
 
-**「暫定」の意味**は §4-1 と同じである。mc-compose がまだ mount していないので、
-`createHudView(factory, parent, motion)` という 3 引数の形は確定していない。
-確定するのは mc-compose が実際に消費したときであり、それまでは
-[versioning.md](./versioning.md) §5 の意味での破壊的変更は起きえない（消費者がいない）。
+### Achievement toast
+
+この API は、`src/domain/achievement-toast.ts` の payload schema と event projection、`src/application/achievement-toast-view.ts` の DOM view、および `src/application/achievement-toast-subscriber.ts` の event-bus subscription から成る。各 module の export は `src/index.ts` の root barrel に含まれる。まだ mc-compose が利用していない API は「契約(暫定)」、subscriber の内部 projection は「内部(可視)」に分類する。
+
+| モジュール | export | 種別 | 分類 | 振る舞い |
+| --- | --- | --- | --- | --- |
+| `domain/achievement-toast.ts` | `AchievementToast` / `AchievementToastSchema` / `AchievementToastIcon` / `AchievementToastIconSchema` / `AchievementToastTitle` / `AchievementToastTitleSchema` | type + schema | **契約(暫定)** | toast payload と表示値を検証する |
+| `domain/achievement-toast.ts` | `achievementToastFromEvent` | function | 内部(可視) | `Effect.Effect<AchievementToast \| null, Schema.SchemaError>` を返す |
+| `application/achievement-toast-view.ts` | `AchievementToastView` / `createAchievementToastView` | type + function | **契約(暫定)** | toast payload を DOM に表示する |
+| `application/achievement-toast-subscriber.ts` | `AchievementToastSubscription` / `startAchievementToastSubscriber` | type + function | **契約(暫定)** | sim の event bus を購読する。`close` で停止し、`join: Effect.Effect<void, Schema.SchemaError>` で subscriber failure を観測する |
+
+mc-sim 0.7.0 の `DomainEvent` は mc-kernel 0.12.0 の広い achievement brand を使う。mx-ui は
+受信した ID を mc-kernel 0.14.0 の `AchievementIdSchema` で decode してから表示表を引く。
+失敗は `Schema.SchemaError` として subscriber の `join` から観測でき、toast に既定値を入れない。
+表示名と item icon は mx-ui が所有し、表示表は有限 catalog の全 `AchievementId` literal を key にした `Record<AchievementId, AdvancementDisplay>` にする。
+`minecraft:story/form_obsidian` は “Ice Bucket Challenge” の ID として含み、存在しない `minecraft:story/obtain_obsidian` は含まない。
+
+**「契約(暫定)」**は、mc-compose などの host がまだ消費していない API を示す。最初の consumer が付くまでは、
+既存 consumer を壊す互換性変更は発生しない。各 API の現時点の分類は上の表を参照し、release の versioning は
+[versioning.md](./versioning.md) §5 に従う。
 
 ### なぜ `HTMLElement` ではなく構造型なのか
 
-`tsconfig.base.json` は 16 リポジトリで唯一 `"lib": ["ES2024", "DOM"]` を宣言しており、
+`tsconfig.base.json` includes `DOM` for UI implementation and `ESNext.Disposable` for the `Disposable` and `AsyncDisposable` types referenced by Effect 4 declarations. Consumers who specify `lib` explicitly must include `ESNext.Disposable` too.
 **`HTMLElement` は書ける**。それでも `application/dom-surface.ts` がある理由は 2 つで、
 mc-render の理由（DOM lib が無い）とは**別物**である。
 
@@ -321,15 +293,15 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
    `as unknown as HTMLElement` を書いた偽物を使うかしないとテストできない。
    後者のほうが悪い——キャストこそが型安全を失う場所であり、しかもそれがテスト側にあるので
    偽物が実物からずれても誰も気づけない。
-2. **リスナを配らないため。** この面には `addEventListener` が**無い**。
-   だから DN-UI-4 の「Escape の所有者は 1 つ」は規律ではなく**語彙の問題**になる。
-   `test/public-api.test.ts` の
-   `REGRESSION: exports no way for a renderer to take a key (DN-UI-4)` が
-   バレル側からもこれを固定している。
+2. **一般要素にイベント登録口を配らないため。** `DomElement` に `addEventListener` は無い。
+   native button/input の `DomInteractiveElement` / `DomInputElement` には click/input 用の登録口があり、
+   session key listener は mount adapter が root の `ownerDocument` に登録する。
+   その境界を分けることで、一般 renderer が独自の keyboard handler を持たない。
+   `test/public-api.test.ts` は renderer に key handler を渡す export が無いことも検査する。
 
 構造型が実 DOM の**真の部分集合**であることは `test/dom-surface.test.ts` が
 実 `lib.dom.d.ts` に対して fixture をコンパイルして診断 0 件を assert する（mc-render と同じ手口）。
-支払った代償は DN-UI-13 に書く。
+
 
 ### `domain/caption.ts` — すべて内部(可視)
 
@@ -349,9 +321,9 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
 | `saveStatus` / `saveStatusMessage` | 純粋関数 |
 
 自動保存インジケータの**状態と表示時間**である。要素は `application/save-indicator.ts`。
-`domain/caption.ts` と同じくクロックを取らず、時刻は引数で受ける（DN-UI-10）。
+`domain/caption.ts` と同じくクロックを取らず、時刻は引数で受ける。
 **stage は増やしていない**——字幕と違って刈り取るキューが無く、
-失効は読み取り時の引き算だからである（DN-UI-13h）。
+失効は読み取り時に経過時間を引いて判定するからである。
 
 ### `domain/accessibility.ts` — すべて内部(可視)
 
@@ -362,8 +334,7 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
 | `colorVisionAttribute` / `colorVisionMatrix` / `colorVisionMatrixValues` / `applyColorVisionMatrix` / `resolveMotionPreference` / `animationDurationMs` / `shouldAnimate` / `rebind` / `unboundActions` | 純粋関数 |
 
 `colorVisionMatrix` 以下の 3 つと `COLOR_VISION_FILTER_COLOR_SPACE` は
-**`feColorMatrix` ダルトナイゼーションそのもの**である。参照実装ではマークアップ（`index.html:445-460`）
-だったので carry over から漏れていた。スイッチだけでは後ろに何も無いフックが残る（DN-UI-1a）。
+**`feColorMatrix` による色覚補正を実装する関数と定数**である。補正を有効にする UI とフィルターの両方を提供する。
 
 ### `domain/modal-stack.ts` — すべて内部(可視)
 
@@ -378,23 +349,15 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
 ビューモデル、字幕キュー、アクセシビリティ関数、モーダルスタックは**全部 export されている**。
 export されているのに公開 API ではない、というのは矛盾に見えるが、そうではない。
 
-- **export する理由**: 各画面プレビュー（plan.md §3.13）とテストがこのリポジトリの外側の入口（`index.ts`）から
-  同じものを見られる必要がある。`test/public-api.test.ts` の
-  `exposes the same implementations through the barrel as through the modules` がこれを固定している。
+- **export する理由**: 各画面プレビューとテストは package root barrel から同じ実装を使う。`test/public-api.test.ts` の
+  `exposes the same implementations through the barrel as through the modules` がこの対応を検査する。
 - **公開 API ではない理由**: mc-compose はこれらを使わない。使わないものを変えても mc-compose は壊れない。
   だから `iconRow` の戻り値を変えても **MINOR bump で済む**（[versioning.md](./versioning.md) §5）。
 
-`test/public-api.test.ts` は 3 つのブロックに分けてこの区別を記録している —
-`re-exports the stage registration contract — the part mc-compose actually consumes`（契約）、
-`REGRESSION: every accessibility asset plan.md §3.13 asks to carry over is still exported`（消えたら困る資産）、
-`re-exports the view-model domain and the modal stack, which the per-screen previews drive`（プレビューが駆動するもの）。
-
-4 つ目は**不在**を固定するブロックである —
+別の回帰テストは**不在**を固定する —
 `REGRESSION: does not republish mc-kernel’s vocabulary as its own` が
 `StageId` と `DeltaTimeSecs` がバレルに現れないことを assert する。
 「見えるが公開ではない」の管理はドキュメントでできるが、
 「所有していないものを公開する」はドキュメントでは止められない——消えるのが約束だからである。
 
-2 つ目のブロックは分類ではなく**存在保証**である。
-plan.md §3.13 が「引き継ぐ」と言っているアクセシビリティ資産は、
-引き継がれた後に静かに落とされると引き継がれなかったのと区別がつかない。名前で列挙してあるのはそのためである。
+アクセシビリティ関数の root exports はプレビューとテストで使うが、契約 API としては分類しない。存在は `test/public-api.test.ts` の export checks で固定する。
