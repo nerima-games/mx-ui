@@ -57,6 +57,11 @@ jobs:
       - name: Install dependencies
         run: nix develop --command pnpm install --frozen-lockfile
 
+      - name: Check shared ast-grep conformance
+        uses: nerima-games/.github/conformance/ast-grep@f594176eb568341ab31babbfef16a260979f75f2
+        with:
+          public-api-baseline: .ast-grep/public-api-baseline.json
+
       # verify covers typecheck, lint, and the unit suite (3 stages).
       - name: Verify
         run: nix develop --command pnpm verify
