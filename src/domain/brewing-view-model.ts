@@ -18,56 +18,26 @@ type BrewingProgressView =
   | Readonly<{ readonly _tag: 'Idle' }>
   | Readonly<{ readonly _tag: 'Brewing'; readonly remainingSecs: number }>
 
-export type BrewingUnsupportedOperation =
+export type BrewingOperation =
   | 'insert-selected-item'
   | 'collect-bottle'
   | 'drink-potion'
 
-type BrewingUnsupportedState<
-  Operation extends BrewingUnsupportedOperation = BrewingUnsupportedOperation,
-> = Readonly<{
-  readonly _tag: 'Unsupported'
-  readonly operation: Operation
-  readonly reason: string
-}>
-
-export type BrewingIntent = Readonly<{ readonly _tag: 'Close' }>
+export type BrewingIntent =
+  | Readonly<{ readonly _tag: 'InsertSelectedItem' }>
+  | Readonly<{ readonly _tag: 'CollectBottle' }>
+  | Readonly<{ readonly _tag: 'DrinkPotion' }>
+  | Readonly<{ readonly _tag: 'Close' }>
 
 export type BrewingViewModel = Readonly<{
   readonly bottles: readonly [BrewingBottleView, BrewingBottleView, BrewingBottleView]
   readonly fuel: BrewingStackView | undefined
   readonly fuelCharges: BrewingState['fuelCharges']
   readonly ingredient: BrewingStackView | undefined
-  readonly operations: Readonly<{
-    readonly collectBottle: BrewingUnsupportedState<'collect-bottle'>
-    readonly drinkPotion: BrewingUnsupportedState<'drink-potion'>
-    readonly insertSelectedItem: BrewingUnsupportedState<'insert-selected-item'>
-  }>
   readonly progress: BrewingProgressView
 }>
 
 const IDLE_BREW_PROGRESS_SECS = 0
-
-const INSERT_UNSUPPORTED: BrewingUnsupportedState<'insert-selected-item'> = Object.freeze({
-  _tag: 'Unsupported',
-  operation: 'insert-selected-item',
-  reason:
-    'Inserting a selected item changes player inventory and the brewing stand together. mc-sim 0.6.0 commits those service changes separately; the 0.7.0 plan-fragment API is required.',
-})
-
-const COLLECT_UNSUPPORTED: BrewingUnsupportedState<'collect-bottle'> = Object.freeze({
-  _tag: 'Unsupported',
-  operation: 'collect-bottle',
-  reason:
-    'Collecting a bottle changes the brewing stand and player inventory together. mc-sim 0.6.0 commits those service changes separately; the 0.7.0 plan-fragment API is required.',
-})
-
-const DRINK_UNSUPPORTED: BrewingUnsupportedState<'drink-potion'> = Object.freeze({
-  _tag: 'Unsupported',
-  operation: 'drink-potion',
-  reason:
-    'Drinking a potion changes player inventory and player effects together. mc-sim 0.6.0 cannot commit those owner changes atomically; the 0.7.0 plan-fragment API is required.',
-})
 
 const projectStack = (stack: BrewingState['ingredient']): BrewingStackView | undefined => {
   if (!stack) {
@@ -101,11 +71,6 @@ export const brewingViewModel = (snapshot: BrewingSnapshot): BrewingViewModel =>
     fuel: projectStack(snapshot.fuel),
     fuelCharges: snapshot.fuelCharges,
     ingredient: projectStack(snapshot.ingredient),
-    operations: Object.freeze({
-      collectBottle: COLLECT_UNSUPPORTED,
-      drinkPotion: DRINK_UNSUPPORTED,
-      insertSelectedItem: INSERT_UNSUPPORTED,
-    }),
     progress: projectProgress(snapshot.brewProgressSecs),
   })
 }

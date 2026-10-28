@@ -131,6 +131,11 @@
             "name": "effect",
             "message": "Please use named imports from 'effect' package",
             "importNames": ["default"]
+          },
+          {
+            "name": "@nerima-games/mc-render",
+            "message": "Only type imports from the public root of mc-render are allowed.",
+            "allowTypeImports": true
           }
         ],
         "patterns": [
@@ -142,7 +147,8 @@
               "!@nerima-games/mc-sim",
               "!@nerima-games/mc-sim/**",
               "!@nerima-games/mc-audio",
-              "!@nerima-games/mc-audio/**"
+              "!@nerima-games/mc-audio/**",
+              "!@nerima-games/mc-render"
             ],
             "message": "mx-ui is Tier3 (DEPENDENCY_POLICY.md §1); only the listed packages may be imported."
           }

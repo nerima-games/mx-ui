@@ -40,13 +40,10 @@ describe('achievement toast projection', () => {
     })
   })
 
-  it('preserves an unknown branded ID in the fallback display', () => {
+  it('does not produce a toast for an ID without display metadata', () => {
     const event = achievementEvent('example:custom/achievement')
-    const toast = achievementToastFromEvent(event)
 
-    expect(toast?.achievement).toBe('example:custom/achievement')
-    expect(toast?.icon).toBe('minecraft:nether_star')
-    expect(toast?.title).toBe('example:custom/achievement')
+    expect(achievementToastFromEvent(event)).toBeNull()
   })
 
   it('ignores non-achievement domain events', () => {

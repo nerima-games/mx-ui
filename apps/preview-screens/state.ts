@@ -36,21 +36,10 @@ import {
   type KeyBindings,
   type MotionSetting,
 } from '../../src/domain/accessibility'
+import { captionLines, type CaptionEvent } from '../../src/domain/caption'
 import {
-  emptyCaptionQueue,
-  expireCaptions,
-  receiveCaption,
-  type CaptionEvent,
-  type CaptionQueue,
-  type CaptionSettings,
-} from '../../src/domain/caption'
-import {
-  DEFAULT_MAX_HEALTH_POINTS,
-  DEFAULT_MAX_HUNGER_POINTS,
   HOTBAR_SLOT_COUNT,
   spawnSnapshot,
-  type HotbarSlotSnapshot,
-  type VitalsSnapshot,
 } from '../../src/domain/hud-view-model'
 import {
   closeScreen,
@@ -60,7 +49,22 @@ import {
   type ModalStack,
   type ScreenId,
 } from '../../src/domain/modal-stack'
-import { DEFAULT_CAPTION_SETTINGS } from '../../src/stages/registration'
+import {
+  EntityHealthPoints,
+  ExperienceLevel,
+  HungerPoints,
+  TotalExperience,
+  experienceCostOfLevel,
+  experienceLevel,
+  experienceProgress,
+  itemStack,
+  normaliseVitals,
+  totalExperienceAtLevel,
+  type InventoryCarriedSlot,
+  type Vitals,
+} from '@nerima-games/mc-sim'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { Result } from 'effect'
 
 export type ScreenName = 'hud' | 'inventory' | 'settings' | 'captions'
 
@@ -102,37 +106,71 @@ export const DEFAULT_BINDINGS: KeyBindings = new Map<InputAction, string>([
   ['inventory', 'KeyE'],
 ])
 
+const sampleStack = (
+  item: Parameters<typeof itemStack>[0],
+  count: number,
+  durabilityPercent?: number,
+): InventoryCarriedSlot => {
+  const result = itemStack(item, count)
+  if (!Result.isSuccess(result)) {
+    throw new Error(`preview fixture could not create ${item}: ${JSON.stringify(result.failure)}`)
+  }
+  return durabilityPercent === undefined
+    ? result.success
+    : { ...result.success, durability: { current: durabilityPercent, max: 100 } }
+}
+
 /** A hotbar with something in it, because an empty one shows nothing. */
-export const SAMPLE_HOTBAR: ReadonlyArray<HotbarSlotSnapshot> = [
-  { itemId: 'diamond_pickaxe', count: 1, durability: 0.82 },
-  { itemId: 'iron_sword', count: 1, durability: 0.12 },
-  { itemId: 'torch', count: 64, durability: undefined },
-  { itemId: 'cobblestone', count: 12, durability: undefined },
-  { itemId: 'bread', count: 3, durability: undefined },
-  { itemId: undefined, count: 0, durability: undefined },
-  { itemId: 'oak_planks', count: 1, durability: undefined },
-  { itemId: undefined, count: 0, durability: undefined },
-  { itemId: 'water_bucket', count: 1, durability: undefined },
+export const SAMPLE_HOTBAR: ReadonlyArray<InventoryCarriedSlot> = [
+  sampleStack('diamond_pickaxe', 1, 82),
+  sampleStack('iron_sword', 1, 12),
+  sampleStack('torch', 64),
+  sampleStack('cobblestone', 12),
+  sampleStack('bread', 3),
+  undefined,
+  sampleStack('oak_planks', 1),
+  undefined,
+  sampleStack('water_bucket', 1),
 ]
 
 export const SAMPLE_CAPTIONS: ReadonlyArray<{
   readonly cueId: string
   readonly text: string
-  readonly direction: CaptionEvent['direction']
+  readonly pan: CaptionEvent['pan']
 }> = [
-  { cueId: 'entity.creeper.primed', text: 'Creeper hisses', direction: 'behind' },
-  { cueId: 'entity.skeleton.shoot', text: 'Arrow fires', direction: 'left' },
-  { cueId: 'block.water.ambient', text: 'Water flows', direction: 'right' },
-  { cueId: 'entity.zombie.ambient', text: 'Zombie groans', direction: 'ahead' },
-  { cueId: 'block.stone.break', text: 'Block breaks', direction: undefined },
-  { cueId: 'entity.player.hurt', text: 'You are hurt', direction: undefined },
+  { cueId: 'entity.creeper.primed', text: 'Creeper hisses', pan: -1 },
+  { cueId: 'entity.skeleton.shoot', text: 'Arrow fires', pan: -1 },
+  { cueId: 'block.water.ambient', text: 'Water flows', pan: 1 },
+  { cueId: 'entity.zombie.ambient', text: 'Zombie groans', pan: 0 },
+  { cueId: 'block.stone.break', text: 'Block breaks', pan: undefined },
+  { cueId: 'entity.player.hurt', text: 'You are hurt', pan: undefined },
 ]
+
+export type PreviewCaptionSettings = {
+  captionsEnabled: boolean
+  audioUnlocked: boolean
+}
+
+type CaptionTime = CaptionEvent['atSecs']
+
+export const captionAtTime = (seconds: number): CaptionTime =>
+  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
+  MonotonicTimeSecs(seconds)
+
+const experienceTotal = (level: number, progress: number): TotalExperience => {
+  const brandedLevel = ExperienceLevel(level)
+  return TotalExperience(
+    totalExperienceAtLevel(brandedLevel) + progress * experienceCostOfLevel(brandedLevel),
+  )
+}
 
 export type PreviewState = {
   screen: ScreenName
-  vitals: VitalsSnapshot
-  captions: CaptionQueue
-  captionSettings: CaptionSettings
+  vitals: Vitals
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot>
+  selectedHotbarSlot: number
+  captions: ReadonlyArray<CaptionEvent>
+  captionSettings: PreviewCaptionSettings
   /** Monotonic seconds. A keystroke moves it; nothing else may. */
   nowSecs: number
   nextCaption: number
@@ -159,15 +197,14 @@ export const makeState = (): PreviewState => ({
   screen: 'hud',
   vitals: {
     ...spawnSnapshot,
-    healthPoints: 15,
-    hungerPoints: 17,
-    experienceLevel: 12,
-    experienceProgress: 0.4,
-    hotbar: SAMPLE_HOTBAR,
-    selectedHotbarIndex: 0,
+    healthPoints: EntityHealthPoints(15),
+    hungerPoints: HungerPoints(17),
+    totalExperience: experienceTotal(12, 0.4),
   },
-  captions: emptyCaptionQueue,
-  captionSettings: DEFAULT_CAPTION_SETTINGS,
+  hotbarSlots: SAMPLE_HOTBAR,
+  selectedHotbarSlot: 0,
+  captions: [],
+  captionSettings: { captionsEnabled: true, audioUnlocked: false },
   nowSecs: 0,
   nextCaption: 0,
 
@@ -197,84 +234,84 @@ const clamp = (value: number, low: number, high: number): number =>
 
 export const adjustHealth = (state: PreviewState, delta: number): string => {
   const healthPoints = clamp(state.vitals.healthPoints + delta, 0, state.vitals.maxHealthPoints)
-  state.vitals = { ...state.vitals, healthPoints }
+  state.vitals = { ...state.vitals, healthPoints: EntityHealthPoints(healthPoints) }
   return `health ${String(healthPoints)}/${String(state.vitals.maxHealthPoints)}`
 }
 
 export const adjustHunger = (state: PreviewState, delta: number): string => {
   const hungerPoints = clamp(state.vitals.hungerPoints + delta, 0, state.vitals.maxHungerPoints)
-  state.vitals = { ...state.vitals, hungerPoints }
+  state.vitals = { ...state.vitals, hungerPoints: HungerPoints(hungerPoints) }
   return `hunger ${String(hungerPoints)}/${String(state.vitals.maxHungerPoints)}`
 }
 
 export const adjustExperience = (state: PreviewState, delta: number): string => {
-  const raw = state.vitals.experienceProgress + delta
+  const currentLevel = experienceLevel(state.vitals)
+  const currentProgress = experienceProgress(state.vitals)
+  const raw = currentProgress + delta
   const levelUp = raw >= 1 ? 1 : raw < 0 ? -1 : 0
-  const experienceProgress = raw >= 1 ? raw - 1 : raw < 0 ? raw + 1 : raw
-  const experienceLevel = Math.max(0, state.vitals.experienceLevel + levelUp)
-  state.vitals = { ...state.vitals, experienceProgress, experienceLevel }
-  return `xp ${String(experienceLevel)} + ${(experienceProgress * 100).toFixed(0)}%`
+  const nextProgress = raw >= 1 ? raw - 1 : raw < 0 ? raw + 1 : raw
+  const nextLevel = Math.max(0, currentLevel + levelUp)
+  state.vitals = { ...state.vitals, totalExperience: experienceTotal(nextLevel, nextProgress) }
+  return `xp ${String(nextLevel)} + ${(nextProgress * 100).toFixed(0)}%`
 }
 
 export const selectSlot = (state: PreviewState, delta: number): string => {
   const selectedHotbarIndex =
-    (((state.vitals.selectedHotbarIndex + delta) % HOTBAR_SLOT_COUNT) + HOTBAR_SLOT_COUNT) %
+    (((state.selectedHotbarSlot + delta) % HOTBAR_SLOT_COUNT) + HOTBAR_SLOT_COUNT) %
     HOTBAR_SLOT_COUNT
-  state.vitals = { ...state.vitals, selectedHotbarIndex }
+  state.selectedHotbarSlot = selectedHotbarIndex
   return `slot ${String(selectedHotbarIndex + 1)}`
 }
 
 /**
  * Wear down the held item.
  *
- * Also the way to reproduce the empty-slot durability bug by hand: damage a
- * slot to nothing with `d`, empty it with `E`, and watch the durability bar stay.
+ * Press `E` afterward to remove the carried stack and its durability together.
  */
 export const damageHeld = (state: PreviewState, delta: number): string => {
-  const index = state.vitals.selectedHotbarIndex
-  const slot = state.vitals.hotbar[index]
-  if (slot?.durability === undefined) {
+  const index = state.selectedHotbarSlot
+  const slot = state.hotbarSlots[index]
+  const durabilityState = slot?.durability
+  if (durabilityState === undefined) {
     return 'nothing in hand that can wear out'
   }
-  const durability = clamp(slot.durability + delta, 0, 1)
-  const hotbar = state.vitals.hotbar.map((existing, position) =>
-    position === index ? { ...existing, durability } : existing,
+  const currentPercent = durabilityState.current / durabilityState.max
+  const durability = clamp(currentPercent + delta, 0, 1)
+  const hotbarSlots = state.hotbarSlots.map((existing, position) =>
+    position === index && existing !== undefined
+      ? {
+          ...existing,
+          durability: { current: durability * durabilityState.max, max: durabilityState.max },
+        }
+      : existing,
   )
-  state.vitals = { ...state.vitals, hotbar }
+  state.hotbarSlots = hotbarSlots
   return `durability ${(durability * 100).toFixed(0)}%`
 }
 
 export const emptyHeldSlot = (state: PreviewState): string => {
-  const index = state.vitals.selectedHotbarIndex
-  const hotbar = state.vitals.hotbar.map((existing, position) =>
-    position === index ? { ...existing, itemId: undefined, count: 0 } : existing,
+  const index = state.selectedHotbarSlot
+  const hotbarSlots = state.hotbarSlots.map((existing, position) =>
+    position === index ? undefined : existing,
   )
-  state.vitals = { ...state.vitals, hotbar }
-  return `slot ${String(index + 1)} emptied — look at what the view model still reports for it`
+  state.hotbarSlots = hotbarSlots
+  return `slot ${String(index + 1)} emptied — an empty slot has no stack or durability`
 }
 
 export const resetVitals = (state: PreviewState): string => {
-  state.vitals = {
-    ...spawnSnapshot,
-    maxHealthPoints: DEFAULT_MAX_HEALTH_POINTS,
-    maxHungerPoints: DEFAULT_MAX_HUNGER_POINTS,
-    hotbar: SAMPLE_HOTBAR,
-  }
+  state.vitals = spawnSnapshot
+  state.hotbarSlots = SAMPLE_HOTBAR
+  state.selectedHotbarSlot = 0
   return 'vitals reset to a fresh spawn'
 }
 
 /**
- * Feed the view model a value that came across a version boundary and is not a
- * number.
- *
- * `domain/hud-view-model.ts:78-90` says out-of-range input is clamped rather
- * than rejected because 「the snapshot comes from another repository across a
- * version boundary」. NaN is the same class of input, so the preview has a key
- * for it.
+ * Feed malformed health data through mc-sim's normalizer, which replaces NaN
+ * with zero before the HUD projects the state.
  */
 export const injectNaNHealth = (state: PreviewState): string => {
-  state.vitals = { ...state.vitals, healthPoints: Number.NaN }
-  return 'healthPoints = NaN — compare the heart row against the death flag'
+  state.vitals = normaliseVitals({ ...state.vitals, healthPoints: Number.NaN })
+  return 'healthPoints = NaN normalised by mc-sim to zero'
 }
 
 // ---------------------------------------------------------------------------
@@ -284,17 +321,14 @@ export const injectNaNHealth = (state: PreviewState): string => {
 /**
  * Advance time.
  *
- * Expiry runs here rather than in the renderer, mirroring `ui:overlay-sync`
- * (`stages/registration.ts:104-114`), which accumulates `dt` and calls
- * `expireCaptions`. The preview's "frame" is a keystroke, and `dt` is whatever
- * the key says — which is what lets a three-second lifetime be stepped through
- * in quarter seconds without waiting three seconds.
+ * The event list retains its source events; `captionLines` applies mc-audio's
+ * visibility window against the virtual clock whenever this preview redraws.
  */
 export const advanceClock = (state: PreviewState, dtSecs: number): string => {
+  const before = captionLines(state.captions, captionAtTime(state.nowSecs)).length
   state.nowSecs += dtSecs
-  const before = state.captions.visible.length
-  state.captions = expireCaptions(state.captions, state.nowSecs)
-  const dropped = before - state.captions.visible.length
+  const after = captionLines(state.captions, captionAtTime(state.nowSecs)).length
+  const dropped = before - after
   return `t = ${state.nowSecs.toFixed(2)}s${dropped > 0 ? `, ${String(dropped)} caption(s) expired` : ''}`
 }
 
@@ -304,28 +338,34 @@ export const emitCaption = (state: PreviewState): string => {
     return 'no sample captions'
   }
   state.nextCaption += 1
-  const before = state.captions
-  state.captions = receiveCaption(
-    state.captions,
-    { cueId: sample.cueId, text: sample.text, direction: sample.direction, atSecs: state.nowSecs },
-    state.captionSettings,
-  )
-  return state.captions === before
-    ? `${sample.cueId} was dropped — captions are switched off`
-    : `${sample.cueId} at t = ${state.nowSecs.toFixed(2)}s`
+  if (!state.captionSettings.captionsEnabled) {
+    return `${sample.cueId} was dropped — captions are switched off`
+  }
+  state.captions = [...state.captions, {
+    atSecs: captionAtTime(state.nowSecs),
+    cueId: sample.cueId,
+    ...(sample.pan === undefined ? {} : { pan: sample.pan }),
+    reason: 'unavailable',
+    text: sample.text,
+  }]
+  return `${sample.cueId} at t = ${state.nowSecs.toFixed(2)}s`
 }
 
-/** Emit the SAME cue again, which is how the de-duplication rule is checked. */
+/** Emit the SAME cue again, which lets mc-audio refresh the visible text row. */
 export const repeatCaption = (state: PreviewState): string => {
   const sample = SAMPLE_CAPTIONS[(state.nextCaption - 1 + SAMPLE_CAPTIONS.length) % SAMPLE_CAPTIONS.length]
   if (sample === undefined) {
     return 'nothing emitted yet'
   }
-  state.captions = receiveCaption(
-    state.captions,
-    { cueId: sample.cueId, text: sample.text, direction: sample.direction, atSecs: state.nowSecs },
-    state.captionSettings,
-  )
+  if (state.captionSettings.captionsEnabled) {
+    state.captions = [...state.captions, {
+      atSecs: captionAtTime(state.nowSecs),
+      cueId: sample.cueId,
+      ...(sample.pan === undefined ? {} : { pan: sample.pan }),
+      reason: 'unavailable',
+      text: sample.text,
+    }]
+  }
   return `${sample.cueId} again — one entry refreshed, not two entries stacked`
 }
 
@@ -341,8 +381,8 @@ export const toggleCaptions = (state: PreviewState): string => {
  * Flip the browser's autoplay gate.
  *
  * The interesting thing about this key is that NOTHING HAPPENS. plan.md §3.6
- * fixes captions as firing BEFORE the audio gate, so `receiveCaption` does not
- * read `audioUnlocked` at all (`domain/caption.ts:1-23`). A deaf player must see
+ * fixes captions as firing BEFORE the audio gate, so this preview does not
+ * read `audioUnlocked` when it appends events. A deaf player must see
  * captions before they have clicked anything, and the preview shows that the
  * omission is deliberate by giving it a key that visibly does nothing.
  */

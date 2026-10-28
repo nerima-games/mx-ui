@@ -7,6 +7,7 @@ import {
   type UiSettingsCallbacks,
   createSessionOverlays,
 } from './session-overlays.js'
+import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../domain/hud-view-model.js'
 import { type HudView, createHudView } from './hud-view.js'
 import {
   type InventoryAction,
@@ -36,11 +37,13 @@ import {
   type MainMenuView,
   createMainMenuView,
 } from './main-menu-view.js'
-import { hudViewModel, spawnSnapshot } from '../domain/hud-view-model.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import { Effect } from 'effect'
 import type { MotionPreference } from '../domain/accessibility.js'
 import { uiModule } from '../stages/registration.js'
+
+const HOTBAR_START_INDEX = 0
+const INITIAL_SELECTED_HOTBAR_SLOT = 0
 
 export type UiMountedViews = {
   readonly root: HTMLElement
@@ -431,7 +434,16 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     ownedRoot: HTMLElement,
   ): { readonly handleInventoryKey: (event: KeyboardEvent) => boolean; readonly hud: HudView; readonly inventory: InventoryView } => {
     const hud = createHudView(document, ownedRoot, options.motion ?? 'full')
-    hud.render(hudViewModel(spawnSnapshot))
+    hud.render(
+      hudViewModel(
+        spawnSnapshot,
+        emptyInventorySnapshot.inventory.slots.slice(
+          HOTBAR_START_INDEX,
+          HOTBAR_SLOT_COUNT,
+        ),
+        INITIAL_SELECTED_HOTBAR_SLOT,
+      ),
+    )
 
     const inventory = createInventoryView(document, ownedRoot)
     inventory.root.setAttribute('hidden', '')

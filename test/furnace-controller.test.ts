@@ -17,6 +17,7 @@ import {
   makeFurnaceService,
   makeFurnaceServiceRegistration,
   makeWorldCommitCoordinator,
+  validateFurnaceSnapshot,
   type ItemStack,
   type ItemStackFailure,
 } from '@nerima-games/mc-sim'
@@ -38,15 +39,9 @@ const decodeFurnaceServiceState = Schema.decodeUnknownResult(
   FurnaceServiceStateSchema,
   strictSchemaOptions,
 )
-const decodeFurnaceFailure = Schema.decodeUnknownResult(FurnaceFailureSchema, strictSchemaOptions)
-const decodeFurnaceSnapshotValidation = Schema.decodeUnknownResult(
-  FurnaceSnapshotValidationResultSchema,
-  strictSchemaOptions,
-)
-const decodeFurnaceStateValidationFailure = Schema.decodeUnknownResult(
-  FurnaceStateValidationFailureSchema,
-  strictSchemaOptions,
-)
+const isFurnaceFailure = Schema.is(FurnaceFailureSchema)
+const isFurnaceSnapshotValidation = Schema.is(FurnaceSnapshotValidationResultSchema)
+const isFurnaceStateValidationFailure = Schema.is(FurnaceStateValidationFailureSchema)
 
 const furnaceStateInput = {
   station: 'furnace',
@@ -160,22 +155,21 @@ describe('furnace controller', () => {
         Effect.provide(fixture.layer),
       )
 
-      expect(outputCandidate.outcome.result._tag).toBe('Collected')
+      expect(outputCandidate.outcome.result['_tag']).toBe('Collected')
       expect(countOf(outputCandidate.outcome.inventory, 'gold_ingot')).toBe(1)
       expect(experienceCandidate.experience).toBe(1)
       expect(experienceCandidate.expectedRevision).toBe(outputCandidate.expectedRevision)
 
-      if (
-        outputCandidate.ownerCandidate === undefined ||
-        experienceCandidate.ownerCandidate === undefined
-      ) {
+      const outputOwnerCandidate = outputCandidate.ownerCandidate
+      const experienceOwnerCandidate = experienceCandidate.ownerCandidate
+      if (outputOwnerCandidate === undefined || experienceOwnerCandidate === undefined) {
         return yield* Effect.die('successful collection must return owner candidates')
       }
       const outputState = Schema.decodeUnknownSync(FurnaceServiceStateSchema)(
-        outputCandidate.ownerCandidate.state,
+        outputOwnerCandidate.state,
       )
       const experienceState = Schema.decodeUnknownSync(FurnaceServiceStateSchema)(
-        experienceCandidate.ownerCandidate.state,
+        experienceOwnerCandidate.state,
       )
       const commit = Effect.flatMap(WorldCommitCoordinator, (coordinator) =>
         coordinator.commit({
@@ -183,7 +177,7 @@ describe('furnace controller', () => {
           expectedDimensions: [],
           changes: [
             {
-              ownerId: outputCandidate.ownerCandidate.ownerId,
+              ownerId: outputOwnerCandidate.ownerId,
               state: {
                 furnace: outputState.furnace,
                 experience: experienceState.experience,
@@ -302,7 +296,9 @@ describe('furnace controller', () => {
             cookProgressSecs: cookProgress,
           })
           expect(Result.isSuccess(decoded)).toBe(true)
-          if (Result.isFailure(decoded)) return
+          if (Result.isFailure(decoded)) {
+            return
+          }
 
           const projection = furnaceSnapshotOf(decoded.success)
           expect(Result.isFailure(projection)).toBe(cookProgress > 0)
@@ -378,25 +374,21 @@ describe('furnace controller', () => {
       fc.assert(
         fc.property(fc.constant(field), (missingField) => {
           expect(
-            Result.isFailure(
-              decodeFurnaceStateValidationFailure(
-                withoutField(furnaceStateValidationFailureInput, missingField),
-              ),
+            isFurnaceStateValidationFailure(
+              withoutField(furnaceStateValidationFailureInput, missingField),
             ),
-          ).toBe(true)
+          ).toBe(false)
         }),
         { numRuns: 1 },
       )
       fc.assert(
         fc.property(fc.constant(field), (nullField) => {
           expect(
-            Result.isFailure(
-              decodeFurnaceStateValidationFailure({
-                ...furnaceStateValidationFailureInput,
-                [nullField]: null,
-              }),
-            ),
-          ).toBe(true)
+            isFurnaceStateValidationFailure({
+              ...furnaceStateValidationFailureInput,
+              [nullField]: null,
+            }),
+          ).toBe(false)
         }),
         { numRuns: 1 },
       )
@@ -407,21 +399,17 @@ describe('furnace controller', () => {
       fc.assert(
         fc.property(fc.constant(field), (missingField) => {
           expect(
-            Result.isFailure(
-              decodeFurnaceSnapshotValidation(
-                withoutField(validValidationResult, missingField),
-              ),
+            isFurnaceSnapshotValidation(
+              withoutField(validValidationResult, missingField),
             ),
-          ).toBe(true)
+          ).toBe(false)
         }),
         { numRuns: 1 },
       )
       fc.assert(
         fc.property(fc.constant(field), (nullField) => {
           expect(
-            Result.isFailure(
-              decodeFurnaceSnapshotValidation({ ...validValidationResult, [nullField]: null }),
-            ),
+            !isFurnaceSnapshotValidation({ ...validValidationResult, [nullField]: null }),
           ).toBe(true)
         }),
         { numRuns: 1 },
@@ -442,18 +430,8 @@ describe('furnace controller', () => {
           ),
         ).toBe(true)
         expect(
-          Result.isFailure(
-            decodeFurnaceStateValidationFailure({
-              ...furnaceStateValidationFailureInput,
-              [extraField]: true,
-            }),
-          ),
-        ).toBe(true)
-        expect(
-          Result.isFailure(
-            decodeFurnaceSnapshotValidation({ ...validValidationResult, [extraField]: true }),
-          ),
-        ).toBe(true)
+          validateFurnaceSnapshot({ ...furnaceStateInput, [extraField]: true })['_tag'],
+        ).toBe('Invalid')
       }),
     )
   })
@@ -462,8 +440,8 @@ describe('furnace controller', () => {
     fc.assert(
       fc.property(fc.string(), (suffix) => {
         const unknownTag = `unknown-${suffix}`
-        expect(Result.isFailure(decodeFurnaceFailure({ _tag: unknownTag }))).toBe(true)
-        expect(Result.isFailure(decodeFurnaceSnapshotValidation({ _tag: unknownTag }))).toBe(true)
+        expect(isFurnaceFailure({ _tag: unknownTag })).toBe(false)
+        expect(isFurnaceSnapshotValidation({ _tag: unknownTag })).toBe(false)
       }),
     )
   })

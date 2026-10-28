@@ -39,11 +39,8 @@ import {
 import {
   captionLines,
   CAPTION_LIFETIME_SECS,
-  emptyCaptionQueue,
-  expireCaptions,
   MAX_VISIBLE_CAPTIONS,
-  receiveCaption,
-  type CaptionQueue,
+  type CaptionEvent,
 } from '../../src/domain/caption'
 import {
   hudViewModel,
@@ -51,7 +48,6 @@ import {
   spawnSnapshot,
   DEFAULT_MAX_HEALTH_POINTS,
   HOTBAR_SLOT_COUNT,
-  type VitalsSnapshot,
 } from '../../src/domain/hud-view-model'
 import {
   emptyInventorySnapshot,
@@ -60,11 +56,27 @@ import {
   inventoryViewModel,
   regionOf,
 } from '../../src/domain/inventory-view-model'
-import { itemStack } from '@nerima-games/mc-sim'
+import {
+  EntityHealthPoints,
+  ExperienceLevel,
+  HungerPoints,
+  TotalExperience,
+  experienceCostOfLevel,
+  itemStack,
+  normaliseVitals,
+  totalExperienceAtLevel,
+  type Vitals,
+} from '@nerima-games/mc-sim'
 import { Result } from 'effect'
 import { escapePressed, openScreen, type ModalStack } from '../../src/domain/modal-stack'
 import { COLLAPSE_SEPARATION, hex, surveyPalette } from '../../src/domain/palette'
-import { DEFAULT_BINDINGS, PREVIEW_ACTIONS, SAMPLE_CAPTIONS, SAMPLE_HOTBAR } from './state'
+import {
+  captionAtTime,
+  DEFAULT_BINDINGS,
+  PREVIEW_ACTIONS,
+  SAMPLE_CAPTIONS,
+  SAMPLE_HOTBAR,
+} from './state'
 
 const pad = (text: string, width: number): string =>
   text.length >= width ? text : text + ' '.repeat(width - text.length)
@@ -76,11 +88,26 @@ const padNumber = (value: number | string, width: number): string => {
 
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no')
 
-const snapshotWith = (overrides: Partial<VitalsSnapshot>): VitalsSnapshot => ({
+const experienceTotal = (level: number, progress: number): Vitals['totalExperience'] => {
+  const brandedLevel = ExperienceLevel(level)
+  return TotalExperience(
+    totalExperienceAtLevel(brandedLevel) + progress * experienceCostOfLevel(brandedLevel),
+  )
+}
+
+const vitalsWith = (overrides: Partial<Vitals> = {}): Vitals => ({
   ...spawnSnapshot,
-  hotbar: SAMPLE_HOTBAR,
+  healthPoints: EntityHealthPoints(15),
+  hungerPoints: HungerPoints(17),
+  totalExperience: experienceTotal(12, 0.4),
   ...overrides,
 })
+
+const hudWith = (
+  overrides: Partial<Vitals> = {},
+  selectedHotbarSlot = 0,
+  hotbarSlots = SAMPLE_HOTBAR,
+) => hudViewModel(vitalsWith(overrides), hotbarSlots, selectedHotbarSlot)
 
 const iconSummary = (points: number): string => {
   const row = iconRow(points, DEFAULT_MAX_HEALTH_POINTS)
@@ -97,36 +124,41 @@ type CaptionProbe = {
   readonly freshness: ReadonlyArray<string>
 }
 
+const captionEvent = (
+  sample: (typeof SAMPLE_CAPTIONS)[number],
+  atSecs: number,
+): CaptionEvent => ({
+  atSecs: captionAtTime(atSecs),
+  cueId: sample.cueId,
+  ...(sample.pan === undefined ? {} : { pan: sample.pan }),
+  reason: 'unavailable',
+  text: sample.text,
+})
+
 const probeCaptionLifetime = (): ReadonlyArray<CaptionProbe> => {
-  const settings = { captionsEnabled: true, audioUnlocked: false }
-  let queue: CaptionQueue = emptyCaptionQueue
   const [first, second] = SAMPLE_CAPTIONS
   if (first === undefined || second === undefined) {
     return []
   }
 
-  queue = receiveCaption(queue, { ...first, atSecs: 0 }, settings)
-  queue = receiveCaption(queue, { ...second, atSecs: 1 }, settings)
+  const events = [captionEvent(first, 0), captionEvent(second, 1)]
 
   return [0, 1, 2, 2.9, 3, 3.5, 4, 5].map((atSecs) => {
-    const expired = expireCaptions(queue, atSecs)
+    const lines = captionLines(events, captionAtTime(atSecs))
     return {
       atSecs,
-      visible: expired.visible.length,
-      freshness: captionLines(expired, atSecs).map((line) => line.freshness.toFixed(2)),
+      visible: lines.length,
+      freshness: lines.map((line) => line.freshness.toFixed(2)),
     }
   })
 }
 
 const probeOverflow = (): { readonly emitted: number; readonly kept: number; readonly dropped: string } => {
-  const settings = { captionsEnabled: true, audioUnlocked: false }
-  let queue: CaptionQueue = emptyCaptionQueue
-  SAMPLE_CAPTIONS.forEach((sample, index) => {
-    queue = receiveCaption(queue, { ...sample, atSecs: index }, settings)
-  })
-  const keptIds = new Set(queue.visible.map((event) => event.cueId))
-  const dropped = SAMPLE_CAPTIONS.filter((sample) => !keptIds.has(sample.cueId)).map((sample) => sample.cueId)
-  return { emitted: SAMPLE_CAPTIONS.length, kept: queue.visible.length, dropped: dropped.join(', ') }
+  const events = SAMPLE_CAPTIONS.map((sample) => captionEvent(sample, 0))
+  const visible = captionLines(events, captionAtTime(0))
+  const keptTexts = new Set(visible.map((line) => line.text))
+  const dropped = SAMPLE_CAPTIONS.filter((sample) => !keptTexts.has(sample.text)).map((sample) => sample.cueId)
+  return { emitted: events.length, kept: visible.length, dropped: dropped.join(', ') }
 }
 
 // ---------------------------------------------------------------------------
@@ -278,76 +310,7 @@ type Finding = {
 const collectFindings = (): ReadonlyArray<Finding> => {
   const findings: Array<Finding> = []
 
-  // 1. Durability survives an emptied slot.
-  const emptied = hudViewModel(
-    snapshotWith({
-      hotbar: [{ itemId: undefined, count: 0, durability: 0.5 }, ...SAMPLE_HOTBAR.slice(1)],
-    }),
-  )
-  const [ghost] = emptied.hotbar
-  if (ghost !== undefined && ghost.empty && ghost.durabilityPercent !== undefined) {
-    findings.push({
-      title: 'an empty hotbar slot still reports a durability percentage',
-      detail: [
-        `{ itemId: undefined, count: 0, durability: 0.5 } becomes { empty: true, itemId: undefined,`,
-        `  countLabel: undefined, durabilityPercent: ${String(ghost.durabilityPercent)} }.`,
-        'The `empty` guard clears itemId and countLabel and does not clear durabilityPercent',
-        '(domain/hud-view-model.ts:105-124). A DOM layer that draws the bar when the field is',
-        'present — the obvious way to write it — draws a durability bar under an empty slot.',
-        'Reachable in play: a tool that breaks leaves count 0 with a durability still attached.',
-      ],
-    })
-  }
-
-  // 2. NaN defeats the clamp.
-  const nanHealth = hudViewModel(snapshotWith({ healthPoints: Number.NaN }))
-  const allEmpty = nanHealth.hearts.every((icon) => icon === 'empty')
-  if (allEmpty && !nanHealth.dead) {
-    findings.push({
-      title: 'NaN health draws an empty heart row and reports dead: false',
-      detail: [
-        'iconRow clamps with Math.min/Math.max, which pass NaN through, so every comparison',
-        'against it is false and every icon comes out empty. `dead` is a separate expression',
-        '(Math.floor(healthPoints) <= 0) and NaN <= 0 is false — so the row says the player has no',
-        'health and the flag says they are alive.',
-        'The module clamps rather than rejects specifically because 「the snapshot comes from another',
-        'repository across a version boundary」 (domain/hud-view-model.ts:78-90). NaN is exactly that',
-        'class of input, and it is the one the clamp does not stop.',
-      ],
-    })
-  }
-
-  // 3. The same NaN hole, one field along.
-  const nanSlot = hudViewModel(snapshotWith({ selectedHotbarIndex: Number.NaN }))
-  if (!nanSlot.hotbar.some((slot) => slot.selected)) {
-    findings.push({
-      title: 'a NaN selectedHotbarIndex leaves NO slot selected',
-      detail: [
-        'selectedHotbarIndex is clamped 「rather than trusted」 because a wrapping scroll wheel or an',
-        'old save can deliver 9 or -1, and 「none of them should make the HUD disappear」',
-        '(domain/hud-view-model.ts:126-136). A NaN goes straight through the same clamp and no slot',
-        'compares equal to it, so the selection highlight vanishes entirely.',
-        'Same root cause as the finding above: clamp() is not NaN-safe, and three fields depend on it.',
-      ],
-    })
-  }
-
-  // 4. Rounding the XP bar to full before the level ticks.
-  const nearlyLevelled = hudViewModel(snapshotWith({ experienceLevel: 7, experienceProgress: 0.999 }))
-  if (nearlyLevelled.experiencePercent === 100 && nearlyLevelled.experienceLevelLabel === '7') {
-    findings.push({
-      title: 'the XP bar reads 100% one level early',
-      detail: [
-        'experienceProgress 0.999 at level 7 becomes { experienceLevelLabel: "7", experiencePercent: 100 }.',
-        'Math.round takes anything above 0.995 to a full bar, so the player sees a filled bar and no',
-        'level-up, which reads as a stuck HUD. Math.floor would show 99 and never lie in this',
-        'direction; the cost is that a genuine 100% shows as 99 for one frame.',
-        'Minor, and worth a decision rather than a default.',
-      ],
-    })
-  }
-
-  // 5. The daltonisation matrices, which used to be missing outright, are now
+  // 1. The daltonisation matrices, which used to be missing outright, are now
   //    carried over.
   if (colorVisionMatrix('protanopia') === undefined) {
     findings.push({
@@ -470,6 +433,9 @@ export const buildStatsReport = (): ReadonlyArray<string> => {
   const cleared = rebind(DEFAULT_BINDINGS, 'jump', 'Escape')
   const idempotent = rebind(DEFAULT_BINDINGS, 'jump', 'Space')
   const bound = rebind(DEFAULT_BINDINGS, 'drop', 'KeyQ')
+  const normalisedNaN = normaliseVitals({ ...vitalsWith(), healthPoints: Number.NaN })
+  const normalisedNaNHud = hudViewModel(normalisedNaN, SAMPLE_HOTBAR, 0)
+  const nearlyLevelled = hudWith({ totalExperience: experienceTotal(7, 0.999) })
 
   const lines: Array<string> = [
     'mx-ui screens — numeric report',
@@ -479,17 +445,18 @@ export const buildStatsReport = (): ReadonlyArray<string> => {
     ...[20, 19, 11, 10, 1, 0, -3, 40].map(
       (points) => `  ${padNumber(points, 4)} points  ${iconSummary(points)}   ${pad(`(# full, / half, . empty)`, 26)}`,
     ),
-    `  NaN points  ${iconSummary(Number.NaN)}   dead flag: ${String(hudViewModel(snapshotWith({ healthPoints: Number.NaN })).dead)}`,
+    `  NaN points in iconRow: ${iconSummary(Number.NaN)}   mc-sim normalises health to ${String(normalisedNaN.healthPoints)}; dead ${String(normalisedNaNHud.dead)}`,
+    `  XP 0.999 at level 7 -> ${String(nearlyLevelled.experiencePercent)}% (floored)`,
     '',
     '2. hotbar view model',
     `  HOTBAR_SLOT_COUNT = ${String(HOTBAR_SLOT_COUNT)}`,
-    ...hudViewModel(snapshotWith({ selectedHotbarIndex: 1 })).hotbar.map(
+    ...hudWith({}, 1).hotbar.map(
       (slot) =>
         `  slot ${String(slot.index + 1)}  ${pad(slot.itemId ?? '(none)', 16)}${pad(`count ${slot.countLabel ?? '-'}`, 12)}${pad(`durability ${slot.durabilityPercent === undefined ? '-' : `${String(slot.durabilityPercent)}%`}`, 18)}${slot.empty ? 'empty' : ''}${slot.selected ? '  <- selected' : ''}`,
     ),
-    `  index 9 (past the end): ${String(hudViewModel(snapshotWith({ selectedHotbarIndex: 9 })).hotbar.findIndex((slot) => slot.selected))} selected`,
-    `  index -1:               ${String(hudViewModel(snapshotWith({ selectedHotbarIndex: -1 })).hotbar.findIndex((slot) => slot.selected))} selected`,
-    `  index NaN:              ${String(hudViewModel(snapshotWith({ selectedHotbarIndex: Number.NaN })).hotbar.findIndex((slot) => slot.selected))} selected`,
+    `  index 9 (past the end): ${String(hudWith({}, 9).hotbar.findIndex((slot) => slot.selected))} selected`,
+    `  index -1:               ${String(hudWith({}, -1).hotbar.findIndex((slot) => slot.selected))} selected`,
+    `  index NaN:              ${String(hudWith({}, Number.NaN).hotbar.findIndex((slot) => slot.selected))} selected`,
     '',
     `3. captions  (lifetime ${String(CAPTION_LIFETIME_SECS)}s, at most ${String(MAX_VISIBLE_CAPTIONS)} visible)`,
     '  two captions, emitted at t=0 and t=1',
@@ -498,8 +465,8 @@ export const buildStatsReport = (): ReadonlyArray<string> => {
         `  t = ${pad(probe.atSecs.toFixed(2), 6)}visible ${String(probe.visible)}   freshness ${probe.freshness.join(' ')}`,
     ),
     `  ${String(overflow.emitted)} distinct cues emitted -> ${String(overflow.kept)} kept; dropped: ${overflow.dropped}`,
-    '  captionsEnabled false -> the queue is returned unchanged (the player’s choice gates)',
-    '  audioUnlocked is never read (plan.md §3.6: captions fire before the audio gate)',
+    '  captionsEnabled false -> the preview does not append to the event array (the player’s choice gates)',
+    '  audioUnlocked is never read when appending events (plan.md §3.6: captions fire before the audio gate)',
     '',
     '4. motion',
     ...motionRows,

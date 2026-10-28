@@ -1,20 +1,20 @@
-import { Result } from 'effect'
-import {
-  generateEnchantmentTableOffers,
-  itemStack,
-  type EnchantmentTableFailure,
-  type EnchantmentTableOffer,
-  type EnchantmentTableOffers,
-  type EnchantmentTableRandom,
-  type ItemStackFailure,
-} from '@nerima-games/mc-sim'
-import type { ItemType } from '@nerima-games/mc-kernel'
 import {
   ENCHANTING_OFFER_IDS,
   type EnchantingOfferId,
   type EnchantingOfferSnapshot,
   type EnchantingTableSnapshot,
 } from './enchanting-table-view-model.js'
+import {
+  type EnchantmentTableFailure,
+  type EnchantmentTableOffer,
+  type EnchantmentTableOffers,
+  type EnchantmentTableRandom,
+  type ItemStackFailure,
+  generateEnchantmentTableOffers,
+  itemStack,
+} from '@nerima-games/mc-sim'
+import type { ItemType } from '@nerima-games/mc-kernel'
+import { Result } from 'effect'
 
 export type EnchantableItem = {
   readonly itemId: ItemType
@@ -39,12 +39,6 @@ export type EnchantingOffersFailure =
   | EnchantmentTableFailure
   | EnchantingSeedFailure
   | EnchantingOfferProjectionFailure
-
-export type EnchantingApplyFailure = {
-  readonly _tag: 'EnchantingApplyUnsupported'
-  readonly offerId: EnchantingOfferId
-  readonly reason: 'mc-sim plan-fragment API is not available'
-}
 
 export type EnchantingTableState = {
   readonly item: EnchantableItem | undefined
@@ -88,8 +82,8 @@ const randomOfSeed = (
     return currentSeed
   }
   return Result.succeed({
-    nextInt: (bound) => nextRandom() % bound,
     nextFloat: () => nextRandom() / UINT32_MODULUS,
+    nextInt: (bound) => nextRandom() % bound,
   })
 }
 
@@ -99,54 +93,45 @@ const snapshotOfferOf = (
   offerId: EnchantingOfferId,
 ): Result.Result<EnchantingOfferSnapshot | undefined, EnchantingOfferProjectionFailure> => {
   if (typeof offer === 'undefined') {
-    return Result.succeed(undefined)
+    return Result.succeed(offer)
   }
   const [enchantment, ...additionalEnchantments] = offer.enchantments
   if (typeof enchantment === 'undefined') {
-    return Result.succeed(undefined)
+    return Result.succeed(enchantment)
   }
   if (additionalEnchantments.length > ZERO) {
-    return Result.fail({ _tag: 'EnchantingOfferProjectionFailure', offerId, offer })
+    return Result.fail({ _tag: 'EnchantingOfferProjectionFailure', offer, offerId })
   }
   return Result.succeed({
     enchantmentId: enchantment.id,
     enchantmentLevel: enchantment.level,
     lapisCost: offer.lapisCost,
     levelCost: offer.levelCost,
-    rejectionReason: 'mc-sim plan-fragment API is not available',
   })
 }
 
 const snapshotOffersOf = (
   offers: EnchantmentTableOffers,
 ): Result.Result<EnchantingTableSnapshot['offers'], EnchantingOfferProjectionFailure> => {
-  const first = snapshotOfferOf(offers[0], ENCHANTING_OFFER_IDS[0])
-  if (Result.isFailure(first)) {
-    return Result.fail(first.failure)
+  const [firstOffer, secondOffer, thirdOffer] = offers
+  const [firstId, secondId, thirdId] = ENCHANTING_OFFER_IDS
+  const projected = Result.all([
+    snapshotOfferOf(firstOffer, firstId),
+    snapshotOfferOf(secondOffer, secondId),
+    snapshotOfferOf(thirdOffer, thirdId),
+  ])
+  if (Result.isFailure(projected)) {
+    return Result.fail(projected.failure)
   }
-  const second = snapshotOfferOf(offers[1], ENCHANTING_OFFER_IDS[1])
-  if (Result.isFailure(second)) {
-    return Result.fail(second.failure)
-  }
-  const third = snapshotOfferOf(offers[2], ENCHANTING_OFFER_IDS[2])
-  if (Result.isFailure(third)) {
-    return Result.fail(third.failure)
-  }
-  const projectedOffers: EnchantingTableSnapshot['offers'] = [
-    first.success,
-    second.success,
-    third.success,
-  ]
-  return Result.succeed(projectedOffers)
+  return Result.succeed(projected.success)
 }
 
-export const enchantingOffers = (
+const generateOffersForItem = (
   state: EnchantingTableState,
-): Result.Result<EnchantingTableSnapshot['offers'], EnchantingOffersFailure> => {
-  if (typeof state.item === 'undefined') {
-    return Result.succeed([undefined, undefined, undefined])
-  }
-  const stack = itemStack(state.item.itemId, state.item.count)
+  item: EnchantableItem,
+): Result.Result<EnchantmentTableOffers, EnchantingOffersFailure> => {
+  const { itemId, count } = item
+  const stack = itemStack(itemId, count)
   if (Result.isFailure(stack)) {
     return Result.fail(stack.failure)
   }
@@ -154,11 +139,21 @@ export const enchantingOffers = (
   if (Result.isFailure(random)) {
     return Result.fail(random.failure)
   }
-  const generated = generateEnchantmentTableOffers({
-    item: stack.success.item,
+  return generateEnchantmentTableOffers({
     bookshelfCount: state.bookshelfCount,
+    item: stack.success.item,
     random: random.success,
   })
+}
+
+export const enchantingOffers = (
+  state: EnchantingTableState,
+): Result.Result<EnchantingTableSnapshot['offers'], EnchantingOffersFailure> => {
+  const { item } = state
+  if (typeof item === 'undefined') {
+    return Result.succeed([item, item, item])
+  }
+  const generated = generateOffersForItem(state, item)
   if (Result.isFailure(generated)) {
     return Result.fail(generated.failure)
   }
@@ -191,13 +186,3 @@ export const enchantingTableSnapshotOf = (
   })
 }
 
-/** Rejects local application until mc-sim exposes its plan-fragment API. */
-export const applyEnchantmentOffer = (
-  _state: EnchantingTableState,
-  offerId: EnchantingOfferId,
-): Result.Result<never, EnchantingApplyFailure> =>
-  Result.fail({
-    _tag: 'EnchantingApplyUnsupported',
-    offerId,
-    reason: 'mc-sim plan-fragment API is not available',
-  })

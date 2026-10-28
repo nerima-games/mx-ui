@@ -9,7 +9,6 @@ import {
 import { describe, expect, it } from 'vitest'
 import { createEnchantingTableView } from '../src/application/enchanting-table-view'
 import {
-  applyEnchantmentOffer,
   enchantingOffers,
   enchantingTableSnapshotOf,
   type EnchantingTableState,
@@ -39,9 +38,7 @@ describe('enchanting table controller', () => {
     expect(result.success.map((offer) => offer?.lapisCost)).toStrictEqual([1, 2, 3])
     expect(result.success.every((offer) => offer !== undefined)).toBe(true)
     expect(
-      result.success.every(
-        (offer) => offer?.rejectionReason === 'mc-sim plan-fragment API is not available',
-      ),
+      result.success.every((offer) => offer === undefined || offer.rejectionReason === undefined),
     ).toBe(true)
   })
 
@@ -51,7 +48,7 @@ describe('enchanting table controller', () => {
     if (Result.isSuccess(result)) {
       throw new Error('invalid item count must fail stack construction')
     }
-    expect(result.failure._tag).toBe('BrandError')
+    expect(result.failure['_tag']).toBe('BrandError')
   })
 
   it('returns invalid seed failures without normalizing them', () => {
@@ -135,7 +132,7 @@ describe('enchanting table controller', () => {
     if (Result.isSuccess(invalid)) {
       throw new Error('invalid stack must fail snapshot projection')
     }
-    expect(invalid.failure._tag).toBe('BrandError')
+    expect(invalid.failure['_tag']).toBe('BrandError')
 
     const noLapis = enchantingTableSnapshotOf(readyState({ lapisCount: 0 }))
     expect(Result.isSuccess(noLapis)).toBe(true)
@@ -145,33 +142,15 @@ describe('enchanting table controller', () => {
     expect(noLapis.success.lapis).toBeUndefined()
   })
 
-  it('returns a typed unsupported result for local offer application', () => {
-    const state = readyState()
-    const result = applyEnchantmentOffer(state, 'offer-1')
-    expect(Result.isFailure(result)).toBe(true)
-    if (Result.isSuccess(result)) {
-      throw new Error('local enchanting application must remain unsupported')
-    }
-    expect(result.failure).toStrictEqual({
-      _tag: 'EnchantingApplyUnsupported',
-      offerId: 'offer-1',
-      reason: 'mc-sim plan-fragment API is not available',
-    })
-    expect(state.item?.count).toBe(1)
-    expect(state.lapisCount).toBe(3)
-    expect(state.experienceLevel).toBe(30)
-    expect(state.seed).toBe(11)
-  })
-
-  it('keeps an offer click connected to the typed unsupported result without mutation', () => {
+  it('returns the selected offer to the host for plan-based application', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const state = readyState()
-    let application: ReturnType<typeof applyEnchantmentOffer> | undefined
+    let intent: string | null = null
     const view = createEnchantingTableView(factory, host, {
       onActivate: (target) => {
         if (target === 'offer-1' || target === 'offer-2' || target === 'offer-3') {
-          application = applyEnchantmentOffer(state, target)
+          intent = target
         }
       },
     })
@@ -183,13 +162,10 @@ describe('enchanting table controller', () => {
     view.render(enchantingTableViewModel(snapshot.success))
     const button = fakeElement(view.root).find('data-operation-target', 'offer-1')
     expect(button).toBeDefined()
+    expect(button?.attributes.has('disabled')).toBe(false)
     button?.dispatch('click')
 
-    expect(application).toBeDefined()
-    if (typeof application === 'undefined') {
-      throw new Error('click must reach the controller')
-    }
-    expect(Result.isFailure(application)).toBe(true)
+    expect(intent).toBe('offer-1')
     expect(state).toStrictEqual(readyState())
     expect(button?.listeners).toStrictEqual(['click'])
   })
@@ -277,8 +253,8 @@ describe('enchanting table controller', () => {
     if (Result.isSuccess(outOfRange)) {
       throw new Error('count above the item stack limit must fail')
     }
-    const failure = Object.fromEntries(Object.entries(outOfRange.failure as object))
-    expect(failure._tag).toBe('ItemValidationFailure')
+    const failure = { ...outOfRange.failure }
+    expect(failure['_tag']).toBe('ItemValidationFailure')
 
     const decodeFailure = Schema.decodeUnknownResult(ItemStackFailureSchema, {
       onExcessProperty: 'error',
@@ -366,18 +342,17 @@ describe('enchanting table controller', () => {
         if (Result.isSuccess(result)) {
           expect(result.success).toHaveLength(3)
           for (const offer of result.success) {
-            if (offer === undefined) {
-              continue
+            if (offer !== undefined) {
+              expect(offer.enchantmentId.length).toBeGreaterThan(0)
+              expect([1, 2, 3]).toContain(offer.lapisCost)
+              expect(Number.isInteger(offer.levelCost)).toBe(true)
             }
-            expect(offer.enchantmentId.length).toBeGreaterThan(0)
-            expect([1, 2, 3]).toContain(offer.lapisCost)
-            expect(Number.isInteger(offer.levelCost)).toBe(true)
           }
           return
         }
 
-        expect(result.failure._tag).toBe('EnchantingOfferProjectionFailure')
-        if (result.failure._tag !== 'EnchantingOfferProjectionFailure') {
+        expect(result.failure['_tag']).toBe('EnchantingOfferProjectionFailure')
+        if (result.failure['_tag'] !== 'EnchantingOfferProjectionFailure') {
           throw new Error('valid offer inputs may only fail during projection')
         }
         expect(['offer-1', 'offer-2', 'offer-3']).toContain(result.failure.offerId)
@@ -386,31 +361,17 @@ describe('enchanting table controller', () => {
     )
   })
 
-  it('property: keeps applying generated valid offers typed unsupported and unchanged', () => {
+  it('property: keeps generated offers available for plan-based application', () => {
     fc.assert(
-      fc.property(
-        fc.record({
-          experienceLevel: fc.integer({ min: 0, max: 100 }),
-          lapisCount: fc.integer({ min: 0, max: 64 }),
-          offerId: fc.constantFrom('offer-1', 'offer-2', 'offer-3'),
-          seed: fc.integer({ min: 0, max: 0xffff_ffff }),
-        }),
-        ({ experienceLevel, lapisCount, offerId, seed }) => {
-          const state = readyState({ experienceLevel, lapisCount, seed })
-          const before = structuredClone(state)
-          const result = applyEnchantmentOffer(state, offerId)
-          expect(Result.isFailure(result)).toBe(true)
-          if (Result.isSuccess(result)) {
-            throw new Error('enchantment apply must remain unsupported')
-          }
-          expect(result.failure).toStrictEqual({
-            _tag: 'EnchantingApplyUnsupported',
-            offerId,
-            reason: 'mc-sim plan-fragment API is not available',
-          })
-          expect(state).toStrictEqual(before)
-        },
-      ),
+      fc.property(fc.integer({ min: 0, max: 0xffff_ffff }), (seed) => {
+        const result = enchantingOffers(readyState({ seed }))
+        if (Result.isFailure(result)) {
+          return
+        }
+        expect(
+          result.success.every((offer) => offer === undefined || offer.rejectionReason === undefined),
+        ).toBe(true)
+      }),
     )
   })
 })

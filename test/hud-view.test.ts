@@ -86,9 +86,9 @@ const decodeOwnerVitals = Schema.decodeUnknownResult(VitalsSchema, {
   onExcessProperty: 'error',
 })
 
-const decodeOwnerCarriedSlot = Schema.decodeUnknownResult(InventoryCarriedSlotSchema, {
-  onExcessProperty: 'error',
-})
+// mc-sim exports this synchronous schema as Schema<unknown>, which omits the
+// no-service decoder metadata needed by decodeUnknownResult.
+const isOwnerCarriedSlot = Schema.is(InventoryCarriedSlotSchema)
 
 const decodeOwnerVitalsOrThrow = (input: unknown): Vitals => {
   const decoded = decodeOwnerVitals(input)
@@ -99,9 +99,8 @@ const decodeOwnerVitalsOrThrow = (input: unknown): Vitals => {
 }
 
 const assertOwnerCarriedSlot = (slot: InventoryCarriedSlot): InventoryCarriedSlot => {
-  const decoded = decodeOwnerCarriedSlot(slot)
-  if (Result.isFailure(decoded)) {
-    throw decoded.failure
+  if (!isOwnerCarriedSlot(slot)) {
+    throw new Error('owner carried-slot schema must accept a valid slot')
   }
   return slot
 }
@@ -115,12 +114,16 @@ const expectOwnerSchemaFailure = <A>(
   }
 }
 
-const ownerCarriedSlotForCount = (count: number): InventoryCarriedSlot => {
-  const stack = itemStack('stone' as ItemType, StackCount(count))
+const ownerCarriedSlotForCount = (count: number): Exclude<InventoryCarriedSlot, undefined> => {
+  const stack = itemStack('stone', StackCount(count))
   if (Result.isFailure(stack)) {
     throw stack.failure
   }
-  return assertOwnerCarriedSlot(stack.success)
+  if (stack.success === undefined) {
+    throw new Error('test item stack must contain one item')
+  }
+  assertOwnerCarriedSlot(stack.success)
+  return stack.success
 }
 
 const validOwnerVitalsArbitrary = fc
@@ -681,14 +684,10 @@ describe('HUD owner projection contracts', () => {
 
     const validSlot = ownerCarriedSlotForCount(1)
     assertOwnerCarriedSlot(undefined)
-    expectOwnerSchemaFailure(decodeOwnerCarriedSlot(null))
-    expectOwnerSchemaFailure(
-      decodeOwnerCarriedSlot({ item: validSlot.item, count: validSlot.count }),
-    )
-    expectOwnerSchemaFailure(decodeOwnerCarriedSlot({ ...validSlot, count: 0 }))
-    expectOwnerSchemaFailure(
-      decodeOwnerCarriedSlot({ ...validSlot, item: 'unknown-owner-item' }),
-    )
+    expect(isOwnerCarriedSlot(null)).toBe(false)
+    expect(isOwnerCarriedSlot({ item: validSlot.item, count: validSlot.count })).toBe(false)
+    expect(isOwnerCarriedSlot({ ...validSlot, count: 0 })).toBe(false)
+    expect(isOwnerCarriedSlot({ ...validSlot, item: 'unknown-owner-item' })).toBe(false)
   })
 
   it('projects generated strict-schema vitals and owner hotbar slots', () => {
@@ -772,7 +771,7 @@ describe('HUD owner projection contracts', () => {
             expectOwnerSchemaFailure(decodeOwnerVitals(input))
           }
           for (const input of schemaCases.malformedSlots) {
-            expectOwnerSchemaFailure(decodeOwnerCarriedSlot(input))
+            expect(isOwnerCarriedSlot(input)).toBe(false)
           }
         },
       ),

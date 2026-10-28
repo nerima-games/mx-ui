@@ -1,5 +1,6 @@
 /* eslint-disable max-params, max-statements, no-magic-numbers, no-ternary, no-undefined -- Geometry is clearer with direct index arithmetic and absent-region checks. */
 import type { InventoryViewModel, SlotRegion } from '../domain/inventory-view-model.js'
+import type { FocusTarget } from '@nerima-games/mc-render'
 import type { InventoryInteractionTarget } from './inventory-view.js'
 
 export type InventoryNavigationDirection = 'down' | 'left' | 'right' | 'up'
@@ -27,8 +28,6 @@ const REGION_STATE_ATTRIBUTE = 'data-region-state'
 const SLOT_INDEX_ATTRIBUTE = 'data-slot-index'
 const CRAFTING_OUTPUT_FOCUS_GROUP = 'crafting-output'
 const ELEMENT_NODE_TYPE = 1
-
-type InventoryFocusTarget = Readonly<{ readonly group: string; readonly index: number }>
 
 const isElement = (target: unknown): target is Element =>
   typeof target === 'object' &&
@@ -95,7 +94,7 @@ const focusTargetForCraftingOutput = (element: Element) => {
 /** Resolve only focusable members marked by mx-ui's inventory and hotbar DOM. */
 export const inventoryFocusTargetForElement = (
   target: unknown,
-): InventoryFocusTarget | undefined => {
+): FocusTarget | undefined => {
   if (!isElement(target)) {
     return undefined
   }

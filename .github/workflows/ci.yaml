@@ -107,7 +107,12 @@ jobs:
   # `pnpm verify` (CI has no browser binary otherwise; this job supplies one
   # explicitly instead of making the headline gate depend on it).
   test-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container:
+      # Pin the OS userland, Playwright browsers, fontconfig and fonts used by
+      # exact screenshot comparisons. This amd64 manifest is the image digest
+      # for Playwright 1.64.1 on Ubuntu 24.04.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:d65108d1a8095d8b0c4a5e32bf1807a40a5ce90ff0c78473e1116b1c243235e8
     timeout-minutes: 30
 
     steps:
@@ -140,8 +145,13 @@ jobs:
       - name: Install dependencies
         run: nix develop --command pnpm install --frozen-lockfile
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
       - name: Browser tests
         run: nix develop --command pnpm test:browser
+
+      - name: Upload Playwright failure output
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-output
+          path: test-results/
+          retention-days: 7

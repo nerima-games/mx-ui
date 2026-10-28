@@ -13,10 +13,9 @@ import { createCaptionView } from '../src/application/caption-view'
 import { captionLines } from '../src/domain/caption'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 
-const captionTime = (seconds: number): CaptionEvent['atSecs'] => {
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.11.
-  return MonotonicTimeSecs(seconds)
-}
+const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
+  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
+  MonotonicTimeSecs(seconds)
 
 const event = (
   cueId: string,

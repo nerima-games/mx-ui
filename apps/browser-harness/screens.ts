@@ -44,9 +44,11 @@
  * ARGUMENT. A harness that needed a real clock to show a hit marker would be
  * evidence against that design; this one needs `0`.
  */
-import { captionLines, emptyCaptionQueue, receiveCaption } from '../../src/domain/caption'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { EntityHealthPoints } from '@nerima-games/mc-sim'
+import { captionLines, type CaptionEvent } from '../../src/domain/caption'
 import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
-import { hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
+import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../../src/domain/inventory-view-model'
 import { initialMainMenuState, mainMenuViewModel, openPanel } from '../../src/domain/main-menu'
 import { saveStatus, saveStatusMessage } from '../../src/domain/save-status'
@@ -59,6 +61,10 @@ import { createLoadingView } from '../../src/application/loading-view'
 import { createMainMenuView } from '../../src/application/main-menu-view'
 import { createSaveIndicator } from '../../src/application/save-indicator'
 import type { DomElement, DomElementFactory } from '../../src/application/dom-surface'
+
+const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
+  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
+  MonotonicTimeSecs(seconds)
 
 /** The `?screen=` values, and the order the hosts are created in. */
 export const SCREEN_NAMES = [
@@ -127,11 +133,12 @@ export const mountScreens = (
   menu.render(mainMenuViewModel(initialMainMenuState))
 
   const hud = createHudView(factory, hostFor('hud'), motion)
+  const hotbarSlots = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
   // Dead and then alive, for `test/accessibility-gate.test.ts`'s reason: a state
   // whose elements are only built when it occurs is a state a sweep sees only if
   // the sweep triggered it.
-  hud.render(hudViewModel({ ...spawnSnapshot, healthPoints: 0 }))
-  hud.render(hudViewModel(spawnSnapshot))
+  hud.render(hudViewModel({ ...spawnSnapshot, healthPoints: EntityHealthPoints(0) }, hotbarSlots, 0))
+  hud.render(hudViewModel(spawnSnapshot, hotbarSlots, 0))
   // Slot 4, so the focus ring is DRAWN. This is the reading `docs/testing.md` §4
   // names as unproven: whether the ring is visible ON the slot is the `outline`
   // and `box-shadow` stacking order, and stacking order is a browser's answer.
@@ -141,14 +148,19 @@ export const mountScreens = (
   inventory.render(inventoryViewModel(emptyInventorySnapshot))
 
   const captions = createCaptionView(factory, hostFor('captions'), motion)
+  const nowSecs = captionTime(0)
   captions.render(
     captionLines(
-      receiveCaption(
-        emptyCaptionQueue,
-        { cueId: 'creeper', text: 'Creeper hisses', direction: 'left', atSecs: 0 },
-        { captionsEnabled: true, audioUnlocked: false },
-      ),
-      0,
+      [
+        {
+          atSecs: nowSecs,
+          cueId: 'creeper',
+          pan: -0.5,
+          reason: 'audible',
+          text: 'Creeper hisses',
+        },
+      ],
+      nowSecs,
     ),
   )
 

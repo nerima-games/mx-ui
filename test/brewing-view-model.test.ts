@@ -77,28 +77,9 @@ describe('brewingViewModel', () => {
     expect(model.progress).toStrictEqual({ _tag: 'Idle' })
   })
 
-  it('keeps every non-atomic station operation typed as unsupported with its reason', () => {
+  it('keeps service operation support out of the snapshot projection', () => {
     const model = brewingViewModel(emptySnapshot())
 
-    expect(model.operations).toStrictEqual({
-      insertSelectedItem: {
-        _tag: 'Unsupported',
-        operation: 'insert-selected-item',
-        reason: expect.stringContaining('inventory and the brewing stand'),
-      },
-      collectBottle: {
-        _tag: 'Unsupported',
-        operation: 'collect-bottle',
-        reason: expect.stringContaining('brewing stand and player inventory'),
-      },
-      drinkPotion: {
-        _tag: 'Unsupported',
-        operation: 'drink-potion',
-        reason: expect.stringContaining('player inventory and player effects'),
-      },
-    })
-    expect(Object.values(model.operations).every((operation) => operation.reason.includes('0.7.0'))).toBe(
-      true,
-    )
+    expect(model).not.toHaveProperty('operations')
   })
 })

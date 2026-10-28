@@ -49,9 +49,8 @@ const advancementDisplay = (icon: string, title: string): AdvancementDisplay => 
   title: toastTitle(title),
 })
 
-// The kernel exposes AchievementId as a branded string, so this local vanilla
-// Lookup is partial and preserves unknown IDs instead of claiming exhaustiveness.
-const VANILLA_ADVANCEMENT_DISPLAY: Readonly<Record<string, AdvancementDisplay>> = {
+// Keep this partial until mc-kernel publishes its finite AchievementId catalog.
+const VANILLA_ADVANCEMENT_DISPLAY: Readonly<Partial<Record<string, AdvancementDisplay>>> = {
   'minecraft:adventure/kill_a_mob': advancementDisplay('minecraft:iron_sword', 'Monster Hunter'),
   'minecraft:adventure/root': advancementDisplay('minecraft:map', 'Adventure'),
   'minecraft:end/dragon_egg': advancementDisplay('minecraft:dragon_egg', 'The Next Generation'),
@@ -77,19 +76,17 @@ const VANILLA_ADVANCEMENT_DISPLAY: Readonly<Record<string, AdvancementDisplay>> 
   'minecraft:story/enter_the_end': advancementDisplay('minecraft:end_portal_frame', 'The End?'),
   'minecraft:story/enter_the_nether': advancementDisplay('minecraft:flint_and_steel', 'We Need to Go Deeper'),
   'minecraft:story/follow_ender_eye': advancementDisplay('minecraft:ender_eye', 'Eye Spy'),
+  'minecraft:story/form_obsidian': advancementDisplay('minecraft:obsidian', 'Ice Bucket Challenge'),
   'minecraft:story/iron_tools': advancementDisplay('minecraft:iron_pickaxe', "Isn't It Iron Pick?"),
   'minecraft:story/lava_bucket': advancementDisplay('minecraft:lava_bucket', 'Hot Stuff'),
   'minecraft:story/mine_diamond': advancementDisplay('minecraft:diamond', 'Diamonds!'),
   'minecraft:story/mine_stone': advancementDisplay('minecraft:wooden_pickaxe', 'Stone Age'),
   'minecraft:story/obtain_armor': advancementDisplay('minecraft:iron_chestplate', 'Suit Up'),
-  'minecraft:story/obtain_obsidian': advancementDisplay('minecraft:obsidian', 'Ice Bucket Challenge'),
   'minecraft:story/root': advancementDisplay('minecraft:crafting_table', 'Minecraft'),
   'minecraft:story/shiny_gear': advancementDisplay('minecraft:diamond_chestplate', 'Cover Me with Diamonds'),
   'minecraft:story/smelt_iron': advancementDisplay('minecraft:iron_ingot', 'Acquire Hardware'),
   'minecraft:story/upgrade_tools': advancementDisplay('minecraft:stone_pickaxe', 'Getting an Upgrade'),
 }
-
-const UNKNOWN_ADVANCEMENT_ICON = toastIcon('minecraft:nether_star')
 
 export const achievementToastFromEvent = (event: DomainEvent): AchievementToast | null => {
   if (event['_tag'] !== 'AchievementUnlocked') {
@@ -97,12 +94,15 @@ export const achievementToastFromEvent = (event: DomainEvent): AchievementToast 
   }
 
   const display = VANILLA_ADVANCEMENT_DISPLAY[event.achievement]
+  if (typeof display === 'undefined') {
+    return null
+  }
 
   return {
     achievement: event.achievement,
-    icon: display?.icon ?? UNKNOWN_ADVANCEMENT_ICON,
+    icon: display.icon,
     player: event.player,
     tick: event.tick,
-    title: display?.title ?? toastTitle(event.achievement),
+    title: display.title,
   }
 }

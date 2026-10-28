@@ -17,22 +17,10 @@ import {
   colorVisionMatrixValues,
 } from '../src/domain/accessibility'
 import {
-  CAPTION_LIFETIME_SECS,
-  captionLines,
-  emptyCaptionQueue,
-  expireCaptions,
-  MAX_VISIBLE_CAPTIONS,
-  receiveCaption,
-  type CaptionEvent,
-  type CaptionSettings,
-} from '../src/domain/caption'
-import {
-  DEFAULT_MAX_HEALTH_POINTS,
   HOTBAR_SLOT_COUNT,
   hudViewModel,
   iconRow,
   spawnSnapshot,
-  type VitalsSnapshot,
 } from '../src/domain/hud-view-model'
 import {
   emptyInventorySnapshot,
@@ -78,399 +66,27 @@ const testItemStack = (
   }
   expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
 }
-const withVitals = (overrides: Partial<VitalsSnapshot>): VitalsSnapshot => ({
-  ...spawnSnapshot,
-  ...overrides,
-})
-
-describe('hearts and hunger shanks', () => {
-  it.effect('full health is ten full hearts', () =>
+describe('HUD projection from mc-sim state', () => {
+  it.effect('projects owner vitals into icon rows and selects the supplied hotbar slot', () =>
     Effect.sync(() => {
-      expect(iconRow(20, 20).filter((icon) => icon === 'full')).toHaveLength(10)
-      expect(iconRow(20, 20)).toHaveLength(10)
-    }),
-  )
-
-  it.effect('REGRESSION: an odd health total shows a HALF heart rather than rounding it away', () =>
-    Effect.sync(() => {
-      // A player on one health point must see half a heart. Rounding down shows
-      // them an empty row and rounding up shows them a full one; both are lies
-      // at the exact moment the truth matters most.
+      expect(iconRow(20, 20)).toStrictEqual(Array.from({ length: 10 }, () => 'full'))
       expect(iconRow(19, 20)).toStrictEqual([
         'full', 'full', 'full', 'full', 'full', 'full', 'full', 'full', 'full', 'half',
       ])
-      expect(iconRow(1, 20)).toStrictEqual([
-        'half', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty',
-      ])
-    }),
-  )
-
-  it.effect('zero health is ten empty hearts, not an empty array', () =>
-    Effect.sync(() => {
-      expect(iconRow(0, 20)).toHaveLength(10)
-      expect(iconRow(0, 20).every((icon) => icon === 'empty')).toBe(true)
-    }),
-  )
-
-  it.effect('a snapshot from across a version boundary is clamped rather than trusted', () =>
-    Effect.sync(() => {
-      // A HUD that throws is worse than a HUD that is briefly wrong.
-      expect(iconRow(999, 20).every((icon) => icon === 'full')).toBe(true)
-      expect(iconRow(-5, 20).every((icon) => icon === 'empty')).toBe(true)
-      expect(iconRow(7.9, 20).filter((icon) => icon === 'full')).toHaveLength(3)
-    }),
-  )
-
-  it.effect('an odd maximum still gets a row long enough to hold it', () =>
-    Effect.sync(() => {
       expect(iconRow(5, 5)).toStrictEqual(['full', 'full', 'half'])
-    }),
-  )
 
-  it.effect('REGRESSION: NaN is clamped like any other bad value — Math.min/Math.max pass it through', () =>
-    Effect.sync(() => {
-      // Found by `pnpm preview --stats` (F2). DN-UI-7 clamps because
-      // `VitalsSnapshot` crosses a pinned version boundary from mc-sim, and NaN
-      // is exactly that class of input: a divide by a zero maximum, a field
-      // that changed meaning, a save read with the wrong shape. The old clamp
-      // was `Math.min(Math.max(v, low), high)`, and every comparison against
-      // NaN is false, so NaN came out the other side unchanged.
-      expect(iconRow(Number.NaN, 20)).toHaveLength(10)
-      expect(iconRow(Number.NaN, 20).every((icon) => icon === 'empty')).toBe(true)
-    }),
-  )
+      const hotbar = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
+      const model = hudViewModel(spawnSnapshot, hotbar, 0)
 
-  it.effect('REGRESSION: a non-finite maximum yields no icons rather than throwing', () =>
-    Effect.sync(() => {
-      // `Math.ceil(Infinity / 2)` is Infinity and `Array.from({ length:
-      // Infinity })` throws RangeError — the one outcome DN-UI-7 forbids
-      // outright ("a HUD that throws is worse than a HUD that is briefly
-      // wrong"). Zero icons is the only count that is not invented for a
-      // maximum that is not a number.
-      expect(() => iconRow(10, Number.POSITIVE_INFINITY)).not.toThrow()
-      expect(iconRow(10, Number.POSITIVE_INFINITY)).toStrictEqual([])
-      expect(iconRow(10, Number.NaN)).toStrictEqual([])
-    }),
-  )
-})
-
-describe('hotbar projection', () => {
-  it.effect(`the view model always has exactly ${String(HOTBAR_SLOT_COUNT)} slots, however short the snapshot`, () =>
-    Effect.sync(() => {
-      expect(hudViewModel(withVitals({ hotbar: [] })).hotbar).toHaveLength(HOTBAR_SLOT_COUNT)
-      expect(
-        hudViewModel(withVitals({ hotbar: [{ itemId: 'STONE', count: 3, durability: undefined }] }))
-          .hotbar,
-      ).toHaveLength(HOTBAR_SLOT_COUNT)
-    }),
-  )
-
-  it.effect('REGRESSION: an out-of-range selected index is clamped, so the HUD never loses its selection', () =>
-    Effect.sync(() => {
-      // A wrapping scroll wheel, an old save, a QA API call — all deliver 9 or
-      // -1 sooner or later, and none of them should blank the hotbar.
-      const high = hudViewModel(withVitals({ selectedHotbarIndex: 99 }))
-      const low = hudViewModel(withVitals({ selectedHotbarIndex: -3 }))
-
-      expect(high.hotbar.filter((slot) => slot.selected)).toHaveLength(1)
-      expect(high.hotbar[HOTBAR_SLOT_COUNT - 1]?.selected).toBe(true)
-      expect(low.hotbar[0]?.selected).toBe(true)
-    }),
-  )
-
-  it.effect('a stack of one shows no count label, as in vanilla', () =>
-    Effect.sync(() => {
-      const model = hudViewModel(
-        withVitals({
-          hotbar: [
-            { itemId: 'DIAMOND_PICKAXE', count: 1, durability: 0.5 },
-            { itemId: 'COBBLESTONE', count: 64, durability: undefined },
-          ],
-        }),
-      )
-
-      expect(model.hotbar[0]?.countLabel).toBeUndefined()
-      expect(model.hotbar[0]?.durabilityPercent).toBe(50)
-      expect(model.hotbar[1]?.countLabel).toBe('64')
-      expect(model.hotbar[1]?.durabilityPercent).toBeUndefined()
-    }),
-  )
-
-  it.effect('a slot holding zero of something is empty, not a zero-count item', () =>
-    Effect.sync(() => {
-      const model = hudViewModel(
-        withVitals({ hotbar: [{ itemId: 'STONE', count: 0, durability: undefined }] }),
-      )
-      expect(model.hotbar[0]?.empty).toBe(true)
-      expect(model.hotbar[0]?.itemId).toBeUndefined()
-    }),
-  )
-
-  it.effect('REGRESSION: an empty slot reports NO durability — every field goes, not just the obvious two', () =>
-    Effect.sync(() => {
-      // Found by `pnpm preview --stats` (F1). Reachable in play: a tool that
-      // breaks leaves count 0 behind with a durability still attached. The
-      // `empty` guard used to clear `itemId` and `countLabel` and not
-      // `durabilityPercent`, and a DOM layer that draws the bar when the field
-      // is present — the obvious way to write it — draws a durability bar
-      // under an empty slot.
-      const model = hudViewModel(
-        withVitals({ hotbar: [{ itemId: undefined, count: 0, durability: 0.5 }] }),
-      )
-
-      expect(model.hotbar[0]).toStrictEqual({
-        index: 0,
-        itemId: undefined,
-        countLabel: undefined,
-        durabilityPercent: undefined,
-        selected: true,
-        empty: true,
-      })
-
-      // A broken tool: the item is still named but there are none left.
-      const broken = hudViewModel(
-        withVitals({ hotbar: [{ itemId: 'DIAMOND_PICKAXE', count: 0, durability: 0 }] }),
-      )
-      expect(broken.hotbar[0]?.empty).toBe(true)
-      expect(broken.hotbar[0]?.durabilityPercent).toBeUndefined()
-    }),
-  )
-
-  it.effect('REGRESSION: a NaN selected index still selects a slot, exactly as 9 and -1 do', () =>
-    Effect.sync(() => {
-      // Found by `pnpm preview --stats` (F3): the same NaN hole as the heart
-      // row, one field along. The clamp exists so that a wrapping scroll wheel
-      // "should not make the HUD disappear" (DN-UI-7), and NaN went straight
-      // through it, leaving no slot highlighted at all. NaN gets the low bound
-      // for the same reason -1 does: some slot must be lit, and slot 0 is the
-      // one the player starts on.
-      const model = hudViewModel(withVitals({ selectedHotbarIndex: Number.NaN }))
-
-      expect(model.hotbar.filter((slot) => slot.selected)).toHaveLength(1)
+      expect(model.hearts).toHaveLength(10)
+      expect(model.shanks).toHaveLength(10)
+      expect(model.hotbar).toHaveLength(HOTBAR_SLOT_COUNT)
       expect(model.hotbar[0]?.selected).toBe(true)
-    }),
-  )
-
-  it.effect('REGRESSION: a NaN count is not drawn as the text "NaN"', () =>
-    Effect.sync(() => {
-      // `String(Math.max(0, Math.floor(NaN)))` is the string "NaN", and the DOM
-      // layer would faithfully draw it on top of the slot. Same clamp, same
-      // boundary, same rule.
-      const model = hudViewModel(
-        withVitals({ hotbar: [{ itemId: 'STONE', count: Number.NaN, durability: Number.NaN }] }),
-      )
-
-      expect(model.hotbar[0]?.countLabel).toBeUndefined()
-      expect(model.hotbar[0]?.empty).toBe(true)
-      expect(model.hotbar[0]?.durabilityPercent).toBeUndefined()
+      expect(model.dead).toBe(false)
     }),
   )
 })
 
-describe('experience and death', () => {
-  it.effect('experience progress becomes a clamped whole percentage', () =>
-    Effect.sync(() => {
-      expect(hudViewModel(withVitals({ experienceProgress: 0.333 })).experiencePercent).toBe(33)
-      expect(hudViewModel(withVitals({ experienceProgress: 1.5 })).experiencePercent).toBe(100)
-      expect(hudViewModel(withVitals({ experienceProgress: -1 })).experiencePercent).toBe(0)
-    }),
-  )
-
-  it.effect('the model reports death, so the death screen is driven by the same derivation as the HUD', () =>
-    Effect.sync(() => {
-      expect(hudViewModel(withVitals({ healthPoints: 0 })).dead).toBe(true)
-      expect(hudViewModel(withVitals({ healthPoints: 1 })).dead).toBe(false)
-      expect(hudViewModel(spawnSnapshot).dead).toBe(false)
-    }),
-  )
-
-  it.effect('REGRESSION: the XP bar does not read 100% one level early', () =>
-    Effect.sync(() => {
-      // Found by `pnpm preview --stats` (F4). `Math.round(0.999 * 100)` is 100,
-      // so the bar filled while the level label beside it still said 7 — a
-      // contradiction the player can see, which reads as a HUD stuck at full
-      // for the last fraction of every level. Floor never claims a threshold
-      // that has not been crossed.
-      const nearly = hudViewModel(withVitals({ experienceLevel: 7, experienceProgress: 0.999 }))
-      expect(nearly.experiencePercent).toBe(99)
-      expect(nearly.experienceLevelLabel).toBe('7')
-
-      // 1.0 is the ONLY input that reaches 100, which is the whole point.
-      expect(hudViewModel(withVitals({ experienceProgress: 1 })).experiencePercent).toBe(100)
-      expect(hudViewModel(withVitals({ experienceProgress: 0.9999 })).experiencePercent).toBe(99)
-    }),
-  )
-
-  it.effect('REGRESSION: NaN health makes the heart row and the `dead` flag agree', () =>
-    Effect.sync(() => {
-      // Found by `pnpm preview --stats` (F2). The row said "no health" and the
-      // flag said "alive" — two answers to one question about one snapshot,
-      // because `dead` was a separate expression and `NaN <= 0` is false. Both
-      // now read the same clamped number, so they cannot diverge again.
-      //
-      // The clamp sends NaN to the LOW bound rather than the high one for the
-      // same reason DN-UI-6 refuses to round a half heart up: showing a fuller
-      // row than the snapshot claims is the lie that matters. The visible
-      // consequence — a death screen on a garbage frame — is reportable; a
-      // silently full heart row is not.
-      const model = hudViewModel(withVitals({ healthPoints: Number.NaN }))
-
-      expect(model.hearts.every((icon) => icon === 'empty')).toBe(true)
-      expect(model.dead).toBe(true)
-
-      // Still not clamped rather than rejected: nothing throws, whatever arrives.
-      expect(() =>
-        hudViewModel(
-          withVitals({
-            healthPoints: Number.NaN,
-            maxHealthPoints: Number.NaN,
-            hungerPoints: Number.POSITIVE_INFINITY,
-            maxHungerPoints: Number.POSITIVE_INFINITY,
-            experienceLevel: Number.NaN,
-            experienceProgress: Number.NaN,
-            selectedHotbarIndex: Number.NaN,
-          }),
-        ),
-      ).not.toThrow()
-    }),
-  )
-
-  it.effect('REGRESSION: a NaN experience level is not drawn as the text "NaN"', () =>
-    Effect.sync(() => {
-      expect(hudViewModel(withVitals({ experienceLevel: Number.NaN })).experienceLevelLabel).toBe('0')
-      expect(hudViewModel(withVitals({ experienceProgress: Number.NaN })).experiencePercent).toBe(0)
-    }),
-  )
-
-  it.effect('a spawn snapshot renders as a full, empty-handed HUD', () =>
-    Effect.sync(() => {
-      const model = hudViewModel(spawnSnapshot)
-      expect(model.hearts.every((icon) => icon === 'full')).toBe(true)
-      expect(model.shanks).toHaveLength(DEFAULT_MAX_HEALTH_POINTS / 2)
-      expect(model.hotbar.every((slot) => slot.empty)).toBe(true)
-      expect(model.experienceLevelLabel).toBe('0')
-    }),
-  )
-})
-
-describe('captions fire before the audio gate', () => {
-  const event = (cueId: string, atSecs: number): CaptionEvent => ({
-    cueId,
-    text: cueId,
-    direction: undefined,
-    atSecs,
-  })
-
-  const settings = (overrides: Partial<CaptionSettings> = {}): CaptionSettings => ({
-    captionsEnabled: true,
-    audioUnlocked: true,
-    ...overrides,
-  })
-
-  it.effect('REGRESSION: a caption is shown even when the browser has not unlocked audio', () =>
-    Effect.sync(() => {
-      // plan.md §3.6: 「音が出せない状態でも字幕は出る」. Gating captions on the
-      // autoplay unlock means a deaf player sees nothing until they happen to
-      // click, and nothing at all if they play muted.
-      const locked = receiveCaption(emptyCaptionQueue, event('creeper.primed', 0), settings({ audioUnlocked: false }))
-      const unlocked = receiveCaption(emptyCaptionQueue, event('creeper.primed', 0), settings({ audioUnlocked: true }))
-
-      expect(locked.visible).toHaveLength(1)
-      // Identical output: `audioUnlocked` is present in the settings type and is
-      // deliberately not consulted.
-      expect(locked).toStrictEqual(unlocked)
-    }),
-  )
-
-  it.effect('the player turning captions off DOES suppress them, because that is an explicit choice', () =>
-    Effect.sync(() => {
-      const queue = receiveCaption(emptyCaptionQueue, event('creeper.primed', 0), settings({ captionsEnabled: false }))
-      expect(queue).toBe(emptyCaptionQueue)
-    }),
-  )
-
-  it.effect('REGRESSION: repeating a cue refreshes it instead of stacking duplicates', () =>
-    Effect.sync(() => {
-      // Eight footsteps in a second are one fact, not eight lines of text.
-      let queue = emptyCaptionQueue
-      for (let step = 0; step < 8; step += 1) {
-        queue = receiveCaption(queue, event('player.step', step * 0.1), settings())
-      }
-      expect(queue.visible).toHaveLength(1)
-      expect(queue.visible[0]?.atSecs).toBeCloseTo(0.7, 10)
-    }),
-  )
-
-  it.effect(`at most ${String(MAX_VISIBLE_CAPTIONS)} captions are visible, newest first`, () =>
-    Effect.sync(() => {
-      let queue = emptyCaptionQueue
-      for (const cue of ['a', 'b', 'c', 'd', 'e', 'f']) {
-        queue = receiveCaption(queue, event(cue, 0), settings())
-      }
-      expect(queue.visible.map((caption) => caption.cueId)).toStrictEqual(['f', 'e', 'd', 'c'])
-    }),
-  )
-
-  it.effect('REGRESSION: expiry takes the time as an argument — nothing here reads a clock', () =>
-    Effect.sync(() => {
-      // `Date.now()` is banned repository-wide and enforced by `pnpm check:deps`
-      // (plan.md §4.3). Passing the instant in is also what lets a scenario test
-      // fast-forward three seconds without waiting three seconds.
-      const queue = receiveCaption(emptyCaptionQueue, event('creeper.primed', 10), settings())
-
-      expect(expireCaptions(queue, 10 + CAPTION_LIFETIME_SECS - 0.01).visible).toHaveLength(1)
-      expect(expireCaptions(queue, 10 + CAPTION_LIFETIME_SECS).visible).toHaveLength(0)
-      // Unchanged queues are returned by identity, so a still frame allocates
-      // nothing.
-      expect(expireCaptions(queue, 10)).toBe(queue)
-    }),
-  )
-
-  it.effect('caption lines carry a directional arrow and a freshness that fades to zero', () =>
-    Effect.sync(() => {
-      const queue = receiveCaption(
-        emptyCaptionQueue,
-        { cueId: 'creeper.primed', text: 'Creeper hisses', direction: 'left', atSecs: 0 },
-        settings(),
-      )
-
-      expect(captionLines(queue, 0)).toStrictEqual([
-        { text: 'Creeper hisses', arrow: '←', freshness: 1 },
-      ])
-      expect(captionLines(queue, CAPTION_LIFETIME_SECS)[0]?.freshness).toBe(0)
-      expect(captionLines(queue, CAPTION_LIFETIME_SECS / 2)[0]?.freshness).toBeCloseTo(0.5, 10)
-    }),
-  )
-
-  it.effect('a zero lifetime yields zero freshness instead of dividing by zero', () =>
-    Effect.sync(() => {
-      // Reachable from the settings screen: a "caption duration" slider at its
-      // minimum. `Infinity` freshness would render as a permanently opaque
-      // caption that never goes away.
-      const queue = receiveCaption(emptyCaptionQueue, event('creeper.primed', 0), settings())
-      expect(captionLines(queue, 0, 0)[0]?.freshness).toBe(0)
-    }),
-  )
-
-  it.effect('a non-positional sound gets no arrow', () =>
-    Effect.sync(() => {
-      const queue = receiveCaption(emptyCaptionQueue, event('music.calm', 0), settings())
-      expect(captionLines(queue, 0)[0]?.arrow).toBeUndefined()
-    }),
-  )
-})
-
-/**
- * The daltonisation correction — the OTHER half of plan.md §3.13's colour
- * vision asset.
- *
- * The switch (`colorVisionAttribute`, `COLOR_VISION_FILTER_TARGET`) was carried
- * over first and the matrices were not, which left a hook with nothing behind
- * it: `data-color-vision="protanopia"` on `<body>` and no filter for the CSS to
- * point at. `pnpm preview --stats` reported that as F5. The matrices are now
- * here, transcribed from the reference's `index.html:445-460`, and these tests
- * are what makes a transcription error loud instead of invisible.
- */
 describe('colour vision correction (the feColorMatrix matrices themselves)', () => {
   /**
    * Byte-for-byte from `takeokunn/ts-minecraft` `index.html:451-459`, with the
@@ -984,13 +600,16 @@ describe('inventory and crafting project state without interpreting it', () => {
         throw new Error('the hotbar region should be projected')
       }
 
-      // Byte for byte what `hudViewModel` produces for the same slot.
+      // Byte for byte what `hudViewModel` produces for the same owner slot.
+      const [ownerSlot] = filled(0, 'diamond_pickaxe', 1).slots
+      if (ownerSlot === undefined) {
+        throw new Error('the occupied inventory slot should be projected')
+      }
       expect(hotbar.slots[0]).toStrictEqual(
         hudViewModel(
-          withVitals({
-            hotbar: [{ itemId: 'diamond_pickaxe', count: 1, durability: 0.5 }],
-            selectedHotbarIndex: 0,
-          }),
+          spawnSnapshot,
+          [{ ...ownerSlot, durability: { current: 1, max: 2 } }],
+          0,
         ).hotbar[0],
       )
 

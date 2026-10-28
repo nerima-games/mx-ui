@@ -109,6 +109,9 @@ export const uiModule: GameModule<never, never, never> = {
 }
 ```
 
+`UiFrameState.selectedHotbarSlot` は `SelectedHotbarSlot` 型である。外部から更新する値は
+`SelectedHotbarSlotSchema` で 0〜8 の整数として decode する。
+
 `RIn` は `never` のままである。`ui:hud-sync` が mc-sim を読み、`ui:overlay-sync` が
 mc-audio に autoplay ゲートの状態を尋ねるようになったとき、それらは `frameStages` の中で —
 つまり `RRegister` パラメータで — 取得される。本リポジトリはそれらが供給しなければならないものを

@@ -15,6 +15,46 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import * as ui from '../src/index'
+import type {
+  AchievementToast,
+  AchievementToastIcon,
+  AchievementToastSubscription,
+  AchievementToastTitle,
+  AchievementToastView,
+  BrewingBottleView,
+  BrewingIntent,
+  BrewingOperation,
+  BrewingSnapshot,
+  BrewingStackView,
+  BrewingView,
+  BrewingViewActions,
+  BrewingViewModel,
+  DebugOverlayModel,
+  DebugOverlaySnapshot,
+  DebugOverlayView,
+  FramesPerSecond,
+  GpuTimeMilliseconds,
+  OnboardingCallbacks,
+  OnboardingInput,
+  OnboardingIntent,
+  OnboardingView,
+  OnboardingViewModel,
+  PauseMenuCallbacks,
+  PauseMenuHostIntent,
+  PauseMenuView,
+  PauseMenuViewModel,
+  SelectedHotbarSlot,
+  TradeProfession,
+  TradeSnapshot,
+  TradeView,
+  TradeViewActions,
+  TradeViewIntent,
+  UiQaDebugOverlayState,
+  UiQaNamespace,
+  UiQaSnapshot,
+  UiQaState,
+  UiQaStateOperation,
+} from '../src/index'
 import { rebind } from '../src/domain/accessibility'
 import { hudViewModel } from '../src/domain/hud-view-model'
 import { escapePressed } from '../src/domain/modal-stack'
@@ -31,6 +71,7 @@ describe('public API surface', () => {
         // `stages/registration.ts` on why the array was the obstacle.
         'uiModule',
         'makeUiFrameState',
+        'SelectedHotbarSlotSchema',
         'UI_STAGE_IDS',
         'UPSTREAM_STAGE_IDS',
       ]
@@ -86,15 +127,104 @@ describe('public API surface', () => {
         // サウンド字幕
         'MAX_VISIBLE_CAPTIONS',
         'CAPTION_LIFETIME_SECS',
-        'emptyCaptionQueue',
-        'receiveCaption',
-        'expireCaptions',
         'captionLines',
       ]
 
       for (const name of accessibility) {
         expect(Object.keys(ui)).toContain(name)
       }
+    }),
+  )
+
+  it.effect('re-exports the W4 A–D presentation APIs through the package root', () =>
+    Effect.sync(() => {
+      const streamApis = [
+        'AchievementToastIconSchema',
+        'AchievementToastTitleSchema',
+        'AchievementToastSchema',
+        'achievementToastFromEvent',
+        'ACHIEVEMENT_TOAST_EVENT_SUBSCRIBER_CAPACITY',
+        'AchievementToastEventBusLayer',
+        'startAchievementToastSubscriber',
+        'createAchievementToastView',
+        'FramesPerSecondSchema',
+        'GpuTimeMillisecondsSchema',
+        'debugOverlayModel',
+        'createDebugOverlayView',
+        'UiQaStateInputSchema',
+        'UiQaStateSchema',
+        'uiQaStateFromSnapshot',
+        'UI_QA_NAMESPACE_NAME',
+        'UI_QA_STATE_OPERATION_NAME',
+        'createUiQaNamespace',
+        'TradeSnapshotSchema',
+        'decodeTradeSnapshot',
+        'tradeViewModel',
+        'createTradeView',
+        'brewingViewModel',
+        'createBrewingView',
+        'onboardingViewModel',
+        'createOnboardingView',
+        'PAUSE_MENU_ACTION_LABEL',
+        'SAVE_AND_QUIT_TO_TITLE_INTENT',
+        'pauseMenuViewModel',
+        'escapePauseMenu',
+        'openPauseSettings',
+        'closePauseSettings',
+        'resumePauseMenu',
+        'createPauseMenuView',
+      ]
+
+      for (const name of streamApis) {
+        expect(Object.keys(ui)).toContain(name)
+      }
+    }),
+  )
+
+  it.effect('keeps the W4 A–D type contracts available from the package root', () =>
+    Effect.sync(() => {
+      type StreamTypes = [
+        AchievementToast,
+        AchievementToastIcon,
+        AchievementToastSubscription,
+        AchievementToastTitle,
+        AchievementToastView,
+        BrewingBottleView,
+        BrewingIntent,
+        BrewingOperation,
+        BrewingSnapshot,
+        BrewingStackView,
+        BrewingView,
+        BrewingViewActions,
+        BrewingViewModel,
+        DebugOverlayModel,
+        DebugOverlaySnapshot,
+        DebugOverlayView,
+        FramesPerSecond,
+        GpuTimeMilliseconds,
+        OnboardingCallbacks,
+        OnboardingInput,
+        OnboardingIntent,
+        OnboardingView,
+        OnboardingViewModel,
+        PauseMenuCallbacks,
+        SelectedHotbarSlot,
+        PauseMenuHostIntent,
+        PauseMenuView,
+        PauseMenuViewModel,
+        TradeProfession,
+        TradeSnapshot,
+        TradeView,
+        TradeViewActions,
+        TradeViewIntent,
+        UiQaDebugOverlayState,
+        UiQaNamespace,
+        UiQaSnapshot,
+        UiQaState,
+        UiQaStateOperation,
+      ]
+      const typeContract: StreamTypes | undefined = undefined
+      expect(typeContract).toBeUndefined()
     }),
   )
 
@@ -115,7 +245,6 @@ describe('public API surface', () => {
         'escapePressed',
         'gameplayInputSuppressed',
         'pointerLockReleased',
-        'DEFAULT_CAPTION_SETTINGS',
         'EXPERIENCE_MODULE_STAGE_PREFIXES',
         'OWN_STAGE_PREFIX',
         // The save indicator's timing, which is a derivation like any other:

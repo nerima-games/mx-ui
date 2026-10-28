@@ -1,11 +1,11 @@
 /** Project owner supplied game state into UI-ready HUD values. */
 
 import {
+  type InventoryCarriedSlot,
+  type Vitals,
   clampHotbarIndex,
   isDead,
   vitalsView,
-  type InventoryCarriedSlot,
-  type Vitals,
 } from '@nerima-games/mc-sim'
 
 export {
@@ -73,21 +73,47 @@ const slotCountLabel = (count: number, empty: boolean): string | undefined => {
   return String(count)
 }
 
+const visibleSlotValue = <TValue,>(value: TValue, empty: boolean): TValue | undefined => {
+  if (empty) {
+    return
+  }
+  return value
+}
+
+const ownerSlotDurabilityPercent = (
+  slot: Exclude<InventoryCarriedSlot, undefined>,
+): number | undefined => {
+  const { durability } = slot
+  if (typeof durability === 'undefined') {
+    return
+  }
+  return Math.round((durability.current / durability.max) * FULL_PERCENT)
+}
+
 const slotDurabilityPercent = (
   slot: InventoryCarriedSlot | HotbarSlotSnapshot,
 ): number | undefined => {
   if (typeof slot === 'undefined') {
     return
   }
-  if (!('item' in slot)) {
-    const durability = slot.durability
-    return typeof durability === 'undefined' ? undefined : Math.round(durability * FULL_PERCENT)
+  if ('item' in slot) {
+    return ownerSlotDurabilityPercent(slot)
   }
-  const durability = slot.durability
+  const { durability } = slot
   if (typeof durability === 'undefined') {
     return
   }
-  return Math.round((durability.current / durability.max) * FULL_PERCENT)
+  return Math.round(durability * FULL_PERCENT)
+}
+
+const itemIdOf = (slot: InventoryCarriedSlot | HotbarSlotSnapshot): string | undefined => {
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if ('item' in slot) {
+    return slot.item
+  }
+  return slot.itemId
 }
 
 /** Project an owner supplied carried slot into the shared slot view. */
@@ -96,16 +122,20 @@ export const slotView = (
   index: number,
   selectedIndex: number,
 ): SlotView => {
-  const empty = typeof slot === 'undefined'
   const count = slot?.count ?? ZERO
-  const itemId = typeof slot === 'undefined' ? undefined : 'item' in slot ? slot.item : slot.itemId
+  const candidateItemId = itemIdOf(slot)
+  const empty =
+    typeof slot === 'undefined' ||
+    typeof candidateItemId === 'undefined' ||
+    !Number.isSafeInteger(count) ||
+    count <= ZERO
 
   return {
     countLabel: slotCountLabel(count, empty),
-    durabilityPercent: slotDurabilityPercent(slot),
+    durabilityPercent: visibleSlotValue(slotDurabilityPercent(slot), empty),
     empty,
     index,
-    itemId,
+    itemId: visibleSlotValue(candidateItemId, empty),
     selected: index === selectedIndex,
   }
 }

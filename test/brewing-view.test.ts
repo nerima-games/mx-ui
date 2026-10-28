@@ -6,7 +6,7 @@ import {
   itemStack as makeItemStack,
   type BrewingState,
 } from '@nerima-games/mc-sim'
-import { brewingViewModel } from '../src/domain/brewing-view-model.js'
+import { type BrewingIntent, brewingViewModel } from '../src/domain/brewing-view-model.js'
 import { createBrewingView } from '../src/application/brewing-view.js'
 import { fakeDocument, fakeElement } from './fake-dom.js'
 
@@ -25,10 +25,10 @@ const testItemStack = (
 }
 
 describe('createBrewingView', () => {
-  it('keeps controls in visual order, disables unsupported actions, and exposes a native close intent', () => {
+  it('keeps controls in visual order and emits an intent from each enabled button', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
-    const onIntent = vi.fn()
+    const onIntent = vi.fn<(intent: BrewingIntent) => void>()
     const view = createBrewingView(factory, host, { onIntent })
     const root = fakeElement(view.root)
     const model = brewingViewModel(
@@ -56,38 +56,34 @@ describe('createBrewingView', () => {
       'Drink potion',
       'Close',
     ])
-    expect(controls.map((control) => control.attributes.get('disabled') === '')).toStrictEqual([
-      true,
-      true,
-      true,
+    expect(controls.map((control) => control.attributes.has('disabled'))).toStrictEqual([
+      false,
+      false,
+      false,
       false,
     ])
-    expect(controls.map((control) => control.attributes.get('aria-disabled'))).toStrictEqual([
-      'true',
-      'true',
-      'true',
-      undefined,
+    expect(controls.map((control) => control.attributes.has('aria-disabled'))).toStrictEqual([
+      false,
+      false,
+      false,
+      false,
     ])
     expect(controls.every((control) => control.attributes.get('type') === 'button')).toBe(true)
     expect(controls.every((control) => control.attributes.get('tabindex') === undefined)).toBe(true)
-    expect([
-      root.find('data-brewing-reason', 'insert-selected-item')?.textContent,
-      root.find('data-brewing-reason', 'collect-bottle')?.textContent,
-      root.find('data-brewing-reason', 'drink-potion')?.textContent,
-    ]).toStrictEqual([
-      model.operations.insertSelectedItem.reason,
-      model.operations.collectBottle.reason,
-      model.operations.drinkPotion.reason,
-    ])
-    expect(controls[0]?.attributes.get('aria-label')).toContain(
-      model.operations.insertSelectedItem.reason,
-    )
+    expect(root.findAll('data-brewing-reason', 'insert-selected-item')).toStrictEqual([])
+    expect(root.findAll('data-brewing-reason', 'collect-bottle')).toStrictEqual([])
+    expect(root.findAll('data-brewing-reason', 'drink-potion')).toStrictEqual([])
 
     controls[0]?.dispatch('click')
     controls[1]?.dispatch('click')
     controls[2]?.dispatch('click')
     controls[3]?.dispatch('click')
-    expect(onIntent).toHaveBeenCalledExactlyOnceWith({ _tag: 'Close' })
+    expect(onIntent.mock.calls.map(([intent]) => intent)).toStrictEqual([
+      { _tag: 'InsertSelectedItem' },
+      { _tag: 'CollectBottle' },
+      { _tag: 'DrinkPotion' },
+      { _tag: 'Close' },
+    ])
   })
 
   it('renders snapshot summary, remaining time, and a polite status region', () => {

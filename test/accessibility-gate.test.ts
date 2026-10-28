@@ -50,7 +50,9 @@
  * attribute is exactly what a fake document records.
  */
 import { describe, expect, it } from 'vitest'
-import { emptyCaptionQueue, captionLines, receiveCaption } from '../src/domain/caption'
+import { MonotonicTimeSecs, EntityHealthPoints } from '@nerima-games/mc-kernel'
+import type { CaptionEvent } from '@nerima-games/mc-audio'
+import { captionLines } from '../src/domain/caption'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
 import { GUARDED_TOKENS, surveyPalette, type PaletteSurvey, type Rgb } from '../src/domain/palette'
@@ -73,6 +75,12 @@ import {
   type PaletteTokenName,
 } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
+
+const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
+  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
+  MonotonicTimeSecs(seconds)
+
+const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
 /** `var(--mx-ui-ink)` back to `INK`'s three numbers. */
 const TOKEN_BY_VAR: ReadonlyMap<string, PaletteTokenName> = new Map(
@@ -167,8 +175,14 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   // The death screen is a STATE of the HUD here rather than a screen of its own
   // (`hud-view.ts`: 「The HUD says 「dead」; it does not open a screen」), so the
   // audit sees it by rendering a dead player.
-  hud.render(hudViewModel({ ...spawnSnapshot, healthPoints: 0 }))
-  hud.render(hudViewModel(spawnSnapshot))
+  hud.render(
+    hudViewModel(
+      { ...spawnSnapshot, healthPoints: EntityHealthPoints(0) },
+      EMPTY_HOTBAR_SLOTS,
+      0,
+    ),
+  )
+  hud.render(hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, 0))
   hud.setKeyboardFocus(4)
 
   const inventory = createInventoryView(factory, parent)
@@ -177,12 +191,16 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   const captions = createCaptionView(factory, parent, 'full')
   captions.render(
     captionLines(
-      receiveCaption(
-        emptyCaptionQueue,
-        { cueId: 'creeper', text: 'Creeper hisses', direction: 'left', atSecs: 0 },
-        { captionsEnabled: true, audioUnlocked: false },
-      ),
-      0,
+      [
+        {
+          cueId: 'creeper',
+          text: 'Creeper hisses',
+          pan: -1,
+          atSecs: captionTime(0),
+          reason: 'audible',
+        },
+      ],
+      captionTime(0),
     ),
   )
 
@@ -368,9 +386,9 @@ describe('WCAG 4.1.2: every tab stop on every screen announces something', () =>
     const parent = fakeElement(factory.createElement('div'))
     const view = createHudView(factory, parent, 'full')
 
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, 0))
     const before = factory.mark()
-    view.render(hudViewModel(spawnSnapshot))
+    view.render(hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, 0))
 
     // Projected to strings rather than compared as `Mutation` objects. A
     // `Mutation` holds its `target`, a `FakeElement` holds the shared log, and

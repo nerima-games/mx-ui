@@ -115,7 +115,7 @@ test('trade offers follow native tab order and expose polite status in a real do
   await expect(close).toBeFocused()
 })
 
-test('brewing unsupported actions show reasons and only Close receives tab focus', async ({ page }) => {
+test('brewing actions are enabled, keyboard reachable, and emit their intents', async ({ page }) => {
   await openHarness(page, { screen: 'crosshair' })
 
   await page.evaluate(
@@ -133,8 +133,8 @@ test('brewing unsupported actions show reasons and only Close receives tab focus
       document.body.appendChild(host)
 
       const view = createBrewingView(document, host, {
-        onIntent: () => {
-          throw new Error('Unexpected brewing intent during navigation test')
+        onIntent: (intent) => {
+          host.setAttribute('data-brewing-last-intent', intent['_tag'])
         },
       })
       const snapshot = JSON.parse(snapshotJson, (_key, value) => (value === null ? undefined : value))
@@ -148,6 +148,7 @@ test('brewing unsupported actions show reasons and only Close receives tab focus
   )
 
   const brewing = page.locator('[data-brewing-browser-host] [data-mx-ui="brewing"]')
+  const host = page.locator('[data-brewing-browser-host]')
   const controls = brewing.locator('[data-mx-ui="brewing-control"]')
   const insert = brewing.locator('[data-brewing-operation="insert-selected-item"]')
   const collect = brewing.locator('[data-brewing-operation="collect-bottle"]')
@@ -155,23 +156,28 @@ test('brewing unsupported actions show reasons and only Close receives tab focus
   const close = brewing.getByRole('button', { name: 'Close' })
 
   await expect(controls).toHaveCount(4)
-  await expect(insert).toBeDisabled()
-  await expect(collect).toBeDisabled()
-  await expect(drink).toBeDisabled()
-  await expect(brewing.locator('[data-brewing-reason="insert-selected-item"]')).toHaveText(
-    /Inserting a selected item changes player inventory and the brewing stand together\./,
-  )
-  await expect(brewing.locator('[data-brewing-reason="collect-bottle"]')).toHaveText(
-    /Collecting a bottle changes the brewing stand and player inventory together\./,
-  )
-  await expect(brewing.locator('[data-brewing-reason="drink-potion"]')).toHaveText(
-    /Drinking a potion changes player inventory and player effects together\./,
-  )
-  await expect(insert).toHaveAttribute('aria-label', /Unavailable\. Inserting a selected item/)
-  await expect(collect).toHaveAttribute('aria-label', /Unavailable\. Collecting a bottle/)
-  await expect(drink).toHaveAttribute('aria-label', /Unavailable\. Drinking a potion/)
+  await expect(insert).toBeEnabled()
+  await expect(collect).toBeEnabled()
+  await expect(drink).toBeEnabled()
   await expect(close).toBeEnabled()
 
   await page.keyboard.press('Tab')
+  await expect(insert).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'InsertSelectedItem')
+
+  await page.keyboard.press('Tab')
+  await expect(collect).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'CollectBottle')
+
+  await page.keyboard.press('Tab')
+  await expect(drink).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'DrinkPotion')
+
+  await page.keyboard.press('Tab')
   await expect(close).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute('data-brewing-last-intent', 'Close')
 })

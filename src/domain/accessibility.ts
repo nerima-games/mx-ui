@@ -379,7 +379,6 @@ export const rebind = (
 
   return { bindings: new Map(bindings).set(action, code), kind: 'bound' }
 }
-
 /** Actions with no binding in a legacy key map. */
 export const unboundActions = (
   bindings: KeyBindings,

@@ -2,8 +2,8 @@
 
 import {
   CAPTION_DISPLAY_SECS,
-  visibleCaptions,
   type CaptionEvent,
+  visibleCaptions,
 } from '@nerima-games/mc-audio'
 
 export {
@@ -19,20 +19,27 @@ export type CaptionLineView = {
   readonly freshness: number
 }
 
+const ZERO = 0
+const ONE = 1
+const VISIBLE_CAPTIONS_NOW_ARGUMENT_INDEX = 1
+
 const captionArrow = (pan: CaptionEvent['pan']): CaptionLineView['arrow'] => {
-  if (typeof pan === 'undefined' || pan === 0) {
+  if (typeof pan === 'undefined' || pan === ZERO) {
     return
   }
-  return pan < 0 ? '←' : '→'
+  if (pan < ZERO) {
+    return '←'
+  }
+  return '→'
 }
 
 const captionFreshness = (nowSecs: number, atSecs: number): number =>
-  Math.max(0, Math.min(1, 1 - (nowSecs - atSecs) / CAPTION_DISPLAY_SECS))
+  Math.max(ZERO, Math.min(ONE, ONE - (nowSecs - atSecs) / CAPTION_DISPLAY_SECS))
 
 /** Filter with mc-audio's caption policy, then project each line for rendering. */
 export const captionLines = (
   events: ReadonlyArray<CaptionEvent>,
-  nowSecs: Parameters<typeof visibleCaptions>[1],
+  nowSecs: Parameters<typeof visibleCaptions>[typeof VISIBLE_CAPTIONS_NOW_ARGUMENT_INDEX],
 ): ReadonlyArray<CaptionLineView> =>
   visibleCaptions(events, nowSecs).map((event) => ({
     arrow: captionArrow(event.pan),

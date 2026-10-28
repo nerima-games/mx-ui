@@ -96,18 +96,13 @@ describe('D domain properties', () => {
     )
   })
 
-  it('projects generated unknown achievement IDs through the strict toast schema', () => {
+  it('does not project generated achievement IDs without display metadata', () => {
     fc.assert(
       fc.property(fc.string({ minLength: 1 }), (suffix) => {
         const achievement = `example:${suffix}`
         const projected = achievementToastFromEvent(achievementEvent(achievement))
-        const decoded = Schema.decodeUnknownSync(AchievementToastSchema, {
-          onExcessProperty: 'error',
-        })(projected)
 
-        expect(decoded.achievement).toBe(achievement)
-        expect(decoded.title).toBe(achievement)
-        expect(decoded.icon).toBe('minecraft:nether_star')
+        expect(projected).toBeNull()
       }),
     )
   })

@@ -1,21 +1,16 @@
 import {
-  type AttributeCell,
-  type TextCell,
-  attributeCell,
-  textCell,
-  writeAttribute,
-  writeText,
-} from './dom-write.js'
-import { type BrewingIntent, brewingViewModel } from '../domain/brewing-view-model.js'
+  type BrewingIntent,
+  type BrewingOperation,
+  brewingViewModel,
+} from '../domain/brewing-view-model.js'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import { type TextCell, textCell, writeText } from './dom-write.js'
 
 const PROGRESS_DECIMAL_PLACES = 1
 
 type BrewingViewModel = ReturnType<typeof brewingViewModel>
 type BrewingProgressView = BrewingViewModel['progress']
-type BrewingUnsupportedState = BrewingViewModel['operations'][keyof BrewingViewModel['operations']]
-
 export type BrewingViewActions = Readonly<{
   readonly onIntent: (intent: BrewingIntent) => void
 }>
@@ -25,30 +20,22 @@ export type BrewingView = Readonly<{
   readonly render: (model: BrewingViewModel) => void
 }>
 
-type UnsupportedControl = Readonly<{
-  readonly ariaLabel: AttributeCell
-  readonly button: DomInteractiveElement
-  readonly label: string
-  readonly reason: TextCell
-}>
-
-type BrewingControls = Readonly<{
-  readonly close: DomInteractiveElement
-  readonly collectBottle: UnsupportedControl
-  readonly drinkPotion: UnsupportedControl
-  readonly insertSelectedItem: UnsupportedControl
+type BrewingParts = Readonly<{
+  readonly progress: TextCell
+  readonly status: TextCell
+  readonly summary: TextCell
 }>
 
 type BrewingControlContext = Readonly<{
+  readonly actions: BrewingViewActions
   readonly factory: DomElementFactory
   readonly root: DomElement
 }>
 
-type BrewingParts = Readonly<{
-  readonly controls: BrewingControls
-  readonly progress: TextCell
-  readonly status: TextCell
-  readonly summary: TextCell
+type BrewingIntentControl = Readonly<{
+  readonly intent: BrewingIntent
+  readonly label: string
+  readonly operation: BrewingOperation
 }>
 
 const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
@@ -72,45 +59,18 @@ const createTextElement = (
   return textCell(element)
 }
 
-const createDisabledButton = (
+const createIntentButton = (
   context: BrewingControlContext,
-  operation: BrewingUnsupportedState['operation'],
-  label: string,
+  control: BrewingIntentControl,
 ): DomInteractiveElement => {
   const button = context.factory.createElement('button')
   button.setAttribute('type', 'button')
   button.setAttribute('data-mx-ui', 'brewing-control')
-  button.setAttribute('data-brewing-operation', operation)
-  button.setAttribute('disabled', '')
-  button.setAttribute('aria-disabled', 'true')
-  button.textContent = label
+  button.setAttribute('data-brewing-operation', control.operation)
+  button.textContent = control.label
+  button.addEventListener('click', () => context.actions.onIntent(control.intent))
   context.root.appendChild(button)
   return button
-}
-
-const createReason = (
-  context: BrewingControlContext,
-  operation: BrewingUnsupportedState['operation'],
-): TextCell => {
-  const reason = context.factory.createElement('p')
-  reason.setAttribute('data-brewing-reason', operation)
-  context.root.appendChild(reason)
-  return textCell(reason)
-}
-
-const createUnsupportedControl = (
-  context: BrewingControlContext,
-  operation: BrewingUnsupportedState['operation'],
-  label: string,
-): UnsupportedControl => {
-  const button = createDisabledButton(context, operation, label)
-  const reason = createReason(context, operation)
-  return {
-    ariaLabel: attributeCell(button, 'aria-label'),
-    button,
-    label,
-    reason,
-  }
 }
 
 const createCloseControl = (
@@ -132,17 +92,29 @@ const createControls = (
   factory: DomElementFactory,
   root: DomElement,
   actions: BrewingViewActions,
-): BrewingControls => {
-  const context: BrewingControlContext = { factory, root }
-  const insertSelectedItem = createUnsupportedControl(
-    context,
-    'insert-selected-item',
-    'Insert selected item',
-  )
-  const collectBottle = createUnsupportedControl(context, 'collect-bottle', 'Collect bottle')
-  const drinkPotion = createUnsupportedControl(context, 'drink-potion', 'Drink potion')
-  const close = createCloseControl(factory, root, actions)
-  return { close, collectBottle, drinkPotion, insertSelectedItem }
+): void => {
+  const context: BrewingControlContext = { actions, factory, root }
+  const controls: ReadonlyArray<BrewingIntentControl> = [
+    {
+      intent: { _tag: 'InsertSelectedItem' },
+      label: 'Insert selected item',
+      operation: 'insert-selected-item',
+    },
+    {
+      intent: { _tag: 'CollectBottle' },
+      label: 'Collect bottle',
+      operation: 'collect-bottle',
+    },
+    {
+      intent: { _tag: 'DrinkPotion' },
+      label: 'Drink potion',
+      operation: 'drink-potion',
+    },
+  ]
+  for (const control of controls) {
+    createIntentButton(context, control)
+  }
+  createCloseControl(factory, root, actions)
 }
 
 const summaryText = (model: BrewingViewModel): string => {
@@ -173,14 +145,6 @@ const statusText = (progress: BrewingProgressView): string => {
   return `Brewing in progress, ${progress.remainingSecs.toFixed(PROGRESS_DECIMAL_PLACES)} seconds remaining`
 }
 
-const updateUnsupportedControl = (
-  control: UnsupportedControl,
-  state: BrewingUnsupportedState,
-): void => {
-  writeAttribute(control.ariaLabel, `${control.label}. Unavailable. ${state.reason}`)
-  writeText(control.reason, state.reason)
-}
-
 const createStatusCell = (factory: DomElementFactory, root: DomElement): TextCell => {
   const statusElement = factory.createElement('div')
   statusElement.setAttribute('data-mx-ui', 'brewing-status')
@@ -202,9 +166,8 @@ const createBrewingParts = (
 
   const summary = createTextElement(factory, root, 'brewing-summary')
   const progress = createTextElement(factory, root, 'brewing-progress')
-  const controls = createControls(factory, root, actions)
+  createControls(factory, root, actions)
   return {
-    controls,
     progress,
     status: createStatusCell(factory, root),
     summary,
@@ -215,9 +178,6 @@ const renderBrewingParts = (parts: BrewingParts, model: BrewingViewModel): void 
   writeText(parts.summary, summaryText(model))
   writeText(parts.progress, progressText(model.progress))
   writeText(parts.status, statusText(model.progress))
-  updateUnsupportedControl(parts.controls.insertSelectedItem, model.operations.insertSelectedItem)
-  updateUnsupportedControl(parts.controls.collectBottle, model.operations.collectBottle)
-  updateUnsupportedControl(parts.controls.drinkPotion, model.operations.drinkPotion)
 }
 
 export const createBrewingView = (
