@@ -6,6 +6,7 @@ import * as Scope from 'effect/Scope'
 import { describe, expect, it, vi } from 'vitest'
 
 const TOAST_BUS_CAPACITY = Schema.decodeUnknownSync(EventSubscriberCapacitySchema)(64)
+const SCOPE_STATE_TAG = '_tag' as const
 
 describe('UiMount startup interruption', () => {
   it('closes the toast scope if startup is interrupted while subscribing', async () => {
@@ -31,7 +32,7 @@ describe('UiMount startup interruption', () => {
             const fiber = yield* runtime.start.pipe(Effect.forkChild)
             yield* Deferred.await(subscriberEntered)
             yield* Fiber.interrupt(fiber)
-            expect(toastScope?.state._tag).toBe('Closed')
+            expect(toastScope?.state[SCOPE_STATE_TAG]).toBe('Closed')
             yield* runtime.stop
           }).pipe(Effect.provide(DomainEventBusLayer(TOAST_BUS_CAPACITY))),
         ),

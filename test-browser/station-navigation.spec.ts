@@ -65,7 +65,7 @@ const SNAPSHOT = {
   status: 'Choose a trade',
 }
 
-test('trade offers follow native tab order and expose polite status in a real document', async ({ page }) => {
+test('trade offers follow native tab order and emit offers from Enter and Space', async ({ page }) => {
   const decoded = decodeTradeSnapshot(SNAPSHOT)
   if (decoded['_tag'] === 'Failure') {
     throw decoded.failure
@@ -85,7 +85,9 @@ test('trade offers follow native tab order and expose polite status in a real do
 
       const view = createTradeView(document, host, {
         onIntent: (intent) => {
-          throw new Error(`Unexpected trade intent during navigation test: ${intent['_tag']}`)
+          host.setAttribute('data-trade-host-intent', JSON.stringify(intent))
+          const previousCount = Number(host.getAttribute('data-trade-host-intent-count') ?? '0')
+          host.setAttribute('data-trade-host-intent-count', String(previousCount + 1))
         },
       })
       view.render(snapshot)
@@ -94,6 +96,7 @@ test('trade offers follow native tab order and expose polite status in a real do
   )
 
   const trade = page.locator('[data-trade-browser-host] [data-mx-ui="trade"]')
+  const host = page.locator('[data-trade-browser-host]')
   const availableOffer = trade.getByRole('button', {
     name: '4 minecraft:wheat -> 1 minecraft:emerald (2/7)',
   })
@@ -113,6 +116,23 @@ test('trade offers follow native tab order and expose polite status in a real do
   await expect(availableOffer).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(close).toBeFocused()
+
+  await page.keyboard.press('Shift+Tab')
+  await expect(availableOffer).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(host).toHaveAttribute(
+    'data-trade-host-intent',
+    JSON.stringify({
+      _tag: 'TradeVillager',
+      actor: availableTrade.actor,
+      offerId: availableTrade.offerId,
+      villager: availableTrade.villager,
+    }),
+  )
+  await expect(host).toHaveAttribute('data-trade-host-intent-count', '1')
+
+  await page.keyboard.press('Space')
+  await expect(host).toHaveAttribute('data-trade-host-intent-count', '2')
 })
 
 test('brewing actions are enabled, keyboard reachable, and emit their intents', async ({ page }) => {

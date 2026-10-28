@@ -152,6 +152,16 @@ test.describe('W4-C pause menu accessibility', () => {
             if (control) {
               host.setAttribute('data-host-delegated-target', control.getAttribute('data-interaction-target') ?? '')
               host.setAttribute('data-host-binding-action', control.getAttribute('data-binding-action') ?? '')
+              host.setAttribute(
+                'data-host-settings-intent',
+                [
+                  control.getAttribute('data-interaction-target'),
+                  control.getAttribute('data-settings-field'),
+                  control.getAttribute('data-setting-value'),
+                ]
+                  .filter((value): value is string => value !== null)
+                  .join(':'),
+              )
             }
           }
         })
@@ -231,6 +241,15 @@ test.describe('W4-C pause menu accessibility', () => {
     await page.keyboard.press('Enter')
     await expect(host).toHaveAttribute('data-host-delegated-target', 'settings-binding')
     await expect(host).toHaveAttribute('data-host-binding-action', 'moveForward')
+
+    const normalDifficulty = difficultyGroup.getByRole('button', { name: 'Difficulty: Normal' })
+    await normalDifficulty.focus()
+    await page.keyboard.press('Enter')
+    await expect(host).toHaveAttribute('data-host-settings-intent', 'settings-choice:difficulty:normal')
+
+    await audioSwitch.focus()
+    await page.keyboard.press('Space')
+    await expect(host).toHaveAttribute('data-host-settings-intent', 'settings-toggle:audioEnabled')
   })
 })
 // END W4-C accessibility coverage

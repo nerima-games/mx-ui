@@ -103,8 +103,10 @@ describe('UiMount', () => {
           const moduleInstance = yield* runtime.start
 
           const mounted = runtime.current()
-          expect(mounted).toBeDefined()
-          const toastView = mounted!.achievementToast
+          if (mounted === undefined) {
+            throw new Error('Expected the UI mount to be active')
+          }
+          const toastView = mounted.achievementToast
           const toastRoot = host.querySelector<HTMLElement>('[data-mx-ui="achievement-toast"]')
           expect(toastRoot).not.toBeNull()
           expect(toastRoot?.hidden).toBe(true)
@@ -144,8 +146,10 @@ describe('UiMount', () => {
           yield* runtime.start.pipe(Effect.provideService(Scope.Scope, parentScope))
 
           const mounted = runtime.current()
-          expect(mounted).toBeDefined()
-          const render = vi.spyOn(mounted!.achievementToast, 'render')
+          if (mounted === undefined) {
+            throw new Error('Expected the UI mount to be active')
+          }
+          const render = vi.spyOn(mounted.achievementToast, 'render')
 
           yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
           expect(render).toHaveBeenCalledOnce()
@@ -196,8 +200,10 @@ describe('UiMount', () => {
           yield* runtime.start
 
           const mounted = runtime.current()
-          expect(mounted).toBeDefined()
-          vi.spyOn(mounted!.overlays, 'destroy').mockImplementation(() => {
+          if (mounted === undefined) {
+            throw new Error('Expected the UI mount to be active')
+          }
+          vi.spyOn(mounted.overlays, 'destroy').mockImplementation(() => {
             throw new Error('view destroy failed')
           })
 
