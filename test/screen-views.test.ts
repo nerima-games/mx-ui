@@ -34,7 +34,8 @@ import { describe, expect, it } from 'vitest'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
 import { captionLines, emptyCaptionQueue, receiveCaption, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
 import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
-import { itemStack } from '@nerima-games/mc-sim'
+import { itemStack as makeItemStack } from '@nerima-games/mc-sim'
+import { Result } from 'effect'
 import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
 import { createCaptionView } from '../src/application/caption-view'
 import { createInventoryView } from '../src/application/inventory-view'
@@ -52,6 +53,17 @@ const queueOf = (...texts: ReadonlyArray<string>) =>
       receiveCaption(queue, { cueId: text, text, direction: 'left', atSecs: index }, enabled),
     emptyCaptionQueue,
   )
+
+const testItemStack = (
+  item: Parameters<typeof makeItemStack>[0],
+  count: Parameters<typeof makeItemStack>[1],
+) => {
+  const result = makeItemStack(item, count)
+  if (Result.isSuccess(result)) {
+    return result.success
+  }
+  expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
+}
 
 describe('captions are rendered as TEXT', () => {
   it('puts the caption in textContent, where a screen reader can reach it', () => {
@@ -199,7 +211,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     view.render(
       inventoryViewModel({
         ...emptyInventorySnapshot,
-        armour: [itemStack('iron_helmet', 1)],
+        armour: [testItemStack('iron_helmet', 1)],
       }),
       { focused: { index: 0, kind: 'slot', region: 'armour' }, status: 'Helmet equipped' },
     )
@@ -263,7 +275,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     view.render(
       inventoryViewModel({
         ...emptyInventorySnapshot,
-        carried: itemStack('stone', 12),
+        carried: testItemStack('stone', 12),
       }),
     )
 
@@ -285,7 +297,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const view = createInventoryView(factory, parent)
 
     view.render(
-      inventoryViewModel({ ...emptyInventorySnapshot, carried: itemStack('stone', 1) }),
+      inventoryViewModel({ ...emptyInventorySnapshot, carried: testItemStack('stone', 1) }),
       { focused: { kind: 'crafting-output' }, status: 'Carrying stone' },
     )
 
@@ -308,7 +320,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
@@ -331,7 +343,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
       { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
@@ -347,7 +359,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 1) },
+          result: { _tag: 'Match', output: testItemStack('stick', 1) },
         },
       }),
       { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
@@ -365,13 +377,13 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      carried: itemStack('stone', 12),
+      carried: testItemStack('stone', 12),
       crafting: {
         gridWidth: 2,
         grid: [undefined, undefined, undefined, undefined],
@@ -453,7 +465,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         ...emptyInventorySnapshot,
         crafting: {
           gridWidth: size,
-          grid: Array.from({ length: size * size }, () => itemStack('stone', 1)),
+          grid: Array.from({ length: size * size }, () => testItemStack('stone', 1)),
           result: { _tag: 'NoMatch' },
         },
       })

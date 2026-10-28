@@ -6,7 +6,7 @@
  * DOM-flow tests come later and have their own rules — see docs/testing.md.
  */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect } from 'effect'
+import { Effect, Result } from 'effect'
 import * as ui from '../src/index'
 import {
   applyColorVisionMatrix,
@@ -44,7 +44,7 @@ import {
   slotSnapshotOf,
   type InventorySnapshot,
 } from '../src/domain/inventory-view-model'
-import { itemStack, type Inventory } from '@nerima-games/mc-sim'
+import { itemStack as makeItemStack, type Inventory } from '@nerima-games/mc-sim'
 import type { ItemType } from '@nerima-games/mc-kernel'
 import {
   COLLAPSE_SEPARATION,
@@ -68,6 +68,16 @@ import {
   type Rgb,
 } from '../src/domain/palette'
 
+const testItemStack = (
+  item: Parameters<typeof makeItemStack>[0],
+  count: Parameters<typeof makeItemStack>[1],
+) => {
+  const result = makeItemStack(item, count)
+  if (Result.isSuccess(result)) {
+    return result.success
+  }
+  expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
+}
 const withVitals = (overrides: Partial<VitalsSnapshot>): VitalsSnapshot => ({
   ...spawnSnapshot,
   ...overrides,
@@ -940,7 +950,7 @@ describe('inventory and crafting project state without interpreting it', () => {
   /** A one-item inventory, for tests that need a single occupied slot. */
   const filled = (index: number, item: ItemType, count: number): Inventory => ({
     slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, slot) =>
-      slot === index ? itemStack(item, count) : undefined,
+      slot === index ? testItemStack(item, count) : undefined,
     ),
   })
 
@@ -1076,12 +1086,12 @@ describe('inventory and crafting project state without interpreting it', () => {
       const model = inventoryViewModel(
         inventoryWith({
           armour: [
-            itemStack('iron_helmet', 1),
+            testItemStack('iron_helmet', 1),
             undefined,
             undefined,
-            itemStack('iron_boots', 1),
+            testItemStack('iron_boots', 1),
           ],
-          offhand: itemStack('shield', 1),
+          offhand: testItemStack('shield', 1),
         }),
       )
 
@@ -1149,7 +1159,7 @@ describe('inventory and crafting project state without interpreting it', () => {
 
       const matched = inventoryViewModel(
         inventoryWith({
-          crafting: { ...grid, result: { _tag: 'Match', output: itemStack('oak_planks', 4) } },
+          crafting: { ...grid, result: { _tag: 'Match', output: testItemStack('oak_planks', 4) } },
         }),
       )
       expect(matched.crafting.kind).toBe('match')
@@ -1207,7 +1217,7 @@ describe('inventory and crafting project state without interpreting it', () => {
       const model = inventoryViewModel(
         inventoryWith({
           inventory: filled(0, 'cobblestone', 32),
-          carried: itemStack('cobblestone', 32),
+          carried: testItemStack('cobblestone', 32),
         }),
       )
       expect(model.carried?.itemId).toBe('cobblestone')
@@ -1227,7 +1237,7 @@ describe('inventory and crafting project state without interpreting it', () => {
       // instead, to prove the derivation survives a slot mc-sim itself would
       // refuse to build.
       const slots = emptyInventorySnapshot.inventory.slots.slice()
-      const firstSlot = structuredClone(itemStack('stone', 1))
+      const firstSlot = structuredClone(testItemStack('stone', 1))
       Object.defineProperty(firstSlot, 'count', { value: Number.NaN })
       slots[0] = firstSlot
       const model = inventoryViewModel(

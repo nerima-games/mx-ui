@@ -61,6 +61,7 @@ import {
   regionOf,
 } from '../../src/domain/inventory-view-model'
 import { itemStack } from '@nerima-games/mc-sim'
+import { Result } from 'effect'
 import { escapePressed, openScreen, type ModalStack } from '../../src/domain/modal-stack'
 import { COLLAPSE_SEPARATION, hex, surveyPalette } from '../../src/domain/palette'
 import { DEFAULT_BINDINGS, PREVIEW_ACTIONS, SAMPLE_CAPTIONS, SAMPLE_HOTBAR } from './state'
@@ -202,11 +203,19 @@ const paletteLines = (): ReadonlyArray<string> => {
  * report that only showed the grid would hide the refusal.
  */
 const inventoryLines = (): ReadonlyArray<string> => {
+  const diamondPickaxe = itemStack('diamond_pickaxe', 1)
+  if (!Result.isSuccess(diamondPickaxe)) {
+    return [`  mc-sim itemStack(diamond_pickaxe) failed: ${JSON.stringify(diamondPickaxe.failure)}`]
+  }
+  const cobblestone = itemStack('cobblestone', 64)
+  if (!Result.isSuccess(cobblestone)) {
+    return [`  mc-sim itemStack(cobblestone) failed: ${JSON.stringify(cobblestone.failure)}`]
+  }
   const model = inventoryViewModel({
     ...emptyInventorySnapshot,
     inventory: {
       slots: Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) =>
-        index === 0 ? itemStack('diamond_pickaxe', 1) : index === 11 ? itemStack('cobblestone', 64) : undefined,
+        index === 0 ? diamondPickaxe.success : index === 11 ? cobblestone.success : undefined,
       ),
     },
     durabilityBySlot: new Map([[0, 0.82]]),

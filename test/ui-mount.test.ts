@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { Effect } from 'effect'
+import { Effect, Result } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { inventoryTargetAt, makeUiMount } from '../src/application/ui-mount'
 import type { InventoryInteractionTarget } from '../src/application/inventory-view'
@@ -11,8 +11,18 @@ import {
   inventoryViewModel,
   type InventoryViewModel,
 } from '../src/domain/inventory-view-model'
-import { itemStack } from '@nerima-games/mc-sim'
+import { itemStack as makeItemStack } from '@nerima-games/mc-sim'
 
+const testItemStack = (
+  item: Parameters<typeof makeItemStack>[0],
+  count: Parameters<typeof makeItemStack>[1],
+) => {
+  const result = makeItemStack(item, count)
+  if (Result.isSuccess(result)) {
+    return result.success
+  }
+  expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
+}
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [{ sessionId: 'session-1', name: 'Cliff House' }]
 
 afterEach(() => {
@@ -557,7 +567,7 @@ describe('UiMount', () => {
 
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [itemStack('torch', 3)] },
+      inventory: { slots: [testItemStack('torch', 3)] },
     })
 
     runtime.updateInventory(model)
@@ -571,7 +581,7 @@ describe('UiMount', () => {
     runtime.openInventory()
     const other = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [itemStack('coal', 5)] },
+      inventory: { slots: [testItemStack('coal', 5)] },
     })
     runtime.updateInventory(other)
     expect(hotbarFirstSlot()?.querySelector('[data-mx-ui="slot-item"]')?.textContent).toBe(
@@ -692,7 +702,7 @@ describe('UiMount', () => {
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
@@ -820,7 +830,7 @@ describe('UiMount', () => {
         crafting: {
           gridWidth: 2,
           grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: itemStack('stick', 4) },
+          result: { _tag: 'Match', output: testItemStack('stick', 4) },
         },
       }),
     )
@@ -844,7 +854,7 @@ describe('UiMount', () => {
 
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
-      inventory: { slots: [itemStack('diamond', 1)] },
+      inventory: { slots: [testItemStack('diamond', 1)] },
     })
     runtime.openInventory(model)
     const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
@@ -949,7 +959,7 @@ describe('UiMount', () => {
 
     const base = inventoryViewModel({
       ...emptyInventorySnapshot,
-      offhand: itemStack('shield', 1),
+      offhand: testItemStack('shield', 1),
     })
     const widenedOffhand: InventoryViewModel = {
       ...base,
