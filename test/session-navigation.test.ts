@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { Result } from 'effect'
 import type { CreateWorldRequest } from '../src/domain/main-menu'
-import { createSessionHref, createUniqueSessionId, sessionHref } from '../src/domain/session-navigation'
-import type { SessionIdAllocationFailure } from '../src/domain/session-navigation'
+import {
+  createSessionHref,
+  createUniqueSessionId,
+  sessionHref,
+  type SessionIdAllocationFailure,
+} from '../src/domain/session-navigation'
 
 // Mirrors mc-compose's `readSessionId` contract exactly (that module stayed
 // in mc-compose — see this file's header) so the generator here and the
