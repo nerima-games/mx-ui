@@ -1,5 +1,11 @@
 # @nerima-games/mx-ui
 
+## 0.8.0
+
+### Minor Changes
+
+- Align the audio, render, and simulation dependency pins with mc-audio 0.5.0, mc-render 0.10.0, and mc-sim 0.9.0.
+
 ## 0.7.0
 
 ### Minor Changes
