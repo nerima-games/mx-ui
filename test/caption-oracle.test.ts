@@ -1,35 +1,16 @@
 /** Caption UI projection against mc-audio's owner supplied visibility policy. */
 import * as fc from 'fast-check'
-import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
   CAPTION_DISPLAY_SECS,
   CAPTION_REASONS,
   MAX_VISIBLE_CAPTIONS,
   visibleCaptions,
-  type CaptionEvent,
 } from '@nerima-games/mc-audio'
 import { describe, expect, it } from 'vitest'
 import { createCaptionView } from '../src/application/caption-view'
 import { captionLines } from '../src/domain/caption'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
-
-const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
-  MonotonicTimeSecs(seconds)
-
-const event = (
-  cueId: string,
-  text: string,
-  atSecs: number,
-  pan?: number,
-  reason: CaptionEvent['reason'] = 'audible',
-): CaptionEvent => ({
-  cueId,
-  text,
-  atSecs: captionTime(atSecs),
-  reason,
-  ...(typeof pan === 'undefined' ? {} : { pan }),
-})
+import { captionEvent, captionTime } from './helpers/caption-event'
 
 const mount = () => {
   const factory = fakeDocument()
@@ -47,10 +28,10 @@ const visibleText = (root: FakeElement): ReadonlyArray<string> =>
 describe('caption lines project mc-audio visibility', () => {
   it('preserves the owner order and maps pan and remaining display time', () => {
     const events = [
-      event('step-old', 'Footsteps', 0),
-      event('jump', 'Jump', 0.75, 0.5),
-      event('step-new', 'Footsteps', 1, -0.5),
-      event('future', 'Future', 1.5),
+      captionEvent('Footsteps', 0, undefined, 'audible'),
+      captionEvent('Jump', 0.75, 0.5, 'audible'),
+      captionEvent('Footsteps', 1, -0.5, 'audible'),
+      captionEvent('Future', 1.5, undefined, 'audible'),
     ]
     const now = captionTime(1.25)
     const ownerVisible = visibleCaptions(events, now)
@@ -66,9 +47,9 @@ describe('caption lines project mc-audio visibility', () => {
   })
 
   it('leaves expiry, future timestamps, and the visible cap to mc-audio', () => {
-    const atBoundary = event('expired', 'Expired', 0)
-    const current = event('current', 'Current', 0.1)
-    const future = event('future', 'Future', 3)
+    const atBoundary = captionEvent('Expired', 0, undefined, 'audible')
+    const current = captionEvent('Current', 0.1, undefined, 'audible')
+    const future = captionEvent('Future', 3, undefined, 'audible')
     const boundaryNow = captionTime(CAPTION_DISPLAY_SECS)
     const boundaryEvents = [atBoundary, current, future]
 
@@ -80,7 +61,7 @@ describe('caption lines project mc-audio visibility', () => {
     ])
 
     const events = Array.from({ length: MAX_VISIBLE_CAPTIONS + 3 }, (_value, index) =>
-      event(`cue-${String(index)}`, `line-${String(index)}`, index / 10),
+      captionEvent(`line-${String(index)}`, index / 10, undefined, 'audible'),
     )
     const now = captionTime(1)
     const ownerVisible = visibleCaptions(events, now)
@@ -94,8 +75,8 @@ describe('caption lines project mc-audio visibility', () => {
   it('renders only projected owner lines and clears rows when none are visible', () => {
     const { factory, view, root } = mount()
     const events = [
-      event('first', 'First', 0),
-      event('second', 'Second', 1),
+      captionEvent('First', 0, undefined, 'audible'),
+      captionEvent('Second', 1, undefined, 'audible'),
     ]
     const now = captionTime(1.5)
     const lines = captionLines(events, now)
@@ -118,10 +99,10 @@ describe('mc-audio caption owner property contract', () => {
     const nowSecs = 10
     const expiryBoundary = nowSecs - CAPTION_DISPLAY_SECS
     const events = [
-      event('inside', 'just-inside', expiryBoundary + 0.001),
-      event('at-boundary', 'at-boundary', expiryBoundary),
-      event('outside', 'just-outside', expiryBoundary - 0.001),
-      event('future', 'future', nowSecs + 0.001),
+      captionEvent('just-inside', expiryBoundary + 0.001, undefined, 'audible'),
+      captionEvent('at-boundary', expiryBoundary, undefined, 'audible'),
+      captionEvent('just-outside', expiryBoundary - 0.001, undefined, 'audible'),
+      captionEvent('future', nowSecs + 0.001, undefined, 'audible'),
     ]
     const now = captionTime(nowSecs)
     const ownerVisible = visibleCaptions(events, now)
@@ -135,7 +116,6 @@ describe('mc-audio caption owner property contract', () => {
   it('projects generated event lists exactly from owner visibility', () => {
     const eventLists = fc.array(
       fc.record({
-        cueId: fc.string({ maxLength: 12 }),
         text: fc.string({ maxLength: 16 }),
         atSecs: fc.double({ min: 0, max: 20, noNaN: true }),
         pan: fc.option(fc.double({ min: -1, max: 1, noNaN: true }), { nil: undefined }),
@@ -145,19 +125,17 @@ describe('mc-audio caption owner property contract', () => {
     )
     const fixedExpirySamples = [
       {
-        cueId: 'just-inside',
         text: 'just-inside',
         ageSecs: CAPTION_DISPLAY_SECS - 0.001,
         visible: true,
       },
-      { cueId: 'at-boundary', text: 'at-boundary', ageSecs: CAPTION_DISPLAY_SECS, visible: false },
+      { text: 'at-boundary', ageSecs: CAPTION_DISPLAY_SECS, visible: false },
       {
-        cueId: 'just-outside',
         text: 'just-outside',
         ageSecs: CAPTION_DISPLAY_SECS + 0.001,
         visible: false,
       },
-      { cueId: 'future', text: 'future', ageSecs: -0.001, visible: false },
+      { text: 'future', ageSecs: -0.001, visible: false },
     ] as const
 
     fc.assert(
@@ -167,8 +145,8 @@ describe('mc-audio caption owner property contract', () => {
         fc.constant(fixedExpirySamples),
         (rawEvents, nowSecs, expirySamples) => {
           const fixedNowSecs = 10
-          const fixedEvents = expirySamples.map(({ cueId, text, ageSecs }) =>
-            event(cueId, text, fixedNowSecs - ageSecs),
+          const fixedEvents = expirySamples.map(({ text, ageSecs }) =>
+            captionEvent(text, fixedNowSecs - ageSecs, undefined, 'audible'),
           )
           const fixedNow = captionTime(fixedNowSecs)
           const fixedOwnerVisible = visibleCaptions(fixedEvents, fixedNow)
@@ -180,8 +158,8 @@ describe('mc-audio caption owner property contract', () => {
             fixedOwnerVisible.map((caption) => caption.text),
           )
 
-          const events = rawEvents.map(({ cueId, text, atSecs, pan, reason }) =>
-            event(cueId, text, atSecs, pan, reason),
+          const events = rawEvents.map(({ text, atSecs, pan, reason }) =>
+            captionEvent(text, atSecs, pan, reason),
           )
           const now = captionTime(nowSecs)
           const ownerVisible = visibleCaptions(events, now)

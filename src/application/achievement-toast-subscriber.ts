@@ -1,11 +1,12 @@
 import type * as Scope from 'effect/Scope'
 import { type AchievementToast, achievementToastFromEvent } from '../domain/achievement-toast.js'
-import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from 'effect'
 import {
   DomainEventBus,
   EventSubscriberCapacitySchema,
   DomainEventBusLayer as domainEventBusLayer,
 } from '@nerima-games/mc-sim'
+import { Effect, Fiber, Schema, Stream } from 'effect'
+import { finishAchievementToastSubscription } from './achievement-toast-subscription.js'
 
 const { decodeUnknownSync } = Schema
 const TOAST_EVENT_SUBSCRIBER_CAPACITY = 64
@@ -39,18 +40,7 @@ export const startAchievementToastSubscriber: (
     ).pipe(Effect.forkScoped({ startImmediately: true }))
 
     const close = Effect.flatMap(Fiber.interrupt(fiber), () =>
-      Effect.flatMap(Fiber.await(fiber), (exit) => {
-        if (Exit.isSuccess(exit)) {
-          return Effect.void
-        }
-
-        const failure = Cause.findErrorOption(exit.cause)
-        if (Option.isSome(failure)) {
-          return Effect.fail(failure.value)
-        }
-
-        return Effect.void
-      }),
+      Effect.flatMap(Fiber.await(fiber), finishAchievementToastSubscription),
     )
 
     return { close, join: Fiber.join(fiber) }

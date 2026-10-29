@@ -1,4 +1,9 @@
-import { AchievementIdSchema, EntityIdSchema, SimulationTickSchema } from '@nerima-games/mc-kernel'
+import {
+  AchievementIdSchema,
+  DomainEventSchema,
+  EntityIdSchema,
+  SimulationTickSchema,
+} from '@nerima-games/mc-kernel'
 import { type Brand, Effect, Schema } from 'effect'
 import type { DomainEvent } from '@nerima-games/mc-sim'
 
@@ -176,25 +181,28 @@ const VANILLA_ADVANCEMENT_DISPLAY: Readonly<Record<AchievementId, AdvancementDis
 }
 
 export const achievementToastFromEvent = (
-  event: DomainEvent,
-): Effect.Effect<AchievementToast | null, Schema.SchemaError> => {
-  if (event['_tag'] !== 'AchievementUnlocked') {
-    return Effect.succeed(null)
-  }
+  event: unknown,
+): Effect.Effect<AchievementToast | null, Schema.SchemaError> =>
+  Schema.decodeUnknownEffect(DomainEventSchema)(event).pipe(
+    Effect.flatMap((decodedEvent) => {
+      if (decodedEvent['_tag'] !== 'AchievementUnlocked') {
+        return Effect.succeed(null)
+      }
 
-  return Schema.decodeUnknownEffect(AchievementIdSchema)(event.achievement).pipe(
-    Effect.flatMap((achievement) =>
-      Effect.map(Schema.encodeUnknownEffect(AchievementIdSchema)(achievement), (achievementId) => {
-        const display = VANILLA_ADVANCEMENT_DISPLAY[achievementId]
+      return Schema.decodeUnknownEffect(AchievementIdSchema)(decodedEvent.achievement).pipe(
+        Effect.flatMap((achievement) =>
+          Effect.map(Schema.encodeUnknownEffect(AchievementIdSchema)(achievement), (achievementId) => {
+            const display = VANILLA_ADVANCEMENT_DISPLAY[achievementId]
 
-        return {
-          achievement,
-          icon: display.icon,
-          player: event.player,
-          tick: event.tick,
-          title: display.title,
-        }
-      }),
-    ),
+            return {
+              achievement,
+              icon: display.icon,
+              player: decodedEvent.player,
+              tick: decodedEvent.tick,
+              title: display.title,
+            }
+          }),
+        ),
+      )
+    }),
   )
-}

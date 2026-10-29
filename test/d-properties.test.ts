@@ -3,7 +3,7 @@ import { BrandError } from 'effect/Brand'
 import { Effect, Result, Schema } from 'effect'
 import fc from 'fast-check'
 import { describe, it, expect } from 'vitest'
-import { achievementEventFromLegacySim } from './helpers/achievement-event'
+import { untrustedAchievementEvent } from './helpers/achievement-event'
 import {
   AchievementToastIconSchema,
   AchievementToastSchema,
@@ -85,7 +85,7 @@ describe('D domain properties', () => {
   it('returns SchemaError for generated IDs outside the kernel catalog', () => {
     fc.assert(
       fc.property(fc.string({ minLength: 1 }), (suffix) => {
-        const event = achievementEventFromLegacySim(`example:${suffix}`)
+        const event = untrustedAchievementEvent(`example:${suffix}`)
         const result = Effect.runSync(Effect.result(achievementToastFromEvent(event)))
 
         expect(Result.isFailure(result)).toBe(true)

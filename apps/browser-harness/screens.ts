@@ -45,6 +45,7 @@
  * evidence against that design; this one needs `0`.
  */
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { AudioCaptionText, AudioPan, SoundCueId } from '@nerima-games/mc-audio'
 import { EntityHealthPoints } from '@nerima-games/mc-sim'
 import { captionLines, type CaptionEvent } from '../../src/domain/caption'
 import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
@@ -63,7 +64,6 @@ import { createSaveIndicator } from '../../src/application/save-indicator'
 import type { DomElement, DomElementFactory } from '../../src/application/dom-surface'
 
 const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
   MonotonicTimeSecs(seconds)
 
 /** The `?screen=` values, and the order the hosts are created in. */
@@ -154,10 +154,10 @@ export const mountScreens = (
       [
         {
           atSecs: nowSecs,
-          cueId: 'creeper',
-          pan: -0.5,
+          cueId: SoundCueId('blockBreak'),
+          pan: AudioPan(-0.5),
           reason: 'audible',
-          text: 'Creeper hisses',
+          text: AudioCaptionText('Creeper hisses'),
         },
       ],
       nowSecs,

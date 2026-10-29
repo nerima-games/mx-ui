@@ -50,8 +50,7 @@
  * attribute is exactly what a fake document records.
  */
 import { describe, expect, it } from 'vitest'
-import { MonotonicTimeSecs, EntityHealthPoints } from '@nerima-games/mc-kernel'
-import type { CaptionEvent } from '@nerima-games/mc-audio'
+import { EntityHealthPoints } from '@nerima-games/mc-kernel'
 import { captionLines } from '../src/domain/caption'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
@@ -75,10 +74,7 @@ import {
   type PaletteTokenName,
 } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
-
-const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
-  MonotonicTimeSecs(seconds)
+import { captionEvent, captionTime } from './helpers/caption-event'
 
 const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
@@ -192,13 +188,7 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   captions.render(
     captionLines(
       [
-        {
-          cueId: 'creeper',
-          text: 'Creeper hisses',
-          pan: -1,
-          atSecs: captionTime(0),
-          reason: 'audible',
-        },
+        captionEvent('Creeper hisses', 0, -1, 'audible'),
       ],
       captionTime(0),
     ),

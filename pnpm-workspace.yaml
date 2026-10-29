@@ -8,13 +8,14 @@ overrides:
   undici: 8.12.2
 minimumReleaseAgeExclude:
   - '@nerima-games/mc-kernel@0.2.8 || 0.2.17 || 0.5.1 || 0.7.0 || 0.8.0 || 0.11.0 || 0.12.0 || 0.14.0'
-  - '@nerima-games/mc-render@0.9.0'
-  - '@nerima-games/mc-sim@0.1.24 || 0.1.39 || 0.2.1 || 0.4.1 || 0.4.2 || 0.5.0 || 0.6.0 || 0.7.0 || 0.7.1'
-  - '@nerima-games/mc-noise@0.2.0 || 0.3.0 || 0.3.1 || 0.4.0'
-  - '@nerima-games/mc-physics@0.1.7 || 0.2.1 || 0.2.2 || 0.3.0'
-  - '@nerima-games/mc-worldgen@0.1.14 || 0.2.0 || 0.3.1 || 0.3.2 || 0.5.0 || 0.7.0'
-  - '@nerima-games/mc-audio@0.2.7 || 0.2.8 || 0.3.0'
-  - '@nerima-games/mc-save@0.3.0 || 0.4.1 || 0.5.0'
+  - '@nerima-games/mc-render@0.9.0 || 0.10.0'
+  - '@nerima-games/mc-sim@0.1.24 || 0.1.39 || 0.2.1 || 0.4.1 || 0.4.2 || 0.5.0 || 0.6.0 || 0.7.0 || 0.7.1 || 0.9.0'
+  - '@nerima-games/mc-noise@0.2.0 || 0.3.0 || 0.3.1 || 0.4.0 || 0.6.0'
+  - '@nerima-games/mc-physics@0.1.7 || 0.2.1 || 0.2.2 || 0.3.0 || 0.5.0'
+  - '@nerima-games/mc-worldgen@0.1.14 || 0.2.0 || 0.3.1 || 0.3.2 || 0.5.0 || 0.7.0 || 0.8.0'
+  - '@nerima-games/mc-audio@0.2.7 || 0.2.8 || 0.3.0 || 0.5.0'
+  - '@nerima-games/mc-save@0.3.0 || 0.4.1 || 0.5.0 || 0.7.0'
   # pnpm blocks releases published within 24 hours by default.
   # This entry exempts Vite 8.3.5 from that check.
   - vite@8.3.5
+  - '@nerima-games/mc-meshing@0.5.0'

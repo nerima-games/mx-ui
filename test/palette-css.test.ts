@@ -11,8 +11,6 @@
  * sweep stays, because closing it once is not the same as keeping it closed.
  */
 import { describe, expect, it } from 'vitest'
-import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
-import type { CaptionEvent } from '@nerima-games/mc-audio'
 import * as palette from '../src/domain/palette'
 import {
   PALETTE_PROPERTY,
@@ -32,6 +30,7 @@ import { createHudView } from '../src/application/hud-view'
 import { createInventoryView } from '../src/application/inventory-view'
 import { createSaveIndicator } from '../src/application/save-indicator'
 import { fakeDocument, fakeElement } from './fake-dom'
+import { captionTime } from './helpers/caption-event'
 
 const isRgb = (value: unknown): value is palette.Rgb =>
   Array.isArray(value) && value.length === 3 && value.every((channel) => typeof channel === 'number')
@@ -45,10 +44,6 @@ const isRgb = (value: unknown): value is palette.Rgb =>
  * of a bound into a stylesheet as if they were colours somebody could use.
  */
 const NON_TOKEN_RGB_EXPORTS = new Set(['SCRIM_OVER_DARKEST_WORLD', 'SCRIM_OVER_BRIGHTEST_WORLD'])
-
-const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
-  MonotonicTimeSecs(seconds)
 
 const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
