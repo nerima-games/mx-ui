@@ -31,7 +31,6 @@
  * its display half moved.
  */
 import { describe, expect, it } from 'vitest'
-import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import type { CaptionEvent } from '@nerima-games/mc-audio'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
 import { captionLines, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
@@ -46,19 +45,10 @@ import { createSlotElement, updateSlotElement } from '../src/application/slot-el
 import type { SlotView } from '../src/domain/hud-view-model'
 import { PALETTE_PROPERTY } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames } from './fake-dom'
-
-const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
-  MonotonicTimeSecs(seconds)
+import { captionEvent, captionTime } from './helpers/caption-event'
 
 const queueOf = (...texts: ReadonlyArray<string>): ReadonlyArray<CaptionEvent> =>
-  texts.map((text, index): CaptionEvent => ({
-    cueId: text,
-    text,
-    pan: -1,
-    atSecs: captionTime(index),
-    reason: 'audible',
-  }))
+  texts.map((text, index) => captionEvent(text, index, -1, 'audible'))
 
 const testItemStack = (
   item: Parameters<typeof makeItemStack>[0],

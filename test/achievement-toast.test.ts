@@ -8,11 +8,11 @@ import {
   AchievementToastTitleSchema,
   achievementToastFromEvent,
 } from '../src/domain/achievement-toast'
-import { achievementEventFromLegacySim } from './helpers/achievement-event'
+import { achievementEvent, untrustedAchievementEvent } from './helpers/achievement-event'
 
 describe('achievement toast projection', () => {
   it('uses the vanilla advancement title and item icon', () => {
-    const event = achievementEventFromLegacySim('minecraft:story/mine_stone')
+    const event = achievementEvent('minecraft:story/mine_stone')
     const toast = Effect.runSync(Effect.orDie(achievementToastFromEvent(event)))
 
     expect(
@@ -27,7 +27,7 @@ describe('achievement toast projection', () => {
   })
 
   it('returns a typed schema failure for an ID outside the kernel catalog', () => {
-    const event = achievementEventFromLegacySim('example:custom/achievement')
+    const event = untrustedAchievementEvent('example:custom/achievement')
     const result = Effect.runSync(Effect.result(achievementToastFromEvent(event)))
 
     expect(Result.isFailure(result)).toBe(true)

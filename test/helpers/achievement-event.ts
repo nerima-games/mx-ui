@@ -1,20 +1,28 @@
-import { EntityIdSchema, SimulationTickSchema } from '@nerima-games/mc-kernel'
+import { AchievementIdSchema, DomainEventSchema } from '@nerima-games/mc-kernel'
 import type { DomainEvent } from '@nerima-games/mc-sim'
 import { Schema } from 'effect'
 
 type AchievementUnlockedEvent = Extract<DomainEvent, { readonly _tag: 'AchievementUnlocked' }>
+type AchievementId = Schema.Codec.Encoded<typeof AchievementIdSchema>
 
-const LegacyAchievementIdSchema = Schema.NonEmptyString.pipe(Schema.brand('AchievementId'))
-const LegacyAchievementUnlockedEventSchema = Schema.TaggedStruct('AchievementUnlocked', {
-  achievement: LegacyAchievementIdSchema,
-  player: EntityIdSchema,
-  tick: SimulationTickSchema,
-})
-
-export const achievementEventFromLegacySim = (achievement: string): AchievementUnlockedEvent =>
-  Schema.decodeUnknownSync(LegacyAchievementUnlockedEventSchema)({
+export const achievementEvent = (achievement: AchievementId): AchievementUnlockedEvent => {
+  const event = Schema.decodeUnknownSync(DomainEventSchema)({
     _tag: 'AchievementUnlocked',
     achievement,
     player: 'player:one',
     tick: 7,
   })
+
+  if (event['_tag'] !== 'AchievementUnlocked') {
+    throw new Error('expected an achievement-unlocked event')
+  }
+
+  return event
+}
+
+export const untrustedAchievementEvent = (achievement: string): unknown => ({
+  _tag: 'AchievementUnlocked',
+  achievement,
+  player: 'player:one',
+  tick: 7,
+})

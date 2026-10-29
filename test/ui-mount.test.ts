@@ -12,6 +12,11 @@ import {
   UiMountError,
   type UiMountOptions,
 } from '../src/application/ui-mount'
+import {
+  finishToastSubscriptionClose,
+  finishUiMountCleanup,
+} from '../src/application/ui-mount-cleanup'
+import { achievementToastFromEvent } from '../src/domain/achievement-toast'
 import type { InventoryInteractionTarget } from '../src/application/inventory-view'
 import { uiModule } from '../src/stages/registration'
 import { initialMainMenuState, mainMenuViewModel, type SavedWorld } from '../src/domain/main-menu'
@@ -21,7 +26,7 @@ import {
   type InventoryViewModel,
 } from '../src/domain/inventory-view-model'
 import { DomainEventBus, itemStack as makeItemStack } from '@nerima-games/mc-sim'
-import { achievementEventFromLegacySim } from './helpers/achievement-event'
+import { achievementEvent, untrustedAchievementEvent } from './helpers/achievement-event'
 
 const testScopes: Array<Scope.Closeable> = []
 
@@ -112,7 +117,7 @@ describe('UiMount', () => {
           expect(toastRoot?.hidden).toBe(true)
           const render = vi.spyOn(toastView, 'render')
 
-          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          yield* bus.publish(achievementEvent('minecraft:story/mine_stone'))
           expect(toastRoot?.hidden).toBe(false)
           expect(host.querySelector('[data-mx-ui="achievement-toast-title"]')?.textContent).toBe('Stone Age')
           expect(render).toHaveBeenCalledOnce()
@@ -123,7 +128,7 @@ describe('UiMount', () => {
           })
 
           yield* runtime.stop
-          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          yield* bus.publish(achievementEvent('minecraft:story/mine_stone'))
           expect(render).toHaveBeenCalledOnce()
           expect(host.querySelector('[data-mx-ui="achievement-toast"]')).toBeNull()
           const stoppedQaState = yield* moduleInstance.qa.observe.state.run({})
@@ -151,11 +156,11 @@ describe('UiMount', () => {
           }
           const render = vi.spyOn(mounted.achievementToast, 'render')
 
-          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          yield* bus.publish(achievementEvent('minecraft:story/mine_stone'))
           expect(render).toHaveBeenCalledOnce()
 
           yield* Scope.close(parentScope, Exit.void)
-          yield* bus.publish(achievementEventFromLegacySim('minecraft:story/mine_stone'))
+          yield* bus.publish(achievementEvent('minecraft:story/mine_stone'))
           expect(render).toHaveBeenCalledOnce()
 
           yield* runtime.stop
@@ -166,51 +171,61 @@ describe('UiMount', () => {
     )
   })
 
-  it('returns an unsupported achievement id as a SchemaError when stopping the mount', async () => {
+  it('rejects an unsupported achievement id before it reaches the mounted subscriber', async () => {
+    const validation = Effect.runSync(
+      Effect.result(
+        achievementToastFromEvent(untrustedAchievementEvent('example:custom/achievement')),
+      ),
+    )
+    expect(Result.isFailure(validation)).toBe(true)
+    if (Result.isFailure(validation)) {
+      expect(validation.failure).toBeInstanceOf(Schema.SchemaError)
+    }
+
     const host = document.createElement('main')
     document.body.appendChild(host)
     const runtime = makeRawUiMount({ root: host })
 
-    const failure = await Effect.runPromise(
+    await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const bus = yield* DomainEventBus
           yield* runtime.start
-          yield* bus.publish(achievementEventFromLegacySim('example:custom/achievement'))
-          yield* Effect.yieldNow
-          return yield* Effect.flip(runtime.stop)
+          yield* runtime.stop
         }).pipe(Effect.provide(AchievementToastEventBusLayer)),
       ),
     )
 
-    expect(failure).toBeInstanceOf(Schema.SchemaError)
     expect(runtime.current()).toBeUndefined()
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
-  it('reports subscriber and view cleanup failures together', async () => {
-    const host = document.createElement('main')
-    document.body.appendChild(host)
-    const runtime = makeRawUiMount({ root: host })
-
-    const failure = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const bus = yield* DomainEventBus
-          yield* runtime.start
-
-          const mounted = runtime.current()
-          if (mounted === undefined) {
-            throw new Error('Expected the UI mount to be active')
-          }
-          vi.spyOn(mounted.overlays, 'destroy').mockImplementation(() => {
-            throw new Error('view destroy failed')
-          })
-
-          yield* bus.publish(achievementEventFromLegacySim('example:custom/achievement'))
-          yield* Effect.yieldNow
-          return yield* Effect.flip(runtime.stop)
-        }).pipe(Effect.provide(AchievementToastEventBusLayer)),
+  it('reports subscriber and view cleanup failures together', () => {
+    const subscriptionResult = Result.map(
+      Effect.runSync(
+        Effect.result(
+          achievementToastFromEvent(untrustedAchievementEvent('example:custom/achievement')),
+        ),
+      ),
+      () => undefined,
+    )
+    const viewsError = new UiMountError('Failed to stop mx-ui', {
+      cause: new Error('view destroy failed'),
+    })
+    const viewsResult = Result.fail(viewsError)
+    const subscriptionClose = Effect.runSync(
+      Effect.result(finishToastSubscriptionClose(subscriptionResult)),
+    )
+    const failure = Effect.runSync(
+      Effect.flip(
+        finishUiMountCleanup(subscriptionResult, viewsResult),
+      ),
+    )
+    const subscriptionFailure = Effect.runSync(
+      Effect.flip(
+        finishUiMountCleanup(
+          subscriptionResult,
+          Result.succeed(undefined),
+        ),
       ),
     )
 
@@ -221,6 +236,8 @@ describe('UiMount', () => {
         message: 'Failed to stop mx-ui',
       }),
     })
+    expect(subscriptionFailure).toBeInstanceOf(Schema.SchemaError)
+    expect(Result.isFailure(subscriptionClose)).toBe(true)
   })
 
   it('remounts cleanly and detaches listeners from the previous menu', async () => {

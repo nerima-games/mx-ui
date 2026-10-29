@@ -13,7 +13,7 @@ import {
   type UiSettingsCallbacks,
   createSessionOverlays,
 } from './session-overlays.js'
-import { Effect, Exit, Result, Schema } from 'effect'
+import { Effect, Exit, Schema } from 'effect'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../domain/hud-view-model.js'
 import { type HudView, createHudView } from './hud-view.js'
 import {
@@ -44,13 +44,17 @@ import {
   type MainMenuView,
   createMainMenuView,
 } from './main-menu-view.js'
+import { finishToastSubscriptionClose, finishUiMountCleanup } from './ui-mount-cleanup.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import type { AchievementToast } from '../domain/achievement-toast.js'
 import { DomainEventBus } from '@nerima-games/mc-sim'
 import type { MotionPreference } from '../domain/accessibility.js'
+import { UiMountError } from './ui-mount-error.js'
 import type { UiQaSnapshot } from '../domain/ui-qa.js'
 import { createUiModuleInstance } from './ui-module-instance.js'
 import { uiModule } from '../stages/registration.js'
+
+export { UiMountError } from './ui-mount-error.js'
 
 const HOTBAR_START_INDEX = 0
 const INITIAL_SELECTED_HOTBAR_SLOT = 0
@@ -99,18 +103,6 @@ export type UiMount = {
     target: InventoryDragTarget,
   ) => boolean
   readonly updateInventoryActionState: (state: InventoryActionState) => void
-}
-
-export class UiMountError {
-  readonly _tag = 'UiMountError'
-  readonly name = 'UiMountError'
-  readonly message: string
-  readonly cause: unknown
-
-  constructor(message: string, options?: ErrorOptions) {
-    this.message = message
-    this.cause = options?.cause
-  }
 }
 
 const inventoryDirectionForKey = (key: string): InventoryNavigationDirection | null => {
@@ -378,30 +370,6 @@ const removeUiMountedViews = (
     },
   })
 
-const finishUiMountCleanup = (
-  message: string,
-  subscriptionResult: Result.Result<void, Schema.SchemaError>,
-  viewsResult: Result.Result<void, UiMountError>,
-): Effect.Effect<void, UiMountError | Schema.SchemaError> => {
-  if (Result.isFailure(subscriptionResult) && Result.isFailure(viewsResult)) {
-    return Effect.fail(
-      new UiMountError(message, {
-        cause: {
-          subscriptionError: subscriptionResult.failure,
-          viewsError: viewsResult.failure,
-        },
-      }),
-    )
-  }
-  if (Result.isFailure(viewsResult)) {
-    return Effect.fail(viewsResult.failure)
-  }
-  if (Result.isFailure(subscriptionResult)) {
-    return Effect.fail(subscriptionResult.failure)
-  }
-  return Effect.void
-}
-
 const createAchievementToastLifecycle = (session: UiMountSession) => {
   const close = (): Effect.Effect<void, Schema.SchemaError> => {
     const subscription = session.toastSubscription
@@ -415,9 +383,7 @@ const createAchievementToastLifecycle = (session: UiMountSession) => {
         yield* Scope.close(scope, Exit.void)
       }
       delete session.achievementToast
-      if (Result.isFailure(subscriptionResult)) {
-        return yield* Effect.fail(subscriptionResult.failure)
-      }
+      yield* finishToastSubscriptionClose(subscriptionResult)
     })
   }
 
@@ -532,7 +498,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
 
       const subscriptionResult = yield* Effect.result(toastLifecycle.close())
       const viewsResult = yield* Effect.result(removeUiMountedViews(previous, message))
-      return yield* finishUiMountCleanup(message, subscriptionResult, viewsResult)
+      return yield* finishUiMountCleanup(subscriptionResult, viewsResult)
     })
 
   const createBaseViews = (

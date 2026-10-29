@@ -64,6 +64,7 @@ import {
   type Vitals,
 } from '@nerima-games/mc-sim'
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { AudioCaptionText, AudioPan, MinecraftSoundEventId } from '@nerima-games/mc-audio'
 import { Result } from 'effect'
 
 export type ScreenName = 'hud' | 'inventory' | 'settings' | 'captions'
@@ -134,16 +135,40 @@ export const SAMPLE_HOTBAR: ReadonlyArray<InventoryCarriedSlot> = [
 ]
 
 export const SAMPLE_CAPTIONS: ReadonlyArray<{
-  readonly cueId: string
-  readonly text: string
+  readonly cueId: CaptionEvent['cueId']
+  readonly text: CaptionEvent['text']
   readonly pan: CaptionEvent['pan']
 }> = [
-  { cueId: 'entity.creeper.primed', text: 'Creeper hisses', pan: -1 },
-  { cueId: 'entity.skeleton.shoot', text: 'Arrow fires', pan: -1 },
-  { cueId: 'block.water.ambient', text: 'Water flows', pan: 1 },
-  { cueId: 'entity.zombie.ambient', text: 'Zombie groans', pan: 0 },
-  { cueId: 'block.stone.break', text: 'Block breaks', pan: undefined },
-  { cueId: 'entity.player.hurt', text: 'You are hurt', pan: undefined },
+  {
+    cueId: MinecraftSoundEventId('entity.creeper.primed'),
+    text: AudioCaptionText('Creeper hisses'),
+    pan: AudioPan(-1),
+  },
+  {
+    cueId: MinecraftSoundEventId('entity.skeleton.shoot'),
+    text: AudioCaptionText('Arrow fires'),
+    pan: AudioPan(-1),
+  },
+  {
+    cueId: MinecraftSoundEventId('block.water.ambient'),
+    text: AudioCaptionText('Water flows'),
+    pan: AudioPan(1),
+  },
+  {
+    cueId: MinecraftSoundEventId('entity.zombie.ambient'),
+    text: AudioCaptionText('Zombie groans'),
+    pan: AudioPan(0),
+  },
+  {
+    cueId: MinecraftSoundEventId('block.stone.break'),
+    text: AudioCaptionText('Block breaks'),
+    pan: undefined,
+  },
+  {
+    cueId: MinecraftSoundEventId('entity.player.hurt'),
+    text: AudioCaptionText('You are hurt'),
+    pan: undefined,
+  },
 ]
 
 export type PreviewCaptionSettings = {
@@ -154,7 +179,6 @@ export type PreviewCaptionSettings = {
 type CaptionTime = CaptionEvent['atSecs']
 
 export const captionAtTime = (seconds: number): CaptionTime =>
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
   MonotonicTimeSecs(seconds)
 
 const experienceTotal = (level: number, progress: number): TotalExperience => {

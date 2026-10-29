@@ -12,7 +12,6 @@ import * as publicUi from '../src/index'
 import {
   DeltaTimeSecs,
   EntityHealthPoints,
-  MonotonicTimeSecs,
   StageId,
   type GameModule,
   type StageRegistration,
@@ -37,6 +36,7 @@ import { FrameServicesLayer } from './frame-services'
 import { debugOverlayModel } from '../src/domain/debug-overlay'
 import type { UiQaSnapshot } from '../src/domain/ui-qa'
 import { createUiModuleInstance } from '../src/application/ui-module-instance'
+import { captionEvent, captionTime } from './helpers/caption-event'
 
 const QA_WORLD_Y = 64
 const QA_WORLD_Z = -2
@@ -46,10 +46,6 @@ const SECOND_QA_WORLD_X = 7
 
 const allAfterEdges = (stages: ReadonlyArray<StageRegistration>): ReadonlyArray<string> =>
   stages.flatMap((stage) => [...(stage.after ?? [])])
-
-const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
-  // @ts-expect-error mc-audio 0.3.0 uses the kernel 0.8 time brand; mx-ui exposes kernel 0.12.
-  MonotonicTimeSecs(seconds)
 
 const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
@@ -170,13 +166,7 @@ describe('stage behaviour', () => {
       const overlaySync = uiStages(state).find((stage) => stage.id === UI_STAGE_IDS.overlaySync)
 
       const events: ReadonlyArray<CaptionEvent> = [
-        {
-          cueId: 'creeper.primed',
-          text: 'Creeper hisses',
-          pan: -1,
-          atSecs: captionTime(0),
-          reason: 'audible',
-        },
+        captionEvent('Creeper hisses', 0, -1, 'audible'),
       ]
       yield* Ref.set(state.captions, events)
       expect(captionLines(events, captionTime(0))).toHaveLength(1)
