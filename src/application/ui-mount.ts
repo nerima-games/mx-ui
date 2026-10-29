@@ -498,7 +498,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
 
       const subscriptionResult = yield* Effect.result(toastLifecycle.close())
       const viewsResult = yield* Effect.result(removeUiMountedViews(previous, message))
-      return yield* finishUiMountCleanup(message, subscriptionResult, viewsResult)
+      return yield* finishUiMountCleanup(subscriptionResult, viewsResult)
     })
 
   const createBaseViews = (

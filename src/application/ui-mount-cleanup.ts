@@ -11,13 +11,12 @@ export const finishToastSubscriptionClose = (
 }
 
 export const finishUiMountCleanup = (
-  message: string,
   subscriptionResult: Result.Result<void, Schema.SchemaError>,
   viewsResult: Result.Result<void, UiMountError>,
 ): Effect.Effect<void, UiMountError | Schema.SchemaError> => {
   if (Result.isFailure(subscriptionResult) && Result.isFailure(viewsResult)) {
     return Effect.fail(
-      new UiMountError(message, {
+      new UiMountError(viewsResult.failure.message, {
         cause: {
           subscriptionError: subscriptionResult.failure,
           viewsError: viewsResult.failure,

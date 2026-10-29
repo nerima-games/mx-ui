@@ -217,13 +217,12 @@ describe('UiMount', () => {
     )
     const failure = Effect.runSync(
       Effect.flip(
-        finishUiMountCleanup('Failed to stop mx-ui', subscriptionResult, viewsResult),
+        finishUiMountCleanup(subscriptionResult, viewsResult),
       ),
     )
     const subscriptionFailure = Effect.runSync(
       Effect.flip(
         finishUiMountCleanup(
-          'Failed to stop mx-ui',
           subscriptionResult,
           Result.succeed(undefined),
         ),
