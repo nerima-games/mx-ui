@@ -170,7 +170,9 @@ export type SlotElement = {
   readonly root: DomElement
   readonly hiddenFlag: AttributeCell
   readonly itemText: TextCell
+  readonly itemTitle: AttributeCell
   readonly countText: TextCell
+  readonly countTitle: AttributeCell
   readonly emptyFlag: AttributeCell
   readonly mergeableFlag: AttributeCell
   readonly selectedFlag: AttributeCell
@@ -195,6 +197,12 @@ export type SlotButtonView = {
   readonly focused: boolean
 }
 
+type RadioStateCells = {
+  readonly checked: AttributeCell
+}
+
+const radioStateCells = new WeakMap<SlotElement, RadioStateCells>()
+
 /**
  * Build one slot, styled entirely from tokens.
  *
@@ -217,20 +225,27 @@ const createSlotRoot = (factory: DomElementFactory, index: number): DomElement =
   return root
 }
 
-const createSlotItem = (factory: DomElementFactory, root: DomElement): TextCell => {
+type SlotTextElements = {
+  readonly text: TextCell
+  readonly title: AttributeCell
+}
+
+const createSlotItem = (factory: DomElementFactory, root: DomElement): SlotTextElements => {
   const item = factory.createElement('span')
   item.setAttribute('data-mx-ui', 'slot-item')
   item.style.setProperty('color', PALETTE_VAR.ink)
+  item.style.setProperty('overflow-wrap', 'anywhere')
   root.appendChild(item)
-  return textCell(item)
+  return { text: textCell(item), title: attributeCell(item, 'title') }
 }
 
-const createSlotCount = (factory: DomElementFactory, root: DomElement): TextCell => {
+const createSlotCount = (factory: DomElementFactory, root: DomElement): SlotTextElements => {
   const count = factory.createElement('span')
   count.setAttribute('data-mx-ui', 'slot-count')
   count.style.setProperty('color', PALETTE_VAR.ink)
+  count.style.setProperty('overflow-wrap', 'anywhere')
   root.appendChild(count)
-  return textCell(count)
+  return { text: textCell(count), title: attributeCell(count, 'title') }
 }
 
 type SlotDurabilityElements = {
@@ -310,20 +325,25 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
     ariaLive: attributeCell(root, 'aria-live'),
     borderColor: styleCell(root, 'border-color'),
     borderWeight: styleCell(root, 'border-width'),
-    countText: count,
+    countText: count.text,
+    countTitle: count.title,
     durabilityColor: durability.color,
     durabilityHidden: durability.hidden,
     durabilityWidth: durability.width,
     emptyFlag: attributeCell(root, 'data-empty'),
     focusRingHidden,
     hiddenFlag: attributeCell(root, 'hidden'),
-    itemText: item,
+    itemText: item.text,
+    itemTitle: item.title,
     mergeableFlag: attributeCell(root, 'data-mergeable'),
     role: attributeCell(root, 'role'),
     root,
     selectedFlag: attributeCell(root, 'data-selected'),
     tabStop: attributeCell(root, 'tabindex'),
   }
+  radioStateCells.set(slot, {
+    checked: attributeCell(root, 'aria-checked'),
+  })
   // The ring was hidden directly above; tell its cell so, or the first call
   // Issues a redundant write from the construction side, where the 「unchanged
   // Re-render mutates nothing」 test cannot see it. `tabStop` is deliberately NOT
@@ -394,12 +414,39 @@ export const setSlotKeyboardFocus = (slot: SlotElement, focused: boolean): void 
   writeHidden(slot.focusRingHidden, !focused)
 }
 
+const clearRadioState = (slot: SlotElement): void => {
+  const state = radioStateCells.get(slot)
+  if (typeof state !== 'undefined') {
+    writeAttribute(state.checked)
+  }
+}
+
+const writeRadioState = (state: RadioStateCells, selected: boolean): void => {
+  if (selected) {
+    writeAttribute(state.checked, 'true')
+    return
+  }
+  writeAttribute(state.checked, 'false')
+}
+
 const clearSlotButtonView = (slot: SlotElement): void => {
   writeAttribute(slot.role)
   writeAttribute(slot.ariaLabel)
   writeAttribute(slot.ariaDisabled)
   writeAttribute(slot.tabStop)
   setSlotKeyboardFocus(slot, false)
+  clearRadioState(slot)
+}
+
+const updateRadioState = (slot: SlotElement, selected: boolean): void => {
+  if (slot.role.previous !== 'radio') {
+    return
+  }
+  const state = radioStateCells.get(slot)
+  if (typeof state === 'undefined') {
+    return
+  }
+  writeRadioState(state, selected)
 }
 
 /** Project optional button semantics without taking ownership of activation. */
@@ -413,6 +460,7 @@ export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): voi
   writeAttribute(slot.ariaDisabled, String(view.disabled))
   setSlotTabStop(slot, view.tabStop)
   setSlotKeyboardFocus(slot, view.focused)
+  clearRadioState(slot)
 }
 
 /** `''` when present, otherwise no attribute at all. */
@@ -456,6 +504,15 @@ const updateSlotDurability = (slot: SlotElement, durability: number | undefined)
   writeStyle(slot.durabilityColor, durabilityColor(durability))
 }
 
+const updateSlotText = (
+  text: TextCell,
+  title: AttributeCell,
+  value: string | undefined,
+): void => {
+  writeText(text, value ?? '')
+  writeAttribute(title, value)
+}
+
 /**
  * Project a `SlotView` onto a built slot. Diffed field by field.
  *
@@ -470,10 +527,11 @@ export const updateSlotElement = (
   view: SlotView,
   mergeable?: boolean,
 ): void => {
-  writeText(slot.itemText, view.itemId ?? '')
-  writeText(slot.countText, view.countLabel ?? '')
+  updateSlotText(slot.itemText, slot.itemTitle, view.itemId)
+  updateSlotText(slot.countText, slot.countTitle, view.countLabel)
   writeAttribute(slot.emptyFlag, presenceValue(view.empty))
   writeAttribute(slot.selectedFlag, presenceValue(view.selected))
+  updateRadioState(slot, view.selected)
   writeAttribute(slot.mergeableFlag, presenceValue(mergeable === true))
 
   writeStyle(slot.borderColor, selectionColor(view.selected))

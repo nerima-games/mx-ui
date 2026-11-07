@@ -1,218 +1,399 @@
-/**
- * The browser harness — mx-ui's screens in a REAL document, and nothing else.
- *
- * ---------------------------------------------------------------------------
- * Why this exists when `apps/preview-screens/` already does
- * ---------------------------------------------------------------------------
- *
- * `apps/preview-screens/main.ts` argues at length why the FIRST preview was a
- * terminal renderer, and every one of its four reasons still holds. It also
- * names what a terminal cannot see — 「レイアウト崩れ、重なり、フォーカスリング、
- * スクリーンリーダーの読み上げ」 — and says that when the first screen was written
- * the browser preview goes 「これの代わりではなく隣に」. The screens are written.
- * This is the one that goes beside it.
- *
- * `docs/testing.md` §4 states exactly two things this repository has not proved,
- * and both are here:
- *
- *   1. GEOMETRY. Nothing asserts a width, a height, a position, a `z-index` or
- *      how a host's stylesheet interacts with any of them. The guarantee assumes
- *      guarded content stays ON the scrim; containment is structural but 「an
- *      element inside a scrim-backed element」 and 「a pixel on top of the scrim」
- *      are different sentences.
- *   2. `var()` IS UNRESOLVED. `test/fake-dom.ts` records the reference string and
- *      runs no cascade. The property names agree by construction because both
- *      sides come from the same constant, but nobody has watched a browser paint
- *      the colour.
- *
- * ---------------------------------------------------------------------------
- * THE ONE LINE THAT MATTERS
- * ---------------------------------------------------------------------------
- *
- *     const factory: DomElementFactory = document
- *
- * No cast. `application/dom-surface.ts` claims a real `Document` satisfies its
- * structural surface, `test/fixtures/dom-surface.ts` proves that claim against
- * `lib.dom.d.ts`, and `test/dom-surface.test.ts` asserts the proof compiles
- * clean. This is the same claim COLLECTED: the renderers were written against
- * the surface and are handed the real thing, so if the surface had drifted the
- * failure arrives here as a compile error or a `TypeError` rather than as a
- * browser consumer reaching for `as unknown as`.
- *
- * ---------------------------------------------------------------------------
- * WHAT THE HARNESS MAY STYLE, AND WHAT IT MUST NOT
- * ---------------------------------------------------------------------------
- *
- * The harness is the HOST. `docs/public-api.md` §4-1 makes the root an argument
- * precisely because mx-ui does not own the page, so a harness supplying a page
- * is supplying the thing a host supplies and nothing is being smuggled.
- *
- * The line is drawn in `index.html`: every rule there is scoped to
- * `[data-harness-host]` or above it, and NOT ONE reaches inside an mx-ui root.
- * That is what keeps the measurements honest. A harness stylesheet that sized a
- * hotbar slot would turn 「is the slot big enough to press」 into 「did the
- * harness say 48px」, which is the failure mode `docs/e2e-triage.md` names when
- * it refuses to assert `48` against a number a fake produced:
- * 「測っていないものを測ったことにはしない」.
- *
- * ---------------------------------------------------------------------------
- * NO LISTENER, HERE EITHER — and the harness is where that would be easiest
- * ---------------------------------------------------------------------------
- *
- * A browser harness is the obvious place to slip in `addEventListener`: it has a
- * real document, real events, and no test watching. It does not have one.
- * DN-UI-4's guarantee is that a renderer written against
- * `application/dom-surface.ts` CANNOT attach a handler because the verb is not
- * in the vocabulary, and the harness demonstrating the ban rather than
- * demonstrating an exception to it is worth more than any interactivity it would
- * buy. State comes from the query string; there is nothing to click.
- *
- * If a future check genuinely needs an event, it attaches OUTSIDE any mx-ui root
- * — on the page shell — and says so at the call site.
- */
-import type { MotionPreference } from '../../src/domain/accessibility'
+import { colorVisionMatrixValues } from '../../src/domain/accessibility'
 import type { DomElementFactory } from '../../src/application/dom-surface'
-import { mountScreens, SCREEN_NAMES, type ScreenName } from './screens'
+import {
+  collectDiagnostics,
+  createIntentLog,
+  intentLogDiagnosticValue,
+  type DiagnosticValue,
+} from './diagnostics-core'
+import { createDebugPanel } from './debug-panel'
+import {
+  DEFAULT_SCREEN_IDS,
+  SCENARIO_REGISTRY,
+  defaultScenarioForScreen,
+  findScenario,
+  scenariosForScreen,
+} from './scenario-registry'
+import type { HarnessEnvironment, HarnessUrlState, ScenarioDefinition, ScenarioMount } from './scenario-types'
+import { parseHarnessStateJson, serializeHarnessStateJson } from './json-state'
+import { parseHarnessUrl, serializeHarnessState, type UrlIssue } from './url-state'
+import { createVirtualClock, type VirtualClockState } from './virtual-clock'
 
-/**
- * Set on `<html>` once every screen is mounted.
- *
- * An attribute rather than a `window.__NERIMA_GAMES_QA__` global, which is what
- * `docs/e2e-triage.md` §0 records as the convention for mc-compose. The
- * convention is right there and wrong here: a QA global exists so a test can ask
- * a RUNNING GAME about state it cannot see in the DOM (frame counters, camera
- * vectors). This harness has no state that is not the DOM — every question the
- * browser checks ask is a question about elements — so a global would be an API
- * surface carrying nothing.
- */
 const READY_ATTRIBUTE = 'data-harness-ready'
+const IDENTITY_MATRIX = '1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0'
 
-const isScreenName = (value: string): value is ScreenName =>
-  (SCREEN_NAMES as ReadonlyArray<string>).includes(value)
+const environmentFrom = (state: HarnessUrlState): HarnessEnvironment => ({
+  motion: state.motion,
+  cvd: state.cvd,
+  width: state.width,
+  height: state.height,
+  safe: state.safe,
+  dpr: state.dpr,
+  textScale: state.textScale,
+  contrast: state.contrast,
+  background: state.background,
+})
 
-/**
- * Which screen to leave visible, or `undefined` for all of them.
- *
- * Selection HIDES the other hosts rather than declining to mount them. Mounting
- * is the thing under test: a `?screen=hud` run that never built the inventory
- * would also never notice the inventory failing to build.
- */
-const selectedScreen = (search: string): ScreenName | undefined => {
-  const requested = new URLSearchParams(search).get('screen')
-  return requested !== null && isScreenName(requested) ? requested : undefined
+type MountedScenario = {
+  readonly definition: ScenarioDefinition
+  readonly mount: ScenarioMount
 }
 
-const selectedMotion = (search: string): MotionPreference =>
-  new URLSearchParams(search).get('motion') === 'reduced' ? 'reduced' : 'full'
-
-const selectedBreakProgress = (search: string): number | undefined => {
-  const requested = new URLSearchParams(search).get('breakProgress')
-  if (requested === null) {
-    return undefined
-  }
-  const progress = Number(requested)
-  return Number.isFinite(progress) && progress >= 0 && progress <= 1 ? progress : undefined
+const makeHost = (screen: string, scenario: ScenarioDefinition): HTMLDivElement => {
+  const host = document.createElement('div')
+  host.setAttribute('data-harness-host', screen)
+  host.setAttribute('data-harness-scenario', scenario.id)
+  return host
 }
 
-/**
- * The emulated safe-area inset, in CSS pixels.
- *
- * `env(safe-area-inset-*)` is zero in a headless Chromium with no notch, so a
- * check written against it would pass on an empty premise — the same shape of
- * defect `surveyPalette` was given an argument to escape (`docs/testing.md`
- * §5-3: 「発火するところを誰も見たことがないガードは、繋がっているかどうか誰も
- * 知らないガードである」). `?safe=44` gives the host a real inset so the check
- * has something to be wrong about. The default is the real `env()`, so the page
- * still behaves correctly on a device that has one.
- */
-const selectedSafeInset = (search: string): string | undefined => {
-  const requested = new URLSearchParams(search).get('safe')
-  if (requested === null) {
-    return undefined
-  }
-  const pixels = Number(requested)
-  return Number.isFinite(pixels) && pixels >= 0 ? `${String(pixels)}px` : undefined
+const addSvgFilter = (): SVGFEColorMatrixElement => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('width', '0')
+  svg.setAttribute('height', '0')
+  svg.style.position = 'absolute'
+
+  const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter')
+  filter.id = 'harness-color-vision-filter'
+  const matrix = document.createElementNS('http://www.w3.org/2000/svg', 'feColorMatrix')
+  matrix.setAttribute('type', 'matrix')
+  matrix.setAttribute('values', IDENTITY_MATRIX)
+  filter.append(matrix)
+  svg.append(filter)
+  document.body.append(svg)
+  return matrix
 }
 
 const start = (): void => {
-  /**
-   * THE ASSIGNMENT. A real `Document`, to the structural factory, with no cast.
-   *
-   * `DomElementFactory` names one method. `Document` has several hundred
-   * members and one of them is `createElement`, whose `(tagName: string):
-   * HTMLElement` overload is assignable to it. That is the whole subset claim,
-   * and it is being made against the real declarations rather than against
-   * `test/fake-dom.ts`.
-   */
   const factory: DomElementFactory = document
+  const { hash, pathname, search } = window.location
+  const { state: initialState, issues: initialIssues } = parseHarnessUrl(search, SCENARIO_REGISTRY)
+  let state = initialState
+  let issues: ReadonlyArray<UrlIssue> = initialIssues
+  const mounts: MountedScenario[] = []
+  const intentLog = createIntentLog(200)
 
-  /**
-   * The mount root, and it is deliberately left as `HTMLDivElement`.
-   *
-   * THIS LINE WAS WRITTEN `const page: DomElement = document.createElement('div')`
-   * FIRST AND DID NOT COMPILE, which is the most useful thing the harness found
-   * on its first run:
-   *
-   *     apps/browser-harness/main.ts: error TS2345: Argument of type
-   *     'DomElement' is not assignable to parameter of type 'Node'.
-   *       Type 'DomElement' is missing the following properties from type
-   *       'Node': baseURI, childNodes, firstChild, isConnected, and 43 more.
-   *
-   * on the `document.body.appendChild(page)` below. It is NOT a defect in
-   * `application/dom-surface.ts` — it is COST 1 and COST 2 in that file's header
-   * observed from the direction the fixture does not exercise, and it is worth
-   * naming because it constrains how a HOST must be written.
-   *
-   * The surface is a subset of the real DOM in ONE direction. `HTMLElement` is
-   * assignable to `DomElement` (`test/fixtures/dom-surface.ts:58`), so a real
-   * element can be handed IN. The reverse is blocked, and by a stronger thing
-   * than the variance the header discusses: `Node.appendChild` is generic
-   * (`<T extends Node>(node: T): T`), so bivariance never gets a chance — a
-   * structural supertype simply does not satisfy `extends Node`.
-   *
-   * Nothing in mx-ui needs the reverse, and the shape of `docs/public-api.md`
-   * §4-1's intended mount面 already says so: `mount: (root: HTMLElement) =>
-   * Effect<void, never, Scope>` takes a REAL element. A host creates its roots
-   * with the real DOM, appends them with the real DOM, and only then hands them
-   * to mx-ui — after which mx-ui does all its own appending through the
-   * structural surface and never gives an element back. The harness is written
-   * that way here because that is how a host is written, not to dodge an error.
-   *
-   * What it would have cost to "fix" it in the surface is worth recording too:
-   * nothing structural is both a supertype of `Node` (so a real element
-   * satisfies `DomElement`) and a subtype of it (so a built element satisfies
-   * `appendChild`), which is COST 2's argument. The only way through is a cast,
-   * and a cast in a harness is the exact thing `application/dom-surface.ts`
-   * says would be worse than a jsdom: 「the cast is where the type safety would
-   * actually be lost」.
-   */
   const page = document.createElement('div')
   page.setAttribute('data-harness-page', '')
-  document.body.appendChild(page)
+  const panelRef: { current: ReturnType<typeof createDebugPanel> | undefined } = { current: undefined }
+  const emitIntent = (intent: unknown): void => {
+    intentLog.add(intent)
+    if (state.panel) {
+      panelRef.current?.setIntentLog(intentLogDiagnosticValue(intentLog))
+    }
+  }
+  const stage = document.createElement('main')
+  stage.setAttribute('data-harness-stage', '')
+  page.append(stage)
+  document.body.append(page)
 
-  const inset = selectedSafeInset(window.location.search)
-  if (inset !== undefined) {
-    // On the PAGE, never on an mx-ui root. `index.html` reads this property.
-    page.style.setProperty('--harness-safe-inset', inset)
+  const matrix = addSvgFilter()
+  const updateUrl = (): void => {
+    const query = serializeHarnessState(state)
+    window.history.replaceState(null, '', `${pathname}${query}${hash}`)
   }
 
-  const screens = mountScreens(
-    factory,
-    page,
-    selectedMotion(window.location.search),
-    selectedBreakProgress(window.location.search),
-  )
+  const applyEnvironment = (): void => {
+    const environment = environmentFrom(state)
+    page.dataset['panelHidden'] = String(!state.panel)
+    page.style.setProperty('--harness-safe-inset', `${state.safe}px`)
+    page.style.setProperty('--harness-text-scale', String(state.textScale / 100))
+    page.style.setProperty('--harness-viewport-width', `${state.width}px`)
+    page.style.setProperty('--harness-viewport-height', `${state.height}px`)
+    stage.dataset['motion'] = environment.motion
+    stage.dataset['layout'] = state.layout
+    stage.dataset['cvd'] = environment.cvd
+    stage.dataset['dpr'] = String(environment.dpr)
+    stage.dataset['contrast'] = environment.contrast
+    stage.dataset['background'] = environment.background
+    stage.dataset['textScale'] = String(environment.textScale)
+    stage.dataset['width'] = String(environment.width)
+    stage.dataset['height'] = String(environment.height)
+    matrix.setAttribute('values', colorVisionMatrixValues(environment.cvd) ?? IDENTITY_MATRIX)
 
-  const only = selectedScreen(window.location.search)
-  if (only !== undefined) {
-    for (const screen of screens) {
-      if (screen.name !== only) {
-        screen.host.setAttribute('hidden', '')
+    const filters = [
+      environment.cvd === 'off' ? '' : 'url(#harness-color-vision-filter)',
+      environment.contrast === 'more' ? 'contrast(1.25)' : '',
+      environment.contrast === 'forced' ? 'grayscale(1) contrast(1.8)' : '',
+    ].filter((filter) => filter !== '')
+    stage.style.filter = filters.join(' ')
+  }
+
+  const updatePanel = (): void => {
+    const panel = panelRef.current
+    if (panel === undefined) {
+      return
+    }
+    const active = scenariosForScreen(state.screen)
+    panel.update(
+      state,
+      issues,
+      DEFAULT_SCREEN_IDS.map((screen) => defaultScenarioForScreen(screen)).filter(
+        (scenario): scenario is ScenarioDefinition => scenario !== undefined,
+      ),
+      active,
+      `Registered ${SCENARIO_REGISTRY.length} scenarios; mounted ${mounts.length} instance(s).`,
+      serializeHarnessStateJson(state),
+    )
+  }
+
+  let diagnosticsFrame: number | null = null
+  const scheduleDiagnostics = (): void => {
+    if (diagnosticsFrame !== null) {
+      return
+    }
+    diagnosticsFrame = window.requestAnimationFrame(() => {
+      diagnosticsFrame = null
+      const panel = panelRef.current
+      if (panel === undefined) {
+        return
       }
+      const scenario = findScenario(state.screen, state.scenario)
+      const selectedMount = mounts.find(
+        ({ definition }) => definition.screen === state.screen && definition.id === state.scenario,
+      )?.mount
+      const host = Array.from(stage.querySelectorAll<HTMLElement>('[data-harness-host]')).find(
+        (candidate) =>
+          candidate.dataset['harnessHost'] === state.screen &&
+          candidate.dataset['harnessScenario'] === state.scenario,
+      )
+      const root = host?.querySelector<HTMLElement>(':scope > [data-mx-ui]') ?? null
+      const inputJson: DiagnosticValue<unknown> =
+        scenario === undefined
+          ? { status: 'unsupported', reason: 'The selected scenario is not registered.' }
+          : {
+              status: 'available',
+              value: {
+                scenario: { id: scenario.id, screen: scenario.screen, surface: scenario.surface, title: scenario.title },
+                context: {
+                  environment: environmentFrom(state),
+                  time: state.time,
+                  ...(state.breakProgress === undefined ? {} : { breakProgress: state.breakProgress }),
+                },
+              },
+            }
+      const intents = intentLogDiagnosticValue(intentLog)
+      const viewModelJson: DiagnosticValue<unknown> =
+        scenario === undefined
+          ? { status: 'unsupported', reason: 'The selected scenario is not registered.' }
+          : selectedMount === undefined
+            ? { status: 'unsupported', reason: 'The selected scenario is not mounted.' }
+            : selectedMount.viewModel === undefined
+              ? { status: 'unsupported', reason: 'The selected scenario does not expose a view model.' }
+              : { status: 'available', value: selectedMount.viewModel() }
+      panel.setDiagnostics(collectDiagnostics(root, inputJson, intents, viewModelJson))
+    })
+  }
+
+  const syncMountTime = (time: number): void => {
+    for (const { mount } of mounts) {
+      mount.setTime(time)
     }
   }
 
-  document.documentElement.setAttribute(READY_ATTRIBUTE, String(screens.length))
+  const mountScenario = (
+    scenario: ScenarioDefinition,
+    parent: HTMLElement,
+    hidden: boolean,
+    scale = 1,
+  ): void => {
+    const host = makeHost(scenario.screen, scenario)
+    // Keep inactive screens measurable for the browser geometry checks without painting them.
+    host.style.visibility = hidden ? 'hidden' : 'visible'
+    host.style.width = `${state.width}px`
+    host.style.height = `${state.height}px`
+    host.style.setProperty('--harness-safe-inset', `${state.safe}px`)
+    host.style.setProperty('--harness-text-scale', String(state.textScale / 100))
+    if (scale !== 1) {
+      host.style.transform = `scale(${String(scale)})`
+      host.style.transformOrigin = 'top left'
+    }
+    parent.append(host)
+    const context = {
+      factory,
+      host,
+      environment: environmentFrom(state),
+      time: state.time,
+      emitIntent,
+      ...(state.breakProgress === undefined ? {} : { breakProgress: state.breakProgress }),
+    }
+    try {
+      mounts.push({ definition: scenario, mount: scenario.mount(context) })
+    } catch (error) {
+      host.remove()
+      throw error
+    }
+  }
+
+  const renderSingle = (): void => {
+    const viewport = document.createElement('div')
+    viewport.setAttribute('data-harness-viewport', '')
+    viewport.style.width = `${state.width}px`
+    viewport.style.height = `${state.height}px`
+    for (const screen of DEFAULT_SCREEN_IDS) {
+      const selected = screen === state.screen
+      const scenario = selected
+        ? findScenario(screen, state.scenario)
+        : defaultScenarioForScreen(screen)
+      if (scenario === undefined) {
+        throw new Error(`browser-harness: missing scenario "${screen}/${state.scenario}"`)
+      }
+      mountScenario(scenario, viewport, !selected)
+    }
+    stage.append(viewport)
+  }
+
+  const renderGallery = (): void => {
+    const gallery = document.createElement('div')
+    gallery.setAttribute('data-harness-gallery', '')
+    const width = Math.min(320, state.width)
+    const height = Math.min(180, state.height)
+    const scale = Math.min(width / state.width, height / state.height)
+    for (const scenario of scenariosForScreen(state.screen)) {
+      const card = document.createElement('section')
+      card.setAttribute('data-scenario-card', scenario.id)
+      const title = document.createElement('h2')
+      title.textContent = `${scenario.surface}: ${scenario.title}`
+      card.append(title)
+      const viewport = document.createElement('div')
+      viewport.setAttribute('data-harness-viewport', '')
+      viewport.style.width = `${width}px`
+      viewport.style.height = `${height}px`
+      card.append(viewport)
+      mountScenario(scenario, viewport, false, scale)
+      gallery.append(card)
+    }
+    stage.append(gallery)
+  }
+
+  const renderStage = (): void => {
+    for (const { mount } of mounts.splice(0)) {
+      mount.dispose()
+    }
+    stage.replaceChildren()
+    applyEnvironment()
+    if (state.layout === 'gallery') {
+      renderGallery()
+    } else {
+      renderSingle()
+    }
+    syncMountTime(state.time)
+    updatePanel()
+    scheduleDiagnostics()
+    document.documentElement.setAttribute(READY_ATTRIBUTE, String(mounts.length))
+  }
+
+  const replaceState = (nextState: HarnessUrlState): void => {
+    if (nextState.screen !== state.screen || nextState.scenario !== state.scenario) {
+      intentLog.reset()
+    }
+    state = nextState
+    issues = []
+    panelRef.current?.setStateJsonError('')
+    applyEnvironment()
+    updateUrl()
+    renderStage()
+  }
+
+  const commit = (patch: Partial<HarnessUrlState>): void => {
+    replaceState({ ...state, ...patch })
+  }
+
+  const clock = createVirtualClock(
+    { time: state.time, playing: state.playing, speed: state.speed },
+    (clockState: VirtualClockState) => {
+      state = { ...state, ...clockState }
+      syncMountTime(clockState.time)
+      updateUrl()
+      updatePanel()
+    },
+  )
+
+  const panel = createDebugPanel({
+    emitIntent,
+    onScreen: (screen) => {
+      const scenario = defaultScenarioForScreen(screen)
+      if (scenario === undefined) {
+        throw new Error(`browser-harness: no default scenario for screen "${screen}"`)
+      }
+      clock.reset()
+      commit({ screen, scenario: scenario.id })
+    },
+    onScenario: (scenario) => {
+      clock.reset()
+      commit({ scenario })
+    },
+    onLayout: (layout) => commit({ layout }),
+    onEnvironment: (patch) => commit(patch),
+    onTime: (seconds) => {
+      clock.pause()
+      clock.setTime(seconds)
+    },
+    onPause: () => clock.pause(),
+    onStep: () => clock.step(),
+    onPlay: () => clock.play(),
+    onSpeed: (speed) => clock.setSpeed(speed),
+    onReset: () => {
+      issues = []
+      panelRef.current?.setStateJsonError('')
+      clock.reset()
+      renderStage()
+    },
+    onCopyUrl: async () => {
+      const activePanel = panelRef.current
+      if (activePanel === undefined) {
+        return
+      }
+      try {
+        await navigator.clipboard.writeText(window.location.href)
+        activePanel.setCopyMessage('URL copied.')
+      } catch {
+        activePanel.setCopyMessage('Copy failed: clipboard access is unavailable.')
+      }
+    },
+    onCopyJson: async () => {
+      const activePanel = panelRef.current
+      if (activePanel === undefined) {
+        return
+      }
+      const json = serializeHarnessStateJson(state)
+      activePanel.setStateJson(json)
+      try {
+        if (navigator.clipboard === undefined) {
+          throw new Error('Clipboard access is unavailable.')
+        }
+        await navigator.clipboard.writeText(json)
+        activePanel.setCopyMessage('JSON copied.')
+      } catch {
+        activePanel.selectStateJson()
+        activePanel.setCopyMessage('Clipboard unavailable. The JSON is selected for manual copying.')
+      }
+    },
+    onImportJson: (input) => {
+      const activePanel = panelRef.current
+      if (activePanel === undefined) {
+        return
+      }
+      const result = parseHarnessStateJson(input, SCENARIO_REGISTRY)
+      if (!result.ok) {
+        activePanel.setStateJsonError(result.error.message)
+        return
+      }
+      clock.pause()
+      clock.setSpeed(result.state.speed)
+      clock.setTime(result.state.time)
+      if (result.state.playing) {
+        clock.play()
+      }
+      replaceState(result.state)
+      activePanel.setCopyMessage('JSON imported.')
+    },
+  })
+  panelRef.current = panel
+  page.append(panel.element)
+
+  applyEnvironment()
+  renderStage()
 }
 
 start()

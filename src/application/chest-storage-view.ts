@@ -83,7 +83,7 @@ const createGrid = (
   grid.setAttribute('data-mx-ui', spec.id)
   grid.setAttribute('data-region', spec.id)
   grid.style.setProperty('display', 'grid')
-  grid.style.setProperty('grid-template-columns', `repeat(${String(spec.columns)}, 1fr)`)
+  grid.style.setProperty('grid-template-columns', `repeat(${String(spec.columns)}, minmax(0, 1fr))`)
   parent.appendChild(grid)
 
   return spec.targets.map((target) => {

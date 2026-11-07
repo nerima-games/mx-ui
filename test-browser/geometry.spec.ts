@@ -59,6 +59,7 @@ import {
   CROSSHAIR_BREAK_PROGRESS_LABEL,
   CROSSHAIR_SIZE,
 } from '../src/application/crosshair-view'
+import { DEFAULT_SCREEN_IDS } from '../apps/browser-harness/scenario-registry'
 import { NARROW_VIEWPORTS, openHarness } from './harness'
 
 /**
@@ -276,7 +277,9 @@ test.describe('block-breaking progress stays visible and perceivable', () => {
     await expect(page.getByRole('progressbar', { name: CROSSHAIR_BREAK_PROGRESS_LABEL })).toHaveCount(
       0,
     )
-    const hiddenIndicator = page.locator('[data-mx-ui="crosshair-progress"]')
+    const hiddenIndicator = page.locator(
+      '[data-harness-host="crosshair"] [data-mx-ui="crosshair-progress"]',
+    )
     await expect(hiddenIndicator).toBeHidden()
     await expect(hiddenIndicator).not.toHaveAttribute('aria-valuenow')
   })
@@ -382,11 +385,9 @@ test.describe('reduced motion removes the animation and keeps the signal', () =>
   })
 })
 
-test.describe('screens stay inside the safe area, and the reticle stays on the point', () => {
+test.describe('registered screens stay inside the safe area, and the reticle stays on the point', () => {
   for (const viewport of NARROW_VIEWPORTS) {
-    test(`content-bearing screens fit the safe rect at ${String(viewport.width)}px`, async ({
-      page,
-    }) => {
+    test(`screen roots fit the safe rect except the viewport-centered crosshair at ${String(viewport.width)}px`, async ({ page }) => {
       // `hud.e2e.ts`'s `expectInsideViewport` and `inventory-overlay.e2e.ts`'s
       // 「inventory remains usable at ${width}px」, ported. The reference asked for
       // containment in the VIEWPORT; this asks for containment in the SAFE RECT,
@@ -417,11 +418,11 @@ test.describe('screens stay inside the safe area, and the reticle stays on the p
         { inset: SAFE_INSET_PX },
       )
 
-      // The crosshair is EXEMPT and the exemption is the interesting part, not a
-      // loophole. A reticle marks the camera's principal point, which is the
-      // centre of the canvas and has nothing to do with where a phone's chrome
-      // happens to be — an inset crosshair would be a crosshair pointing at the
-      // wrong place. It gets its own assertion below rather than a pass here.
+      // Every registered screen is mounted and counted. Registry `surface` is a
+      // display label, not a content-bearing classification, so this test keeps
+      // the crosshair exception explicit. A reticle marks the camera's principal
+      // point, the centre of the canvas, independent of a phone's chrome. It gets
+      // its own assertion below rather than a pass here.
       const outside = measured.roots
         .filter((root) => root.name !== 'crosshair')
         .filter((root) => !insideRect(root.box, measured.safe))
@@ -430,7 +431,7 @@ test.describe('screens stay inside the safe area, and the reticle stays on the p
             `${root.name}: ${JSON.stringify(root.box)} leaves ${JSON.stringify(measured.safe)}`,
         )
 
-      expect(measured.roots.length).toBe(7)
+      expect(measured.roots.length).toBe(DEFAULT_SCREEN_IDS.length)
       expect(outside).toStrictEqual([])
     })
 

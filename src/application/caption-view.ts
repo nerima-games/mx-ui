@@ -78,6 +78,7 @@ const createCaptionText = (factory: DomElementFactory, parent: DomElement): Text
   const text = factory.createElement('span')
   text.setAttribute('data-mx-ui', 'caption-text')
   text.style.setProperty('color', PALETTE_VAR.ink)
+  text.style.setProperty('overflow-wrap', 'anywhere')
   parent.appendChild(text)
   return textCell(text)
 }

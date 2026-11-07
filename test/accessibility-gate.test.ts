@@ -132,16 +132,15 @@ const auditColorProperty = (
 }
 
 /**
- * Every screen this repository can build, mounted.
+ * The original fake-DOM samples for name and palette regressions.
  *
- * Each entry is the analogue of one `test()` in the reference file: `main menu`,
+ * These representative trees retain the original checks for `main menu`,
  * `in-session HUD`, `inventory overlay`, `pause menu`, `how to play`,
- * `death screen`, and the three parameterised panels. Only the ones mx-ui HAS are
- * here — see this file's sibling report; a screen that does not exist cannot be
- * audited, and inventing one to audit it would be auditing the invention.
+ * `death screen`, and the three parameterised panels. They remain focused
+ * fake-DOM regressions; the complete ledger-driven browser sweep is in
+ * `test-browser/accessibility.spec.ts`.
  *
- * `main menu` is no longer one of the absent ones, and the loading screen has
- * joined it. The menu is swept on ALL THREE of its cards rather than on whichever
+ * The menu is swept on ALL THREE of its cards rather than on whichever
  * one it happens to open with: the reference reached each card with a click, so a
  * naming defect on the New World card was one click away from an audit that never
  * went there.
@@ -273,7 +272,7 @@ const isTabStop = (
   isFocusable(element, parents) &&
   (isNativeFocusable(element) || element.attributes.get('tabindex') !== '-1')
 
-describe('WCAG 4.1.2: every tab stop on every screen announces something', () => {
+describe('WCAG 4.1.2: representative fake-DOM controls retain their names', () => {
   it('no focusable element on any screen is anonymous', () => {
     // The reference's finding was 「the unlabeled keyboard-rebind inputs」 — a
     // control a sighted player reaches by Tab and a screen-reader player reaches

@@ -27,15 +27,16 @@ import { expect, test } from '@playwright/test'
 import { HOTBAR_SLOT_COUNT } from '../src/domain/hud-view-model'
 import { INVENTORY_SLOT_COUNT } from '../src/domain/inventory-view-model'
 import { PALETTE_PROPERTY, PALETTE_TOKEN_NAMES, PALETTE_VALUE } from '../src/application/palette-css'
+import { DEFAULT_SCREEN_IDS } from '../apps/browser-harness/scenario-registry'
 import { openHarness } from './harness'
 
 test.describe('mx-ui mounts against a real Document', () => {
   test('every screen builds into the host it was handed, with no cast anywhere', async ({
     page,
   }) => {
-    // `openHarness` already asserts the ready attribute is `7`. This adds the
-    // shape: seven hosts, each with exactly one child, and that child is the
-    // root the corresponding view built.
+    // `openHarness` already asserts the ready attribute matches the registered
+    // screens. This adds the shape: each registered screen has one host with
+    // exactly one child, and that child is the root the corresponding view built.
     //
     // 「Exactly one」 is the part worth having. `docs/public-api.md` §4-1 makes the
     // parent an argument so a page can stand up more than one instance, and the
@@ -51,21 +52,19 @@ test.describe('mx-ui mounts against a real Document', () => {
       })),
     )
 
-    expect(mounted).toStrictEqual([
-      { host: 'main-menu', children: 1, root: 'main-menu' },
-      { host: 'hud', children: 1, root: 'hud' },
-      { host: 'inventory', children: 1, root: 'inventory' },
-      { host: 'captions', children: 1, root: 'captions' },
-      { host: 'save-indicator', children: 1, root: 'save-indicator' },
-      { host: 'loading', children: 1, root: 'loading' },
-      { host: 'crosshair', children: 1, root: 'crosshair' },
-    ])
+    expect(mounted).toStrictEqual(
+      DEFAULT_SCREEN_IDS.map((screen) => ({
+        host: screen,
+        children: 1,
+        root: screen === 'pause' || screen === 'session-overlays' ? 'pause-menu' : screen,
+      })),
+    )
   })
 
   test('REGRESSION: the surface is enough to build the whole tree, not just its root', async ({
     page,
   }) => {
-    // A mount that produced seven empty roots would satisfy the test above. The
+    // A mount that produced empty roots would satisfy the test above. The
     // counts below are the ones the headless suite already pins
     // (`test/screen-mount.test.ts`), asked again of a real document — so a
     // `createElement` or an `appendChild` that behaved differently on the real
@@ -137,7 +136,7 @@ test.describe('mx-ui mounts against a real Document', () => {
       return { inlineHandlers, sawTheControl, roots: roots.length }
     })
 
-    expect(result.roots).toBe(7)
+    expect(result.roots).toBe(DEFAULT_SCREEN_IDS.length)
     // The control fired, so 「no handler」 below is a finding and not a blind spot.
     expect(result.sawTheControl).toBe(true)
     expect(result.inlineHandlers).toStrictEqual([])
@@ -148,14 +147,16 @@ test.describe('mx-ui mounts against a real Document', () => {
   }) => {
     await openHarness(page, { screen: 'hud' })
 
-    const respawn = page.locator('[data-mx-ui="respawn"]')
+    const hudHost = page.locator('[data-harness-host="hud"]')
+    const respawn = hudHost.locator('[data-mx-ui="respawn"]')
     await expect(respawn).toBeHidden()
     await expect(respawn).toHaveAttribute('type', 'button')
 
     await page.evaluate(() => {
-      const death = document.querySelector('[data-mx-ui="death"]')
+      const host = document.querySelector('[data-harness-host="hud"]')
+      const death = host?.querySelector('[data-mx-ui="death"]') ?? null
       const shell = document.querySelector('[data-harness-page]')
-      if (death === null || shell === null) {
+      if (host === null || death === null || shell === null) {
         throw new Error('respawn browser test: missing death overlay or page shell')
       }
 
@@ -174,9 +175,9 @@ test.describe('mx-ui mounts against a real Document', () => {
     })
 
     await page.keyboard.press('Tab')
-    await expect(page.locator('[data-mx-ui="slot"][tabindex="0"]')).toBeFocused()
+    await expect(hudHost.locator('[data-mx-ui="slot"][tabindex="0"]')).toBeFocused()
     await page.keyboard.press('Tab')
-    await expect(page.getByRole('button', { name: 'Respawn' })).toBeFocused()
+    await expect(hudHost.getByRole('button', { name: 'Respawn' })).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page.locator('[data-harness-page]')).toHaveAttribute('data-harness-respawned', '')
   })
