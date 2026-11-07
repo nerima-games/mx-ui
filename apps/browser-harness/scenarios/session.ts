@@ -46,9 +46,9 @@ const mountMainMenu = (
 ): ScenarioMount => {
   let model = mainMenuViewModel(state, savedWorlds)
   const view = createMainMenuView(context.factory, context.host, {
-    onCreateWorld: noTime,
-    onLoadWorld: noTime,
-    onOpenSettings: noTime,
+    onCreateWorld: (request) => context.emitIntent({ _tag: 'CreateWorld', ...request }),
+    onLoadWorld: (world) => context.emitIntent({ _tag: 'LoadWorld', ...world }),
+    onOpenSettings: () => context.emitIntent({ _tag: 'OpenSettings' }),
     onStateChange: (nextState) => {
       model = mainMenuViewModel(nextState, savedWorlds)
     },

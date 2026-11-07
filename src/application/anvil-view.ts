@@ -111,6 +111,7 @@ type AnvilNameInput = {
   readonly input: DomInputElement
   readonly tabStop: AttributeCell
   readonly focused: AttributeCell
+  readonly title: AttributeCell
 }
 
 const createAnvilNameInput = (factory: DomElementFactory, root: DomElement): AnvilNameInput => {
@@ -125,6 +126,7 @@ const createAnvilNameInput = (factory: DomElementFactory, root: DomElement): Anv
     focused: attributeCell(nameInput, 'data-focused'),
     input: nameInput,
     tabStop: attributeCell(nameInput, 'tabindex'),
+    title: attributeCell(nameInput, 'title'),
   }
 }
 
@@ -213,15 +215,21 @@ export const createAnvilView = (factory: DomElementFactory, parent: DomElement):
     }
   }
 
+  const renderAnvilName = (value: string): void => {
+    if (previousName === value) {
+      return
+    }
+    previousName = value
+    name.input.value = value
+    writeAttribute(name.title, value)
+  }
+
   const renderAnvilDetails = (
     model: AnvilViewModel,
     focusedTarget: AnvilOperationTarget,
     interaction: AnvilInteractionView | undefined,
   ): void => {
-    if (previousName !== model.name) {
-      previousName = model.name
-      name.input.value = model.name
-    }
+    renderAnvilName(model.name)
     const nameIsFocused = focusedTarget === 'name'
     writeAttribute(name.tabStop, tabStopValue(nameIsFocused))
     writeAttribute(
