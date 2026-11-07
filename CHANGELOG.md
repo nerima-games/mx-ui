@@ -1,5 +1,11 @@
 # @nerima-games/mx-ui
 
+## 0.9.1
+
+### Patch Changes
+
+- [#55](https://github.com/nerima-games/mx-ui/pull/55) [`26782cb`](https://github.com/nerima-games/mx-ui/commit/26782cb9939fa31b9547ad226e97e49a65e9f18f) Thanks [@takeokunn](https://github.com/takeokunn)! - Keep long anvil item names readable and record main-menu host intents in the browser harness.
+
 ## 0.9.0
 
 ### Minor Changes
