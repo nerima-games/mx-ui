@@ -146,6 +146,7 @@ const addStyles = (): HTMLStyleElement => {
 export const installComparison = (
   panel: HTMLElement,
   emitIntent: ScenarioContext['emitIntent'],
+  runSync: ScenarioContext['runSync'],
 ): void => {
   if (panel.querySelector('[data-condition-comparison]') !== null) {
     return
@@ -251,6 +252,7 @@ export const installComparison = (
         environment: condition,
         time: state.time,
         emitIntent,
+        runSync,
         ...(state.breakProgress === undefined ? {} : { breakProgress: state.breakProgress }),
       })
       view.append(host)

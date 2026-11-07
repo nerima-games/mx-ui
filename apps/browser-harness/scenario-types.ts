@@ -1,5 +1,6 @@
 import type { DomElement, DomElementFactory } from '../../src/application/dom-surface'
 import type { ColorVisionMode, MotionPreference } from '../../src/domain/accessibility'
+import type { Effect } from 'effect'
 
 export type ScreenId = string
 export type ScenarioId = string
@@ -39,6 +40,9 @@ export type ScenarioContext = {
   readonly environment: HarnessEnvironment
   readonly time: number
   readonly emitIntent: (intent: unknown) => void
+  readonly runSync: <Success, Failure>(
+    effect: Effect.Effect<Success, Failure, never>,
+  ) => Success
   readonly breakProgress?: number
 }
 

@@ -9,6 +9,7 @@ import type {
   HarnessUrlState,
   LayoutMode,
   PlaybackSpeed,
+  ScenarioContext,
   ScenarioDefinition,
 } from './scenario-types'
 import { MAX_HARNESS_STATE_JSON_BYTES } from './json-state'
@@ -17,6 +18,7 @@ import type { UrlIssue } from './url-state'
 
 export type DebugPanelActions = {
   readonly emitIntent: (intent: unknown) => void
+  readonly runSync: ScenarioContext['runSync']
   readonly onScreen: (screen: string) => void
   readonly onScenario: (scenario: string) => void
   readonly onLayout: (layout: LayoutMode) => void
@@ -354,7 +356,7 @@ export const createDebugPanel = (actions: DebugPanelActions): DebugPanel => {
     element.hidden = !state.panel
   }
 
-  installComparison(element, actions.emitIntent)
+  installComparison(element, actions.emitIntent, actions.runSync)
 
   return {
     element,

@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { colorVisionMatrixValues } from '../../src/domain/accessibility'
 import type { DomElementFactory } from '../../src/application/dom-surface'
 import {
@@ -14,7 +15,13 @@ import {
   findScenario,
   scenariosForScreen,
 } from './scenario-registry'
-import type { HarnessEnvironment, HarnessUrlState, ScenarioDefinition, ScenarioMount } from './scenario-types'
+import type {
+  HarnessEnvironment,
+  HarnessUrlState,
+  ScenarioContext,
+  ScenarioDefinition,
+  ScenarioMount,
+} from './scenario-types'
 import { parseHarnessStateJson, serializeHarnessStateJson } from './json-state'
 import { parseHarnessUrl, serializeHarnessState, type UrlIssue } from './url-state'
 import { createVirtualClock, type VirtualClockState } from './virtual-clock'
@@ -72,6 +79,7 @@ const start = (): void => {
   let issues: ReadonlyArray<UrlIssue> = initialIssues
   const mounts: MountedScenario[] = []
   const intentLog = createIntentLog(200)
+  const runSync: ScenarioContext['runSync'] = (effect) => Effect.runSync(effect)
 
   const page = document.createElement('div')
   page.setAttribute('data-harness-page', '')
@@ -215,6 +223,7 @@ const start = (): void => {
       environment: environmentFrom(state),
       time: state.time,
       emitIntent,
+      runSync,
       ...(state.breakProgress === undefined ? {} : { breakProgress: state.breakProgress }),
     }
     try {
@@ -311,6 +320,7 @@ const start = (): void => {
 
   const panel = createDebugPanel({
     emitIntent,
+    runSync,
     onScreen: (screen) => {
       const scenario = defaultScenarioForScreen(screen)
       if (scenario === undefined) {

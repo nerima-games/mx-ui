@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { HarnessEnvironment, ScenarioContext } from '../../apps/browser-harness/scenario-types'
 import { STATION_SCENARIOS } from '../../apps/browser-harness/scenarios/stations'
@@ -82,6 +83,7 @@ const makeContext = (): ScenarioContext => {
     environment: ENVIRONMENT,
     time: 0,
     emitIntent: () => undefined,
+    runSync: Effect.runSync,
   }
 }
 

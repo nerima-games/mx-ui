@@ -1,4 +1,4 @@
-import { Result } from 'effect'
+import { Effect, Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { itemStack } from '@nerima-games/mc-sim'
 import { StackCount } from '@nerima-games/mc-kernel'
@@ -28,7 +28,14 @@ const mountScenario = (id: string) => {
   }
   const factory = fakeDocument()
   const host = fakeElement(factory.createElement('div'))
-  const mount = scenario.mount({ factory, host, environment: DEFAULT_HARNESS_STATE, time: 0, emitIntent: () => undefined })
+  const mount = scenario.mount({
+    factory,
+    host,
+    environment: DEFAULT_HARNESS_STATE,
+    time: 0,
+    emitIntent: () => undefined,
+    runSync: Effect.runSync,
+  })
   return { factory, mount, root: fakeElement(mount.root) }
 }
 
@@ -46,7 +53,14 @@ describe('inventory scenario catalog', () => {
     for (const scenario of INVENTORY_SCENARIOS) {
       const factory = fakeDocument()
       const host = fakeElement(factory.createElement('div'))
-      const mounted = scenario.mount({ factory, host, environment: DEFAULT_HARNESS_STATE, time: 0, emitIntent: () => undefined })
+      const mounted = scenario.mount({
+        factory,
+        host,
+        environment: DEFAULT_HARNESS_STATE,
+        time: 0,
+        emitIntent: () => undefined,
+        runSync: Effect.runSync,
+      })
       const root = fakeElement(mounted.root)
 
       expect(root.attributes.get('data-mx-ui')).toBe('inventory')

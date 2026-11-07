@@ -1,6 +1,6 @@
 import { AudioCaptionText, AudioPan } from '@nerima-games/mc-audio'
 import { MonotonicTimeSecs, StackCount, itemStack } from '@nerima-games/mc-kernel'
-import { Result, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { VitalsSchema, SPAWN_VITALS } from '@nerima-games/mc-sim'
 import {
@@ -53,6 +53,7 @@ const contextFor = (factory: ReturnType<typeof fakeDocument>): ScenarioContext =
   environment,
   time: 0,
   emitIntent: () => undefined,
+  runSync: Effect.runSync,
 })
 
 const decodeVitals = Schema.decodeUnknownResult(VitalsSchema, { onExcessProperty: 'error' })

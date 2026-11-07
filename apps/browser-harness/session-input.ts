@@ -1,6 +1,6 @@
 import { InputAction as inputAction, KeyCode } from '@nerima-games/mc-kernel/domain/settings'
 import { DEFAULT_SETTINGS, makeSettingsService } from '@nerima-games/mc-sim'
-import { Effect, Result } from 'effect'
+import { Result, type Effect } from 'effect'
 import {
   createSettingsView,
   rebindSettingsKey,
@@ -78,6 +78,9 @@ type SessionInputOptions = {
   readonly remapRoot: HTMLElement
   readonly remapStatus: HTMLElement
   readonly root: HTMLElement
+  readonly runPromise: <Success, Failure>(
+    effect: Effect.Effect<Success, Failure, never>,
+  ) => Promise<Success>
 }
 
 export type SessionInput = {
@@ -139,13 +142,13 @@ const renderSettings = (
 }
 
 export const createSessionInput = async (options: SessionInputOptions): Promise<SessionInput> => {
-  const settingsService = await Effect.runPromise(makeSettingsService(DEFAULT_SETTINGS))
-  await Effect.runPromise(settingsService.rebindKey(inputAction('jump'), DEFAULT_BINDINGS.jump))
-  await Effect.runPromise(settingsService.rebindKey(inputAction('sneak'), DEFAULT_BINDINGS.sneak))
+  const settingsService = await options.runPromise(makeSettingsService(DEFAULT_SETTINGS))
+  await options.runPromise(settingsService.rebindKey(inputAction('jump'), DEFAULT_BINDINGS.jump))
+  await options.runPromise(settingsService.rebindKey(inputAction('sneak'), DEFAULT_BINDINGS.sneak))
 
   const settingsView = createSettingsView(document, options.remapRoot)
   const renderBindings = async (): Promise<void> => {
-    const snapshot = await Effect.runPromise(settingsService.snapshot)
+    const snapshot = await options.runPromise(settingsService.snapshot)
     renderSettings(
       settingsView,
       settingsViewModel(snapshot, DEFAULT_BINDINGS, REMAPPABLE_ACTIONS),
@@ -196,7 +199,7 @@ export const createSessionInput = async (options: SessionInputOptions): Promise<
     event.preventDefault()
     event.stopImmediatePropagation()
     setRemapStatus('saving', `Assigning ${event.code}`)
-    Effect.runPromise(
+    options.runPromise(
       rebindSettingsKey(settingsService, {
         action,
         code: event.code,

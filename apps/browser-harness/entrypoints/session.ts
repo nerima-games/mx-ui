@@ -1,8 +1,8 @@
 import { Effect, Exit } from 'effect'
 import * as Scope from 'effect/Scope'
-import { AchievementToastEventBusLayer } from '../../src/application/achievement-toast-subscriber.js'
-import { makeUiMount } from '../../src/application/ui-mount.js'
-import { createSessionInput } from './session-input.js'
+import { AchievementToastEventBusLayer } from '../../../src/application/achievement-toast-subscriber.js'
+import { makeUiMount } from '../../../src/application/ui-mount.js'
+import { createSessionInput } from '../session-input.js'
 
 const requiredElement = (id: string): HTMLElement => {
   const element = document.getElementById(id)
@@ -17,7 +17,9 @@ const startSessionPage = async (): Promise<void> => {
   const actionOutput = requiredElement('session-action-output')
   const remapRoot = requiredElement('key-remap-root')
   const remapStatus = requiredElement('remap-status')
-  const input = await createSessionInput({ actionOutput, remapRoot, remapStatus, root })
+  const runPromise = <Success, Failure>(effect: Effect.Effect<Success, Failure, never>) =>
+    Effect.runPromise(effect)
+  const input = await createSessionInput({ actionOutput, remapRoot, remapStatus, root, runPromise })
   const runtime = makeUiMount({ onInventoryAction: input.onInventoryAction, root })
   const scope = Scope.makeUnsafe()
 

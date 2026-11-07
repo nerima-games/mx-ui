@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '@nerima-games/mc-sim'
-import { Result } from 'effect'
+import { Effect, Result } from 'effect'
 import { JSDOM } from 'jsdom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
@@ -90,6 +90,7 @@ const makeContext = () => {
     },
     time: 0,
     emitIntent: () => undefined,
+    runSync: Effect.runSync,
   }
   return {
     factory,
@@ -117,6 +118,7 @@ const makeNativeContext = (document: Document) => {
     },
     time: 0,
     emitIntent: () => undefined,
+    runSync: Effect.runSync,
   }
   return { host, context }
 }

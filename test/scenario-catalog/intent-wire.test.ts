@@ -1,4 +1,5 @@
 import { JSDOM } from 'jsdom'
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SCENARIO_REGISTRY } from '../../apps/browser-harness/scenario-registry'
 import type {
@@ -73,6 +74,7 @@ describe('scenario intent and view-model wiring', () => {
         environment: ENVIRONMENT,
         time: 0,
         emitIntent: () => undefined,
+        runSync: Effect.runSync,
       }
       const mount = scenario.mount(context)
       mountedScenarios += 1
@@ -98,6 +100,7 @@ describe('scenario intent and view-model wiring', () => {
         environment: ENVIRONMENT,
         time: 0,
         emitIntent: (intent) => emitted.push(intent),
+        runSync: Effect.runSync,
       }
       const mount = scenario.mount(context)
       const selector = INTENT_CONTROL_SELECTORS[scenario.screen]
