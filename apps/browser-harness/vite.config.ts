@@ -8,17 +8,16 @@
  * consumer), so a bundler is what makes this repository loadable in a browser at
  * all today.
  *
- * `root` is this directory rather than the repository root, so the served page
- * is `/` and nothing outside `apps/browser-harness/` is addressable as a URL.
- * `fs.allow` then re-admits exactly the two directories the entry imports —
- * vite refuses to serve files above `root` otherwise, and `domain/` and
- * `application/` are above it.
+ * `root` is this directory, so page URLs stay under the harness. `fs.allow`
+ * admits the harness and `src/` imports without exposing repository metadata.
  */
 import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
-const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url))
+const sourceRoot = fileURLToPath(new URL('../../src/', import.meta.url))
+const snapshotRoot = fileURLToPath(new URL('../../test-browser/ui-baselines.spec.ts-snapshots/', import.meta.url))
+const harnessPort = Number(process.env['HARNESS_PORT'] ?? '5182')
 
 const config: ReturnType<typeof defineConfig> = defineConfig({
   root: here,
@@ -26,22 +25,10 @@ const config: ReturnType<typeof defineConfig> = defineConfig({
     include: ['@nerima-games/mc-kernel/domain/game-mode', '@nerima-games/mc-kernel/domain/settings', 'effect'],
   },
   server: {
-    // 5182, and the two numbers it is avoiding are both real.
-    //
-    // The reference's `playwright.config.ts` serves its own dev app on 5180, and
-    // mc-compose's browser entry point took 5181 while this file was being
-    // written — an actual collision, caught because this harness came up first
-    // and the page that answered was titled 「mc-compose — composed frame」.
-    //
-    // `strictPort` is what turned that into a visible failure rather than a
-    // silent hop to the next free port, which is the same call
-    // `docs/e2e-triage.md` §0 records for the reference's own server. A harness
-    // that quietly moves is a harness whose Playwright `baseURL` is pointing at
-    // whatever else happens to be listening — and the failure mode is a suite
-    // that passes against another repository's application.
-    port: 5182,
+    // Fail on a collision instead of silently serving another app.
+    port: harnessPort,
     strictPort: true,
-    fs: { allow: [repositoryRoot] },
+    fs: { allow: [here, sourceRoot, snapshotRoot] },
   },
   // No `build` target. This is a dev harness and there is nothing to publish:
   // `docs/testing.md` §4 3 is met by `apps/preview-screens/`, and a `dist/` here

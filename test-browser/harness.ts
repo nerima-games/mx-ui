@@ -27,6 +27,13 @@
  */
 import { expect, type Page } from '@playwright/test'
 import type { Rgb } from '../src/domain/palette'
+import {
+  DEFAULT_SCREEN_IDS,
+  defaultScenarioForScreen,
+  scenariosForScreen,
+} from '../apps/browser-harness/scenario-registry'
+import { DEFAULT_HARNESS_STATE, serializeHarnessState } from '../apps/browser-harness/url-state'
+import type { HarnessUrlState } from '../apps/browser-harness/scenario-types'
 
 /** The two viewports `docs/e2e-triage.md` §3.6 names for `usable at ${width}px`. */
 export const NARROW_VIEWPORTS = [
@@ -36,19 +43,29 @@ export const NARROW_VIEWPORTS = [
 
 export type NarrowViewport = (typeof NARROW_VIEWPORTS)[number]
 
-/** Set by `apps/browser-harness/main.ts` once every screen has mounted. */
+/** Set by `apps/browser-harness/main.ts` to the number of mounted scenario instances. */
 const READY_ATTRIBUTE = 'data-harness-ready'
 
 export type HarnessOptions = {
-  readonly screen?: string
-  readonly motion?: 'full' | 'reduced'
-  readonly breakProgress?: number
-  /** Emulated `safe-area-inset`, in CSS pixels. See `main.ts` on why it is emulated. */
-  readonly safe?: number
+  readonly [K in keyof HarnessUrlState]?: HarnessUrlState[K]
+}
+
+export const buildHarnessUrl = (options: HarnessOptions = {}): string => {
+  const screen = options.screen ?? DEFAULT_HARNESS_STATE.screen
+  const scenario =
+    options.scenario ?? defaultScenarioForScreen(screen)?.id ?? DEFAULT_HARNESS_STATE.scenario
+  const state: HarnessUrlState = {
+    ...DEFAULT_HARNESS_STATE,
+    ...options,
+    screen,
+    scenario,
+    panel: options.panel ?? false,
+  }
+  return `/${serializeHarnessState(state)}`
 }
 
 /**
- * Load the harness and wait for every screen to be mounted.
+ * Load the harness and wait for the active scenario instances to be mounted.
  *
  * The wait is on an ATTRIBUTE rather than on a timeout or a selector. A selector
  * would be satisfied by a partially built page — the harness mounts seven
@@ -57,32 +74,32 @@ export type HarnessOptions = {
  * costs (`loading-screen.e2e.ts` loosens a 2,500ms claim to 1,800ms 「for CI
  * jitter」, which `docs/e2e-triage.md` §3.6 notes is 「保険であって、主張の一部では
  * ない」). The attribute is written on the last line of `start()` and carries the
- * screen COUNT, so a harness that mounted six is a failure rather than a wait.
+ * active mount COUNT, so a partially rendered page is a failure.
  */
 export const openHarness = async (page: Page, options: HarnessOptions = {}): Promise<void> => {
-  const params = new URLSearchParams()
-  if (options.screen !== undefined) {
-    params.set('screen', options.screen)
-  }
-  if (options.motion !== undefined) {
-    params.set('motion', options.motion)
-  }
-  if (options.breakProgress !== undefined) {
-    params.set('breakProgress', String(options.breakProgress))
-  }
-  if (options.safe !== undefined) {
-    params.set('safe', String(options.safe))
-  }
-
-  const query = params.toString()
-  await page.goto(query === '' ? '/' : `/?${query}`)
+  const viewport = page.viewportSize()
+  await page.goto(buildHarnessUrl({
+    ...(viewport === null ? {} : { width: viewport.width, height: viewport.height }),
+    ...options,
+  }))
   await page.waitForFunction(
     (attribute: string) => document.documentElement.hasAttribute(attribute),
     READY_ATTRIBUTE,
   )
-  // Seven screens, and asserted rather than assumed: a sweep over the screens
-  // that happened to mount is a sweep that silently shrinks.
-  await expect(page.locator('html')).toHaveAttribute(READY_ATTRIBUTE, '7')
+  if (options.screen === undefined) {
+    await page.evaluate(() => {
+      document.querySelectorAll<HTMLElement>('[data-harness-host]').forEach((host) => {
+        host.style.visibility = 'visible'
+      })
+    })
+  }
+  const requestedScreen = options.screen ?? DEFAULT_HARNESS_STATE.screen
+  const selectedScreen = DEFAULT_SCREEN_IDS.includes(requestedScreen)
+    ? requestedScreen
+    : DEFAULT_HARNESS_STATE.screen
+  const expectedMounts =
+    options.layout === 'gallery' ? scenariosForScreen(selectedScreen).length : DEFAULT_SCREEN_IDS.length
+  await expect(page.locator('html')).toHaveAttribute(READY_ATTRIBUTE, String(expectedMounts))
 }
 
 /** `rgb(22, 26, 29)` / `rgba(10, 14, 18, 0.9)` -> channels. Alpha is dropped. */

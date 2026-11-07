@@ -41,11 +41,12 @@
 import { defineConfig, devices } from '@playwright/test'
 
 /** Kept in one place: `test-browser/harness.ts` builds every URL from it. */
-export const HARNESS_PORT = 5182
+export const HARNESS_PORT: number = Number(process.env['HARNESS_PORT'] ?? '5182')
 
 const config: ReturnType<typeof defineConfig> = defineConfig({
   testDir: './test-browser',
   testMatch: '**/*.spec.ts',
+  outputDir: process.env['PLAYWRIGHT_OUTPUT_DIR'] ?? 'test-results',
   // 30s rather than the reference's 60s. Its timeout budgets a WebGL world
   // booting, a menu appearing and a `waitForReady`; this harness mounts seven
   // screens out of pure functions and sets an attribute, so a run that needs

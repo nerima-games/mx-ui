@@ -130,7 +130,7 @@ const createFurnaceGrid = (factory: DomElementFactory, root: DomElement): DomEle
   const grid = factory.createElement('div')
   grid.setAttribute('data-mx-ui', 'furnace-slots')
   grid.style.setProperty('display', 'grid')
-  grid.style.setProperty('grid-template-columns', 'repeat(3, 1fr)')
+  grid.style.setProperty('grid-template-columns', 'repeat(3, minmax(0, 1fr))')
   root.appendChild(grid)
   return grid
 }

@@ -1,49 +1,3 @@
-/**
- * Every screen this repository builds, mounted against a REAL document.
- *
- * ---------------------------------------------------------------------------
- * THE ASSIGNMENT THIS FILE EXISTS FOR
- * ---------------------------------------------------------------------------
- *
- * `mountScreens` takes a `DomElementFactory` and a `DomElement`. The caller
- * (`main.ts`) hands it `document` and a real `HTMLDivElement`, with NO CAST.
- *
- * That is not a convenience — it is `application/dom-surface.ts`'s central claim
- * being collected at runtime instead of only at compile time.
- * `test/fixtures/dom-surface.ts` proves the structural surface is a SUBSET of
- * `lib.dom.d.ts` by compiling assignments against the real declarations;
- * `test/dom-surface.test.ts` asserts that compile produces zero diagnostics. But
- * a type-level subset claim says nothing about whether the members BEHAVE: a
- * surface could name `setProperty(property, value)` correctly and still be
- * unusable if every renderer in this repository silently depended on something
- * only `test/fake-dom.ts` does.
- *
- * So the harness is written to the surface types and handed the real thing. If
- * this file ever needs `as unknown as` to compile or to run, the surface is
- * wrong and that is the finding, not the workaround.
- *
- * ---------------------------------------------------------------------------
- * The screen list is `test/accessibility-gate.test.ts`'s, deliberately
- * ---------------------------------------------------------------------------
- *
- * Same seven screens, driven through the same states, in the same order. The
- * headless sweep and the browser sweep answering different questions about
- * DIFFERENT screen sets would make a disagreement between them unreadable —
- * nobody could tell whether the browser found a defect or found a screen the
- * fake never saw. Keeping the list identical means any disagreement is about the
- * one thing that changed, which is the presence of a layout and a cascade.
- *
- * ---------------------------------------------------------------------------
- * NO CLOCK, and it is not a style choice
- * ---------------------------------------------------------------------------
- *
- * `apps/` is in `SCAN_ROOTS` (`scripts/check-dependency-whitelist.ts`), so rule
- * 7 — no `Date.now()`, no `performance.now()` — applies here exactly as it does
- * to shipped source. Every time below is a literal, which is possible at all
- * because DN-UI-10 made every time-dependent derivation take its clock as an
- * ARGUMENT. A harness that needed a real clock to show a hit marker would be
- * evidence against that design; this one needs `0`.
- */
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioCaptionText, AudioPan, SoundCueId } from '@nerima-games/mc-audio'
 import { EntityHealthPoints } from '@nerima-games/mc-sim'
@@ -53,7 +7,6 @@ import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../../src/domain
 import { emptyInventorySnapshot, inventoryViewModel } from '../../src/domain/inventory-view-model'
 import { initialMainMenuState, mainMenuViewModel, openPanel } from '../../src/domain/main-menu'
 import { saveStatus, saveStatusMessage } from '../../src/domain/save-status'
-import type { MotionPreference } from '../../src/domain/accessibility'
 import { createCaptionView } from '../../src/application/caption-view'
 import { createCrosshairView } from '../../src/application/crosshair-view'
 import { createHudView } from '../../src/application/hud-view'
@@ -61,12 +14,10 @@ import { createInventoryView } from '../../src/application/inventory-view'
 import { createLoadingView } from '../../src/application/loading-view'
 import { createMainMenuView } from '../../src/application/main-menu-view'
 import { createSaveIndicator } from '../../src/application/save-indicator'
-import type { DomElement, DomElementFactory } from '../../src/application/dom-surface'
+import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from './scenario-types'
 
-const captionTime = (seconds: number): CaptionEvent['atSecs'] =>
-  MonotonicTimeSecs(seconds)
+const captionTime = (seconds: number): CaptionEvent['atSecs'] => MonotonicTimeSecs(seconds)
 
-/** The `?screen=` values, and the order the hosts are created in. */
 export const SCREEN_NAMES = [
   'main-menu',
   'hud',
@@ -79,110 +30,113 @@ export const SCREEN_NAMES = [
 
 export type ScreenName = (typeof SCREEN_NAMES)[number]
 
-export type MountedScreen = {
-  readonly name: ScreenName
-  /** The harness's host. mx-ui's root is a CHILD of this; the harness styles only this. */
-  readonly host: DomElement
-  /** The root mx-ui built. Nothing outside mx-ui ever writes to this subtree. */
-  readonly root: DomElement
+const SCREEN_LABELS: Readonly<Record<ScreenName, string>> = {
+  'main-menu': 'Main menu',
+  hud: 'HUD',
+  inventory: 'Inventory',
+  captions: 'Captions',
+  'save-indicator': 'Save indicator',
+  loading: 'Loading',
+  crosshair: 'Crosshair',
 }
 
-/**
- * Build one host per screen and mount into it.
- *
- * A host PER SCREEN rather than one shared parent, which is the one place this
- * differs from `test/accessibility-gate.test.ts` and it differs because layout
- * exists here. Seven roots in one parent would stack in document order and every
- * geometry reading would be a reading about that stacking rather than about the
- * screen. `docs/public-api.md` §4-1 makes the parent an argument precisely so
- * that a page can stand up more than one, so seven hosts is the shape the
- * contract already anticipates.
- */
-export const mountScreens = (
-  factory: DomElementFactory,
-  page: DomElement,
-  motion: MotionPreference,
-  breakProgress?: number,
-): ReadonlyArray<MountedScreen> => {
-  const hosts = new Map<ScreenName, DomElement>()
-  for (const name of SCREEN_NAMES) {
-    const host = factory.createElement('div')
-    host.setAttribute('data-harness-host', name)
-    page.appendChild(host)
-    hosts.set(name, host)
-  }
+const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount => {
+  const { factory, host, environment, breakProgress } = context
+  const noTime = (): void => undefined
 
-  /**
-   * `Map.get` is `T | undefined` under `noUncheckedIndexedAccess`, and the
-   * honest way to discharge that in a harness is to throw rather than to assert
-   * non-null: the loop above put every name in, so a miss means this function
-   * was edited wrongly and the harness should say so loudly on the page rather
-   * than render six screens and look fine.
-   */
-  const hostFor = (name: ScreenName): DomElement => {
-    const host = hosts.get(name)
-    if (host === undefined) {
-      throw new Error(`browser-harness: no host was created for screen "${name}"`)
+  switch (name) {
+    case 'main-menu': {
+      const menu = createMainMenuView(factory, host)
+      let model = mainMenuViewModel(openPanel(initialMainMenuState, 'new-world'))
+      menu.render(model)
+      model = mainMenuViewModel(openPanel(initialMainMenuState, 'load-world'))
+      menu.render(model)
+      model = mainMenuViewModel(initialMainMenuState)
+      menu.render(model)
+      return { root: menu.root, setTime: noTime, dispose: noTime, viewModel: () => model }
     }
-    return host
-  }
-
-  const menu = createMainMenuView(factory, hostFor('main-menu'))
-  menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'new-world')))
-  menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'load-world')))
-  menu.render(mainMenuViewModel(initialMainMenuState))
-
-  const hud = createHudView(factory, hostFor('hud'), motion)
-  const hotbarSlots = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
-  // Dead and then alive, for `test/accessibility-gate.test.ts`'s reason: a state
-  // whose elements are only built when it occurs is a state a sweep sees only if
-  // the sweep triggered it.
-  hud.render(hudViewModel({ ...spawnSnapshot, healthPoints: EntityHealthPoints(0) }, hotbarSlots, 0))
-  hud.render(hudViewModel(spawnSnapshot, hotbarSlots, 0))
-  // Slot 4, so the focus ring is DRAWN. This is the reading `docs/testing.md` §4
-  // names as unproven: whether the ring is visible ON the slot is the `outline`
-  // and `box-shadow` stacking order, and stacking order is a browser's answer.
-  hud.setKeyboardFocus(4)
-
-  const inventory = createInventoryView(factory, hostFor('inventory'))
-  inventory.render(inventoryViewModel(emptyInventorySnapshot))
-
-  const captions = createCaptionView(factory, hostFor('captions'), motion)
-  const nowSecs = captionTime(0)
-  captions.render(
-    captionLines(
-      [
+    case 'hud': {
+      const hud = createHudView(factory, host, environment.motion)
+      const hotbarSlots = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
+      let model = hudViewModel({ ...spawnSnapshot, healthPoints: EntityHealthPoints(0) }, hotbarSlots, 0)
+      hud.render(model)
+      model = hudViewModel(spawnSnapshot, hotbarSlots, 0)
+      hud.render(model)
+      hud.setKeyboardFocus(4)
+      return { root: hud.root, setTime: noTime, dispose: noTime, viewModel: () => model }
+    }
+    case 'inventory': {
+      const inventory = createInventoryView(factory, host)
+      const model = inventoryViewModel(emptyInventorySnapshot)
+      inventory.render(model)
+      return { root: inventory.root, setTime: noTime, dispose: noTime, viewModel: () => model }
+    }
+    case 'captions': {
+      const captions = createCaptionView(factory, host, environment.motion)
+      const events: ReadonlyArray<CaptionEvent> = [
         {
-          atSecs: nowSecs,
+          atSecs: captionTime(0),
           cueId: SoundCueId('blockBreak'),
           pan: AudioPan(-0.5),
           reason: 'audible',
           text: AudioCaptionText('Creeper hisses'),
         },
-      ],
-      nowSecs,
-    ),
-  )
-
-  const save = createSaveIndicator(factory, hostFor('save-indicator'))
-  save.render(saveStatusMessage(saveStatus('failed', 0), 1))
-
-  const loading = createLoadingView(factory, hostFor('loading'))
-  loading.render({ kind: 'failed', reason: 'chunk stream ended' })
-  loading.render({ kind: 'preparing', held: true })
-
-  const crosshair = createCrosshairView(factory, hostFor('crosshair'), motion)
-  crosshair.render(
-    crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress }, 0),
-  )
-
-  return [
-    { name: 'main-menu', host: hostFor('main-menu'), root: menu.root },
-    { name: 'hud', host: hostFor('hud'), root: hud.root },
-    { name: 'inventory', host: hostFor('inventory'), root: inventory.root },
-    { name: 'captions', host: hostFor('captions'), root: captions.root },
-    { name: 'save-indicator', host: hostFor('save-indicator'), root: save.root },
-    { name: 'loading', host: hostFor('loading'), root: loading.root },
-    { name: 'crosshair', host: hostFor('crosshair'), root: crosshair.root },
-  ]
+      ]
+      let model = captionLines(events, captionTime(context.time))
+      const setTime = (seconds: number): void => {
+        model = captionLines(events, captionTime(seconds))
+        captions.render(model)
+      }
+      setTime(context.time)
+      return { root: captions.root, setTime, dispose: noTime, viewModel: () => model }
+    }
+    case 'save-indicator': {
+      const save = createSaveIndicator(factory, host)
+      const status = saveStatus('failed', 0)
+      let model = saveStatusMessage(status, context.time)
+      const setTime = (seconds: number): void => {
+        model = saveStatusMessage(status, seconds)
+        save.render(model)
+      }
+      setTime(context.time)
+      return { root: save.root, setTime, dispose: noTime, viewModel: () => model }
+    }
+    case 'loading': {
+      const loading = createLoadingView(factory, host)
+      let model: Parameters<typeof loading.render>[0] = { kind: 'failed', reason: 'chunk stream ended' }
+      loading.render(model)
+      model = { kind: 'preparing', held: true }
+      loading.render(model)
+      return { root: loading.root, setTime: noTime, dispose: noTime, viewModel: () => model }
+    }
+    case 'crosshair': {
+      const crosshair = createCrosshairView(factory, host, environment.motion)
+      let model = crosshairViewModel(
+        { ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress },
+        context.time,
+      )
+      const setTime = (seconds: number): void => {
+        model = crosshairViewModel(
+          { ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress },
+          seconds,
+        )
+        crosshair.render(model)
+      }
+      setTime(context.time)
+      return { root: crosshair.root, setTime, dispose: noTime, viewModel: () => model }
+    }
+    default:
+      throw new Error(`browser-harness: unknown screen "${String(name)}"`)
+  }
 }
+
+export const DEFAULT_SCREEN_SCENARIOS: ReadonlyArray<ScenarioDefinition> = SCREEN_NAMES.map(
+  (screen) => ({
+    screen,
+    id: 'default',
+    title: 'Default',
+    surface: SCREEN_LABELS[screen],
+    isDefault: true,
+    mount: (context) => mountScreen(screen, context),
+  }),
+)

@@ -188,6 +188,7 @@ const createButton = (
   const button = ctx.factory.createElement('button')
   setAttributes(button, { 'aria-label': spec.label, 'data-mx-ui': spec.role, type: 'button' })
   button.style.setProperty('color', PALETTE_VAR.ink)
+  button.style.setProperty('background-color', PALETTE_VAR.surfaceRaised)
   button.textContent = spec.label
   if (spec.onClick) {
     addManagedListener(ctx, button, { handler: spec.onClick, type: 'click' })

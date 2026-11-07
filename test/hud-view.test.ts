@@ -35,7 +35,14 @@ import {
 } from '../src/domain/hud-view-model'
 import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../src/domain/palette'
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
-import { FOCUS_RING_SHADOW_WIDTH, FOCUS_RING_WIDTH } from '../src/application/slot-element'
+import { writeAttribute } from '../src/application/dom-write'
+import {
+  createSlotElement,
+  FOCUS_RING_SHADOW_WIDTH,
+  FOCUS_RING_WIDTH,
+  setSlotButtonView,
+  updateSlotElement,
+} from '../src/application/slot-element'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 
@@ -389,10 +396,82 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       '0',
       ...Array<string>(HOTBAR_SIZE - 1).fill('-1'),
     ])
+    expect(root.find('data-mx-ui', 'hotbar')?.attributes.get('role')).toBe('group')
+    expect(root.find('data-mx-ui', 'hotbar')?.attributes.get('aria-label')).toBe('Hotbar')
+    expect(root.find('data-mx-ui', 'hotbar-radio-group')?.attributes.get('role')).toBe('radiogroup')
+    expect(root.find('data-mx-ui', 'hotbar-radio-group')?.attributes.get('aria-label')).toBe('Hotbar slots')
+    expect(slots.every((slot) => slot.attributes.get('role') === 'radio')).toBe(true)
     // And the group has a name. DN-UI-1c: 「the visible label is a sibling
     // `<span>`, so a screen reader would otherwise announce this only as "edit
     // text"」 — a focus stop with no accessible name announces nothing.
-    expect(root.find('data-mx-ui', 'hotbar')?.attributes.get('aria-label')).toBe('Hotbar')
+  })
+
+  it('REGRESSION: an empty slot has an explicit indexed name', () => {
+    // Catches empty hotbar slots that leave a screen reader with no item name.
+    const { root, view } = mount()
+    view.render(hudViewModel())
+
+    expect(root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
+      'Hotbar slot 1, empty',
+    )
+  })
+
+  it('REGRESSION: a filled slot names its item and count', () => {
+    // Catches filled hotbar slots whose accessible names omit their stack contents.
+    const { root, view } = mount()
+    view.render(hudViewModel(SPAWN_VITALS, [undefined, ownerCarriedSlotForCount(64)]))
+
+    expect(root.findAll('data-mx-ui', 'slot')[1]?.attributes.get('aria-label')).toBe(
+      'Hotbar slot 2, stone, 64',
+    )
+  })
+
+  it('REGRESSION: selected radio state follows a moving hotbar selection', () => {
+    // Catches selection state exposed on the old slot after the game selects another slot.
+    const { root, view } = mount()
+    view.render(hudViewModel(SPAWN_VITALS, emptyHotbar, 1))
+    const slots = root.findAll('data-mx-ui', 'slot')
+
+    expect(slots[1]?.attributes.get('aria-checked')).toBe('true')
+    expect(slots[0]?.attributes.get('aria-checked')).toBe('false')
+    expect(slots[1]?.attributes.has('data-selected')).toBe(true)
+
+    view.render(hudViewModel(SPAWN_VITALS, emptyHotbar, 4))
+
+    expect(slots[1]?.attributes.get('aria-checked')).toBe('false')
+    expect(slots[4]?.attributes.get('aria-checked')).toBe('true')
+    expect(slots[1]?.attributes.has('data-selected')).toBe(false)
+    expect(slots[4]?.attributes.has('data-selected')).toBe(true)
+  })
+
+  it('REGRESSION: a stable accessible name and selection cause no attribute writes', () => {
+    // Catches stable ARIA attributes being rewritten on every HUD frame.
+    const { factory, view } = mount()
+    const hotbar = [...emptyHotbar]
+    hotbar[0] = ownerCarriedSlotForCount(64)
+    const model = hudViewModel(SPAWN_VITALS, hotbar, 0)
+    view.render(model)
+    const before = factory.mark()
+
+    view.render(model)
+
+    const writes = writeNames(factory.since(before))
+    expect(writes).not.toContain('attribute:aria-label')
+    expect(writes).not.toContain('attribute:aria-checked')
+  })
+
+  it('REGRESSION: radio projection tolerates a proxy slot without cached state cells', () => {
+    // Catches missing WeakMap state turning a radio slot projection into a runtime error.
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    writeAttribute(slot.role, 'radio')
+    const proxy = new Proxy(slot, {})
+    const view = slotView({ itemId: 'stone', count: 1 }, 0, 0)
+
+    expect(() => updateSlotElement(proxy, view)).not.toThrow()
+    expect(fakeElement(slot.root).attributes.has('aria-checked')).toBe(false)
+    expect(() => setSlotButtonView(proxy)).not.toThrow()
+    expect(fakeElement(slot.root).attributes.has('aria-checked')).toBe(false)
   })
 
   it('draws NO ring until somebody says where the keyboard is', () => {

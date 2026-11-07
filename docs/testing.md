@@ -1,7 +1,5 @@
 # 検証とテスト
 
-出典: plan.md §3.13（検証: 「DOMテスト + 状態モック付きプレビュー(各画面を単体起動して操作)」）、§6 Step 2、§8。
-
 ## 1. 検証ゲート
 
 ゲート構成は各コマンドと設定ファイルが正である。
@@ -30,11 +28,9 @@ $ pnpm test:browser    # Playwright。verify には含まれない
 Nix の devShell では、Corepack が `package.json` の `packageManager` を参照して `pnpm` のバージョンを解決する（12.14.0）。
 oxlint と ast-grep は npm devDependency ではなく `flake.nix` の `pkgs.oxlint` / `pkgs.ast-grep` から供給される。
 
-壁時計の直読み禁止が oxlint ではなく `ast-grep` の仕事なのは、oxlint が該当ルール
-（`no-restricted-syntax` 等）を実装していないためで、経緯は `.ast-grep/rules/no-wall-clock-read.yml`
-と DN-UI-10 にある。
-
 ## 2. 現状の suite
+
+`DN-UI-*` IDs refer to contracts in [design-notes.md](./design-notes.md).
 
 Vitest の対象は `vitest.config.ts` の `include: ['test/**/*.test.ts']` が定める。
 実行環境、テストファイル数、テスト件数、使用中の Vitest 版は、固定スナップショットではなく
@@ -57,10 +53,10 @@ DOM mount、実測ピクセル、レイアウトのように実ブラウザが�
 | `test/public-api.test.ts` | 公開バレル / アクセシビリティ資産の存在保証 / **kernel 語彙を再公開していないこと** / **DN-UI-4（リスナ API を配らないこと）** |
 | `test/dom-surface.test.ts` | **DN-UI-13（構造型が実 DOM の部分集合であること、`domain/` が document に届かないこと）** |
 | `test/hud-view.test.ts` | **DN-UI-13（パレット適用 / 冪等性 / reduced-motion / リスナ皆無）/ DN-UI-13i（フォーカスリング）/ DN-UI-6 / DN-UI-7c** |
-| `test/screen-views.test.ts` | **DN-UI-13（字幕はテキスト / `unknown` は空ではない）/ DN-UI-1a（属性は canvas だけ）/ DN-UI-3。前のモデルの表示が残らないこと（余った枠・消えた領域・carried）もここ（§5-0）** |
+| `test/screen-views.test.ts` | DN-UI-13 (captions stay text; `unknown` is not empty), DN-UI-1a (attributes stay on canvas), and DN-UI-3; verifies that text and slots from the prior model are cleared |
 | `test/palette-css.test.ts` | **DN-UI-11 + DN-UI-13g（全トークンが DOM に届くこと。未参照集合は空になった）** |
 | `test/save-indicator.test.ts` | **DN-UI-13h（自動保存インジケータ、状態と表示時間、色以外での区別）/ DN-UI-10 / DN-UI-11b** |
-| `test/screen-mount.test.ts` | 親は**引数**であること（`docs/public-api.md` §4-1）/ ホットバー選択の ONLY 性 |
+| `test/screen-mount.test.ts` | The parent is passed as an argument (`docs/public-api.md` §4-1); hotbar selection is exclusive |
 | `test/modal-flows.test.ts` | DN-UI-4（Escape 単一ハンドラ）をフロー側から。キーは持たない |
 | `test/accessibility-gate.test.ts` | **全画面スイープ — フォーカス可能物の国勢調査と、書かれた色がトークンに解決すること** |
 | `test/palette-survey.test.ts` | **測定そのものが壊れを検出できること。わざと壊したパレットを `surveyPalette` に渡し、名指しすることと、他のリストは空のままであることを確かめる（§5-3）** |
@@ -88,9 +84,7 @@ The `lib` option makes DOM types available; `environment` determines whether `do
 待っている `Deferred` を解決するのが DOM のイベントリスナ = Effect ランタイムの外側だからで、
 テストファイバを進める仕事がスケジューラの中に存在しない。
 
-根拠は plan.md §3.13 と、参照実装の 3 か所（`docs/codex-implementation-prompt.md:161`、
-`packages/presentation/menu/confirm-dialog.test.ts:88-97` および `:128-132`）。
-全文は [design-notes.md](./design-notes.md) DN-UI-2。
+詳細は [design-notes.md](./design-notes.md) DN-UI-2。
 
 ### 書き方
 
@@ -127,24 +121,11 @@ it('clicking Confirm resolves the dialog', async () => {
 `Effect.acquireRelease` の `acquire`（リスナの設置）がクリックより**後**に走るレースを
 参照実装が実際に踏んでいるためである（`confirm-dialog.test.ts:88-92`）。
 
-### document をどうやって与えるか — 決着（A でも B でもない）
+### Provide a document to DOM tests
 
-2 案を挙げて保留していた。**どちらも採らなかった。**
+`application/` depends on the structural types in `application/dom-surface.ts`, so unit tests use `test/fake-dom.ts` rather than a browser DOM. The fake records mutations, allowing tests to assert that an unchanged render performs no writes. Tests stay in the `node` environment and run in under a second.
 
-| 案 | 内容 | 採否 |
-| --- | --- | --- |
-| A | DOM を要るファイルの先頭に `// @vitest-environment jsdom` プラグマ | 不採用 |
-| B | vitest の project を 2 つに分ける（`node` / `jsdom`） | 不採用 |
-| **C** | **`test/fake-dom.ts` — 構造型を実装した 90 行の偽 document** | **採用** |
-
-`application/` は `HTMLElement` ではなく `application/dom-surface.ts` の**構造型**に対して書かれている。
-だから偽 document は**キャスト無しで**それを満たせる（`test/dom-surface.test.ts`）。
-environment は `node` のままで、suite は 1 秒を切ったままである。
-
-**C が A/B より優れているのは速度ではなく、答えられる問いの種類である。**
-「変更の無い再描画が DOM を 1 回も触らないこと」は jsdom では観測できない——
-*何も起きなかったこと*を報告する API が無いからである。偽 document は変更ログを持つので、
-`expect(factory.since(mark)).toStrictEqual([])` が書ける。これは §5.2 の主張そのものである。
+The fake implements that structural surface without casts. Its mutation log can prove that a render made no DOM changes, which a real browser cannot report directly.
 
 **DN-UI-2 の書き方は変わらない。** デッドロックは environment ではなく
 `it.effect` のファイバ管理の問題である。現状の DOM テストは fiber を fork しないので
@@ -154,15 +135,7 @@ environment は `node` のままで、suite は 1 秒を切ったままである
 **そしてブラウザは依然として必要である。** 偽 document は `var()` を解決せず、
 レイアウトを持たず、ピクセルを持たない。§4 の完成条件 3 と 4 が別行なのはそのためである。
 
-## 4. 完成条件
-
-plan.md §6 Step 2 の共通条件:
-
-> 各リポジトリの完了条件: ユニット/シナリオテスト green + 内蔵プレビューが操作可能
-
-mx-ui にとってのプレビューは plan.md §3.13 の
-
-> 状態モック付きプレビュー(各画面を単体起動して操作)
+## 4. Completion conditions
 
 | # | 条件 | 状態 |
 | --- | --- | --- |
@@ -172,28 +145,23 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 | 4 | アクセシビリティ資産をブラウザで確認 | ✅ **ブラウザで測った**（`pnpm test:browser`、§8）。スロット寸法と hotbar 配置の欠陥を見つけ、修正してある |
 | 5 | 100% カバレッジゲートが有効 | ✅（`vitest.config.ts` の `thresholds` + CI の `Coverage` ステップ。§5） |
 
-### プレビューの条件（満たしている）
+✅ means complete. ⚠️ marks partial work with remaining cases listed.
+
+### Terminal preview
 
 `apps/preview-screens/`。`pnpm preview` で起動、`pnpm preview --screen captions` で字幕画面だけを起動する。
 
 - **各画面が単体で起動する。** 背後にゲームは要らない（`--screen hud | inventory | settings | captions`）。
-- **mc-playground-kit を使っていない**（DN-UI-5、plan.md §3.13:「kit 不要」）。依存は 0 個である。
-- 置き場は `apps/preview-screens/`（plan.md §4.1）。`index.ts` から export されず、`pnpm verify` は起動しない。ソースは型検査・lint の対象である。
+- This terminal preview has no runtime dependencies and is not exported from the package entry point.
 - 状態はモックである（`apps/preview-screens/state.ts`）。
   「リテラルを渡せば HUD が出る」ようにビューモデルが純粋関数であることがこれを可能にしている。
 
 `ui:overlay-sync` が mc-sim の状態を一切読まないのは、この条件のための構造である
 （[responsibility.md](./responsibility.md) §1）。
 
-#### 端末プレビューとブラウザ検証の役割
+#### Terminal preview and browser harness
 
-`apps/preview-screens/` は純粋な view model をモック状態から描画する端末プレビューである。
-状態の組み立てやテキスト出力を素早く確かめられるが、実 DOM のレイアウトは検証しない。
-ブラウザ側は `apps/browser-harness/` と `test-browser/` で実 DOM mount、ピクセル、レイアウトを確認する。
-4 種類の端末プレビュー（HUD、inventory、settings、captions）と、ブラウザで mount する画面群は別の対象である。
-
-`pnpm verify` は `tsconfig.build.json`、`tsconfig.test.json`、`tsconfig.preview.json` を型検査し、
-`apps/preview-screens/` の lint も行う。プレビューを実行するわけではない。
+`apps/preview-screens/` renders mocked view models and does not verify real DOM layout. The browser harness in `apps/browser-harness/` and `test-browser/` mounts the UI in a real browser and checks pixels and layout. `pnpm verify` typechecks and lints the terminal preview but does not run it.
 
 #### 保証はどこまで証明されたか（正確に）
 
@@ -224,7 +192,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 **2 点とも `pnpm test:browser` で検証済みである。** 以下は**何が分かったか**であって、
 もう「未証明」の一覧ではない。詳細は §8。
 
-1. **幾何は測った——そして 2 件の欠陥が出た。** 「レイアウトはブラウザが要る」は正しかったが、
+1. **幾何は測った——そして 2 件の欠陥が出た** (`test-browser/geometry.spec.ts`)。 「レイアウトはブラウザが要る」は正しかったが、
    **要るものが無いのと、誰も作っていないのは別である**。ハーネスを書いたら 5 分で答えが出た。
    - **スロットに寸法が無かった。** 390px 幅で `43.3 x 4`、320px で `35.6 x 4`。
      スロットの 2 つの span は mc-sim がアイテムを供給するまで空なので内容ボックスが 0 で、
@@ -241,7 +209,7 @@ mx-ui にとってのプレビューは plan.md §3.13 の
    - **crosshair の中央は正しかった。** セーフエリアのインセットを入れても viewport 中心に留まる
      （ホストはインセットを padding で持ち、絶対配置の子は padding box に対して解決する）。
      これは**正しい**——照準はカメラの主点を指すのであって、端末のクロームが残した領域の中心ではない。
-2. **`var()` は解決した。そして `compositeOver` の前提が実測で裏付けられた。**
+2. **`var()` は解決した。そして `compositeOver` の前提が実測で裏付けられた** (`test-browser/palette-pixels.spec.ts`)。
    全トークンが宣言どおりのチャンネルに解決し、**アルファも 2 つとも運ばれた**
    （`rgba(10, 14, 18, 0.9)` / `rgba(0, 0, 0, 0.55)`）。
    一番効いたのはこちらである: `domain/palette.ts` は `compositeOver` について
@@ -254,7 +222,6 @@ mx-ui にとってのプレビューは plan.md §3.13 の
    **全部 2 倍明るい面に対して測っていた**ことになり、`SCRIM_ALPHA` の 0.88 → 0.90 は
    その読みの上で決めた 2 桁である。テストは**両方**を assert する——sRGB 予測に一致すること、
    そして**線形予測に一致しないこと**。後半が無ければ前半は許容誤差の広いだけの偶然になる。
-   出荷側の面倒は [versioning.md](./versioning.md) §4（`files` / `exports` / tsc だけでは足りないビルド）。
 
 **そして 1 つだけ、ブラウザでも埋まらないものが残っている**（別種なので番号を分ける）:
 
@@ -266,37 +233,15 @@ mx-ui にとってのプレビューは plan.md §3.13 の
 
 **別件として残っているもの:**
 
-- **mc-sim にレシピモデルが無い。** クラフト**画面**はあり、渡されたものを射影する。
-  しかし「このグリッドは何か作るか」に射影すべき答えが無い（mc-sim の `api-lock.md` に `Recipe` が無い）。
-  だから `CraftingSnapshot.result` は実際 `undefined` で、ビューモデルは `unknown` を返す。
-  **それは正しい挙動であって仮置きではない**が、mc-sim がレシピを所有するまで
-  本物のクラフト結果は出せない。レシピ照合は plan.md §2.3-1 で mc-sim のものであり、
-  ここで発明することがこのリポジトリのしてはならないことである。
+- **Recipe matching belongs to mc-sim.** The view projects the supplied `CraftingSnapshot`; when `result` is `undefined`, its view model reports `unknown` rather than inventing a recipe result.
 - **保存イベントの producer はまだいない。** `domain/save-status.ts` と `application/save-indicator.ts` は status の変換と表示を実装しているが、
-  `SaveStatus` を作って UI に渡すフレーム駆動側は未接続である。これは `VitalsSnapshot` の供給境界と同じ位置にある。
+  `SaveStatus` を作って UI に渡すフレーム駆動側は未接続である。
   字幕と違って**刈り取るキューが無い**（値が 1 つで、失効は読み取り時の引き算）ので、
   `ui:overlay-sync` に足す仕事は無く、stage は変えていない。
 
-### アクセシビリティ検証はユニットテストでは閉じない
+### Browser checks for accessibility
 
-**色覚モードと reduced-motion は「見なければ」検証できない。**
-
-- `colorVisionAttribute('deuteranopia') === 'deuteranopia'` はテストできる。
-  **その属性が付いた画面が実際に読めるか**はテストできない。
-  DN-UI-1a の失敗モード（文書全体に掛けて UI クロームのコントラストを壊す）は、
-  値としては正しいまま起こる。
-- `animationDurationMs(400, 'reduced') === 0` はテストできる。
-  **duration をどこかで 1 か所忘れていないか**はテストできない。
-
-だから完成条件 3 と 4 は別行になっている。**プレビューがこの検証の場所である。**
-参照実装も同じ結論に達しており、`confirm-dialog.test.ts:96-97` が
-「Production behavior (click → resolve, Enter/Esc, focus) was manually verified via Playwright MCP」と記録している。
-
-> **2026-07-28 追記。** 上の 2 つの例は今も正しいが、「見なければ」の**見る側が自動化された**。
-> 「その属性が付いた画面が実際に読めるか」は依然として人間の問いだが、
-> **「ブラウザが実際にその色を描いたか」は機械の問い**であり、§8 がそれを測っている。
-> 参照実装の `Playwright MCP で手で確かめた` という記録は、
-> **手で確かめたことを次の人が確かめ直せない**という意味でもある。
+Unit tests can verify that color-vision and reduced-motion values are produced. Browser tests verify that the rendered screen remains readable and that keyboard interaction works. The terminal preview does not check these browser behaviors (see §8).
 
 ## 5. カバレッジ — 100% ゲートは有効である
 
@@ -313,9 +258,6 @@ thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 どちらかで解消した——後者は多くの場合 `noUncheckedIndexedAccess` が要求する `if` ガードを
 非 null アサーション 1 個に置き換える形になった（分岐そのものを消す。理由は各サイトのコメントに書いてある）。
 
-`domain/` はビューモデル、字幕キュー、モーダルスタック、そしてパレット自身のアクセシビリティ測定を持ち、
-`application/` はこのリポジトリが定義した DOM 界面の上に 7 つのレンダラを持つ。
-
 `vitest.config.ts` と CI ワークフロー（`Coverage` ステップ）の**両方**で有効にしてある。
 閾値は `vitest.config.ts` にしか書かない —— `vitest run --coverage` が自力で非ゼロ終了するので
 CI に追加のフラグは要らず、そうしておけば手元と CI が同じ判定をする。
@@ -324,32 +266,11 @@ CI に追加のフラグは要らず、そうしておけば手元と CI が同�
 計測対象は `index.ts` / `domain/**` / `application/**` / `stages/**`（`coverage.include`）で、
 テスト・設定ファイル・`.d.ts` は除外している。**除外リストにソースファイルは 1 つも無い。**
 
-### 5-0. 有効化のためにやったこと（テストは 20 本、しかし本題はコードの側にある）
-
-branch は **93.57%** で、未到達は 27 本だった。**そのうちテストを書くべきものは 12 本しか無かった。**
-
-| 分岐 | 判定 | 対応 |
-| --- | --- | --- |
-| `matrix[base + n] ?? 0` × 5（`accessibility.ts`） | 型が排除済み。`ColorVisionMatrix` は 20 要素のタプルで、添字は 0/1/2 しか来ない | タプルを分解代入して**削除**（行構造が読めるようにもなった） |
-| `line/icon/slot === undefined` × 5（各レンダラ） | 自分自身の長さで回すループの添字読み。到達不能 | `for (const [i, x] of xs.entries())` にして**削除**。別配列を引く側の検査は**残した**（そちらは本物） |
-| `panels.find(...) ?? root`（`main-menu-view.ts`） | コメント自身が「これは外れない」と書いていた | 閉じた union の `Record` にして**削除**。外れないことを**型が**言うようになった |
-| `left/right === undefined`（全ペア掃引） | 同上 | `entries()` + `slice()` で**削除** |
-| `surfaceOf` の `: SCRIM` | 呼び出し元が既に scrim を除外している | 引数を `Exclude<…, 'scrim'>` にして**削除** |
-| 字幕の `setMotion` 早期 return | 到達可能 | テスト（ただし下記 5-1） |
-| 余った枠を隠す／消えた領域を隠す／carried／crafting match | **本物の抜け**。どれも「前のモデルの表示が残る」失敗 | `test/screen-views.test.ts` |
-| 装備欄・オフハンドを mc-sim が**供給した**場合 | **本物の抜け**。全テストが `undefined` 側しか駆動していない | `test/view-model.test.ts` |
-| `hex` / `compositeOver` の NaN アーム | **本物の抜け**。CSS には失敗チャンネルが無い | `test/view-model.test.ts` |
-| `mergeable === true` | **本物の抜け**。「描かない」と「描けない」が区別できていなかった | `test/screen-views.test.ts` |
-| パレット測定の**報告経路**（7 本） | 到達可能だが、パレットが正しい限り走らない | `surveyPalette` に引数を足し、**壊したパレットを渡すテスト**を新設（5-2） |
-| `hud-view.ts` の短いホットバー | 公開型の境界で到達可能な表示抜け | `test/hud-view.test.ts` の回帰テスト |
-
-**数字のためのテストは 1 本も書いていない。** `exclude` リストも広げていない。
-
 ### 5-1. mutation で分かった 2 つのこと
 
 新規テストは対象コードを壊して赤を確認した（20 個中 17 個が即死）。生き残った 3 つが有益だった。
 
-**`setMotion` の早期 return を消しても全テストが緑のまま通る。** 同じ設定を 2 度書いても
+**`setMotion` の早期 return を消しても、すべてのテストが成功する。** 同じ設定を 2 度書いても
 DOM に何も書かれないという性質は**二重に**成り立っている —— 早期 return がループを飛ばし、
 そのうえ `attributeCell` / `styleCell` が値の変わらない書き込みを弾く。
 早期 return が節約しているのは**ループそのもの**で、それは fake DOM には原理的に見えない。
@@ -357,7 +278,7 @@ DOM に何も書かれないという性質は**二重に**成り立っている
 「観測できる契約を固定しており、現在それを支えているのはセルの側である」に書き直した。
 **テストが何を固定していないかは、固定していることと同じくらい書く価値がある。**
 
-**`applyColorVisionMatrix` の alpha 列と定数オフセット列を消しても全テストが緑のまま通る。**
+**`applyColorVisionMatrix` の alpha 列と定数オフセット列を消しても、すべてのテストが成功する。**
 出荷している 4 つの行列はその 2 列が全部 0 なので、既存のアサーションはすべて 3x3 部分の話だった。
 `ColorVisionMatrix` は公開型で「SVG の `feColorMatrix` が要求する順の 4x5」と明記されており、
 5 列のうち 2 列を黙って無視する実装は**オフセットを使う最初の行列でブラウザと食い違う**。
@@ -384,7 +305,7 @@ lines / statements の 4 指標すべてを 100% とする。生成器が常に 
 const surveyPalette = () => ({ tokensBelowFloor: [], collapsedPairs: [], … })
 ```
 
-これでも**全テストが通る**。カバレッジがそれを見せた: 報告経路
+これでも**すべてのテストが成功する**。カバレッジがそれを見せた: 報告経路
 （`undeclared.push`、ペア名の整形、不透明パネル側の測定）は**一度も実行されていなかった**。
 **発火するところを誰も見たことがないガードは、繋がっているかどうか誰も知らないガードである。**
 
@@ -404,30 +325,13 @@ const surveyPalette = () => ({ tokensBelowFloor: [], collapsedPairs: [], … })
 - **テスト名は「何を守っているか」を書く。** `works correctly` ではなく
   ``REGRESSION: an odd health total shows a HALF heart rather than rounding it away`` のように、
   落ちたときに何が壊れたかが名前で分かるようにする。
-- **設計の前提を守るテストには由来を書く。** plan.md の節番号、参照実装の `path:line`、DN 番号。
-  由来の無いテストは、将来だれかが「たぶん間違いだろう」と直してしまう。
-  現状の 5 ファイルは全部これを守っており、
-  例えば `the mode set matches the reference exactly, so its saved settings stay readable` の本体には
-  `// packages/game/application/settings.schema.ts:10-11` が書かれている。
+- **Tests for design contracts should cite their source.** Link to [design-notes.md](./design-notes.md) or a relevant source file and line.
 - **`REGRESSION:` 接頭辞は「参照実装で実際に起きた／設計注意が明示している失敗」に付ける。**
   そうでないものには付けない。区別が付かなくなると接頭辞の意味が消える。
 
-## 7. 参照実装のテストが**オラクル**である
+## 7. Reference tests as oracles
 
-plan.md §8 のリスク表:
-
-> 書き直しのスコープ(参照実装は84k LOC + 数ヶ月分のデバッグ知見)
-> → 参照実装を仕様書として使い、テスト資産を各Stepで**先に**移植。ゼロから仕様を再発明しない
-
-`packages/presentation/` のテストは実測 **63 ファイル / 10,862 LOC**（`input/` 除く）で、
-非テストコード 10,116 LOC とほぼ同量である。移植順序は [porting.md](./porting.md) §4。
-
-**ただし「オラクルとして移植」は「63 ファイルを移植する」ではない。**
-1 ファイルずつの判定は [dom-oracle-triage.md](./dom-oracle-triage.md) にある。
-本数は **456 本**で、`it.effect` だけを数えると 128 本しか見えない
-（`it.scoped` が 139 本ある — porting.md §4-2 の数え方はここが漏れる）。
-45% は mc-render / mc-sim の持ち物か、DN-UI-4 のように mx-ui が
-**面に動詞を置かないことで別の答えを出している**ものである。
+Use [porting.md](./porting.md) §4 for migration order and [dom-oracle-triage.md](./dom-oracle-triage.md) to decide which assertions belong to mx-ui. Port tests only for the DOM contracts this package owns; behavior owned by other packages stays with those packages.
 
 ## 8. ブラウザゲート（`pnpm test:browser`）
 
@@ -438,23 +342,45 @@ $ pnpm test:browser       # playwright test。webServer が pnpm preview:browser
 $ pnpm preview:browser    # ハーネスだけを立てて目で見る
 ```
 
+### Browser harness
+
+Before running these commands, complete the repository setup in [README.md](../README.md), including dependency installation and GitHub Packages authentication.
+
+Run `pnpm preview:browser` and open `http://localhost:5182/` to inspect a screen. The side panel is open by default. Use **Scenario** to select a screen and scenario, and **Gallery** to show the scenarios for the selected screen together. The **Environment** controls set motion, color-vision mode, viewport size, safe area, device-pixel ratio, text scale, contrast, and background. **Timeline** controls virtual time. **State JSON** imports or exports the current harness state.
+
+The **Diagnostics** section shows the intent log, input JSON, view-model JSON, accessibility tree, focus order, and resolved palette tokens with contrast. Layout diagnostics show bounds, overflow, DOM changes, document listeners, and console or page errors. Select **Refresh layout diagnostics** after changing the rendered scenario or layout.
+
+Run the browser accessibility sweep with the default Chromium project:
+
+```console
+$ pnpm exec playwright test test-browser/accessibility.spec.ts
+```
+
+The sweep checks roles, accessible names, and applicable states for registered UI scenarios. It also checks keyboard behavior, the selected hotbar radio state, and focus order between the UI and debug panel. The full browser gate runs this spec as part of `pnpm test:browser`.
+
+`playwright.environment.config.ts` runs `test-browser/environment.spec.ts` in four projects: desktop Chromium, Firefox, WebKit, and Chromium with a 390 by 844 touch-enabled mobile viewport. Each project checks registered scenarios for rendered content and browser errors; the mobile project also checks horizontal overflow. Install the required browser binaries, then run the environment suite:
+
+```console
+$ pnpm exec playwright install chromium firefox webkit
+$ pnpm exec playwright test --config=playwright.environment.config.ts
+```
+
+ブラウザテストを並列レーンで実行する場合は、レーンごとに異なる`HARNESS_PORT`と`PLAYWRIGHT_OUTPUT_DIR`を指定します。未指定時はポート`5182`と`test-results/`を使います。たとえば、`nix develop --command env HARNESS_PORT=5193 PLAYWRIGHT_OUTPUT_DIR=.artifacts/lane-2 pnpm test:browser`で別の出力先へ実行できます。
+
 | ファイル | 何を測るか |
 | --- | --- |
 | `test-browser/dom-surface.spec.ts` | 実 `Document` への mount、木の構築、listener 境界、palette custom property の配置 |
 | `test-browser/furnace-view.spec.ts` | Furnace view を実 DOM に描画したときの表示 |
 | `test-browser/palette-pixels.spec.ts` | トークンの CSS 解決、alpha、sRGB 合成、palette survey の下限 |
 | `test-browser/geometry.spec.ts` | viewport のレイアウト、focus ring、bar weight、reduced-motion、safe area、crosshair 配置 |
+| `test-browser/accessibility.spec.ts` | 登録済み UI シナリオの role、accessible name、状態、キーボード操作と focus order |
+| `test-browser/environment.spec.ts` | browser projects ごとの描画、browser errors、mobile viewport の横 overflow |
 
 ### 8-1. なぜ `verify` に入れないか
 
 `pnpm verify` は CI の Verify job に対応するが、CI 全体とは異なる。Browser job は別にあり、そこで Chromium を install して suite を実行する。
 入れると、このリポジトリの看板ゲートが 180MB のダウンロードと動く Chromium に依存し、
 **「`playwright install` を走らせていない」という平凡な失敗が、コードについて何も言わない赤いビルドになる。**
-
-前例はこのリポジトリの中にある: `pnpm test:coverage` が §1 の表で
-**「`verify` には含まれない」**と明記されているのと同じ形である。
-組織としては mc-compose の `check:roster` が同じ判断をしている
-（実在するゲートで、実在するスクリプトがあり、`verify` の行には無い）。
 
 **ただし「実行しない」と「検査しない」は別である。**
 `test-browser/` は `SCAN_ROOTS` にも lint 対象にも `tsconfig.test.json` にも入っている——
@@ -485,30 +411,13 @@ const factory: DomElementFactory = document
 そのあと mx-ui に渡す。mx-ui は以後すべて構造型の面から append し、要素を返さない。
 全文は `apps/browser-harness/main.ts` の該当コメントにある。
 
-### 8-3. ハーネスは mx-ui の中を 1 行もスタイルしない
+### 8-3. The harness does not style inside mx-ui
 
-`apps/browser-harness/index.html` の CSS セレクタは `[data-harness-host]` で止まっており、
-**mx-ui のルートの内側に届く規則が 1 つも無い。** これが測定を正直にしている唯一の仕掛けである。
-ハーネスがスロットに `width: 48px` を書けば、
-「スロットは押せる大きさか」は**「ハーネスが 48px と書いたか」**に化ける——
-`docs/e2e-triage.md` が偽 DOM に対して `48` を主張することを拒んだときの
-**「測っていないものを測ったことにはしない」**と同じ失敗である。
+The selectors in `apps/browser-harness/index.html` stop at `[data-harness-host]`. If the harness set a slot width, the browser would measure the harness rule rather than mx-ui's layout. Keeping UI styles out of the harness makes the measured dimensions attributable to mx-ui.
 
-その禁欲が、**否定的な結果を意味のあるものにしている**。
-スロットが 4px で返ってきたことは mx-ui についての事実であって、ハーネスについての事実ではない。
+### 8-4. Event listeners stay outside mx-ui views
 
-### 8-4. リスナはハーネスにも無い
-
-ブラウザハーネスは `addEventListener` を紛れ込ませるのに最も都合のよい場所である——
-実 document があり、実イベントがあり、見ているテストが無い。**無い。**
-DN-UI-4 の保証は「面に動詞が無いのでリスナを付けられない」であり、
-ハーネスがその例外ではなく**その実演**であることのほうが、
-買える対話性より価値がある。状態はクエリ文字列から来る。押すものは無い。
-
-`test-browser/dom-surface.spec.ts` の DN-UI-4 テストは 1 つだけリスナを張るが、
-**mx-ui のルートの外側**（ページシェル）であり、
-張る理由は**カウンタがリスナを見られることを先に示すため**である——
-一度も 1 を見たことのないガードが 0 を報告するのは §5-3 が出荷を拒んだ形である。
+The structural UI surface has no `addEventListener` method; the host application owns input handling at the host boundary. The browser contract test checks UI roots for inline `on*` attributes. It also adds a positive-control listener to the page shell, outside the UI root, to show that the test can observe one. The test does not inspect the browser's event-listener registry; that is available only through DevTools. Unit tests use the fake document to record listener additions.
 
 ### 8-5. カバレッジの責任範囲
 

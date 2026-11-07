@@ -47,6 +47,30 @@ const warmViewModules = async (page: Page, modulePaths: ReadonlyArray<string>): 
   )
 }
 
+const mountBaselineFixture = async (
+  page: Page,
+  name: string,
+  styles: Readonly<Record<string, string>>,
+): Promise<void> => {
+  await page.evaluate(({ fixtureName, fixtureStyles }) => {
+    const stage = document.querySelector<HTMLElement>('[data-harness-stage]')
+    if (stage === null) {
+      throw new Error('Expected the browser harness stage')
+    }
+
+    // The fixed harness page paints above body siblings; reveal this fixture through the stage.
+    stage.style.backgroundColor = 'transparent'
+
+    const fixture = document.createElement('div')
+    fixture.setAttribute('data-d-baseline', fixtureName)
+    fixture.style.setProperty('box-sizing', 'border-box')
+    for (const [property, value] of Object.entries(fixtureStyles)) {
+      fixture.style.setProperty(property, value)
+    }
+    document.body.appendChild(fixture)
+  }, { fixtureName: name, fixtureStyles: styles })
+}
+
 const isolateHarnessScreen = async (page: Page, name: 'main-menu' | 'inventory'): Promise<void> => {
   await page.evaluate((screenName) => {
     let foundTarget = false
@@ -108,20 +132,23 @@ const ONBOARDING_BASELINE_MODEL = onboardingViewModel({
 const mountDebugFixture = async (page: Page, populated: boolean): Promise<void> => {
   await warmViewModule(page, debugOverlayViewModule)
   await openHarness(page, { screen: 'crosshair' })
+  const fixtureName = populated ? 'f3-public-snapshot' : 'f3-unavailable'
+  await mountBaselineFixture(page, fixtureName, {
+    'background-color': '#161b22',
+    color: '#f0f3f6',
+    'font-family': 'ui-monospace, monospace',
+    'font-size': '16px',
+    'line-height': '1.5',
+    padding: '20px',
+    width: '480px',
+  })
   await page.evaluate(
-    async ({ modulePath, populatedFixture }) => {
+    async ({ modulePath, populatedFixture, baselineName }) => {
       const { createDebugOverlayView } = await import(modulePath)
-      const host = document.createElement('main')
-      host.setAttribute('data-d-baseline', populatedFixture ? 'f3-public-snapshot' : 'f3-unavailable')
-      host.style.setProperty('box-sizing', 'border-box')
-      host.style.setProperty('width', '480px')
-      host.style.setProperty('padding', '20px')
-      host.style.setProperty('background-color', '#161b22')
-      host.style.setProperty('color', '#f0f3f6')
-      host.style.setProperty('font-family', 'ui-monospace, monospace')
-      host.style.setProperty('font-size', '16px')
-      host.style.setProperty('line-height', '1.5')
-      document.body.appendChild(host)
+      const host = document.querySelector<HTMLElement>(`[data-d-baseline="${baselineName}"]`)
+      if (host === null) {
+        throw new Error(`Expected the ${baselineName} baseline fixture`)
+      }
 
       const view = createDebugOverlayView(document, host)
       view.update(
@@ -157,7 +184,7 @@ const mountDebugFixture = async (page: Page, populated: boolean): Promise<void> 
       )
       view.root.removeAttribute('hidden')
     },
-    { modulePath: debugOverlayViewModule, populatedFixture: populated },
+    { baselineName: fixtureName, modulePath: debugOverlayViewModule, populatedFixture: populated },
   )
   await page.evaluate(async () => {
     await document.fonts.ready
@@ -167,19 +194,21 @@ const mountDebugFixture = async (page: Page, populated: boolean): Promise<void> 
 const mountAchievementToastFixture = async (page: Page): Promise<void> => {
   await warmViewModule(page, achievementToastViewModule)
   await openHarness(page, { screen: 'crosshair' })
+  await mountBaselineFixture(page, 'achievement-toast-unlocked', {
+    'background-color': '#161b22',
+    color: '#f0f3f6',
+    'font-family': 'ui-monospace, monospace',
+    'font-size': '16px',
+    'line-height': '1.5',
+    padding: '20px',
+    width: '480px',
+  })
   await page.evaluate(async (modulePath) => {
     const { createAchievementToastView } = await import(modulePath)
-    const host = document.createElement('main')
-    host.setAttribute('data-d-baseline', 'achievement-toast-unlocked')
-    host.style.setProperty('box-sizing', 'border-box')
-    host.style.setProperty('width', '480px')
-    host.style.setProperty('padding', '20px')
-    host.style.setProperty('background-color', '#161b22')
-    host.style.setProperty('color', '#f0f3f6')
-    host.style.setProperty('font-family', 'ui-monospace, monospace')
-    host.style.setProperty('font-size', '16px')
-    host.style.setProperty('line-height', '1.5')
-    document.body.appendChild(host)
+    const host = document.querySelector<HTMLElement>('[data-d-baseline="achievement-toast-unlocked"]')
+    if (host === null) {
+      throw new Error('Expected the achievement toast baseline fixture')
+    }
 
     const view = createAchievementToastView(document, host)
     view.render({
@@ -234,6 +263,16 @@ test.describe('exact screen baselines', () => {
   test('pause menu with settings open', async ({ page }) => {
     await warmViewModules(page, [pauseMenuViewModule, pauseMenuViewModelModule, settingsViewModule])
     await openHarness(page, { screen: 'crosshair' })
+    await mountBaselineFixture(page, 'pause-settings', {
+      'background-color': '#161b22',
+      color: '#f0f3f6',
+      'font-family': 'system-ui, sans-serif',
+      'font-size': '16px',
+      'line-height': '1.5',
+      margin: '0 auto',
+      padding: '24px',
+      width: '840px',
+    })
     await page.evaluate(
       async ({ pausePath, pauseModelPath, settingsPath, model }) => {
         const [{ createPauseMenuView }, { pauseMenuViewModel }, { createSettingsView }] = await Promise.all([
@@ -243,18 +282,10 @@ test.describe('exact screen baselines', () => {
           >,
           import(settingsPath) as Promise<typeof import('../src/application/settings-view')>,
         ])
-        const host = document.createElement('main')
-        host.setAttribute('data-d-baseline', 'pause-settings')
-        host.style.setProperty('box-sizing', 'border-box')
-        host.style.setProperty('width', '840px')
-        host.style.setProperty('margin', '0 auto')
-        host.style.setProperty('padding', '24px')
-        host.style.setProperty('background-color', '#161b22')
-        host.style.setProperty('color', '#f0f3f6')
-        host.style.setProperty('font-family', 'system-ui, sans-serif')
-        host.style.setProperty('font-size', '16px')
-        host.style.setProperty('line-height', '1.5')
-        document.body.appendChild(host)
+        const host = document.querySelector<HTMLElement>('[data-d-baseline="pause-settings"]')
+        if (host === null) {
+          throw new Error('Expected the pause settings baseline fixture')
+        }
 
         const pause = createPauseMenuView(document, host)
         pause.render(pauseMenuViewModel(['pause', 'settings']))
@@ -293,21 +324,23 @@ test.describe('exact screen baselines', () => {
   test('furnace station', async ({ page }) => {
     await warmViewModule(page, furnaceViewModule)
     await openHarness(page, { screen: 'crosshair' })
+    await mountBaselineFixture(page, 'furnace-station', {
+      'background-color': '#161b22',
+      color: '#f0f3f6',
+      'font-family': 'system-ui, sans-serif',
+      'font-size': '16px',
+      'line-height': '1.5',
+      margin: '0 auto',
+      padding: '24px',
+      width: '640px',
+    })
     await page.evaluate(
       async ({ modulePath, model }) => {
         const { createFurnaceView } = (await import(modulePath)) as typeof import('../src/application/furnace-view')
-        const host = document.createElement('main')
-        host.setAttribute('data-d-baseline', 'furnace-station')
-        host.style.setProperty('box-sizing', 'border-box')
-        host.style.setProperty('width', '640px')
-        host.style.setProperty('margin', '0 auto')
-        host.style.setProperty('padding', '24px')
-        host.style.setProperty('background-color', '#161b22')
-        host.style.setProperty('color', '#f0f3f6')
-        host.style.setProperty('font-family', 'system-ui, sans-serif')
-        host.style.setProperty('font-size', '16px')
-        host.style.setProperty('line-height', '1.5')
-        document.body.appendChild(host)
+        const host = document.querySelector<HTMLElement>('[data-d-baseline="furnace-station"]')
+        if (host === null) {
+          throw new Error('Expected the furnace baseline fixture')
+        }
 
         const heading = document.createElement('h1')
         heading.textContent = 'Furnace'
@@ -329,21 +362,23 @@ test.describe('exact screen baselines', () => {
   test('onboarding', async ({ page }) => {
     await warmViewModule(page, onboardingViewModule)
     await openHarness(page, { screen: 'crosshair' })
+    await mountBaselineFixture(page, 'onboarding', {
+      'background-color': '#161b22',
+      color: '#f0f3f6',
+      'font-family': 'system-ui, sans-serif',
+      'font-size': '16px',
+      'line-height': '1.5',
+      margin: '0 auto',
+      padding: '24px',
+      width: '640px',
+    })
     await page.evaluate(
       async ({ modulePath, model }) => {
         const { createOnboardingView } = (await import(modulePath)) as typeof import('../src/application/onboarding-view')
-        const host = document.createElement('main')
-        host.setAttribute('data-d-baseline', 'onboarding')
-        host.style.setProperty('box-sizing', 'border-box')
-        host.style.setProperty('width', '640px')
-        host.style.setProperty('margin', '0 auto')
-        host.style.setProperty('padding', '24px')
-        host.style.setProperty('background-color', '#161b22')
-        host.style.setProperty('color', '#f0f3f6')
-        host.style.setProperty('font-family', 'system-ui, sans-serif')
-        host.style.setProperty('font-size', '16px')
-        host.style.setProperty('line-height', '1.5')
-        document.body.appendChild(host)
+        const host = document.querySelector<HTMLElement>('[data-d-baseline="onboarding"]')
+        if (host === null) {
+          throw new Error('Expected the onboarding baseline fixture')
+        }
 
         const view = createOnboardingView(document, host, { onIntent: () => undefined })
         view.render(model)

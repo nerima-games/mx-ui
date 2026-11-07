@@ -259,6 +259,26 @@ const renderIconRow = (
   }
 }
 
+const hotbarSlotName = (index: number, view: SlotView): string => {
+  const displayIndex = String(index + INDEX_INCREMENT)
+  if (typeof view.itemId === 'undefined') {
+    return `Hotbar slot ${displayIndex}, empty`
+  }
+  return `Hotbar slot ${displayIndex}, ${view.itemId}, ${view.countLabel ?? '1'}`
+}
+
+const updateHotbarSlotName = (slot: SlotElement, index: number, view: SlotView): void => {
+  const itemText = view.itemId ?? ''
+  const countText = view.countLabel ?? ''
+  if (
+    typeof slot.ariaLabel.previous === 'undefined' ||
+    slot.itemText.previous !== itemText ||
+    slot.countText.previous !== countText
+  ) {
+    writeAttribute(slot.ariaLabel, hotbarSlotName(index, view))
+  }
+}
+
 const renderHotbarSlots = (
   hotbar: ReadonlyArray<SlotElement>,
   views: ReadonlyArray<SlotView>,
@@ -277,6 +297,7 @@ const renderHotbarSlots = (
     if (typeof view !== 'undefined') {
       // The hotbar has no merge highlighting — that is an inventory-drag
       // Concept and mc-sim answers it per screen, not per frame.
+      updateHotbarSlotName(slot, index, view)
       updateSlotElement(slot, view)
     }
   }
@@ -365,17 +386,29 @@ const createHudExperience = (
   }
 }
 
-const createHotbarRow = (factory: DomElementFactory, root: DomElement): DomElement => {
-  const hotbarRow = factory.createElement('div')
-  hotbarRow.setAttribute('data-mx-ui', 'hotbar')
+const createHotbarGroup = (factory: DomElementFactory, root: DomElement): DomElement => {
+  const hotbarGroup = factory.createElement('div')
+  hotbarGroup.setAttribute('data-mx-ui', 'hotbar')
+  // The hotbar group needs one accessible name because its visible label is a
+  // Sibling `<span>`, not a label for the slot widget.
+  hotbarGroup.setAttribute('role', 'group')
+  hotbarGroup.setAttribute('aria-label', 'Hotbar')
+  root.appendChild(hotbarGroup)
+  return hotbarGroup
+}
+
+const createHotbarRadioGroup = (factory: DomElementFactory, group: DomElement): DomElement => {
+  const hotbarRadioGroup = factory.createElement('div')
+  hotbarRadioGroup.setAttribute('data-mx-ui', 'hotbar-radio-group')
+  hotbarRadioGroup.setAttribute('role', 'radiogroup')
+  hotbarRadioGroup.setAttribute('aria-label', 'Hotbar slots')
+  hotbarRadioGroup.setAttribute('aria-orientation', 'horizontal')
   // The hotbar is ONE tab stop, so it needs one accessible name. DN-UI-1c records
   // The reference discovering the same thing about its rebind fields: 「the
   // Visible label is a sibling `<span>`, so a screen reader would otherwise
   // Announce this only as "edit text"」. A focusable element with no name is a
   // Focus stop that announces nothing, which is a worse outcome than not being
   // Reachable at all. Static, so it costs nothing per frame.
-  hotbarRow.setAttribute('role', 'group')
-  hotbarRow.setAttribute('aria-label', 'Hotbar')
   // NINE COLUMNS, and this line is here because a browser said so.
   //
   // `apps/browser-harness/` mounted this file against a real `Document` and the
@@ -396,13 +429,18 @@ const createHotbarRow = (factory: DomElementFactory, root: DomElement): DomEleme
   // Static rather than a cell: `HOTBAR_SLOT_COUNT` is a constant, so unlike the
   // Inventory's regions there is nothing per-frame to diff. Written at mount and
   // Never again, like every other geometry declaration in this file.
-  hotbarRow.style.setProperty('display', 'grid')
-  hotbarRow.style.setProperty(
+  hotbarRadioGroup.style.setProperty('display', 'grid')
+  hotbarRadioGroup.style.setProperty(
     'grid-template-columns',
     `repeat(${String(HOTBAR_SLOT_COUNT)}, 1fr)`,
   )
-  root.appendChild(hotbarRow)
-  return hotbarRow
+  group.appendChild(hotbarRadioGroup)
+  return hotbarRadioGroup
+}
+
+const createHotbarRow = (factory: DomElementFactory, root: DomElement): DomElement => {
+  const group = createHotbarGroup(factory, root)
+  return createHotbarRadioGroup(factory, group)
 }
 
 const createHotbarSlots = (
@@ -412,6 +450,7 @@ const createHotbarSlots = (
   const hotbar: Array<SlotElement> = []
   for (let index = 0; index < HOTBAR_SLOT_COUNT; index += INDEX_INCREMENT) {
     const slot = createSlotElement(factory, index)
+    writeAttribute(slot.role, 'radio')
     hotbarRow.appendChild(slot.root)
     hotbar.push(slot)
   }

@@ -46,7 +46,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.build.json --pretty false && tsc -p tsconfig.test.json --pretty false && tsc -p tsconfig.preview.json --pretty false",
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.release.json --pretty false",
-    "lint": "oxlint --deny-warnings src apps scripts test test-browser && ast-grep scan",
+    "lint": "oxlint --deny-warnings src apps scripts test test-browser && ast-grep scan && ast-grep scan playwright.config.ts playwright.environment.config.ts",
     "lint:fix": "oxlint --fix src apps scripts test test-browser",
     "preview": "tsx apps/preview-screens/main.ts",
     "preview:browser": "vite --config apps/browser-harness/vite.config.ts",

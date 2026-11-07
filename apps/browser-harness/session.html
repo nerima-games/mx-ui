@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" data-session-ready="0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mx-ui session input</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        background: #111;
+        color: #eee;
+      }
+
+      body {
+        margin: 0;
+        padding: 1rem;
+      }
+
+      main {
+        display: grid;
+        gap: 1rem;
+        max-width: 72rem;
+        margin: 0 auto;
+      }
+
+      section {
+        border: 1px solid #555;
+        padding: 1rem;
+      }
+
+      #session-root {
+        min-height: 30rem;
+      }
+
+      #session-action-output,
+      #remap-status {
+        display: block;
+        min-height: 1.5rem;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>mx-ui session input</h1>
+      <section aria-labelledby="session-heading">
+        <h2 id="session-heading">Mounted session</h2>
+        <div id="session-root" data-session-root></div>
+        <output id="session-action-output" data-session-action="none" aria-live="polite"></output>
+      </section>
+      <section aria-labelledby="remap-heading">
+        <h2 id="remap-heading">Key remapping</h2>
+        <p>Choose a binding, then press the key to assign. A conflict moves the previous binding.</p>
+        <div id="key-remap-root" data-key-remap-root></div>
+        <output id="remap-status" data-remap-status="ready" aria-live="polite">Ready</output>
+        <label for="unrelated-input">Unrelated input</label>
+        <input id="unrelated-input" type="text" />
+      </section>
+    </main>
+    <script type="module" src="/entrypoints/session.ts"></script>
+  </body>
+</html>
