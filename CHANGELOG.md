@@ -1,5 +1,19 @@
 # @nerima-games/mx-ui
 
+## 0.9.0
+
+### Minor Changes
+
+- [#53](https://github.com/nerima-games/mx-ui/pull/53) [`6eed101`](https://github.com/nerima-games/mx-ui/commit/6eed101cfce6e830a06be48c0e9f0a5e8392a367) Thanks [@takeokunn](https://github.com/takeokunn)! - Expose the HUD hotbar as a named radiogroup with named radio slots and selected state for assistive technology.
+
+- [#53](https://github.com/nerima-games/mx-ui/pull/53) [`6eed101`](https://github.com/nerima-games/mx-ui/commit/6eed101cfce6e830a06be48c0e9f0a5e8392a367) Thanks [@takeokunn](https://github.com/takeokunn)! - Add a Playwright browser harness with scenario controls, environment overrides, and live UI diagnostics.
+
+### Patch Changes
+
+- [#53](https://github.com/nerima-games/mx-ui/pull/53) [`6eed101`](https://github.com/nerima-games/mx-ui/commit/6eed101cfce6e830a06be48c0e9f0a5e8392a367) Thanks [@takeokunn](https://github.com/takeokunn)! - Improve main menu button contrast against raised surfaces.
+
+- [#53](https://github.com/nerima-games/mx-ui/pull/53) [`6eed101`](https://github.com/nerima-games/mx-ui/commit/6eed101cfce6e830a06be48c0e9f0a5e8392a367) Thanks [@takeokunn](https://github.com/takeokunn)! - Wrap long caption and slot content, and constrain station slot grids to narrow containers.
+
 ## 0.8.0
 
 ### Minor Changes
