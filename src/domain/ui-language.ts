@@ -1,4 +1,4 @@
-import { Result, Schema } from 'effect'
+import { type Brand, Result, Schema } from 'effect'
 import { AchievementIdSchema } from '@nerima-games/mc-kernel'
 
 export const UI_LANGUAGES = ['en', 'ja'] as const
@@ -7,6 +7,12 @@ const uiLanguageSchema: Schema.Literals<typeof UI_LANGUAGES> = literals(UI_LANGU
 export const UiLanguageSchema: typeof uiLanguageSchema = uiLanguageSchema
 export type UiLanguage = Schema.Schema.Type<typeof UiLanguageSchema>
 export type UiLanguageFailure = { readonly _tag: 'UnsupportedUiLanguage' }
+
+export type UiMessageText = string & Brand.Brand<'UiMessageText'>
+export const UiMessageTextSchema: Schema.Codec<UiMessageText, string> = Schema.String.pipe(
+  Schema.brand('UiMessageText'),
+)
+const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 
 export const DEFAULT_UI_LANGUAGE: UiLanguage = 'en'
 
@@ -255,6 +261,7 @@ const UI_MESSAGE_KEYS = [
   'debug.gpu-timing-supported',
   'debug.gpu-time',
   'debug.quality',
+  'debug.information',
   'debug.overlay',
   'debug.session',
   'debug.session-facing',
@@ -325,6 +332,7 @@ export const UI_MESSAGES: Readonly<Record<UiMessageKey, Readonly<Record<UiLangua
   'debug.frame-delta': { en: 'Frame delta: {seconds}', ja: 'フレーム時間: {seconds}' },
   'debug.gpu-time': { en: 'GPU time: {milliseconds}', ja: 'GPU 時間: {milliseconds}' },
   'debug.gpu-timing-supported': { en: 'GPU timing supported: {supported}', ja: 'GPU 時間計測: {supported}' },
+  'debug.information': { en: 'Debug information', ja: 'デバッグ情報' },
   'debug.none': { en: 'None', ja: 'なし' },
   'debug.overlay': { en: 'Debug overlay', ja: 'デバッグ情報' },
   'debug.quality': { en: 'Quality: {quality}', ja: '画質: {quality}' },
@@ -428,7 +436,7 @@ export const UI_MESSAGES: Readonly<Record<UiMessageKey, Readonly<Record<UiLangua
   'inventory.region.offhand': { en: 'Offhand', ja: 'オフハンド' },
   'inventory.slot-empty': { en: '{region} slot {slot}, empty', ja: '{region} {slot}: 空き' },
   'inventory.slot-item': { en: '{region} slot {slot}, {item}, {count}', ja: '{region} {slot}: {item}、{count} 個' },
-  'inventory.unknown-armour-rack': { en: 'Armour slots are unavailable', ja: '防具スロットを利用できません' },
+  'inventory.unknown-armour-rack': { en: 'Armour rack slots are unavailable', ja: '防具スロットを利用できません' },
   'inventory.unknown-crafting-grid': { en: 'No crafting grid is available for this container', ja: 'このコンテナではクラフトできません' },
   'inventory.unknown-offhand-slot': { en: 'The offhand slot is unavailable', ja: 'オフハンドのスロットを利用できません' },
   'inventory.unreadable-grid-width': { en: 'The crafting grid width {width} is not supported', ja: 'クラフト枠の幅 {width} は対応していません' },
@@ -466,11 +474,11 @@ export const UI_MESSAGES: Readonly<Record<UiMessageKey, Readonly<Record<UiLangua
   'pause.back-to-game': { en: 'Back to Game', ja: 'ゲームに戻る' },
   'pause.close': { en: 'Close', ja: '閉じる' },
   'pause.dialog.game-menu': { en: 'Game menu', ja: 'ゲームメニュー' },
-  'pause.dialog.options': { en: 'Options', ja: '設定' },
+  'pause.dialog.options': { en: 'Settings', ja: '設定' },
   'pause.options': { en: 'Options...', ja: '設定...' },
   'pause.save-and-quit': { en: 'Save and Quit to Title', ja: '保存してタイトルへ戻る' },
   'pause.title.game-menu': { en: 'Game Menu', ja: 'ゲームメニュー' },
-  'pause.title.options': { en: 'Options', ja: '設定' },
+  'pause.title.options': { en: 'Settings', ja: '設定' },
   'save.failed': { en: 'Save failed', ja: '保存できませんでした' },
   'save.saved': { en: 'World saved', ja: 'ワールドを保存しました' },
   'save.saving': { en: 'Saving world…', ja: 'ワールドを保存しています…' },
@@ -569,8 +577,12 @@ const INPUT_ACTION_MESSAGE_KEYS: Readonly<Record<string, UiMessageKey>> = {
   use: 'settings.action.use',
 }
 
-export const inputActionMessageKey = (action: string): UiMessageKey =>
-  INPUT_ACTION_MESSAGE_KEYS[action] ?? 'settings.action.unknown'
+export const inputActionMessageKey = (action: unknown): UiMessageKey => {
+  if (typeof action !== 'string') {
+    return 'settings.action.unknown'
+  }
+  return INPUT_ACTION_MESSAGE_KEYS[action] ?? 'settings.action.unknown'
+}
 
 export const ACHIEVEMENT_TITLES: Readonly<Record<AchievementId, Readonly<Record<UiLanguage, string>>>> = {
   'minecraft:adventure/adventuring_time': { en: 'Adventuring Time', ja: '冒険の時間' },
@@ -707,8 +719,8 @@ export const translateUiMessage = (
   language: UiLanguage,
   key: UiMessageKey,
   values: UiMessageValues = {},
-): string =>
-  UI_MESSAGES[key][language].replace(/\{(?<name>[a-zA-Z0-9_]+)\}/gu, (placeholder, name: string) => {
+): UiMessageText => {
+  const text = UI_MESSAGES[key][language].replace(/\{(?<name>[a-zA-Z0-9_]+)\}/gu, (placeholder, name: string) => {
     const value = values[name]
     if (typeof value === 'undefined') {
       return placeholder
@@ -718,6 +730,8 @@ export const translateUiMessage = (
     }
     return String(value)
   })
+  return decodeUiMessageText(text)
+}
 
-export const translateAchievementTitle = (language: UiLanguage, achievement: AchievementId): string =>
-  ACHIEVEMENT_TITLES[achievement][language]
+export const translateAchievementTitle = (language: UiLanguage, achievement: AchievementId): UiMessageText =>
+  decodeUiMessageText(ACHIEVEMENT_TITLES[achievement][language])

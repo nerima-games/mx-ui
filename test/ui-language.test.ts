@@ -183,6 +183,14 @@ describe('UI language', () => {
     expect(translateUiMessage('en', 'debug.fps')).toBe('FPS: {fps}')
   })
 
+  it('maps arbitrary input-action values to a registered UI message key', () => {
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        expect(Object.hasOwn(UI_MESSAGES, inputActionMessageKey(input))).toBe(true)
+      }),
+    )
+  })
+
   it('updates achievement titles and dynamic text when a mounted root changes language', () => {
     const host = document.createElement('main')
     const achievement = document.createElement('span')

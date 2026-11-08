@@ -175,7 +175,7 @@ const buildDebugHud = (document: Document, root: HTMLElement): HTMLElement => {
   const debugHud = document.createElement('output')
   debugHud.setAttribute('data-mx-ui', 'debug-hud')
   debugHud.setAttribute('role', 'region')
-  setLocalizedAttribute(debugHud, 'aria-label', 'debug.overlay')
+  setLocalizedAttribute(debugHud, 'aria-label', 'debug.information')
   debugHud.hidden = true
   debugHud.style.whiteSpace = 'pre'
   root.appendChild(debugHud)

@@ -19,7 +19,10 @@ import type { DomElement } from './dom-surface.js'
 import { Result } from 'effect'
 
 const LOCALIZED_ELEMENT_ATTRIBUTE = 'data-mx-ui-localized'
-const LOCALIZED_ELEMENT_SELECTOR = `[${LOCALIZED_ELEMENT_ATTRIBUTE}]`
+const LOCALIZED_ELEMENT_SELECTOR: '[data-mx-ui-localized]' = `[${LOCALIZED_ELEMENT_ATTRIBUTE}]`
+
+export type UiLocalizationSelector = '*' | typeof LOCALIZED_ELEMENT_SELECTOR
+export type UiLocalizedAttributeName = 'aria-label' | 'placeholder'
 
 type LocalizedText =
   | Readonly<{ cell: TextCell; key: UiMessageKey; values: UiMessageValues }>
@@ -44,7 +47,7 @@ type LocalizedElementState = {
 }
 
 export type UiLocalizationRoot = {
-  querySelectorAll(selector: string): ArrayLike<unknown>
+  querySelectorAll(selector: UiLocalizationSelector): ArrayLike<unknown>
 }
 
 const localizedElements = new WeakMap<object, LocalizedElementState>()
@@ -141,7 +144,7 @@ export const setLocalizedAchievementTitle = (element: DomElement, achievement: A
 
 export const setLocalizedAttribute = (
   element: DomElement,
-  name: string,
+  name: UiLocalizedAttributeName,
   ...message: [key: UiMessageKey, values?: UiMessageValues]
 ): void => {
   const [key, values = {}] = message

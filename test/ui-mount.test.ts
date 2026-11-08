@@ -389,7 +389,7 @@ describe('UiMount', () => {
     const debug = host.querySelector<HTMLElement>('[data-mx-ui="debug-hud"]')
     expect(debug?.hidden).toBe(true)
     expect(debug?.getAttribute('role')).toBe('region')
-    expect(debug?.getAttribute('aria-label')).toBe('Debug overlay')
+    expect(debug?.getAttribute('aria-label')).toBe('Debug information')
     expect(debug?.getAttribute('aria-live')).toBeNull()
     document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'F1' }))
     expect(debug?.hidden).toBe(false)

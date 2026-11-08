@@ -80,7 +80,7 @@ describe('inventory scenario catalog', () => {
     const unknown = mountScenario('unknown-region').root
     const armour = unknown.find('data-region', 'armour')
     expect(armour?.attributes.get('data-region-state')).toBe('unknown')
-    expect(armour?.find('data-mx-ui', 'region-note')?.textContent).toBe('Armour slots are unavailable')
+    expect(armour?.find('data-mx-ui', 'region-note')?.textContent).toBe('Armour rack slots are unavailable')
   })
 
   it('represents the crafting tri-state and explains unknown visibly', () => {

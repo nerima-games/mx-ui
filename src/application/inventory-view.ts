@@ -68,7 +68,7 @@ import {
   setSlotHidden,
   updateSlotElement,
 } from './slot-element.js'
-import { clearLocalizedAttribute, inheritUiLanguage, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
+import { inheritUiLanguage, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
 import type { SlotView } from '../domain/hud-view-model.js'
 import type { UiMessageKey } from '../domain/ui-language.js'
 
@@ -305,7 +305,7 @@ const buildFocusedSlotButtonView = (
   focused: InventoryInteractionTarget,
 ): SlotButtonView => {
   const { regionId, index, view } = identity
-  const isFocused = focused.kind === 'slot' && focused.region === regionId && focused.index === index
+  const isFocused = focused?.kind === 'slot' && focused.region === regionId && focused.index === index
   return {
     disabled: false,
     focused: isFocused,
@@ -334,7 +334,11 @@ const renderRegionSlotFocus = (
   }>,
 ): void => {
   if (typeof context.focused === 'undefined') {
-    applyButtonView(slot)
+    if (slot.role.previous === 'button') {
+      applyButtonView(slot)
+    }
+    const label = slotLabel(context.regionId, context.index, context.view)
+    writeLocalizedAttribute(slot.ariaLabel, label.key, label.values)
     return
   }
   applyButtonView(
@@ -610,21 +614,25 @@ const updateCarriedSlot = (carried: SlotElement, carriedView: SlotView | undefin
   }
 }
 
+const writeCarriedLabel = (carried: SlotElement, carriedView: SlotView | undefined): void => {
+  const label = carriedItemLabel(carriedView)
+  writeLocalizedAttribute(carried.ariaLabel, label.key, label.values)
+}
+
 const writeCarriedAttributes = (
   carried: SlotElement,
   interaction: InventoryInteractionView | undefined,
   carriedView: SlotView | undefined,
 ): void => {
-  if (typeof interaction === 'undefined') {
-    writeOptionalAttribute(carried.role)
-    writeOptionalAttribute(carried.ariaLive)
-    clearLocalizedAttribute(carried.ariaLabel)
-  } else {
+  const isInteractive = typeof interaction !== 'undefined'
+  if (isInteractive) {
     writeOptionalAttribute(carried.role, 'status')
     writeOptionalAttribute(carried.ariaLive, 'polite')
-    const label = carriedItemLabel(carriedView)
-    writeLocalizedAttribute(carried.ariaLabel, label.key, label.values)
+  } else {
+    writeOptionalAttribute(carried.role)
+    writeOptionalAttribute(carried.ariaLive)
   }
+  writeCarriedLabel(carried, carriedView)
 }
 
 const renderCarriedSlot = (
@@ -658,21 +666,41 @@ const updateCraftingOutputSlot = (
   }
 }
 
+const applyReadOnlyCraftingOutputLabel = (output: SlotElement, crafting: InteractiveCraftingOutcome): void => {
+  const label = outputLabel(crafting)
+  if (output.role.previous === 'button') {
+    applyButtonView(output)
+  }
+  writeLocalizedAttribute(output.ariaLabel, label.key, label.values)
+}
+
+const applyInteractiveCraftingOutputButtonView = (
+  output: SlotElement,
+  crafting: InteractiveCraftingOutcome,
+  focused: InventoryInteractionTarget | undefined,
+): void => {
+  const outputFocused = focused?.kind === 'crafting-output'
+  setSlotFocusTarget(output, { group: 'crafting-output', index: SOLE_SLOT_INDEX })
+  applyButtonView(output, {
+    disabled: crafting.kind === 'no-match',
+    focused: outputFocused,
+    label: '',
+    localizedLabel: outputLabel(crafting),
+    tabStop: outputFocused,
+  })
+}
+
 const applyCraftingOutputButtonView = (output: SlotElement, context: RenderContext): void => {
   const { model, interaction, focused } = context
-  const outputFocused = focused?.kind === 'crafting-output'
-  if (typeof interaction === 'undefined' || model.crafting.kind === 'unknown') {
+  if (model.crafting.kind === 'unknown') {
     applyButtonView(output)
-  } else {
-    setSlotFocusTarget(output, { group: 'crafting-output', index: SOLE_SLOT_INDEX })
-    applyButtonView(output, {
-      disabled: model.crafting.kind === 'no-match',
-      focused: outputFocused,
-      label: '',
-      localizedLabel: outputLabel(model.crafting),
-      tabStop: outputFocused,
-    })
+    return
   }
+  if (typeof interaction === 'undefined') {
+    applyReadOnlyCraftingOutputLabel(output, model.crafting)
+    return
+  }
+  applyInteractiveCraftingOutputButtonView(output, model.crafting, focused)
 }
 
 const renderCraftingOutput = (elements: CraftingElements, context: RenderContext): void => {

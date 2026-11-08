@@ -1,5 +1,4 @@
 import { BREWING_TIME_SECS, type BrewingState } from '@nerima-games/mc-sim'
-import { UI_MESSAGES } from './ui-language.js'
 
 export type BrewingSnapshot = BrewingState
 
@@ -11,7 +10,6 @@ export type BrewingStackView = Readonly<{
 }>
 
 export type BrewingBottleView = Readonly<{
-  readonly label: string
   readonly messageId: 'brewing.bottle-1' | 'brewing.bottle-2' | 'brewing.bottle-3'
   readonly stack: BrewingStackView | undefined
 }>
@@ -52,7 +50,6 @@ const projectBottle = (
   messageId: BrewingBottleView['messageId'],
   stack: BrewingState['bottles'][number],
 ): BrewingBottleView => Object.freeze({
-  label: UI_MESSAGES[messageId].en,
   messageId,
   stack: projectStack(stack),
 })

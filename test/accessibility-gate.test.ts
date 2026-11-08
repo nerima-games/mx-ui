@@ -266,12 +266,13 @@ const isFocusable = (
   !element.attributes.has('disabled') &&
   (isNativeFocusable(element) || element.attributes.has('tabindex'))
 
+// Native buttons with tabindex="-1" remain programmatically focusable, but Tab skips them.
 const isTabStop = (
   element: FakeElement,
   parents: ReadonlyMap<FakeElement, FakeElement>,
 ): boolean =>
   isFocusable(element, parents) &&
-  (isNativeFocusable(element) || element.attributes.get('tabindex') !== '-1')
+  element.attributes.get('tabindex') !== '-1'
 
 describe('WCAG 4.1.2: representative fake-DOM controls retain their names', () => {
   it('no focusable element on any screen is anonymous', () => {
@@ -302,7 +303,9 @@ describe('WCAG 4.1.2: representative fake-DOM controls retain their names', () =
 
     expect(census).toStrictEqual([
       { name: 'main menu', focusable: 3, tabStops: 3 },
-      { name: 'in-session HUD', focusable: 0, tabStops: 0 },
+      // The previous hotbar slot stays enabled for arrow-key navigation; only
+      // the focused slot remains in the sequential Tab order.
+      { name: 'in-session HUD', focusable: 9, tabStops: 1 },
       { name: 'inventory and crafting overlay', focusable: 0, tabStops: 0 },
       { name: 'captions', focusable: 0, tabStops: 0 },
       { name: 'autosave indicator', focusable: 0, tabStops: 0 },

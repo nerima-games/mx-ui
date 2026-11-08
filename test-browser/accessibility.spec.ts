@@ -105,7 +105,7 @@ test.describe('W4-C pause menu accessibility', () => {
     await expect(optionsButton).toBeFocused()
     await page.keyboard.press('Enter')
 
-    const optionsDialog = host.getByRole('dialog', { name: 'Options' })
+    const optionsDialog = host.getByRole('dialog', { name: 'Settings' })
     const closeButton = optionsDialog.getByRole('button', { name: 'Close' })
     await expect(host).toHaveAttribute('data-host-modal-stack', 'pause/settings')
     await expect(optionsDialog).toBeVisible()
@@ -802,7 +802,7 @@ const assertPauseState = async (scenarioId: string, surface: Locator): Promise<v
     expect(dialog).toHaveAttribute('aria-label', 'Game menu'),
   ])
   if (settingsAreOnTop) {
-    const settingsDialog = surface.getByRole('dialog', { name: 'Options' })
+    const settingsDialog = surface.getByRole('dialog', { name: 'Settings' })
     await Promise.all([
       expect(settingsDialog).toHaveAttribute('aria-modal', 'true'),
       expect(settingsDialog.getByRole('button', { name: 'Close' })).toHaveAttribute('type', 'button'),

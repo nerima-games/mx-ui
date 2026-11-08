@@ -12,7 +12,7 @@
  * return the ATTRIBUTE VALUES and DURATIONS a DOM layer should apply, which is
  * what keeps them testable under `environment: 'node'`.
  */
-import { Result, Schema } from 'effect'
+import { type Brand, Result, Schema } from 'effect'
 import type { Settings } from '@nerima-games/mc-sim'
 
 // ---------------------------------------------------------------------------
@@ -230,9 +230,15 @@ export const colorVisionMatrix = (mode: ColorVisionMode): ColorVisionMatrix | un
   return CORRECTION_BY_MODE[mode]
 }
 
+export type ColorVisionMatrixValues = string & Brand.Brand<'ColorVisionMatrixValues'>
+export const ColorVisionMatrixValuesSchema: Schema.Codec<ColorVisionMatrixValues, string> = Schema.String.pipe(
+  Schema.brand('ColorVisionMatrixValues'),
+)
+const decodeColorVisionMatrixValues = Schema.decodeUnknownSync(ColorVisionMatrixValuesSchema)
+
 /** The `<feColorMatrix values>` string for a correction mode. */
-export const colorVisionCorrectionMatrixValues = (mode: ColorVisionCorrectionMode): string =>
-  CORRECTION_BY_MODE[mode].join(' ')
+export const colorVisionCorrectionMatrixValues = (mode: ColorVisionCorrectionMode): ColorVisionMatrixValues =>
+  decodeColorVisionMatrixValues(CORRECTION_BY_MODE[mode].join(' '))
 
 /** The `<feColorMatrix values>` string, ready for the DOM layer. */
 export const colorVisionMatrixValues = (mode: ColorVisionMode): string | undefined => {

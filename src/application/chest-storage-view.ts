@@ -22,7 +22,7 @@ import {
   updateSlotElement,
 } from './slot-element.js'
 import { type TextCell, textCell, writeText } from './dom-write.js'
-import { setLocalizedAttribute, setLocalizedText } from './ui-localization.js'
+import { setLocalizedAttribute, setLocalizedText, writeLocalizedAttribute } from './ui-localization.js'
 import { type UiMessageKey } from '../domain/ui-language.js'
 
 export type ChestStorageInteractionView = {
@@ -231,6 +231,14 @@ const cursorStateValue = (cursor: ChestStorageCursorView | undefined): string =>
 const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | undefined): void => {
   element.root.setAttribute('data-cursor-state', cursorStateValue(cursor))
   updateSlotElement(element, cursor ?? EMPTY_CURSOR_VIEW)
+  if (typeof cursor === 'undefined' || typeof cursor.itemId === 'undefined') {
+    writeLocalizedAttribute(element.ariaLabel, 'inventory.carried-empty')
+    return
+  }
+  writeLocalizedAttribute(element.ariaLabel, 'inventory.carried-item', {
+    count: cursor.countLabel ?? '1',
+    item: cursor.itemId,
+  })
 }
 
 const createChestStorageRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {

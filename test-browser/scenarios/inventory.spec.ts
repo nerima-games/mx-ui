@@ -50,7 +50,7 @@ test.describe('inventory scenarios', () => {
       } else if (scenario.id === 'unknown-region') {
         const armour = inventory.locator('[data-region="armour"]')
         await expect(armour).toHaveAttribute('data-region-state', 'unknown')
-        await expect(armour.locator('[data-mx-ui="region-note"]')).toContainText('armour rack')
+        await expect(armour.locator('[data-mx-ui="region-note"]')).toContainText(/armour rack/i)
       } else if (scenario.id === 'cursor-stack') {
         await expect(inventory.getByRole('status', { name: 'Carried item, stone, 64' })).toBeVisible()
       } else if (scenario.id === 'stack-zero-empty') {

@@ -46,12 +46,15 @@ export type SettingsSliderField =
 export type SettingsChoiceField = 'difficulty' | 'graphicsPreset' | 'reducedMotion' | 'colorVisionCorrection'
 export type SettingsToggleField = 'audioEnabled' | 'captionsEnabled'
 
-export type SettingsViewActions = {
+export type SettingsSliderValue = SettingsViewModel[SettingsSliderField]['value']
+export type SettingsChoiceValue = SettingsViewModel[SettingsChoiceField]
+
+export type SettingsViewActions<Action extends string = string> = {
   readonly onClose?: () => void
-  readonly onSliderChange?: (field: SettingsSliderField, value: number) => void
-  readonly onChoiceChange?: (field: SettingsChoiceField, value: string) => void
+  readonly onSliderChange?: (field: SettingsSliderField, value: SettingsSliderValue) => void
+  readonly onChoiceChange?: (field: SettingsChoiceField, value: SettingsChoiceValue) => void
   readonly onToggleChange?: (field: SettingsToggleField, checked: boolean) => void
-  readonly onBindingActivate?: (action: string) => void
+  readonly onBindingActivate?: (action: Action) => void
 }
 
 export type SettingsKeyRemappingFailure = {

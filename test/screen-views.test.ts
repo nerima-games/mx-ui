@@ -185,7 +185,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     expect(armour?.attributes.get('data-region-state')).toBe('unknown')
     expect(armour?.find('data-mx-ui', 'region-grid')?.attributes.get('hidden')).toBe('')
     expect(armour?.find('data-mx-ui', 'region-note')?.textContent).toBe(
-      'Armour slots are unavailable',
+      'Armour rack slots are unavailable',
     )
 
     const main = root.find('data-region', 'main')
@@ -329,17 +329,16 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
+    const match = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      crafting: {
+        gridWidth: 2,
+        grid: [undefined, undefined, undefined, undefined],
+        result: { _tag: 'Match', output: testItemStack('stick', 4) },
+      },
+    })
 
-    view.render(
-      inventoryViewModel({
-        ...emptyInventorySnapshot,
-        crafting: {
-          gridWidth: 2,
-          grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: testItemStack('stick', 4) },
-        },
-      }),
-    )
+    view.render(match)
 
     const root = fakeElement(view.root)
     expect(root.find('data-mx-ui', 'crafting-outcome')?.attributes.get('data-crafting-state')).toBe(
@@ -349,21 +348,17 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     expect(output?.attributes.has('hidden')).toBe(false)
     expect(output?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stick')
 
-    // The read-only render above never builds an interactive button (`applyCraftingOutputButtonView`
-    // skips `outputLabel` whenever `interaction` is absent), so it can pass even if the MATCH label
-    // text were wrong. Re-rendering the SAME match WITH interaction is what actually asks for the
-    // label text a screen reader gets when the output square is a real, focusable button.
-    view.render(
-      inventoryViewModel({
-        ...emptyInventorySnapshot,
-        crafting: {
-          gridWidth: 2,
-          grid: [undefined, undefined, undefined, undefined],
-          result: { _tag: 'Match', output: testItemStack('stick', 4) },
-        },
-      }),
-      { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
-    )
+    // Read-only output keeps its accessible name without claiming button semantics.
+    expect(output?.attributes.get('role')).toBeUndefined()
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 4')
+
+    // Interactive output has the same name and gains button semantics.
+    view.render(match, { focused: { kind: 'crafting-output' }, status: 'Recipe ready' })
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 4')
+    expect(output?.attributes.get('role')).toBe('button')
+
+    view.render(match)
+    expect(output?.attributes.get('role')).toBeUndefined()
     expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 4')
 
     // A single output item carries no count label (`slotView`'s "a stack of one shows no count
@@ -456,6 +451,9 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     expect(root.findAll('role', 'button')).toHaveLength(0)
     expect(root.findAll('tabindex', '0')).toHaveLength(0)
     expect(root.findAll('tabindex', '-1')).toHaveLength(0)
+    expect(root.find('data-region', 'main')?.find('data-mx-ui', 'slot')?.attributes.get('aria-label')).toBe(
+      'Inventory slot 1, empty',
+    )
     expect(root.find('data-mx-ui', 'crafting-output')?.attributes.get('hidden')).toBe('')
     expect(root.find('data-mx-ui', 'inventory-status')?.textContent).toBe('')
     expect(root.listenersInTree()).toStrictEqual([])

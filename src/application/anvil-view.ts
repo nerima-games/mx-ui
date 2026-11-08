@@ -41,7 +41,7 @@ export type AnvilViewActions = {
   readonly onActivate?: (target: AnvilOperationTarget) => void
   readonly onClose?: () => void
   readonly onFocusChange?: (target: AnvilOperationTarget) => void
-  readonly onNameChange?: (value: string) => void
+  readonly onNameChange?: (value: AnvilViewModel['name']) => void
 }
 
 const SLOT_MESSAGE_KEY: Readonly<Record<AnvilSlotId, UiMessageKey>> = {

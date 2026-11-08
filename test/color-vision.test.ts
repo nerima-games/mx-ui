@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { DEFAULT_SETTINGS } from '@nerima-games/mc-sim'
-import { Result } from 'effect'
+import { Result, Schema } from 'effect'
 import * as fc from 'fast-check'
 import { describe, expect, it, vi } from 'vitest'
 import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
@@ -9,7 +9,9 @@ import { createColorVisionFilterController } from '../src/application/color-visi
 import {
   COLOR_VISION_FILTER_COLOR_SPACE,
   COLOR_VISION_MODES,
+  ColorVisionMatrixValuesSchema,
   colorVisionAttribute,
+  colorVisionCorrectionMatrixValues,
   colorVisionMatrix,
   colorVisionMatrixValues,
   decodeColorVisionMode,
@@ -31,6 +33,18 @@ const makeTarget = () => {
 }
 
 describe('color vision settings projection', () => {
+  it('returns matrix values accepted by the public output schema', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...COLOR_VISION_MODES.filter((mode) => mode !== 'off')),
+        (mode) => {
+          const values = colorVisionCorrectionMatrixValues(mode)
+          expect(Schema.decodeUnknownSync(ColorVisionMatrixValuesSchema)(values)).toBe(values)
+        },
+      ),
+    )
+  })
+
   it('uses the settings correction values and keeps off without a filter', () => {
     expect(COLOR_VISION_MODES).toStrictEqual(['off', 'protanopia', 'deuteranopia', 'tritanopia'])
     expect(colorVisionAttribute('off')).toBeUndefined()

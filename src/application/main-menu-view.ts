@@ -23,7 +23,7 @@ import {
   openPanel,
   worldNameLabel,
 } from '../domain/main-menu.js'
-import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
+import { DEFAULT_UI_LANGUAGE, type UiMessageKey, type UiMessageText, translateUiMessage } from '../domain/ui-language.js'
 import type {
   DomElement,
   DomElementFactory,
@@ -375,7 +375,7 @@ type ConfirmButtonContext = {
   readonly ctx: MountContext
   readonly parent: DomElement
   readonly bindings: MenuBindings
-  readonly defaultWorldName: () => string
+  readonly defaultWorldName: () => UiMessageText
 }
 
 const createConfirmButton = ({ ctx, parent, bindings, defaultWorldName }: ConfirmButtonContext): void => {
