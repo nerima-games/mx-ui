@@ -376,13 +376,9 @@ const resolvedHostName = (
   language: 'en' | 'ja',
   resolver: ItemDisplayNameResolver,
 ): Option.Option<string> => {
-  try {
-    const resolved = resolveItemDisplayName(itemId, language, resolver)
-    if (Result.isSuccess(resolved)) {
-      return Option.some(resolved.success)
-    }
-  } catch {
-    return Option.none()
+  const resolved = resolveItemDisplayName(itemId, language, resolver)
+  if (Result.isSuccess(resolved)) {
+    return Option.some(resolved.success)
   }
   return Option.none()
 }

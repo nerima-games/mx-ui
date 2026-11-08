@@ -154,29 +154,39 @@ const resultValueFromObject = (input: object): Readonly<{ tag: 'Success' | 'Fail
   return
 }
 
-const resultValue = (input: unknown): Readonly<{ tag: 'Success' | 'Failure'; value: unknown }> | undefined => {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    return
+const resultValue = (
+  input: unknown,
+): Result.Result<Readonly<{ tag: 'Success' | 'Failure'; value: unknown }>, ItemDisplayNameResolverFailure> => {
+  const parsed = Result.try({
+    catch: () => ITEM_DISPLAY_NAME_UNAVAILABLE,
+    try: () => {
+      if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+        return
+      }
+      return resultValueFromObject(input)
+    },
+  })
+  if (Result.isFailure(parsed) || typeof parsed.success === 'undefined') {
+    return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
   }
-  try {
-    return resultValueFromObject(input)
-  } catch {
-    return
-  }
+  return Result.succeed(parsed.success)
 }
 
-const resolverValue = (input: unknown): Result.Result<string, ItemDisplayNameResolverFailure> => {
-  const result = resultValue(input)
-  if (typeof result === 'undefined') {
-    return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
-  }
-  if (result.tag === 'Failure') {
-    return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
-  }
-  if (typeof result.value !== 'string') {
+const displayNameFromResult = (
+  result: Readonly<{ tag: 'Success' | 'Failure'; value: unknown }>,
+): Result.Result<string, ItemDisplayNameResolverFailure> => {
+  if (result.tag === 'Failure' || typeof result.value !== 'string') {
     return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
   }
   return Result.succeed(result.value)
+}
+
+const resolverValue = (input: unknown): Result.Result<string, ItemDisplayNameResolverFailure> => {
+  const parsed = resultValue(input)
+  if (Result.isFailure(parsed)) {
+    return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
+  }
+  return displayNameFromResult(parsed.success)
 }
 
 /** Resolve default English or Japanese item names from the kernel registry. */
@@ -195,13 +205,10 @@ const invokeResolver = (
   resolver: ItemDisplayNameResolverCallback,
   itemType: ItemType,
   language: UiLanguage,
-): Result.Result<unknown, ItemDisplayNameResolverFailure> => {
-  try {
-    return Result.succeed(resolver(itemType, language))
-  } catch {
-    return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
-  }
-}
+): Result.Result<unknown, ItemDisplayNameResolverFailure> => Result.try({
+  catch: () => ITEM_DISPLAY_NAME_UNAVAILABLE,
+  try: () => resolver(itemType, language),
+})
 
 const resolveForItemType = (
   itemType: ItemType,

@@ -110,59 +110,73 @@ const dataRecord = (
   input: unknown,
   allowedKeys: ReadonlyArray<string>,
   requiredKeys: ReadonlyArray<string>,
-): DataRecord | undefined => {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    return
+): Result.Result<DataRecord, ItemIconFailure> => {
+  const parsed = Result.try({
+    catch: () => INVALID_ITEM_ICON,
+    try: () => {
+      if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+        return
+      }
+      return decodeDataRecord(input, allowedKeys, requiredKeys)
+    },
+  })
+  if (Result.isFailure(parsed) || typeof parsed.success === 'undefined') {
+    return Result.fail(INVALID_ITEM_ICON)
   }
-  try {
-    return decodeDataRecord(input, allowedKeys, requiredKeys)
-  } catch {
-    return
-  }
+  return Result.succeed(parsed.success)
 }
 
 const boundedUrlText = (input: unknown): input is string =>
   typeof input === 'string' && input.length > ZERO && input.length <= MAX_ICON_URL_LENGTH && input.trim() === input
 
-const parseAbsoluteUrl = (input: string): URL | undefined => {
-  try {
-    return new URL(input)
-  } catch (error) {
-    if (error instanceof TypeError) {
-      return
-    }
-    throw error
-  }
-}
+const parseAbsoluteUrl = (input: string): Result.Result<URL, ItemIconFailure> =>
+  Result.try({
+    catch: () => INVALID_ITEM_ICON,
+    try: () => new URL(input),
+  })
 
 const hasHttpOrigin = (parsed: URL): boolean =>
   (parsed.protocol === 'https:' || parsed.protocol === 'http:') && parsed.hostname !== ''
 
 const hasCredentials = (parsed: URL): boolean => parsed.username !== '' || parsed.password !== ''
 
-const validBlobUrl = (parsed: URL): boolean => {
+const validBlobUrl = (parsed: URL): Result.Result<boolean, ItemIconFailure> => {
   if (parsed.protocol !== 'blob:') {
-    return false
+    return Result.succeed(false)
   }
   const origin = parseAbsoluteUrl(parsed.pathname)
-  return typeof origin !== 'undefined' && hasHttpOrigin(origin) && !hasCredentials(origin)
+  if (Result.isFailure(origin)) {
+    return Result.fail(origin.failure)
+  }
+  return Result.succeed(hasHttpOrigin(origin.success) && !hasCredentials(origin.success))
 }
 
-const absoluteImageUrl = (input: unknown): string | undefined => {
-  if (!boundedUrlText(input)) {
-    return
-  }
-  const parsed = parseAbsoluteUrl(input)
-  if (typeof parsed === 'undefined' || hasCredentials(parsed)) {
-    return
+const acceptedImageUrl = (parsed: URL): Result.Result<string, ItemIconFailure> => {
+  if (hasCredentials(parsed)) {
+    return Result.fail(INVALID_ITEM_ICON)
   }
   if (hasHttpOrigin(parsed)) {
-    return parsed.href
+    return Result.succeed(parsed.href)
   }
-  if (validBlobUrl(parsed)) {
-    return parsed.href
+  const blob = validBlobUrl(parsed)
+  if (Result.isFailure(blob)) {
+    return Result.fail(blob.failure)
   }
-  return
+  if (!blob.success) {
+    return Result.fail(INVALID_ITEM_ICON)
+  }
+  return Result.succeed(parsed.href)
+}
+
+const absoluteImageUrl = (input: unknown): Result.Result<string, ItemIconFailure> => {
+  if (!boundedUrlText(input)) {
+    return Result.fail(INVALID_ITEM_ICON)
+  }
+  const parsed = parseAbsoluteUrl(input)
+  if (Result.isFailure(parsed)) {
+    return Result.fail(parsed.failure)
+  }
+  return acceptedImageUrl(parsed.success)
 }
 
 const validPositiveCoordinate = (value: number): boolean => Number.isSafeInteger(value) && value > ZERO
@@ -206,11 +220,11 @@ const atlasGeometry = (record: DataRecord): AtlasGeometry | undefined => {
 }
 
 const decodeAtlasIcon = (input: unknown, url: string): Result.Result<ItemIcon, ItemIconFailure> => {
-  const atlas = dataRecord(input, ATLAS_KEYS, ATLAS_REQUIRED_KEYS)
-  if (typeof atlas === 'undefined') {
-    return Result.fail(INVALID_ITEM_ICON)
+  const parsedAtlas = dataRecord(input, ATLAS_KEYS, ATLAS_REQUIRED_KEYS)
+  if (Result.isFailure(parsedAtlas)) {
+    return Result.fail(parsedAtlas.failure)
   }
-  const geometry = atlasGeometry(atlas)
+  const geometry = atlasGeometry(parsedAtlas.success)
   if (typeof geometry === 'undefined') {
     return Result.fail(INVALID_ITEM_ICON)
   }
@@ -235,25 +249,25 @@ const decodeUrlIcon = (common: DataRecord, url: string): Result.Result<ItemIcon,
 }
 
 const decodeCommonIcon = (input: unknown, common: DataRecord): Result.Result<ItemIcon, ItemIconFailure> => {
-  const url = absoluteImageUrl(common['url'])
-  if (typeof url === 'undefined') {
-    return Result.fail(INVALID_ITEM_ICON)
+  const imageUrl = absoluteImageUrl(common['url'])
+  if (Result.isFailure(imageUrl)) {
+    return Result.fail(imageUrl.failure)
   }
   if (common['kind'] === 'url') {
-    return decodeUrlIcon(common, url)
+    return decodeUrlIcon(common, imageUrl.success)
   }
   if (common['kind'] === 'atlas') {
-    return decodeAtlasIcon(input, url)
+    return decodeAtlasIcon(input, imageUrl.success)
   }
   return Result.fail(INVALID_ITEM_ICON)
 }
 
 const decodeIcon = (input: unknown): Result.Result<ItemIcon, ItemIconFailure> => {
-  const common = dataRecord(input, ATLAS_KEYS, ['kind', 'url'])
-  if (typeof common === 'undefined') {
-    return Result.fail(INVALID_ITEM_ICON)
+  const parsedCommon = dataRecord(input, ATLAS_KEYS, ['kind', 'url'])
+  if (Result.isFailure(parsedCommon)) {
+    return Result.fail(parsedCommon.failure)
   }
-  return decodeCommonIcon(input, common)
+  return decodeCommonIcon(input, parsedCommon.success)
 }
 
 const resultMember = (
@@ -288,28 +302,43 @@ const effectResultFromObject = (input: object): Readonly<{ tag: 'Success' | 'Fai
   return
 }
 
-const effectResultValue = (input: unknown): Readonly<{ tag: 'Success' | 'Failure'; value: unknown }> | undefined => {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    return
+const effectResultValue = (
+  input: unknown,
+): Result.Result<Readonly<{ tag: 'Success' | 'Failure'; value: unknown }>, ItemIconFailure> => {
+  const parsed = Result.try({
+    catch: () => INVALID_ITEM_ICON,
+    try: () => {
+      if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+        return
+      }
+      return effectResultFromObject(input)
+    },
+  })
+  if (Result.isFailure(parsed) || typeof parsed.success === 'undefined') {
+    return Result.fail(INVALID_ITEM_ICON)
   }
-  try {
-    return effectResultFromObject(input)
-  } catch {
-    return
+  return Result.succeed(parsed.success)
+}
+
+const iconFailureResult = (input: unknown): Result.Result<ItemIcon, ItemIconFailure> => {
+  const failure = dataRecord(input, ['_tag'], ['_tag'])
+  if (Result.isFailure(failure)) {
+    return Result.fail(failure.failure)
   }
+  if (failure.success['_tag'] === 'ItemIconUnavailable' && Object.keys(failure.success).length === SINGLE_KEY) {
+    return Result.fail(ITEM_ICON_UNAVAILABLE)
+  }
+  return Result.fail(INVALID_ITEM_ICON)
 }
 
 const resolverResult = (input: unknown): Result.Result<ItemIcon, ItemIconFailure> => {
-  const result = effectResultValue(input)
-  if (typeof result === 'undefined') {
-    return Result.fail(INVALID_ITEM_ICON)
+  const parsed = effectResultValue(input)
+  if (Result.isFailure(parsed)) {
+    return Result.fail(parsed.failure)
   }
+  const result = parsed.success
   if (result.tag === 'Failure') {
-    const failure = dataRecord(result.value, ['_tag'], ['_tag'])
-    if (failure?.['_tag'] === 'ItemIconUnavailable' && Object.keys(failure).length === SINGLE_KEY) {
-      return Result.fail(ITEM_ICON_UNAVAILABLE)
-    }
-    return Result.fail(INVALID_ITEM_ICON)
+    return iconFailureResult(result.value)
   }
   return decodeIcon(result.value)
 }
@@ -317,13 +346,10 @@ const resolverResult = (input: unknown): Result.Result<ItemIcon, ItemIconFailure
 const invokeItemIconResolver = (
   itemType: ItemType,
   resolver: ItemIconResolverCallback,
-): Result.Result<unknown, ItemIconFailure> => {
-  try {
-    return Result.succeed(resolver(itemType))
-  } catch {
-    return Result.fail(ITEM_ICON_UNAVAILABLE)
-  }
-}
+): Result.Result<unknown, ItemIconFailure> => Result.try({
+    catch: () => ITEM_ICON_UNAVAILABLE,
+    try: () => resolver(itemType),
+  })
 
 export const resolveItemIcon = (
   input: unknown,

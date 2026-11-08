@@ -514,8 +514,10 @@ type AccessibleRole =
   | 'button'
   | 'dialog'
   | 'group'
+  | 'navigation'
   | 'progressbar'
   | 'region'
+  | 'searchbox'
   | 'slider'
   | 'status'
   | 'switch'
@@ -524,6 +526,7 @@ type RoleNameAnchor = {
   readonly role: AccessibleRole
   readonly name?: string
   readonly root?: boolean
+  readonly implicitRole?: boolean
   readonly selector?: string
 }
 type SurfaceAccessibilityContract = {
@@ -567,6 +570,14 @@ const SURFACE_ACCESSIBILITY_CONTRACTS: Readonly<Record<string, SurfaceAccessibil
     ],
   },
   createCrosshairView: { marker: 'crosshair', anchors: [] },
+  createCreativeInventoryView: {
+    marker: 'creative-inventory',
+    anchors: [
+      { role: 'region', name: 'Creative inventory', root: true, implicitRole: true },
+      { role: 'searchbox', name: 'Search items' },
+      { role: 'navigation', name: 'Creative inventory' },
+    ],
+  },
   createDebugOverlayView: {
     marker: 'debug-overlay',
     anchors: [{ role: 'region', name: 'Debug overlay', root: true }],
@@ -601,6 +612,10 @@ const SURFACE_ACCESSIBILITY_CONTRACTS: Readonly<Record<string, SurfaceAccessibil
   createPauseMenuView: {
     marker: 'pause-menu',
     anchors: [{ role: 'dialog', name: 'Game menu', selector: 'pause-panel' }],
+  },
+  createRecipeBookView: {
+    marker: 'recipe-book',
+    anchors: [{ role: 'region', name: 'Recipe book', root: true, implicitRole: true }],
   },
   createSaveIndicator: { marker: 'save-indicator', anchors: [] },
   createSessionOverlays: { marker: 'session-overlays', anchors: [] },
@@ -666,11 +681,12 @@ const browserAccessibilityAudit = (
   ignoredMarkers: ReadonlyArray<string>,
 ): Array<string> => {
   const validRoles = new Set([
-    'alert', 'button', 'checkbox', 'combobox', 'dialog', 'group', 'img', 'list', 'listitem', 'main',
+    'alert', 'button', 'checkbox', 'combobox', 'dialog', 'group', 'img', 'list', 'listitem', 'main', 'navigation',
     'log', 'menu', 'menuitem', 'note', 'option', 'progressbar', 'radio', 'radiogroup', 'region', 'slider',
-    'status', 'switch', 'tab', 'tabpanel', 'textbox',
+    'searchbox', 'status', 'switch', 'tab', 'tabpanel', 'textbox',
+    'tooltip',
   ])
-  const namedRoles = new Set(['button', 'checkbox', 'combobox', 'radio', 'slider', 'switch', 'tab', 'textbox'])
+  const namedRoles = new Set(['button', 'checkbox', 'combobox', 'radio', 'searchbox', 'slider', 'switch', 'tab', 'textbox'])
   const candidates = [
     ...(root.matches('button, input:not([type="hidden"]), select, textarea, [role], [tabindex]:not([tabindex="-1"])')
       ? [root]
@@ -692,7 +708,9 @@ const browserAccessibilityAudit = (
           : tag === 'input'
             ? element.getAttribute('type') === 'range'
               ? 'slider'
-              : 'textbox'
+              : element.getAttribute('type') === 'search'
+                ? 'searchbox'
+                : 'textbox'
             : undefined
     return explicit ?? native
   }
@@ -1053,6 +1071,34 @@ const assertSettingsState = async (surface: Locator): Promise<void> => {
   ])
 }
 
+const assertCreativeInventoryState = async (surface: Locator): Promise<void> => {
+  const search = surface.getByRole('searchbox', { name: 'Search items', exact: true })
+  const categoryNavigation = surface.getByRole('navigation', { name: 'Creative inventory', exact: true })
+  await Promise.all([
+    expect(search).toHaveAttribute('type', 'search'),
+    expect(search).toHaveAttribute('placeholder', 'Search items'),
+    expect(categoryNavigation.getByRole('button', { name: 'All', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    ),
+  ])
+}
+
+const assertRecipeBookState = async (surface: Locator): Promise<void> => {
+  const craftable = surface.locator('[data-mx-ui="recipe-book-craftable"]')
+  const missingIngredients = surface.locator('[data-mx-ui="recipe-book-uncraftable"]')
+  const placeButtons = craftable.getByRole('button', { name: /^Place .+/u })
+  await Promise.all([
+    expect(surface.getByRole('heading', { name: 'Recipe book', exact: true })).toHaveCount(1),
+    expect(craftable.getByRole('heading', { name: 'Craftable', exact: true })).toHaveCount(1),
+    expect(missingIngredients.getByRole('heading', { name: 'Missing ingredients', exact: true })).toHaveCount(1),
+    expect(placeButtons).toHaveCount(2),
+  ])
+  await Promise.all((await placeButtons.all()).map(async (button) => {
+    await expect(button).toHaveAttribute('type', 'button')
+  }))
+}
+
 const assertScenarioState = async (
   surfaceId: string,
   scenarioId: string,
@@ -1062,6 +1108,7 @@ const assertScenarioState = async (
     case 'createAnvilView': return assertAnvilState(scenarioId, surface)
     case 'createAchievementToastView': return assertToastState(surface)
     case 'createBrewingView': return assertBrewingState(surface)
+    case 'createCreativeInventoryView': return assertCreativeInventoryState(surface)
     case 'createCrosshairView': return assertCrosshairState(scenarioId, surface)
     case 'createCaptionView': return assertCaptionState(surface)
     case 'createDebugOverlayView':
@@ -1076,6 +1123,7 @@ const assertScenarioState = async (
     case 'createMainMenuView': return assertMainMenuState(scenarioId, surface)
     case 'createOnboardingView': return assertOnboardingState(scenarioId, surface)
     case 'createPauseMenuView': return assertPauseState(scenarioId, surface)
+    case 'createRecipeBookView': return assertRecipeBookState(surface)
     case 'createSaveIndicator': return assertSaveIndicatorState(surface)
     case 'createSessionOverlays': return assertSessionOverlayState(scenarioId, surface)
     case 'createSettingsView': return assertSettingsState(surface)
@@ -1115,7 +1163,9 @@ test.describe('T06 ledger-driven surface accessibility', () => {
 
       await Promise.all(contract.anchors.map(async (anchor) => {
         const locator = anchor.root
-          ? surface
+          ? anchor.implicitRole === true && anchor.name !== undefined
+            ? host.getByRole(anchor.role, { name: anchor.name })
+            : surface
           : anchor.selector !== undefined
             ? surface.locator(`[data-mx-ui="${anchor.selector}"]`)
             : anchor.name === undefined
@@ -1125,7 +1175,7 @@ test.describe('T06 ledger-driven surface accessibility', () => {
           locator,
           `${reference}: expected ${anchor.role}${anchor.name ? ` named ${anchor.name}` : ''}`,
         ).toHaveCount(1)
-        if (anchor.root === true || anchor.selector !== undefined) {
+        if ((anchor.root === true || anchor.selector !== undefined) && anchor.implicitRole !== true) {
           await expect(locator).toHaveAttribute('role', anchor.role)
         }
         if ((anchor.root === true || anchor.selector !== undefined) && anchor.name !== undefined) {
