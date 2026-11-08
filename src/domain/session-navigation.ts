@@ -56,10 +56,18 @@ export const sessionHref = (sessionId: string): string => `/?session=${encodeURI
 export const createSessionHref = (sessionId: string, request: CreateWorldRequest): string => {
   const parameters = new URLSearchParams({
     create: '1',
+    difficulty: request.difficulty,
     mode: request.mode,
     name: request.name,
+    seedKind: request.seed.kind,
     session: sessionId,
   })
+  if (typeof request.worldType !== 'undefined') {
+    parameters.set('worldType', request.worldType)
+  }
+  if (request.seed.kind === 'fixed') {
+    parameters.set('seed', String(request.seed.value))
+  }
   return `/?${parameters.toString()}`
 }
 

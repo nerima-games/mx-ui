@@ -47,8 +47,9 @@ test('diagnostics follow the selected scenario without changing the UI root', as
   await expect(intentOutput).toHaveText('no intents emitted')
   await expect(viewModelOutput).toContainText('"panel": "root"')
   await expect(viewModelOutput).toContainText('"savedWorlds": []')
-  await root.locator('[data-menu-entry="new-world"]').click()
+  await root.locator('[data-menu-entry="single-player"]').click()
   await expect(intentOutput).toHaveText('no intents emitted')
+  await root.locator('[data-mx-ui="menu-new-world"]').click()
 
   const a11y = JSON.parse((await page.getByTestId('diagnostics-a11y-tree').textContent()) ?? 'null') as ReadonlyArray<{
     role: string
@@ -57,7 +58,7 @@ test('diagnostics follow the selected scenario without changing the UI root', as
   }>
   expect(a11y.length).toBeGreaterThan(0)
   const createWorldButton = a11y.find(
-    (node) => node.role === 'button' && node.name === 'Create New World',
+    (node) => node.role === 'button' && node.name === 'Create',
   )
   expect(createWorldButton).toBeDefined()
   expect(createWorldButton?.state['disabled']).toBe(false)
@@ -70,7 +71,7 @@ test('diagnostics follow the selected scenario without changing the UI root', as
     role: string
   }>
   expect(focus.length).toBeGreaterThan(0)
-  expect(focus[0]).toMatchObject({ index: 0, name: 'Create New World', role: 'button' })
+  expect(focus[0]).toMatchObject({ index: 0, name: 'World name', role: 'textbox' })
 
   const tokens = JSON.parse((await page.getByTestId('diagnostics-tokens').textContent()) ?? 'null') as ReadonlyArray<{
     name: string

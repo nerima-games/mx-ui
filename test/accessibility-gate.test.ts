@@ -149,7 +149,10 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   const factory = fakeDocument()
   const parent = fakeElement(factory.createElement('div'))
 
-  const menu = createMainMenuView(factory, parent)
+  const menu = createMainMenuView(factory, parent, {
+    onExit: () => undefined,
+    onOpenSettings: () => undefined,
+  })
   menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'new-world')))
   menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'load-world')))
   menu.render(mainMenuViewModel(initialMainMenuState))

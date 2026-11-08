@@ -1,12 +1,22 @@
-import { InputAction, KeyCode, type KeyCode as KeyCodeType } from '@nerima-games/mc-kernel/domain/settings'
+import {
+  FieldOfViewDegrees,
+  InputAction,
+  KeyCode,
+  MouseSensitivity,
+  RenderDistanceChunks,
+  VolumeLevel,
+  type KeyCode as KeyCodeType,
+} from '@nerima-games/mc-kernel/domain/settings'
 import { DEFAULT_SETTINGS } from '@nerima-games/mc-sim'
 import { Result } from 'effect'
+import { createChatView } from '../../../src/application/chat-view'
 import { createMainMenuView } from '../../../src/application/main-menu-view'
 import { createOnboardingView } from '../../../src/application/onboarding-view'
 import { createPauseMenuView } from '../../../src/application/pause-menu-view'
 import { createSettingsView } from '../../../src/application/settings-view'
 import { createSessionOverlays } from '../../../src/application/session-overlays'
 import type { DomElement } from '../../../src/application/dom-surface'
+import { CHAT_RECENT_MESSAGE_TICKS, chatKeyboardAction, type ChatMessage } from '../../../src/domain/chat'
 import {
   initialMainMenuState,
   mainMenuViewModel,
@@ -14,10 +24,12 @@ import {
   openPanel,
   cycleWorldMode,
   type SavedWorld,
+  type UnreadableSave,
+  type WorldTypeOption,
 } from '../../../src/domain/main-menu'
 import { pauseMenuViewModel } from '../../../src/domain/pause-menu-view-model'
 import { onboardingViewModel } from '../../../src/domain/onboarding-view-model'
-import { settingsViewModel } from '../../../src/domain/settings-view-model'
+import { settingsViewModel, type SettingsSnapshot } from '../../../src/domain/settings-view-model'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from '../scenario-types'
 
 const noTime = (): void => undefined
@@ -39,18 +51,44 @@ const manyWorlds: ReadonlyArray<SavedWorld> = Array.from({ length: 200 }, (_, in
   return { sessionId: `world-${suffix}`, name: `Saved world ${suffix}` }
 })
 
+const intentWorlds: ReadonlyArray<SavedWorld> = [
+  { sessionId: 'world-one', name: 'First world' },
+]
+
+const intentWorldTypes: ReadonlyArray<WorldTypeOption> = [
+  { value: 'standard', label: { en: 'Standard', ja: '標準' } },
+  { value: 'amplified', label: { en: 'Amplified', ja: '増幅' } },
+]
+
+const intentUnreadableSaves: ReadonlyArray<UnreadableSave> = [
+  {
+    _tag: 'SaveDecodeError',
+    key: 'broken-save',
+    format: 'mc-save',
+    version: 4,
+    reason: 'unsupported header',
+  },
+]
+
 const mountMainMenu = (
   context: ScenarioContext,
   state: typeof initialMainMenuState,
   savedWorlds: ReadonlyArray<SavedWorld> = [],
+  worldTypes: ReadonlyArray<WorldTypeOption> = [],
+  unreadableSaves: ReadonlyArray<UnreadableSave> = [],
 ): ScenarioMount => {
-  let model = mainMenuViewModel(state, savedWorlds)
+  let model = mainMenuViewModel(state, savedWorlds, worldTypes, unreadableSaves)
   const view = createMainMenuView(context.factory, context.host, {
     onCreateWorld: (request) => context.emitIntent({ _tag: 'CreateWorld', ...request }),
     onLoadWorld: (world) => context.emitIntent({ _tag: 'LoadWorld', ...world }),
+    onDeleteWorld: (world) => context.emitIntent({ _tag: 'DeleteWorld', ...world }),
+    onDeleteUnreadableSave: (save) => context.emitIntent({ ...save, _tag: 'DeleteUnreadableSave' }),
+    onExportWorld: (world) => context.emitIntent({ _tag: 'ExportWorld', ...world }),
+    onOpenMultiplayer: () => context.emitIntent({ _tag: 'OpenMultiplayer' }),
     onOpenSettings: () => context.emitIntent({ _tag: 'OpenSettings' }),
+    onExit: () => context.emitIntent({ _tag: 'Exit' }),
     onStateChange: (nextState) => {
-      model = mainMenuViewModel(nextState, savedWorlds)
+      model = mainMenuViewModel(nextState, savedWorlds, worldTypes, unreadableSaves)
     },
   })
   view.render(model)
@@ -59,6 +97,60 @@ const mountMainMenu = (
     setTime: noTime,
     dispose: view.destroy,
     viewModel: () => model,
+  }
+}
+
+const editableKeyboardTarget = (target: EventTarget | null): boolean =>
+  target instanceof Element &&
+  target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !== null
+
+const mountChat = (context: ScenarioContext): ScenarioMount => {
+  const history: ReadonlyArray<ChatMessage> = [
+    { text: 'Welcome to chat', tick: CHAT_RECENT_MESSAGE_TICKS - 1 },
+  ]
+  const currentTick = CHAT_RECENT_MESSAGE_TICKS
+  let isOpen = false
+  const view = createChatView(context.factory, context.host, {
+    onFailure: (failure) => context.emitIntent({ _tag: 'ChatFailure', failure }),
+    onSubmission: (submission) => context.emitIntent({ _tag: 'ChatSubmission', ...submission }),
+  })
+  const render = (): void => {
+    const result = view.render(history, currentTick, isOpen)
+    if (Result.isFailure(result)) {
+      context.emitIntent({ _tag: 'ChatFailure', failure: result.failure })
+    }
+  }
+  const handleKeyDown = (event: KeyboardEvent): void => {
+    if (Reflect.get(context.host.style, 'visibility') !== 'visible') {
+      return
+    }
+    const result = chatKeyboardAction({
+      code: event.code,
+      isOpen,
+      isEditableTarget: editableKeyboardTarget(event.target),
+    })
+    if (Result.isFailure(result)) {
+      context.emitIntent({ _tag: 'ChatFailure', failure: result.failure })
+      return
+    }
+    const action = result.success?.['_tag']
+    if (action === 'OpenChat') {
+      event.preventDefault()
+      isOpen = true
+      render()
+    } else if (action === 'CloseChat') {
+      event.preventDefault()
+      isOpen = false
+      render()
+    }
+  }
+  document.addEventListener('keydown', handleKeyDown)
+  render()
+  return {
+    root: view.root,
+    setTime: noTime,
+    dispose: () => document.removeEventListener('keydown', handleKeyDown),
+    viewModel: () => ({ currentTick, history, isOpen }),
   }
 }
 
@@ -72,6 +164,23 @@ const validSettings = {
   uiScale: 1.5,
 }
 const invalidSettings = { ...DEFAULT_SETTINGS, fovDegrees: Number.NaN }
+const settingsHostSnapshot: SettingsSnapshot = {
+  ...DEFAULT_SETTINGS,
+  difficulty: 'hard',
+  fovDegrees: FieldOfViewDegrees(92),
+  graphicsPreset: 'high',
+  graphicsQuality: 'high',
+  keyBindings: {
+    ...DEFAULT_SETTINGS.keyBindings,
+    [InputAction('moveForward')]: KeyCode('KeyW'),
+  },
+  masterVolume: VolumeLevel(0.8),
+  mouseSensitivity: MouseSensitivity(1),
+  reducedMotion: 'reduced',
+  renderDistance: RenderDistanceChunks(14),
+  sfxVolume: VolumeLevel(1),
+  uiScale: 1.25,
+}
 
 const mountSettings = (context: ScenarioContext, input: unknown): ScenarioMount => {
   const result = settingsViewModel(input, EMPTY_BINDINGS, [])
@@ -92,6 +201,60 @@ const mountSettings = (context: ScenarioContext, input: unknown): ScenarioMount 
   const view = createSettingsView(context.factory, context.host)
   view.render(result.success)
   return { root: view.root, setTime: noTime, dispose: noTime, viewModel: () => result.success }
+}
+
+const mountSettingsHostUpdates = (context: ScenarioContext): ScenarioMount => {
+  const mountPoint = document.createElement('div')
+  mountPoint.setAttribute('data-settings-host-mount', '')
+  context.host.appendChild(mountPoint)
+  let currentSettings = settingsHostSnapshot
+  let currentLanguage: 'en' | 'ja' = 'en'
+  const overlays = createSessionOverlays(document, mountPoint, {
+    callbacks: {
+      onBindingActivate: (action) => context.emitIntent({ _tag: 'SettingsBindingActivated', action }),
+      onSettingsChange: (snapshot) => {
+        currentSettings = snapshot
+        context.emitIntent({ _tag: 'SettingsChanged', snapshot })
+        const readback = overlays.updateSettingsSnapshot(snapshot, currentLanguage)
+        if (Result.isSuccess(readback)) {
+          currentSettings = readback.success
+          context.emitIntent({ _tag: 'SettingsReadback', snapshot: readback.success })
+        } else {
+          context.emitIntent({ _tag: 'SettingsReadbackFailure', failure: readback.failure })
+        }
+      },
+    },
+    initialLanguage: currentLanguage,
+    initialSettingsSnapshot: currentSettings,
+    onLanguageChange: (language) => {
+      currentLanguage = language
+      return Result.succeed(language)
+    },
+  })
+  const handleSettingsHostUpdate = (event: Event): void => {
+    const update = overlays.updateSettingsSnapshot(
+      (event as CustomEvent<unknown>).detail,
+      currentLanguage,
+    )
+    if (Result.isSuccess(update)) {
+      currentSettings = update.success
+      context.emitIntent({ _tag: 'SettingsReadback', snapshot: update.success })
+    } else {
+      context.emitIntent({ _tag: 'SettingsReadbackFailure', failure: update.failure })
+    }
+  }
+  mountPoint.addEventListener('settings-host-update', handleSettingsHostUpdate)
+  overlays.openSettings()
+  return {
+    root: mountPoint,
+    setTime: noTime,
+    dispose: () => {
+      mountPoint.removeEventListener('settings-host-update', handleSettingsHostUpdate)
+      overlays.destroy()
+      mountPoint.remove()
+    },
+    viewModel: () => ({ language: currentLanguage, settings: currentSettings }),
+  }
 }
 
 const quickControls = [
@@ -167,7 +330,22 @@ export const SESSION_SCENARIOS: ReadonlyArray<ScenarioDefinition> = [
     title: 'Root menu',
     surface: 'Main menu',
     isDefault: false,
-    mount: (context) => mountMainMenu(context, initialMainMenuState),
+    mount: (context) => mountMainMenu(context, initialMainMenuState, [], intentWorldTypes),
+  },
+  {
+    screen: 'main-menu',
+    id: 'host-intents',
+    title: 'World management and host intents',
+    surface: 'Main menu',
+    isDefault: false,
+    mount: (context) =>
+      mountMainMenu(
+        context,
+        initialMainMenuState,
+        intentWorlds,
+        intentWorldTypes,
+        intentUnreadableSaves,
+      ),
   },
   {
     screen: 'main-menu',
@@ -244,6 +422,14 @@ export const SESSION_SCENARIOS: ReadonlyArray<ScenarioDefinition> = [
     surface: 'Settings',
     isDefault: true,
     mount: (context) => mountSettings(context, validSettings),
+  },
+  {
+    screen: 'settings',
+    id: 'host-updates',
+    title: 'Settings changes with host readback',
+    surface: 'Settings',
+    isDefault: false,
+    mount: mountSettingsHostUpdates,
   },
   {
     screen: 'settings',
@@ -324,5 +510,13 @@ export const SESSION_SCENARIOS: ReadonlyArray<ScenarioDefinition> = [
     surface: 'Session overlays',
     isDefault: false,
     mount: (context) => mountSessionOverlays(context, true, true),
+  },
+  {
+    screen: 'chat',
+    id: 'keyboard-intents',
+    title: 'Chat keyboard and submission intents',
+    surface: 'Chat',
+    isDefault: true,
+    mount: mountChat,
   },
 ]

@@ -188,6 +188,8 @@ describe('overlay scenario catalog', () => {
     expect(loadingScreenView(ready, LOADING_MINIMUM_VISIBLE_SECS - 0.01)).toStrictEqual({
       held: true,
       kind: 'preparing',
+      progress: 1,
+      stage: 'render-preparation',
     })
     expect(loadingScreenView(ready, LOADING_MINIMUM_VISIBLE_SECS)).toBeUndefined()
     expect(loadingScreenView(loadingStatus({ kind: 'failed', reason: '' }, 0), 200)).toStrictEqual({

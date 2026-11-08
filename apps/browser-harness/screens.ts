@@ -5,7 +5,7 @@ import { captionLines, type CaptionEvent } from '../../src/domain/caption'
 import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../../src/domain/inventory-view-model'
-import { initialMainMenuState, mainMenuViewModel, openPanel } from '../../src/domain/main-menu'
+import { initialMainMenuState, mainMenuViewModel } from '../../src/domain/main-menu'
 import { saveStatus, saveStatusMessage } from '../../src/domain/save-status'
 import { createCaptionView } from '../../src/application/caption-view'
 import { createCrosshairView } from '../../src/application/crosshair-view'
@@ -47,14 +47,14 @@ const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount 
 
   switch (name) {
     case 'main-menu': {
-      const menu = createMainMenuView(factory, host)
-      let model = mainMenuViewModel(openPanel(initialMainMenuState, 'new-world'))
+      const menu = createMainMenuView(factory, host, {
+        onOpenMultiplayer: noTime,
+        onOpenSettings: noTime,
+        onExit: noTime,
+      })
+      const model = mainMenuViewModel(initialMainMenuState)
       menu.render(model)
-      model = mainMenuViewModel(openPanel(initialMainMenuState, 'load-world'))
-      menu.render(model)
-      model = mainMenuViewModel(initialMainMenuState)
-      menu.render(model)
-      return { root: menu.root, setTime: noTime, dispose: noTime, viewModel: () => model }
+      return { root: menu.root, setTime: noTime, dispose: menu.destroy, viewModel: () => model }
     }
     case 'hud': {
       const hud = createHudView(factory, host, environment.motion)

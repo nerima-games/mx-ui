@@ -1,0 +1,44 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const outputPath = resolve(dirname(fileURLToPath(import.meta.url)), '../assets/title-panorama.svg')
+const panorama = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title description">
+  <title id="title">A quiet landscape</title>
+  <desc id="description">A geometric sunrise over distant mountains, forested hills, and a still lake.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#162d46"/>
+      <stop offset="0.52" stop-color="#51728b"/>
+      <stop offset="1" stop-color="#d79c78"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#607f8b"/>
+      <stop offset="1" stop-color="#172e3d"/>
+    </linearGradient>
+    <radialGradient id="sun-glow">
+      <stop offset="0" stop-color="#f6d8a1" stop-opacity="0.78"/>
+      <stop offset="1" stop-color="#f6d8a1" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <circle cx="1130" cy="320" r="250" fill="url(#sun-glow)"/>
+  <circle cx="1130" cy="320" r="96" fill="#f4d7a3"/>
+  <path d="M0 510 180 370 300 457 482 258 655 449 824 318 1000 488 1170 331 1388 482 1518 382 1600 432V642H0Z" fill="#354e65"/>
+  <path d="m180 370 42 31 55-7 23 63-78-29-39 26-42-36Zm302-112 44 53 58-4 31 69-76-34-39 31-66-40Zm342 60 28 33 57-5 48 56-90-20-48 27-41-43Zm346 13 43 44 60-7 48 60-93-21-40 31-55-43Z" fill="#82919b" opacity="0.74"/>
+  <path d="M0 555Q200 485 372 554T738 552t382-7 480 9V900H0Z" fill="#263f4b"/>
+  <path d="M0 611Q214 565 425 608t405-9 398 14 372-8V900H0Z" fill="#37595a"/>
+  <path d="M0 635Q182 604 359 635t350-1 356 5 535-4V900H0Z" fill="url(#water)"/>
+  <path d="M824 641q94 9 184 0t203 5M938 669q78 8 155 0t207 3M743 704q125 9 246-1t298 6M878 741q98 7 190-1t252 4M794 785q141 10 282-1t281 6M972 827q83 7 166-1t166 4" fill="none" stroke="#c7b39b" stroke-opacity="0.34" stroke-width="4"/>
+  <path d="M0 653 119 557l96 96 60-70 88 70 72-89 126 89v74H0Zm1195 13 91-101 83 101 70-74 106 74v82h-350Z" fill="#172d37"/>
+  <g fill="#152b34">
+    <path d="m104 579 32-94 32 94h-20v47h-24v-47Zm93 19 27-80 27 80h-16v39h-22v-39Zm236-9 36-109 36 109h-23v57h-26v-57Zm879 5 31-92 31 92h-19v46h-24v-46Zm119 7 27-81 27 81h-16v41h-22v-41Zm95-12 34-103 34 103h-22v53h-24v-53Z"/>
+  </g>
+  <path d="M0 900V760q190-62 384 5t385-1 419 8 412-13v141Z" fill="#142832" opacity="0.82"/>
+</svg>
+`
+
+await mkdir(dirname(outputPath), { recursive: true })
+await writeFile(outputPath, panorama, 'utf8')
+process.stdout.write(`${outputPath}\n`)

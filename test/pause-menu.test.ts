@@ -50,7 +50,7 @@ class RemovableFakeDocument implements DomElementFactory {
   createElement(tagName: string): DomElement
   createElement(tagName: string): DomElement | DomInteractiveElement | DomInputElement {
     if (tagName === 'button' || tagName === 'input') {
-      const element = new RemovableInteractiveElement(tagName, this.base.mutations)
+      const element = new FakeInteractiveElement(tagName, this.base.mutations)
       this.base.created.push(element)
       return element
     }

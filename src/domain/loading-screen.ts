@@ -45,6 +45,8 @@
  * a duration could hide would be a failure the player learns about by finding
  * themselves back at a menu with no explanation.
  */
+import { Result } from 'effect'
+
 
 /**
  * How long the screen stays up once there is nothing left to wait for.
@@ -66,13 +68,29 @@ export const LOADING_MINIMUM_VISIBLE_SECS = 2.5
  * describe a failure that is not one, which is the shape
  * `domain/inventory-view-model.ts` uses to keep 「empty」 and 「unknown」 apart.
  */
+/** Legacy progress input for callers that do not report a stage yet. */
 export type LoadingProgress =
   | { readonly kind: 'preparing' }
   | { readonly kind: 'ready' }
   | { readonly kind: 'failed'; readonly reason: string }
 
+export type LoadingStage = 'generation' | 'reading' | 'render-preparation'
+
+export type LoadingStageProgress =
+  | { readonly kind: 'preparing'; readonly stage: LoadingStage; readonly progress: number }
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'failed'; readonly reason: string }
+
+export type DeterminateLoadingProgress = LoadingStageProgress
+
+export type InvalidLoadingProgress = {
+  readonly _tag: 'InvalidLoadingProgress'
+  readonly stage: LoadingStage
+  readonly progress: number
+}
+
 export type LoadingStatus = {
-  readonly progress: LoadingProgress
+  readonly progress: DeterminateLoadingProgress
   /**
    * Monotonic seconds at which the screen became VISIBLE — supplied by the
    * caller, never read from a global (DN-UI-10).
@@ -94,6 +112,8 @@ export type LoadingStatus = {
  * Both choices avoid the outcome that traps somebody.
  */
 const NON_FINITE_START_FALLBACK_SECS = 0
+const LOADING_PROGRESS_MIN = 0
+const LOADING_PROGRESS_MAX = 1
 
 const normalizedStartedAtSecs = (atSecs: number): number => {
   if (Number.isFinite(atSecs)) {
@@ -102,10 +122,35 @@ const normalizedStartedAtSecs = (atSecs: number): number => {
   return NON_FINITE_START_FALLBACK_SECS
 }
 
+const legacyProgressToStageProgress = (progress: LoadingProgress): DeterminateLoadingProgress => {
+  if (progress.kind === 'preparing') {
+    return { kind: 'preparing', progress: LOADING_PROGRESS_MIN, stage: 'generation' }
+  }
+  return progress
+}
+
 export const loadingStatus = (progress: LoadingProgress, atSecs: number): LoadingStatus => ({
-  progress,
+  progress: legacyProgressToStageProgress(progress),
   startedAtSecs: normalizedStartedAtSecs(atSecs),
 })
+
+/** Validate determinate host progress before it reaches the view model. */
+export const createLoadingStatus = (
+  progress: LoadingStageProgress,
+  atSecs: number,
+): Result.Result<LoadingStatus, InvalidLoadingProgress> => {
+  if (
+    progress.kind === 'preparing' &&
+    (!Number.isFinite(progress.progress) || progress.progress < LOADING_PROGRESS_MIN || progress.progress > LOADING_PROGRESS_MAX)
+  ) {
+    return Result.fail({
+      _tag: 'InvalidLoadingProgress',
+      progress: progress.progress,
+      stage: progress.stage,
+    })
+  }
+  return Result.succeed({ progress, startedAtSecs: normalizedStartedAtSecs(atSecs) })
+}
 
 /** Nothing is loading, so nothing is on screen. */
 export const IDLE_LOADING_STATUS: LoadingStatus = {
@@ -124,7 +169,7 @@ export const IDLE_LOADING_STATUS: LoadingStatus = {
  * re-derive it. DN-UI-7c is the record of what a second derivation costs.
  */
 export type LoadingScreenView =
-  | { readonly kind: 'preparing'; readonly held: boolean }
+  | { readonly kind: 'preparing'; readonly stage: LoadingStage; readonly progress: number; readonly held: boolean }
   | { readonly kind: 'failed'; readonly reason: string }
 
 export const loadingScreenView = (
@@ -137,7 +182,7 @@ export const loadingScreenView = (
     return { kind: 'failed', reason: progress.reason }
   }
   if (progress.kind === 'preparing') {
-    return { held: false, kind: 'preparing' }
+    return { held: false, kind: 'preparing', progress: progress.progress, stage: progress.stage }
   }
   const elapsed = nowSecs - status.startedAtSecs
   // A NaN or a backwards clock keeps the screen UP for one more frame rather
@@ -145,7 +190,7 @@ export const loadingScreenView = (
   // Choose the outcome that does not invent a claim, and here hiding is the
   // Claim ("the world is ready and you have had time to see that it was not").
   if (Number.isNaN(elapsed) || elapsed < minimumVisibleSecs) {
-    return { held: true, kind: 'preparing' }
+    return { held: true, kind: 'preparing', progress: LOADING_PROGRESS_MAX, stage: 'render-preparation' }
   }
   return
 }

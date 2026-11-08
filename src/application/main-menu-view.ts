@@ -9,27 +9,27 @@ import {
 } from './dom-write.js'
 import {
   type CreateWorldRequest,
+  type GameDifficulty,
   type GameMode,
   type MainMenuState,
   type MainMenuViewModel,
   type MenuPanel,
   type RootEntry,
   type SavedWorld,
-  backToRoot,
+  type UnreadableSave,
   cycleWorldMode,
   initialMainMenuState,
   mainMenuViewModel,
   nameWorld,
   openPanel,
+  parseWorldSeed,
+  seedWorld,
+  setWorldDifficulty,
+  setWorldType,
   worldNameLabel,
 } from '../domain/main-menu.js'
-import { DEFAULT_UI_LANGUAGE, type UiMessageKey, type UiMessageText, translateUiMessage } from '../domain/ui-language.js'
-import type {
-  DomElement,
-  DomElementFactory,
-  DomInputElement,
-  DomInteractiveElement,
-} from './dom-surface.js'
+import { DEFAULT_UI_LANGUAGE, type UiLanguage, type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
+import { type DomElement, type DomElementFactory, type DomInputElement, type DomInteractiveElement } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   inheritUiLanguage,
@@ -38,14 +38,17 @@ import {
   uiLanguageForElement,
   writeLocalizedAttribute,
   writeLocalizedText,
+  writeLocalizedTextUsing,
 } from './ui-localization.js'
+import { Result } from 'effect'
 
-export const MAIN_MENU_TITLE = 'nerima-games'
+export const MAIN_MENU_TITLE: string = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.brand')
 
 export const ROOT_ENTRY_LABEL: Readonly<Record<RootEntry, string>> = {
-  'load-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.load-world'),
-  'new-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.new-world'),
+  exit: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.exit'),
+  multiplayer: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.multiplayer'),
   settings: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.settings'),
+  'single-player': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.single-player'),
 }
 
 export const GAME_MODE_LABEL: Readonly<Record<GameMode, string>> = {
@@ -53,67 +56,60 @@ export const GAME_MODE_LABEL: Readonly<Record<GameMode, string>> = {
   survival: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.mode.survival'),
 }
 
+export const GAME_DIFFICULTY_LABEL: Readonly<Record<GameDifficulty, string>> = {
+  easy: translateUiMessage(DEFAULT_UI_LANGUAGE, 'settings.choice.difficulty.easy'),
+  hard: translateUiMessage(DEFAULT_UI_LANGUAGE, 'settings.choice.difficulty.hard'),
+  normal: translateUiMessage(DEFAULT_UI_LANGUAGE, 'settings.choice.difficulty.normal'),
+  peaceful: translateUiMessage(DEFAULT_UI_LANGUAGE, 'settings.choice.difficulty.peaceful'),
+}
+
 export const MENU_PANEL_LABEL: Readonly<Record<MenuPanel, string>> = {
-  'load-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.load-world'),
+  'load-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.single-player'),
   'new-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.new-world'),
   root: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.root'),
 }
 
-export const MENU_FIELD_LABEL: Readonly<Record<'game-mode' | 'world-name', string>> = {
+export type MenuField = 'world-name' | 'game-mode' | 'seed' | 'difficulty' | 'world-type'
+export const MENU_FIELD_LABEL: Readonly<Record<MenuField, string>> = {
+  difficulty: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.field.difficulty'),
   'game-mode': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.field.game-mode'),
+  seed: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.field.seed'),
   'world-name': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.field.world-name'),
-} as const
+  'world-type': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.field.world-type', { type: '' }),
+}
 
-export type MenuField = keyof typeof MENU_FIELD_LABEL
-
-export const MENU_ACTION_LABEL: Readonly<Record<'back' | 'cancel' | 'confirm', string>> = {
+export type MenuAction = 'back' | 'cancel' | 'confirm' | 'create' | 'delete' | 'export'
+const MENU_ACTION_KEY: Readonly<Record<MenuAction, UiMessageKey>> = {
+  back: 'menu.action.back',
+  cancel: 'menu.action.cancel',
+  confirm: 'menu.action.confirm',
+  create: 'menu.action.create',
+  delete: 'menu.action.delete',
+  export: 'menu.action.export',
+}
+export const MENU_ACTION_LABEL: Readonly<Record<MenuAction, string>> = {
   back: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.back'),
   cancel: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.cancel'),
   confirm: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.confirm'),
-} as const
-
-export type MenuAction = keyof typeof MENU_ACTION_LABEL
+  create: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.create'),
+  delete: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.delete'),
+  export: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.export'),
+}
 
 export const EMPTY_SAVE_LIST_NOTE: string = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.worlds.empty')
-
-/** @deprecated The menu now distinguishes a host-supplied empty list directly. */
-export const NO_SAVE_LIST_NOTE =
-  'mc-save has not been asked. This list is unknown, which is not the same as empty.'
+/** @deprecated Use `EMPTY_SAVE_LIST_NOTE`. */
+export const NO_SAVE_LIST_NOTE: string = EMPTY_SAVE_LIST_NOTE
 
 export type MainMenuCallbacks = {
-  readonly onStateChange: (state: MainMenuState) => void
-  readonly onCreateWorld: (request: CreateWorldRequest) => void
-  readonly onLoadWorld: (world: SavedWorld) => void
-  readonly onOpenSettings: () => void
-}
-
-const noop = (): void => {
-  // No-op.
-}
-
-const NOOP_CALLBACKS: MainMenuCallbacks = {
-  onCreateWorld: noop,
-  onLoadWorld: noop,
-  onOpenSettings: noop,
-  onStateChange: noop,
-}
-
-/** Nothing — the zero count, the zero index, the drain-from-the-start splice. */
-const ZERO = 0
-
-type PanelElement = {
-  readonly panel: MenuPanel
-  readonly root: DomElement
-  readonly hidden: AttributeCell
-}
-
-type SavedWorldRow = {
-  readonly root: DomInteractiveElement
-  readonly hidden: AttributeCell
-  readonly name: TextCell
-  readonly sessionId: TextCell
-  readonly accessibleName: AttributeCell
-  current: SavedWorld
+  readonly onStateChange?: (state: MainMenuState) => void
+  readonly onCreateWorld?: (request: CreateWorldRequest) => void
+  readonly onLoadWorld?: (world: SavedWorld) => void
+  readonly onDeleteWorld?: (world: SavedWorld) => void
+  readonly onDeleteUnreadableSave?: (save: UnreadableSave) => void
+  readonly onExportWorld?: (world: SavedWorld) => void
+  readonly onOpenMultiplayer?: () => void
+  readonly onOpenSettings?: () => void
+  readonly onExit?: () => void
 }
 
 export type MainMenuView = {
@@ -122,652 +118,1198 @@ export type MainMenuView = {
   readonly destroy: () => void
 }
 
-/** Everything an element-building helper needs to mount into the document and clean up after itself. */
-type MountContext = {
+type Button = {
+  readonly element: DomInteractiveElement
+  readonly label: TextCell
+  readonly hidden: AttributeCell
+  readonly disabled: AttributeCell
+}
+
+type SavedWorldRow = {
+  world: SavedWorld
+  readonly root: DomElement
+  readonly rootHidden: AttributeCell
+  readonly load: Button
+  readonly loadAccessibleName: AttributeCell
+  readonly delete: Button
+  readonly export: Button
+  readonly confirm: Button
+  readonly cancel: Button
+}
+
+type UnreadableSaveRow = {
+  save: UnreadableSave
+  readonly root: DomElement
+  readonly rootHidden: AttributeCell
+  readonly detail: TextCell
+  readonly delete: Button
+  readonly confirm: Button
+  readonly cancel: Button
+}
+
+type MenuPanelElement = { readonly element: DomElement; readonly hidden: AttributeCell }
+type MenuPanels = Record<MenuPanel, MenuPanelElement>
+type StyleEntry = readonly [property: string, value: string]
+
+type MakeElementOptions = {
   readonly factory: DomElementFactory
-  readonly cleanups: Array<() => void>
+  readonly parent: DomElement
+  readonly tag: string
+  readonly marker: string
 }
 
-/** The menu's one piece of mutable state, shared by reference with every closure that reads or writes it. */
-type MenuStateBox = {
+type MakeButtonOptions = {
+  readonly factory: DomElementFactory
+  readonly parent: DomElement
+  readonly marker: string
+  readonly action: string
+  readonly key: UiMessageKey
+}
+
+type CreateMenuPanelOptions = {
+  readonly factory: DomElementFactory
+  readonly root: DomElement
+  readonly panel: MenuPanel
+  readonly headingKey: UiMessageKey
+}
+
+type CreateFieldLabelOptions = {
+  readonly factory: DomElementFactory
+  readonly parent: DomElement
+  readonly field: MenuField
+  readonly input: DomInputElement
+}
+
+type CreateWorldInputOptions = {
+  readonly factory: DomElementFactory
+  readonly parent: DomElement
+  readonly marker: string
+  readonly field: 'world-name' | 'seed'
+  readonly key: UiMessageKey
+}
+
+type SeedFields = {
+  readonly worldNameInput: DomInputElement
+  readonly seedInput: DomInputElement
+  readonly seedInvalid: AttributeCell
+  readonly seedErrorHidden: AttributeCell
+}
+
+type WorldForm = SeedFields & {
+  readonly gameModeButton: Button
+  readonly gameModeAccessibleName: AttributeCell
+  readonly difficultyButton: Button
+  readonly difficultyAccessibleName: AttributeCell
+  readonly worldTypeLabelHidden: AttributeCell
+  readonly worldTypeButton: Button
+  readonly worldTypeButtonHidden: AttributeCell
+  readonly worldTypeOptionsStatus: AttributeCell
+  readonly backButton: Button
+  readonly createButton: Button
+}
+
+type WorldList = {
+  readonly createWorldButton: Button
+  readonly emptyNoteHidden: AttributeCell
+  readonly worldList: DomElement
+  readonly unreadableSummaryText: TextCell
+  readonly unreadableSummaryHidden: AttributeCell
+  readonly unreadableList: DomElement
+  readonly backButton: Button
+}
+
+type MainMenuElements = {
+  readonly root: DomElement
+  readonly rootHidden: AttributeCell
+  readonly panelRoots: MenuPanels
+  readonly rootButtons: Record<RootEntry, Button>
+  readonly form: WorldForm
+  readonly worldList: WorldList
+}
+
+type MainMenuRuntime = {
   state: MainMenuState
-  savedWorlds: ReadonlyArray<SavedWorld>
+  model: MainMenuViewModel
+  pendingDelete: string | null
+  readonly savedRows: Map<string, SavedWorldRow>
+  readonly unreadableRows: Map<string, UnreadableSaveRow>
 }
 
-type MenuTransition = (next: MainMenuState, focusTarget: DomInteractiveElement) => void
-
-/** Behavioural wiring shared by every interactive element this file builds. */
-type MenuBindings = {
-  readonly box: MenuStateBox
+type MainMenuRenderContext = {
+  readonly dom: MainMenuElements
+  readonly runtime: MainMenuRuntime
   readonly callbacks: MainMenuCallbacks
-  readonly transition: MenuTransition
+  readonly factory: DomElementFactory
+  readonly listeners: Array<() => void>
 }
 
-const setAttributes = (element: DomElement, attrs: Readonly<Record<string, string>>): void => {
-  for (const [name, value] of Object.entries(attrs)) {
-    element.setAttribute(name, value)
-  }
-}
-
-type ListenerSpec = {
+type BindListenerOptions = {
+  readonly context: MainMenuRenderContext
+  readonly element: DomInteractiveElement
+  readonly listener: EventListener
   readonly type: string
-  readonly handler: () => void
 }
 
-const addManagedListener = (
-  ctx: MountContext,
-  target: DomInteractiveElement,
-  spec: ListenerSpec,
-): void => {
-  target.addEventListener(spec.type, spec.handler)
-  ctx.cleanups.push(() => target.removeEventListener?.(spec.type, spec.handler))
+const IMAGE_SOURCE = new URL('../../assets/title-panorama.svg', import.meta.url).href
+const DIFFICULTIES: ReadonlyArray<GameDifficulty> = ['peaceful', 'easy', 'normal', 'hard']
+const EMPTY_COUNT = 0
+const NEXT_INDEX = 1
+
+const FIELD_MESSAGE_KEY: Readonly<Record<MenuField, UiMessageKey>> = {
+  difficulty: 'menu.field.difficulty',
+  'game-mode': 'menu.field.game-mode',
+  seed: 'menu.field.seed',
+  'world-name': 'menu.field.world-name',
+  'world-type': 'menu.field.world-type',
 }
 
-const PANEL_MESSAGE_KEY: Readonly<Record<MenuPanel, UiMessageKey>> = {
-  'load-world': 'menu.panel.load-world',
-  'new-world': 'menu.panel.new-world',
-  root: 'menu.panel.root',
-}
-
-const panelMessageKey = (panel: MenuPanel): UiMessageKey => PANEL_MESSAGE_KEY[panel]
-
-const createPanel = (
-  factory: DomElementFactory,
-  parent: DomElement,
-  panel: MenuPanel,
-): PanelElement => {
-  const root = factory.createElement('section')
-  setAttributes(root, {
-    'data-menu-panel': panel,
-    'data-mx-ui': 'menu-panel',
-    hidden: '',
-    role: 'group',
-  })
-  setLocalizedAttribute(root, 'aria-label', panelMessageKey(panel))
-  parent.appendChild(root)
-
-  const element: PanelElement = { hidden: attributeCell(root, 'hidden'), panel, root }
-  element.hidden.previous = ''
+const makeElement = ({ factory, parent, tag, marker }: MakeElementOptions): DomElement => {
+  const element = factory.createElement(tag)
+  element.setAttribute('data-mx-ui', marker)
+  inheritUiLanguage(parent, element)
   return element
 }
 
-type ButtonSpec = {
-  readonly role: string
-  readonly localizedKey?: UiMessageKey
-  readonly onClick?: () => void
-}
-
-const styleButton = (button: DomElement): void => {
-  button.style.setProperty('color', PALETTE_VAR.ink)
-  button.style.setProperty('background-color', PALETTE_VAR.surfaceRaised)
-}
-
-const localizeButton = (button: DomElement, key: UiMessageKey): void => {
-  setLocalizedText(button, key)
-  setLocalizedAttribute(button, 'aria-label', key)
-}
-
-const createButton = (
-  ctx: MountContext,
-  parent: DomElement,
-  spec: ButtonSpec,
-): DomInteractiveElement => {
-  const button = ctx.factory.createElement('button')
-  inheritUiLanguage(parent, button)
-  setAttributes(button, { 'data-mx-ui': spec.role, type: 'button' })
-  styleButton(button)
-  if (typeof spec.localizedKey !== 'undefined') {
-    localizeButton(button, spec.localizedKey)
+const setStyleProperties = (element: DomElement, entries: ReadonlyArray<StyleEntry>): void => {
+  for (const [property, value] of entries) {
+    element.style.setProperty(property, value)
   }
-  if (spec.onClick) {
-    addManagedListener(ctx, button, { handler: spec.onClick, type: 'click' })
+}
+
+const initializeButtonElement = (element: DomInteractiveElement, options: MakeButtonOptions): void => {
+  element.setAttribute('type', 'button')
+  element.setAttribute('data-mx-ui', options.marker)
+  element.setAttribute('data-menu-action', options.action)
+  inheritUiLanguage(options.parent, element)
+}
+
+const makeButton = ({ factory, parent, marker, action, key }: MakeButtonOptions): Button => {
+  const element = factory.createElement('button')
+  initializeButtonElement(element, { action, factory, key, marker, parent })
+  const label = textCell(element)
+  writeLocalizedText(label, key)
+  const hidden = attributeCell(element, 'hidden')
+  const disabled = attributeCell(element, 'disabled')
+  parent.appendChild(element)
+  return { disabled, element, hidden, label }
+}
+
+const bindListener = ({ context, element, listener, type }: BindListenerOptions): void => {
+  element.addEventListener(type, listener)
+  context.listeners.push(() => element.removeEventListener?.(type, listener))
+}
+
+const bindButton = (context: MainMenuRenderContext, button: Button, onClick: () => void): void => {
+  bindListener({ context, element: button.element, listener: onClick, type: 'click' })
+}
+
+const setButtonDisabled = (button: Button, disabled: boolean): void => {
+  if (disabled) {
+    writeAttribute(button.disabled, '')
+    return
   }
-  parent.appendChild(button)
-  return button
+  writeAttribute(button.disabled)
 }
 
-const modelState = (model: MainMenuViewModel): MainMenuState => ({
-  draft: { mode: model.mode, name: model.worldNameInput },
-  panel: model.panel,
-})
-
-const MODE_MESSAGE_KEY: Readonly<Record<GameMode, 'menu.mode.creative' | 'menu.mode.survival'>> = {
-  creative: 'menu.mode.creative',
-  survival: 'menu.mode.survival',
+const setButtonHidden = (button: Button, hidden: boolean): void => {
+  writeHidden(button.hidden, hidden)
 }
 
-const modeMessageKey = (mode: GameMode): 'menu.mode.creative' | 'menu.mode.survival' => MODE_MESSAGE_KEY[mode]
-
-const savedWorldListState = (count: number): string => {
-  if (count === ZERO) {
-    return 'empty'
-  }
-  return 'ready'
+const localizeButtonAria = (button: Button, key: UiMessageKey, values: UiMessageValues = {}): void => {
+  setLocalizedAttribute(button.element, 'aria-label', key, values)
 }
 
-const createMainMenuRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
-  const root = factory.createElement('div')
-  root.setAttribute('data-mx-ui', 'main-menu')
-  declarePalette(root)
-  root.style.setProperty('background-color', PALETTE_VAR.surface)
-  root.style.setProperty('color', PALETTE_VAR.ink)
-  parent.appendChild(root)
-  return root
-}
-
-const createMainMenuTitle = (factory: DomElementFactory, root: DomElement): void => {
-  const title = factory.createElement('h1')
-  title.setAttribute('data-mx-ui', 'menu-title')
-  title.style.setProperty('color', PALETTE_VAR.ink)
-  title.textContent = MAIN_MENU_TITLE
-  root.appendChild(title)
-}
-
-const createMenuPanels = (
-  factory: DomElementFactory,
-  root: DomElement,
-): Record<MenuPanel, PanelElement> => ({
-  'load-world': createPanel(factory, root, 'load-world'),
-  'new-world': createPanel(factory, root, 'new-world'),
-  root: createPanel(factory, root, 'root'),
-})
-
-type MainMenuShell = {
+type InitializeMenuPanelOptions = {
+  readonly element: DomElement
   readonly root: DomElement
-  readonly panels: Record<MenuPanel, PanelElement>
+  readonly panel: MenuPanel
+  readonly headingKey: UiMessageKey
+  readonly factory: DomElementFactory
 }
 
-const createMainMenuShell = (factory: DomElementFactory, parent: DomElement): MainMenuShell => {
-  const root = createMainMenuRoot(factory, parent)
-  createMainMenuTitle(factory, root)
-  const panels = createMenuPanels(factory, root)
-  return { panels, root }
+type AppendPanelHeadingOptions = {
+  readonly factory: DomElementFactory
+  readonly panel: DomElement
+  readonly root: DomElement
+  readonly headingKey: UiMessageKey
 }
 
-const createFieldCaption = (
-  ctx: MountContext,
-  parent: DomElement,
-  key: 'menu.field.game-mode' | 'menu.field.world-name',
-): void => {
-  const caption = ctx.factory.createElement('span')
-  caption.setAttribute('data-mx-ui', 'menu-field-caption')
-  caption.style.setProperty('color', PALETTE_VAR.inkMuted)
-  setLocalizedText(caption, key)
-  parent.appendChild(caption)
+const appendPanelHeading = ({ factory, panel, root, headingKey }: AppendPanelHeadingOptions): void => {
+  const heading = makeElement({ factory, marker: 'menu-panel-title', parent: root, tag: 'h2' })
+  writeLocalizedText(textCell(heading), headingKey)
+  panel.appendChild(heading)
 }
 
-const createWorldNameField = (
-  ctx: MountContext,
-  parent: DomElement,
-  bindings: MenuBindings,
-): DomInputElement => {
-  createFieldCaption(ctx, parent, 'menu.field.world-name')
+const initializeMenuPanel = ({ element, root, panel, headingKey, factory }: InitializeMenuPanelOptions): void => {
+  element.setAttribute('data-menu-panel', panel)
+  element.setAttribute('hidden', '')
+  element.setAttribute('role', 'region')
+  setStyleProperties(element, [
+    ['display', 'grid'],
+    ['justify-items', 'center'],
+    ['gap', '0.75rem'],
+    ['width', '100%'],
+  ])
+  setLocalizedAttribute(element, 'aria-label', headingKey)
+  appendPanelHeading({ factory, headingKey, panel: element, root })
+  root.appendChild(element)
+}
 
-  const input: DomInputElement = ctx.factory.createElement('input')
-  setAttributes(input, {
-    'data-mx-ui': 'menu-world-name',
-    type: 'text',
-  })
-  setLocalizedAttribute(input, 'aria-label', 'menu.field.world-name')
-  setLocalizedAttribute(input, 'placeholder', 'menu.world-name.default')
-  addManagedListener(ctx, input, {
-    handler: () => {
-      bindings.box.state = nameWorld(bindings.box.state, input.value)
-      bindings.callbacks.onStateChange(bindings.box.state)
-    },
-    type: 'input',
-  })
-  parent.appendChild(input)
+const createMenuPanel = ({ factory, root, panel, headingKey }: CreateMenuPanelOptions): MenuPanelElement => {
+  const element = makeElement({ factory, marker: 'menu-panel', parent: root, tag: 'section' })
+  initializeMenuPanel({ element, factory, headingKey, panel, root })
+  const hidden = attributeCell(element, 'hidden')
+  hidden.previous = ''
+  return { element, hidden }
+}
+
+const renderFieldLabelText = (label: DomElement, field: MenuField, key: UiMessageKey): void => {
+  if (field === 'world-type') {
+    setLocalizedText(label, key, { type: '' })
+    return
+  }
+  setLocalizedText(label, key)
+}
+
+type CreateFieldLabelTextOptions = {
+  readonly factory: DomElementFactory
+  readonly field: MenuField
+  readonly key: UiMessageKey
+  readonly parent: DomElement
+}
+
+const createFieldLabelText = ({ factory, field, key, parent }: CreateFieldLabelTextOptions): DomElement => {
+  const text = makeElement({ factory, marker: 'menu-field-label-text', parent, tag: 'span' })
+  renderFieldLabelText(text, field, key)
+  return text
+}
+
+const createFieldLabel = ({ factory, parent, field, input }: CreateFieldLabelOptions): DomElement => {
+  const label = makeElement({ factory, marker: 'menu-field-label', parent, tag: 'label' })
+  label.setAttribute('data-menu-field', field)
+  const key = FIELD_MESSAGE_KEY[field]
+  const text = createFieldLabelText({ factory, field, key, parent: label })
+  label.appendChild(text)
+  if (field === 'world-name' || field === 'seed') {
+    setLocalizedAttribute(input, 'aria-label', key)
+  }
+  label.appendChild(input)
+  parent.appendChild(label)
+  return label
+}
+
+const createWorldInput = ({ factory, parent, marker, field, key }: CreateWorldInputOptions): DomInputElement => {
+  const input = factory.createElement('input')
+  input.setAttribute('type', 'text')
+  input.setAttribute('data-mx-ui', marker)
+  inheritUiLanguage(parent, input)
+  setLocalizedAttribute(input, 'aria-label', key)
+  setLocalizedAttribute(input, 'placeholder', key)
+  createFieldLabel({ factory, field, input, parent })
   return input
 }
 
-type ModeButtonElements = {
-  readonly text: TextCell
-  readonly accessibleName: AttributeCell
+const createMenuRoot = (factory: DomElementFactory, parent: DomElement): { readonly root: DomElement; readonly rootHidden: AttributeCell } => {
+  const root = factory.createElement('main')
+  inheritUiLanguage(parent, root)
+  root.setAttribute('data-mx-ui', 'main-menu')
+  root.setAttribute('role', 'main')
+  setStyleProperties(root, [
+    ['position', 'relative'],
+    ['display', 'grid'],
+    ['place-items', 'center'],
+    ['min-height', '100vh'],
+    ['overflow', 'hidden'],
+    ['background-color', 'var(--mx-ui-ink)'],
+  ])
+  declarePalette(root)
+  parent.appendChild(root)
+  return { root, rootHidden: attributeCell(root, 'hidden') }
 }
 
-const createModeButton = (
-  ctx: MountContext,
+const createMenuPanorama = (factory: DomElementFactory, root: DomElement): DomElement => {
+  const panorama = makeElement({ factory, marker: 'menu-panorama', parent: root, tag: 'img' })
+  panorama.setAttribute('src', IMAGE_SOURCE)
+  panorama.setAttribute('alt', '')
+  panorama.setAttribute('aria-hidden', 'true')
+  setStyleProperties(panorama, [
+    ['position', 'absolute'],
+    ['inset', '0'],
+    ['width', '100%'],
+    ['height', '100%'],
+    ['object-fit', 'cover'],
+    ['opacity', '0.82'],
+  ])
+  root.appendChild(panorama)
+  return panorama
+}
+
+const createMenuContent = (factory: DomElementFactory, root: DomElement): DomElement => {
+  const content = makeElement({ factory, marker: 'menu-content', parent: root, tag: 'div' })
+  setStyleProperties(content, [
+    ['position', 'relative'],
+    ['z-index', '1'],
+    ['display', 'grid'],
+    ['justify-items', 'center'],
+    ['gap', '1.5rem'],
+    ['width', 'min(92vw, 38rem)'],
+    ['padding', '2rem'],
+    ['background-color', PALETTE_VAR.scrim],
+  ])
+  root.appendChild(content)
+  return content
+}
+
+const appendMenuTitle = (factory: DomElementFactory, content: DomElement): void => {
+  const title = makeElement({ factory, marker: 'menu-title', parent: content, tag: 'h1' })
+  title.style.setProperty('color', PALETTE_VAR.ink)
+  title.style.setProperty('text-align', 'center')
+  writeLocalizedText(textCell(title), 'menu.brand')
+  content.appendChild(title)
+}
+
+const createMenuScaffold = (
+  factory: DomElementFactory,
   parent: DomElement,
-  bindings: MenuBindings,
-): ModeButtonElements => {
-  const modeButton = createButton(ctx, parent, {
-    localizedKey: 'menu.mode.survival',
-    onClick: () => {
-      bindings.transition(cycleWorldMode(bindings.box.state), modeButton)
-    },
-    role: 'menu-game-mode',
-  })
-  setLocalizedAttribute(modeButton, 'aria-label', 'menu.mode.aria', {
-    mode: { key: 'menu.mode.survival' },
-  })
-  const modeText = textCell(modeButton)
-  modeText.previous = GAME_MODE_LABEL.survival
-  const modeAccessibleName = attributeCell(modeButton, 'aria-label')
-  modeAccessibleName.previous = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.mode.aria', {
-    mode: { key: 'menu.mode.survival' },
-  })
-  return { accessibleName: modeAccessibleName, text: modeText }
+): { readonly root: DomElement; readonly rootHidden: AttributeCell; readonly content: DomElement } => {
+  const { root, rootHidden } = createMenuRoot(factory, parent)
+  createMenuPanorama(factory, root)
+  const content = createMenuContent(factory, root)
+  appendMenuTitle(factory, content)
+  return { content, root, rootHidden }
 }
 
-type MenuSectionContext = {
-  readonly ctx: MountContext
-  readonly parent: DomElement
-  readonly bindings: MenuBindings
-  readonly rootButton: () => DomInteractiveElement
-}
+const createMenuPanels = (factory: DomElementFactory, content: DomElement): MenuPanels => ({
+  'load-world': createMenuPanel({ factory, headingKey: 'menu.panel.single-player', panel: 'load-world', root: content }),
+  'new-world': createMenuPanel({ factory, headingKey: 'menu.panel.new-world', panel: 'new-world', root: content }),
+  root: createMenuPanel({ factory, headingKey: 'menu.panel.root', panel: 'root', root: content }),
+})
 
-const createCancelButton = ({ ctx, parent, bindings, rootButton }: MenuSectionContext): void => {
-  const cancelButton = createButton(ctx, parent, {
-    localizedKey: 'menu.action.cancel',
-    onClick: () => {
-      bindings.transition(
-        backToRoot(bindings.box.state),
-        rootButton(),
-      )
-    },
-    role: 'menu-action',
-  })
-  cancelButton.setAttribute('data-menu-action', 'cancel')
-}
-
-type ConfirmButtonContext = {
-  readonly ctx: MountContext
-  readonly parent: DomElement
-  readonly bindings: MenuBindings
-  readonly defaultWorldName: () => UiMessageText
-}
-
-const createConfirmButton = ({ ctx, parent, bindings, defaultWorldName }: ConfirmButtonContext): void => {
-  const confirmButton = createButton(ctx, parent, {
-    localizedKey: 'menu.action.confirm',
-    onClick: () => {
-      bindings.callbacks.onCreateWorld({
-        mode: bindings.box.state.draft.mode,
-        name: worldNameLabel(bindings.box.state.draft, defaultWorldName()),
-      })
-    },
-    role: 'menu-action',
-  })
-  confirmButton.setAttribute('data-menu-action', 'confirm')
-}
-
-type NewWorldSection = {
-  readonly worldNameInput: DomInputElement
-  readonly modeElements: ModeButtonElements
-}
-
-const createNewWorldSection = ({ ctx, parent, bindings, rootButton }: MenuSectionContext): NewWorldSection => {
-  const worldNameInput = createWorldNameField(ctx, parent, bindings)
-  const modeElements = createModeButton(ctx, parent, bindings)
-  createCancelButton({ bindings, ctx, parent, rootButton })
-  createConfirmButton({
-    bindings,
-    ctx,
-    defaultWorldName: () => translateUiMessage(uiLanguageForElement(worldNameInput), 'menu.world-name.default'),
-    parent,
-  })
-  return { modeElements, worldNameInput }
-}
-
-const createSavedWorldList = (
-  ctx: MountContext,
-  parent: DomElement,
-): { element: DomElement; listState: AttributeCell } => {
-  const savedWorldList = ctx.factory.createElement('div')
-  savedWorldList.setAttribute('data-mx-ui', 'menu-saved-worlds')
-  parent.appendChild(savedWorldList)
-  return { element: savedWorldList, listState: attributeCell(savedWorldList, 'data-region-state') }
-}
-
-const createEmptyNote = (ctx: MountContext, parent: DomElement): AttributeCell => {
-  const emptyNote = ctx.factory.createElement('p')
-  emptyNote.setAttribute('data-mx-ui', 'menu-note')
-  emptyNote.style.setProperty('color', PALETTE_VAR.inkFaint)
-  setLocalizedText(emptyNote, 'menu.worlds.empty')
-  parent.appendChild(emptyNote)
-  return attributeCell(emptyNote, 'hidden')
-}
-
-type LoadWorldSection = {
-  readonly listState: AttributeCell
-  readonly emptyNoteHidden: AttributeCell
-  readonly rows: Map<string, SavedWorldRow>
-  readonly savedWorldList: DomElement
-  readonly firstSavedWorldButton: () => DomInteractiveElement
-  readonly setFirstSavedWorldButton: (button: DomInteractiveElement | null) => void
-}
-
-const createLoadWorldSection = ({ ctx, parent, bindings, rootButton }: MenuSectionContext): LoadWorldSection => {
-  const list = createSavedWorldList(ctx, parent)
-  const emptyNoteHidden = createEmptyNote(ctx, list.element)
-  const rows = new Map<string, SavedWorldRow>()
-
-  const backButton = createButton(ctx, parent, {
-    localizedKey: 'menu.action.back',
-    onClick: () => {
-      bindings.transition(
-        backToRoot(bindings.box.state),
-        rootButton(),
-      )
-    },
-    role: 'menu-action',
-  })
-  backButton.setAttribute('data-menu-action', 'back')
-
-  let firstSavedWorldTarget: DomInteractiveElement = backButton
-  const firstSavedWorldButton = (): DomInteractiveElement => firstSavedWorldTarget
-
-  return {
-    emptyNoteHidden,
-    firstSavedWorldButton,
-    listState: list.listState,
-    rows,
-    savedWorldList: list.element,
-    setFirstSavedWorldButton: (button) => {
-      firstSavedWorldTarget = button ?? backButton
-    },
-  }
-}
-
-type SavedWorldListDeps = {
-  readonly ctx: MountContext
-  readonly parent: DomElement
-  readonly rows: Map<string, SavedWorldRow>
+type BuildRootButtonsOptions = {
+  readonly factory: DomElementFactory
+  readonly panel: DomElement
   readonly callbacks: MainMenuCallbacks
 }
 
-type SavedWorldRowLabels = {
-  readonly name: DomElement
-  readonly sessionId: DomElement
-}
-
-const createSavedWorldRowLabels = (ctx: MountContext, button: DomElement): SavedWorldRowLabels => {
-  const name = ctx.factory.createElement('span')
-  name.setAttribute('data-mx-ui', 'menu-world-name')
-  inheritUiLanguage(button, name)
-  button.appendChild(name)
-  const sessionId = ctx.factory.createElement('span')
-  sessionId.setAttribute('data-mx-ui', 'menu-world-session-id')
-  inheritUiLanguage(button, sessionId)
-  button.appendChild(sessionId)
-  return { name, sessionId }
-}
-
-const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): SavedWorldRow => {
-  let loadWorld = noop
-  const button = createButton(deps.ctx, deps.parent, {
-    onClick: () => loadWorld(),
-    role: 'menu-world-row',
-  })
-  button.setAttribute('data-session-id', world.sessionId)
-  const labels = createSavedWorldRowLabels(deps.ctx, button)
-
-  const row: SavedWorldRow = {
-    accessibleName: attributeCell(button, 'aria-label'),
-    current: world,
-    hidden: attributeCell(button, 'hidden'),
-    name: textCell(labels.name),
-    root: button,
-    sessionId: textCell(labels.sessionId),
+const externalRootCallback = (callbacks: MainMenuCallbacks, entry: RootEntry): (() => void) | null => {
+  if (entry === 'multiplayer') {
+    return callbacks.onOpenMultiplayer ?? null
   }
-  loadWorld = () => deps.callbacks.onLoadWorld(row.current)
-  deps.rows.set(world.sessionId, row)
-  return row
-}
-
-const ensureSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): SavedWorldRow => {
-  const existing = deps.rows.get(world.sessionId)
-  if (existing) {
-    existing.current = world
-    return existing
+  if (entry === 'settings') {
+    return callbacks.onOpenSettings ?? null
   }
-  return createSavedWorldRow(deps, world)
-}
-
-const resolveNewWorldEntryTarget = (
-  entry: RootEntry,
-  worldNameInput: DomInputElement,
-  firstSavedWorldButton: () => DomInteractiveElement,
-): DomInteractiveElement => {
-  if (entry === 'new-world') {
-    return worldNameInput
+  if (entry === 'exit') {
+    return callbacks.onExit ?? null
   }
-  return firstSavedWorldButton()
+  return null
 }
 
-type RootEntryContext = {
-  readonly ctx: MountContext
-  readonly bindings: MenuBindings
-  readonly worldNameInput: DomInputElement
-  readonly firstSavedWorldButton: () => DomInteractiveElement
+type CreateRootEntryButtonOptions = BuildRootButtonsOptions & {
+  readonly entry: RootEntry
+  readonly key: UiMessageKey
 }
 
-const ROOT_ENTRY_MESSAGE_KEY: Readonly<Record<RootEntry, UiMessageKey>> = {
-  'load-world': 'menu.root.load-world',
-  'new-world': 'menu.root.new-world',
-  settings: 'menu.root.settings',
-}
-
-const rootEntryMessageKey = (entry: RootEntry): UiMessageKey => ROOT_ENTRY_MESSAGE_KEY[entry]
-
-const createRootEntryButton = (
-  parent: DomElement,
-  entry: RootEntry,
-  ctx: MountContext,
-): DomInteractiveElement => {
-  const button = createButton(ctx, parent, {
-    localizedKey: rootEntryMessageKey(entry),
-    role: 'menu-entry',
-  })
-  button.setAttribute('data-menu-entry', entry)
+const createRootEntryButton = ({ factory, panel, callbacks, entry, key }: CreateRootEntryButtonOptions): Button => {
+  const button = makeButton({ action: entry, factory, key, marker: 'menu-entry', parent: panel })
+  button.element.setAttribute('data-menu-entry', entry)
+  setStyleProperties(button.element, [
+    ['min-width', 'min(72vw, 20rem)'],
+    ['padding', '0.8rem 1rem'],
+    ['text-align', 'center'],
+  ])
+  localizeButtonAria(button, key)
+  setButtonDisabled(button, entry !== 'single-player' && externalRootCallback(callbacks, entry) === null)
   return button
 }
 
-const createRootEntryButtons = (
-  parent: DomElement,
-  ctx: MountContext,
-): Readonly<Record<RootEntry, DomInteractiveElement>> => {
-  const newWorldButton = createRootEntryButton(parent, 'new-world', ctx)
-  const loadWorldButton = createRootEntryButton(parent, 'load-world', ctx)
-  const settingsButton = createRootEntryButton(parent, 'settings', ctx)
+const buildRootButtons = ({ factory, panel, callbacks }: BuildRootButtonsOptions): Record<RootEntry, Button> => {
+  const singlePlayer = createRootEntryButton({ callbacks, entry: 'single-player', factory, key: 'menu.root.single-player', panel })
+  const multiplayer = createRootEntryButton({ callbacks, entry: 'multiplayer', factory, key: 'menu.root.multiplayer', panel })
+  const settings = createRootEntryButton({ callbacks, entry: 'settings', factory, key: 'menu.root.settings', panel })
+  const exit = createRootEntryButton({ callbacks, entry: 'exit', factory, key: 'menu.root.exit', panel })
+  return { exit, multiplayer, settings, 'single-player': singlePlayer }
+}
 
+const createSeedError = (
+  factory: DomElementFactory,
+  panel: DomElement,
+  seedInput: DomInputElement,
+): { readonly invalid: AttributeCell; readonly hidden: AttributeCell } => {
+  const invalid = attributeCell(seedInput, 'aria-invalid')
+  const error = makeElement({ factory, marker: 'menu-seed-error', parent: panel, tag: 'p' })
+  setLocalizedText(error, 'menu.seed.invalid')
+  error.setAttribute('hidden', '')
+  panel.appendChild(error)
+  const hidden = attributeCell(error, 'hidden')
+  hidden.previous = ''
+  return { hidden, invalid }
+}
+
+const createSeedFields = (factory: DomElementFactory, panel: DomElement): SeedFields => {
+  const worldNameInput = createWorldInput({
+    factory,
+    field: 'world-name',
+    key: 'menu.field.world-name',
+    marker: 'menu-world-name',
+    parent: panel,
+  })
+  const seedInput = createWorldInput({
+    factory,
+    field: 'seed',
+    key: 'menu.field.seed',
+    marker: 'menu-world-seed',
+    parent: panel,
+  })
+  const seed = createSeedError(factory, panel, seedInput)
   return {
-    'load-world': loadWorldButton,
-    'new-world': newWorldButton,
-    settings: settingsButton,
+    seedErrorHidden: seed.hidden,
+    seedInput,
+    seedInvalid: seed.invalid,
+    worldNameInput,
   }
 }
 
-const bindRootEntryButton = (
-  button: DomInteractiveElement,
-  entry: RootEntry,
-  context: RootEntryContext,
-): void => {
-  addManagedListener(context.ctx, button, {
-    handler: () => {
-      if (entry === 'settings') {
-        context.bindings.callbacks.onOpenSettings()
-        return
-      }
-      const target = resolveNewWorldEntryTarget(
-        entry,
-        context.worldNameInput,
-        context.firstSavedWorldButton,
-      )
-      context.bindings.transition(openPanel(context.bindings.box.state, entry), target)
-    },
-    type: 'click',
-  })
+const appendFieldHeading = (factory: DomElementFactory, panel: DomElement, field: MenuField): DomElement => {
+  const heading = makeElement({ factory, marker: 'menu-field-label', parent: panel, tag: 'p' })
+  heading.setAttribute('data-menu-field', field)
+  if (field === 'world-type') {
+    setLocalizedText(heading, FIELD_MESSAGE_KEY[field], { type: '' })
+  } else {
+    setLocalizedText(heading, FIELD_MESSAGE_KEY[field])
+  }
+  panel.appendChild(heading)
+  return heading
 }
 
-const bindRootEntryButtons = (
-  buttons: Readonly<Record<RootEntry, DomInteractiveElement>>,
-  context: RootEntryContext,
-): void => {
-  bindRootEntryButton(buttons['new-world'], 'new-world', context)
-  bindRootEntryButton(buttons['load-world'], 'load-world', context)
-  bindRootEntryButton(buttons.settings, 'settings', context)
+type CreateChoiceControlOptions = {
+  readonly factory: DomElementFactory
+  readonly panel: DomElement
+  readonly field: MenuField
+  readonly marker: string
+  readonly action: string
+  readonly key: UiMessageKey
 }
 
-const applyModelState = (box: MenuStateBox, model: MainMenuViewModel): void => {
-  box.state = modelState(model)
-  box.savedWorlds = model.savedWorlds
+const createChoiceControl = ({ factory, panel, field, marker, action, key }: CreateChoiceControlOptions): {
+  readonly button: Button
+  readonly accessibleName: AttributeCell
+} => {
+  appendFieldHeading(factory, panel, field)
+  const button = makeButton({ action, factory, key, marker, parent: panel })
+  return { accessibleName: attributeCell(button.element, 'aria-label'), button }
 }
 
-const applyPanelVisibility = (
-  panels: Record<MenuPanel, PanelElement>,
-  model: MainMenuViewModel,
-): void => {
-  for (const panel of Object.values(panels)) {
-    writeHidden(panel.hidden, panel.panel !== model.panel)
+const createWorldTypeControl = (factory: DomElementFactory, panel: DomElement): Pick<WorldForm, 'worldTypeLabelHidden' | 'worldTypeButton' | 'worldTypeButtonHidden' | 'worldTypeOptionsStatus'> => {
+  const label = appendFieldHeading(factory, panel, 'world-type')
+  const button = makeButton({ action: 'world-type', factory, key: 'menu.field.world-type', marker: 'menu-world-type', parent: panel })
+  writeLocalizedText(button.label, 'menu.field.world-type', { type: '' })
+  const labelHidden = attributeCell(label, 'hidden')
+  labelHidden.previous = ''
+  writeHidden(labelHidden, true)
+  button.hidden.previous = ''
+  writeHidden(button.hidden, true)
+  return {
+    worldTypeButton: button,
+    worldTypeButtonHidden: button.hidden,
+    worldTypeLabelHidden: labelHidden,
+    worldTypeOptionsStatus: attributeCell(button.element, 'data-world-type-options'),
   }
 }
 
-const applyNewWorldSection = (newWorld: NewWorldSection, model: MainMenuViewModel): void => {
-  if (newWorld.worldNameInput.value !== model.worldNameInput) {
-    newWorld.worldNameInput.value = model.worldNameInput
+type BuildWorldFormOptions = {
+  readonly factory: DomElementFactory
+  readonly panel: DomElement
+}
+
+const buildWorldForm = ({ factory, panel }: BuildWorldFormOptions): WorldForm => {
+  const fields = createSeedFields(factory, panel)
+  const gameMode = createChoiceControl({ action: 'mode', factory, field: 'game-mode', key: 'menu.mode.survival', marker: 'menu-game-mode', panel })
+  const difficulty = createChoiceControl({ action: 'difficulty', factory, field: 'difficulty', key: 'settings.choice.difficulty.normal', marker: 'menu-difficulty', panel })
+  const worldType = createWorldTypeControl(factory, panel)
+  const backButton = makeButton({ action: 'back', factory, key: MENU_ACTION_KEY.back, marker: 'menu-back-worlds', parent: panel })
+  const createButton = makeButton({ action: 'confirm', factory, key: MENU_ACTION_KEY.create, marker: 'menu-create-world', parent: panel })
+  setButtonDisabled(createButton, true)
+  return {
+    ...fields,
+    backButton,
+    createButton,
+    difficultyAccessibleName: difficulty.accessibleName,
+    difficultyButton: difficulty.button,
+    gameModeAccessibleName: gameMode.accessibleName,
+    gameModeButton: gameMode.button,
+    ...worldType,
   }
-  writeLocalizedText(newWorld.modeElements.text, modeMessageKey(model.mode))
-  writeLocalizedAttribute(newWorld.modeElements.accessibleName, 'menu.mode.aria', {
-    mode: { key: modeMessageKey(model.mode) },
-  })
 }
 
-const applySavedWorldRow = (row: SavedWorldRow, world: SavedWorld): void => {
-  writeHidden(row.hidden, false)
-  writeText(row.name, world.name)
-  writeText(row.sessionId, world.sessionId)
-  writeLocalizedAttribute(row.accessibleName, 'menu.world-row.aria', {
-    name: world.name,
-    sessionId: world.sessionId,
-  })
+type BuildWorldListOptions = {
+  readonly factory: DomElementFactory
+  readonly panel: DomElement
 }
 
-const hideStaleSavedWorldRows = (
-  rows: Map<string, SavedWorldRow>,
-  visibleSessionIds: ReadonlySet<string>,
+const createEmptySaveNote = (factory: DomElementFactory, panel: DomElement): AttributeCell => {
+  const emptyNote = makeElement({ factory, marker: 'menu-note', parent: panel, tag: 'p' })
+  setLocalizedText(emptyNote, 'menu.worlds.empty')
+  panel.appendChild(emptyNote)
+  const hidden = attributeCell(emptyNote, 'hidden')
+  hidden.previous = ''
+  return hidden
+}
+
+const createUnreadableSummary = (factory: DomElementFactory, panel: DomElement): { readonly text: TextCell; readonly hidden: AttributeCell } => {
+  const summary = makeElement({ factory, marker: 'menu-unreadable-summary', parent: panel, tag: 'p' })
+  panel.appendChild(summary)
+  const hidden = attributeCell(summary, 'hidden')
+  hidden.previous = ''
+  return { hidden, text: textCell(summary) }
+}
+
+const createUnreadableList = (factory: DomElementFactory, panel: DomElement): DomElement => {
+  const list = makeElement({ factory, marker: 'menu-unreadable-list', parent: panel, tag: 'div' })
+  panel.appendChild(list)
+  return list
+}
+
+const buildWorldList = ({ factory, panel }: BuildWorldListOptions): WorldList => {
+  const createWorldButton = makeButton({ action: 'new-world', factory, key: 'menu.root.new-world', marker: 'menu-new-world', parent: panel })
+  localizeButtonAria(createWorldButton, 'menu.root.new-world')
+  const emptyNoteHidden = createEmptySaveNote(factory, panel)
+  const worldList = makeElement({ factory, marker: 'menu-world-list', parent: panel, tag: 'div' })
+  panel.appendChild(worldList)
+  const summary = createUnreadableSummary(factory, panel)
+  const unreadableList = createUnreadableList(factory, panel)
+  const backButton = makeButton({ action: 'back', factory, key: MENU_ACTION_KEY.back, marker: 'menu-back', parent: panel })
+  return {
+    backButton,
+    createWorldButton,
+    emptyNoteHidden,
+    unreadableList,
+    unreadableSummaryHidden: summary.hidden,
+    unreadableSummaryText: summary.text,
+    worldList,
+  }
+}
+
+type BuildMenuElementsOptions = {
+  readonly factory: DomElementFactory
+  readonly parent: DomElement
+  readonly callbacks: MainMenuCallbacks
+}
+
+const buildMenuElements = ({ factory, parent, callbacks }: BuildMenuElementsOptions): MainMenuElements => {
+  const scaffold = createMenuScaffold(factory, parent)
+  const panelRoots = createMenuPanels(factory, scaffold.content)
+  const rootButtons = buildRootButtons({ callbacks, factory, panel: panelRoots.root.element })
+  const form = buildWorldForm({ factory, panel: panelRoots['new-world'].element })
+  const worldList = buildWorldList({ factory, panel: panelRoots['load-world'].element })
+  return { form, panelRoots, root: scaffold.root, rootButtons, rootHidden: scaffold.rootHidden, worldList }
+}
+
+const createRuntime = (): MainMenuRuntime => ({
+  model: mainMenuViewModel(initialMainMenuState),
+  pendingDelete: null,
+  savedRows: new Map(),
+  state: initialMainMenuState,
+  unreadableRows: new Map(),
+})
+
+type MainMenuButtonFailure = { readonly _tag: 'MissingMainMenuButton'; readonly entry: string }
+
+export const requireRootButton = <Entry extends string, ButtonElement>(
+  buttons: Readonly<Record<Entry, ButtonElement>>,
+  entry: Entry,
+): Result.Result<ButtonElement, MainMenuButtonFailure> => {
+  const button = buttons[entry]
+  if (typeof button === 'undefined') {
+    return Result.fail({ _tag: 'MissingMainMenuButton', entry })
+  }
+  return Result.succeed(button)
+}
+
+const focusForPanel = (
+  dom: MainMenuElements,
+  panel: MenuPanel,
+): Result.Result<DomInteractiveElement, MainMenuButtonFailure> => {
+  if (panel === 'root') {
+    return Result.map(requireRootButton(dom.rootButtons, 'single-player'), (button) => button.element)
+  }
+  if (panel === 'new-world') {
+    return Result.succeed(dom.form.worldNameInput)
+  }
+  return Result.succeed(dom.worldList.createWorldButton.element)
+}
+
+const stateFromModel = (model: MainMenuViewModel): MainMenuState => ({
+  draft: {
+    difficulty: model.difficulty,
+    mode: model.mode,
+    name: model.worldNameInput,
+    seed: model.seedInput,
+    worldType: model.worldType,
+  },
+  panel: model.panel,
+})
+
+const modeMessageKey = (mode: GameMode): UiMessageKey => {
+  if (mode === 'survival') {
+    return 'menu.mode.survival'
+  }
+  return 'menu.mode.creative'
+}
+
+const difficultyMessageKey = (difficulty: GameDifficulty): UiMessageKey => `settings.choice.difficulty.${difficulty}`
+
+const renderInputValue = (input: DomInputElement, value: string): void => {
+  if (input.value !== value) {
+    input.value = value
+  }
+}
+
+const renderWorldType = (form: WorldForm, model: MainMenuViewModel): void => {
+  const selected = model.worldTypes.find((option) => option.value === model.worldType)
+  if (typeof selected === 'undefined') {
+    writeLocalizedText(form.worldTypeButton.label, 'menu.field.world-type', { type: '' })
+    writeHidden(form.worldTypeLabelHidden, true)
+    writeHidden(form.worldTypeButtonHidden, true)
+    return
+  }
+  writeLocalizedTextUsing(form.worldTypeButton.label, (language: UiLanguage) =>
+    translateUiMessage(language, 'menu.field.world-type', { type: selected.label[language] }),
+  )
+  writeHidden(form.worldTypeLabelHidden, false)
+  writeHidden(form.worldTypeButtonHidden, false)
+  setButtonDisabled(form.worldTypeButton, false)
+}
+
+const renderWorldChoices = (form: WorldForm, model: MainMenuViewModel): void => {
+  const modeKey = modeMessageKey(model.mode)
+  const difficultyKey = difficultyMessageKey(model.difficulty)
+  writeLocalizedText(form.gameModeButton.label, modeKey)
+  writeLocalizedText(form.difficultyButton.label, difficultyKey)
+  writeLocalizedAttribute(form.gameModeAccessibleName, 'menu.mode.aria', { mode: { key: modeKey } })
+  writeLocalizedAttribute(form.difficultyAccessibleName, 'settings.choice-aria', {
+    choice: { key: difficultyKey },
+    setting: { key: 'menu.field.difficulty' },
+  })
+  renderWorldType(form, model)
+}
+
+const renderExternalActionAvailability = (context: MainMenuRenderContext): void => {
+  setButtonDisabled(context.dom.rootButtons.multiplayer, typeof context.callbacks.onOpenMultiplayer !== 'function')
+  setButtonDisabled(context.dom.rootButtons.settings, typeof context.callbacks.onOpenSettings !== 'function')
+  setButtonDisabled(context.dom.rootButtons.exit, typeof context.callbacks.onExit !== 'function')
+}
+
+const renderSaveListSummary = (context: MainMenuRenderContext, model: MainMenuViewModel): void => {
+  writeHidden(context.dom.worldList.emptyNoteHidden, model.savedWorlds.length !== EMPTY_COUNT)
+  writeLocalizedText(context.dom.worldList.unreadableSummaryText, 'menu.worlds.unreadable', {
+    count: String(model.unreadableSaves.length),
+  })
+  writeHidden(context.dom.worldList.unreadableSummaryHidden, model.unreadableSaves.length === EMPTY_COUNT)
+}
+
+const renderMenuAvailability = (context: MainMenuRenderContext, model: MainMenuViewModel): void => {
+  let optionsStatus = 'available'
+  if (model.worldTypes.length === EMPTY_COUNT) {
+    optionsStatus = 'empty'
+  }
+  writeAttribute(context.dom.form.worldTypeOptionsStatus, optionsStatus)
+  setButtonDisabled(context.dom.form.createButton, typeof context.callbacks.onCreateWorld !== 'function')
+  renderExternalActionAvailability(context)
+  renderSaveListSummary(context, model)
+}
+
+const renderWorldForm = (context: MainMenuRenderContext, model: MainMenuViewModel): void => {
+  const { form } = context.dom
+  renderInputValue(form.worldNameInput, model.worldNameInput)
+  renderInputValue(form.seedInput, model.seedInput)
+  renderWorldChoices(form, model)
+  renderMenuAvailability(context, model)
+}
+
+const pendingEntityKey = (pending: string | null, kind: 'world' | 'unreadable'): string | null => {
+  if (pending === null) {
+    return null
+  }
+  const waitingPrefix = `waiting:${kind}:`
+  if (pending.startsWith(waitingPrefix)) {
+    return pending.slice(waitingPrefix.length)
+  }
+  const activePrefix = `${kind}:`
+  if (pending.startsWith(activePrefix)) {
+    return pending.slice(activePrefix.length)
+  }
+  return null
+}
+
+const clearMissingPendingEntity = (
+  runtime: MainMenuRuntime,
+  keys: ReadonlySet<string>,
+  kind: 'world' | 'unreadable',
 ): void => {
-  for (const [sessionId, row] of rows) {
-    if (!visibleSessionIds.has(sessionId)) {
-      writeHidden(row.hidden, true)
+  const pending = pendingEntityKey(runtime.pendingDelete, kind)
+  if (pending !== null && !keys.has(pending)) {
+    runtime.pendingDelete = null
+  }
+}
+
+const renderSavedWorldButtonAvailability = (context: MainMenuRenderContext, row: SavedWorldRow, waiting: boolean): void => {
+  setButtonDisabled(row.load, typeof context.callbacks.onLoadWorld !== 'function' || waiting)
+  setButtonDisabled(row.delete, typeof context.callbacks.onDeleteWorld !== 'function' || waiting)
+  setButtonDisabled(row.export, typeof context.callbacks.onExportWorld !== 'function' || waiting)
+  setButtonDisabled(row.confirm, typeof context.callbacks.onDeleteWorld !== 'function' || waiting)
+}
+
+const renderSavedWorldButtonVisibility = (row: SavedWorldRow, confirming: boolean, waiting: boolean): void => {
+  setButtonHidden(row.delete, confirming || waiting)
+  setButtonHidden(row.confirm, !confirming && !waiting)
+  setButtonHidden(row.cancel, !confirming || waiting)
+  setButtonHidden(row.export, confirming || waiting)
+}
+
+const renderSavedWorldRowButtons = (context: MainMenuRenderContext, row: SavedWorldRow, key: string): void => {
+  const confirming = context.runtime.pendingDelete === key
+  const waiting = context.runtime.pendingDelete === `waiting:${key}`
+  renderSavedWorldButtonAvailability(context, row, waiting)
+  renderSavedWorldButtonVisibility(row, confirming, waiting)
+}
+
+const hideRemovedSavedWorldRows = (runtime: MainMenuRuntime, ids: ReadonlySet<string>): void => {
+  for (const [sessionId, row] of runtime.savedRows) {
+    if (!ids.has(sessionId)) {
+      writeHidden(row.rootHidden, true)
     }
   }
 }
 
-const syncSavedWorldRows = (
-  listDeps: SavedWorldListDeps,
-  savedWorlds: ReadonlyArray<SavedWorld>,
-  setFirstSavedWorldButton: (button: DomInteractiveElement | null) => void,
+const renderUnreadableRowButtons = (
+  context: MainMenuRenderContext,
+  row: UnreadableSaveRow,
+  key: string,
 ): void => {
-  const visibleSessionIds = new Set(savedWorlds.map((world) => world.sessionId))
-  let firstRow: SavedWorldRow | null = null
-  for (const world of savedWorlds) {
-    const row = ensureSavedWorldRow(listDeps, world)
-    if (firstRow === null) {
-      firstRow = row
+  const isConfirming = context.runtime.pendingDelete === key
+  const isWaiting = context.runtime.pendingDelete === `waiting:${key}`
+  const unavailable = typeof context.callbacks.onDeleteUnreadableSave !== 'function' || isWaiting
+  setButtonDisabled(row.delete, unavailable)
+  setButtonDisabled(row.confirm, unavailable)
+  setButtonHidden(row.delete, isConfirming || isWaiting)
+  setButtonHidden(row.confirm, !isConfirming && !isWaiting)
+  setButtonHidden(row.cancel, !isConfirming || isWaiting)
+}
+
+const hideRemovedUnreadableRows = (runtime: MainMenuRuntime, keys: ReadonlySet<string>): void => {
+  for (const [key, row] of runtime.unreadableRows) {
+    if (!keys.has(key)) {
+      writeHidden(row.rootHidden, true)
     }
-    applySavedWorldRow(row, world)
   }
-  setFirstSavedWorldButton(firstRow?.root ?? null)
-  hideStaleSavedWorldRows(listDeps.rows, visibleSessionIds)
 }
 
-type RenderContext = {
-  readonly box: MenuStateBox
-  readonly listDeps: SavedWorldListDeps
-  readonly loadWorld: LoadWorldSection
-  readonly newWorld: NewWorldSection
-  readonly panelFlag: AttributeCell
-  readonly panels: Record<MenuPanel, PanelElement>
+type SavedWorldButtons = {
+  readonly load: Button
+  readonly loadAccessibleName: AttributeCell
+  readonly remove: Button
+  readonly exportButton: Button
+  readonly confirm: Button
+  readonly cancel: Button
 }
 
-const createRenderModel =
-  (context: RenderContext) =>
-  (model: MainMenuViewModel): void => {
-    applyModelState(context.box, model)
-    writeAttribute(context.panelFlag, model.panel)
-    applyPanelVisibility(context.panels, model)
-    applyNewWorldSection(context.newWorld, model)
-    writeAttribute(context.loadWorld.listState, savedWorldListState(model.savedWorlds.length))
-    writeHidden(context.loadWorld.emptyNoteHidden, model.savedWorlds.length !== ZERO)
-    syncSavedWorldRows(
-      context.listDeps,
-      model.savedWorlds,
-      context.loadWorld.setFirstSavedWorldButton,
-    )
+const createSavedWorldButtons = (factory: DomElementFactory, parent: DomElement): SavedWorldButtons => {
+  const load = makeButton({ action: 'load', factory, key: 'menu.world-row.aria', marker: 'menu-world-row', parent })
+  const loadAccessibleName = attributeCell(load.element, 'aria-label')
+  const remove = makeButton({ action: 'delete', factory, key: MENU_ACTION_KEY.delete, marker: 'menu-world-delete', parent })
+  const exportButton = makeButton({ action: 'export', factory, key: MENU_ACTION_KEY.export, marker: 'menu-world-export', parent })
+  const confirm = makeButton({ action: 'confirm-delete', factory, key: MENU_ACTION_KEY.confirm, marker: 'menu-world-delete-confirm', parent })
+  const cancel = makeButton({ action: 'cancel-delete', factory, key: MENU_ACTION_KEY.cancel, marker: 'menu-world-delete-cancel', parent })
+  return { cancel, confirm, exportButton, load, loadAccessibleName, remove }
+}
+
+const showSavedWorldDeleteConfirmation = (context: MainMenuRenderContext, row: SavedWorldRow): void => {
+  const key = `world:${row.world.sessionId}`
+  context.runtime.pendingDelete = key
+  renderSavedWorldRowButtons(context, row, key)
+}
+
+const confirmSavedWorldDeletion = (context: MainMenuRenderContext, row: SavedWorldRow): void => {
+  const key = `world:${row.world.sessionId}`
+  if (context.runtime.pendingDelete !== key || typeof context.callbacks.onDeleteWorld !== 'function') {
+    return
   }
+  context.callbacks.onDeleteWorld(row.world)
+  context.runtime.pendingDelete = `waiting:${key}`
+  renderSavedWorldRowButtons(context, row, key)
+}
 
-export const requireRootButton = (
-  buttons: Readonly<Record<RootEntry, DomInteractiveElement>>,
-  entry: RootEntry,
-): DomInteractiveElement => buttons[entry]
+const cancelSavedWorldDeletion = (context: MainMenuRenderContext, row: SavedWorldRow): void => {
+  const key = `world:${row.world.sessionId}`
+  if (context.runtime.pendingDelete === key) {
+    context.runtime.pendingDelete = null
+  }
+  renderSavedWorldRowButtons(context, row, key)
+}
 
-const assembleMainMenu = (
-  ctx: MountContext,
-  shell: MainMenuShell,
-  callbacks: MainMenuCallbacks,
-): ((model: MainMenuViewModel) => void) => {
-  const box: MenuStateBox = { savedWorlds: [], state: initialMainMenuState }
-  let transitionRef: MenuTransition = noop
-  const bindings: MenuBindings = {
-    box,
-    callbacks,
-    transition: (next, target) => {
-      transitionRef(next, target)
+const bindSavedWorldRow = (context: MainMenuRenderContext, row: SavedWorldRow): void => {
+  bindButton(context, row.load, () => context.callbacks.onLoadWorld?.(row.world))
+  bindButton(context, row.export, () => context.callbacks.onExportWorld?.(row.world))
+  bindButton(context, row.delete, () => showSavedWorldDeleteConfirmation(context, row))
+  bindButton(context, row.confirm, () => confirmSavedWorldDeletion(context, row))
+  bindButton(context, row.cancel, () => cancelSavedWorldDeletion(context, row))
+}
+
+const createSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld): SavedWorldRow => {
+  const { dom } = context
+  const root = makeElement({ factory: context.factory, marker: 'menu-world-row-container', parent: dom.root, tag: 'article' })
+  root.setAttribute('data-session-id', world.sessionId)
+  const buttons = createSavedWorldButtons(context.factory, root)
+  buttons.load.element.setAttribute('data-session-id', world.sessionId)
+  dom.worldList.worldList.appendChild(root)
+  const row: SavedWorldRow = {
+    cancel: buttons.cancel,
+    confirm: buttons.confirm,
+    delete: buttons.remove,
+    export: buttons.exportButton,
+    load: buttons.load,
+    loadAccessibleName: buttons.loadAccessibleName,
+    root,
+    rootHidden: attributeCell(root, 'hidden'),
+    world,
+  }
+  context.runtime.savedRows.set(world.sessionId, row)
+  bindSavedWorldRow(context, row)
+  return row
+}
+
+const ensureSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld): SavedWorldRow => {
+  const existing = context.runtime.savedRows.get(world.sessionId)
+  if (typeof existing !== 'undefined') {
+    existing.world = world
+    return existing
+  }
+  return createSavedWorldRow(context, world)
+}
+
+const renderSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld): void => {
+  const row = ensureSavedWorldRow(context, world)
+  writeHidden(row.rootHidden, false)
+  writeLocalizedText(row.load.label, 'menu.world-row.aria', { name: world.name, sessionId: world.sessionId })
+  writeLocalizedAttribute(row.loadAccessibleName, 'menu.world-row.aria', { name: world.name, sessionId: world.sessionId })
+  renderSavedWorldRowButtons(context, row, `world:${world.sessionId}`)
+}
+
+const renderSavedWorlds = (context: MainMenuRenderContext, worlds: ReadonlyArray<SavedWorld>): void => {
+  const ids = new Set(worlds.map((world) => world.sessionId))
+  clearMissingPendingEntity(context.runtime, ids, 'world')
+  for (const world of worlds) {
+    renderSavedWorldRow(context, world)
+  }
+  hideRemovedSavedWorldRows(context.runtime, ids)
+}
+
+type UnreadableSaveButtons = {
+  readonly deleteButton: Button
+  readonly confirm: Button
+  readonly cancel: Button
+}
+
+const createUnreadableSaveButtons = (factory: DomElementFactory, parent: DomElement): UnreadableSaveButtons => ({
+  cancel: makeButton({ action: 'cancel-delete-unreadable', factory, key: MENU_ACTION_KEY.cancel, marker: 'menu-unreadable-delete-cancel', parent }),
+  confirm: makeButton({ action: 'confirm-delete-unreadable', factory, key: MENU_ACTION_KEY.confirm, marker: 'menu-unreadable-delete-confirm', parent }),
+  deleteButton: makeButton({ action: 'delete-unreadable', factory, key: MENU_ACTION_KEY.delete, marker: 'menu-unreadable-delete', parent }),
+})
+
+const showUnreadableDeleteConfirmation = (context: MainMenuRenderContext, row: UnreadableSaveRow): void => {
+  const key = `unreadable:${row.save.key}`
+  context.runtime.pendingDelete = key
+  renderUnreadableRowButtons(context, row, key)
+}
+
+const confirmUnreadableDeletion = (context: MainMenuRenderContext, row: UnreadableSaveRow): void => {
+  const key = `unreadable:${row.save.key}`
+  if (context.runtime.pendingDelete !== key || typeof context.callbacks.onDeleteUnreadableSave !== 'function') {
+    return
+  }
+  context.callbacks.onDeleteUnreadableSave(row.save)
+  context.runtime.pendingDelete = `waiting:${key}`
+  renderUnreadableRowButtons(context, row, key)
+}
+
+const cancelUnreadableDeletion = (context: MainMenuRenderContext, row: UnreadableSaveRow): void => {
+  const key = `unreadable:${row.save.key}`
+  if (context.runtime.pendingDelete === key) {
+    context.runtime.pendingDelete = null
+  }
+  renderUnreadableRowButtons(context, row, key)
+}
+
+const bindUnreadableSaveRow = (context: MainMenuRenderContext, row: UnreadableSaveRow): void => {
+  bindButton(context, row.delete, () => showUnreadableDeleteConfirmation(context, row))
+  bindButton(context, row.confirm, () => confirmUnreadableDeletion(context, row))
+  bindButton(context, row.cancel, () => cancelUnreadableDeletion(context, row))
+}
+
+type UnreadableSaveRowElements = { readonly root: DomElement; readonly detail: DomElement }
+
+const createUnreadableSaveRowElements = (context: MainMenuRenderContext, save: UnreadableSave): UnreadableSaveRowElements => {
+  const { dom } = context
+  const root = makeElement({ factory: context.factory, marker: 'menu-unreadable-row', parent: dom.root, tag: 'article' })
+  root.setAttribute('data-save-key', save.key)
+  const detail = makeElement({ factory: context.factory, marker: 'menu-unreadable-detail', parent: dom.root, tag: 'p' })
+  return { detail, root }
+}
+
+const createUnreadableSaveRow = (context: MainMenuRenderContext, save: UnreadableSave): UnreadableSaveRow => {
+  const { detail, root } = createUnreadableSaveRowElements(context, save)
+  const buttons = createUnreadableSaveButtons(context.factory, root)
+  root.appendChild(detail)
+  context.dom.worldList.unreadableList.appendChild(root)
+  const row: UnreadableSaveRow = {
+    cancel: buttons.cancel,
+    confirm: buttons.confirm,
+    delete: buttons.deleteButton,
+    detail: textCell(detail),
+    root,
+    rootHidden: attributeCell(root, 'hidden'),
+    save,
+  }
+  context.runtime.unreadableRows.set(save.key, row)
+  bindUnreadableSaveRow(context, row)
+  return row
+}
+
+const ensureUnreadableRow = (context: MainMenuRenderContext, save: UnreadableSave): UnreadableSaveRow => {
+  const existing = context.runtime.unreadableRows.get(save.key)
+  if (typeof existing !== 'undefined') {
+    existing.save = save
+    return existing
+  }
+  return createUnreadableSaveRow(context, save)
+}
+
+const renderUnreadableRow = (context: MainMenuRenderContext, save: UnreadableSave): void => {
+  const row = ensureUnreadableRow(context, save)
+  writeHidden(row.rootHidden, false)
+  writeText(row.detail, `${save.key} · ${save.format} ${String(save.version)} · ${save.reason}`)
+  renderUnreadableRowButtons(context, row, `unreadable:${save.key}`)
+}
+
+const renderUnreadableSaves = (context: MainMenuRenderContext, saves: ReadonlyArray<UnreadableSave>): void => {
+  const keys = new Set(saves.map((save) => save.key))
+  clearMissingPendingEntity(context.runtime, keys, 'unreadable')
+  for (const save of saves) {
+    renderUnreadableRow(context, save)
+  }
+  hideRemovedUnreadableRows(context.runtime, keys)
+}
+
+const renderPanelVisibility = (dom: MainMenuElements, panel: MenuPanel): void => {
+  for (const key of ['root', 'load-world', 'new-world'] as const) {
+    writeHidden(dom.panelRoots[key].hidden, panel !== key)
+  }
+}
+
+const renderMainMenu = (context: MainMenuRenderContext, model: MainMenuViewModel): void => {
+  context.runtime.model = model
+  context.runtime.state = stateFromModel(model)
+  renderPanelVisibility(context.dom, model.panel)
+  renderWorldForm(context, model)
+  renderSavedWorlds(context, model.savedWorlds)
+  renderUnreadableSaves(context, model.unreadableSaves)
+}
+
+const updateMainMenuState = (context: MainMenuRenderContext, nextState: MainMenuState): void => {
+  context.runtime.state = nextState
+  context.runtime.model = mainMenuViewModel(
+    nextState,
+    context.runtime.model.savedWorlds,
+    context.runtime.model.worldTypes,
+    context.runtime.model.unreadableSaves,
+  )
+  context.callbacks.onStateChange?.(nextState)
+  renderMainMenu(context, context.runtime.model)
+}
+
+const transitionMainMenuPanel = (
+  context: MainMenuRenderContext,
+  panel: MenuPanel,
+  focusTarget?: DomInteractiveElement,
+): void => {
+  updateMainMenuState(context, openPanel(context.runtime.state, panel))
+  let target = focusTarget
+  if (typeof target === 'undefined') {
+    const focusResult = focusForPanel(context.dom, panel)
+    if (Result.isFailure(focusResult)) {
+      return
+    }
+    target = focusResult.success
+  }
+  target.focus()
+}
+
+const readWorldSeed = (context: MainMenuRenderContext): CreateWorldRequest['seed'] | null => {
+  const seed = parseWorldSeed(context.dom.form.seedInput.value)
+  if (Result.isFailure(seed)) {
+    writeAttribute(context.dom.form.seedInvalid, 'true')
+    writeHidden(context.dom.form.seedErrorHidden, false)
+    return null
+  }
+  writeAttribute(context.dom.form.seedInvalid)
+  writeHidden(context.dom.form.seedErrorHidden, true)
+  return seed.success
+}
+
+type WorldTypeSelection =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'selected'; readonly value: string }
+  | { readonly kind: 'unavailable' }
+
+const selectedWorldTypeForRequest = (model: MainMenuViewModel): WorldTypeSelection => {
+  const selected = model.worldTypes.find((option) => option.value === model.worldType)
+  if (typeof selected !== 'undefined') {
+    return { kind: 'selected', value: selected.value }
+  }
+  if (model.worldTypes.length === EMPTY_COUNT) {
+    return { kind: 'none' }
+  }
+  return { kind: 'unavailable' }
+}
+
+const buildCreateWorldRequest = (
+  context: MainMenuRenderContext,
+  seed: CreateWorldRequest['seed'],
+  worldType: string | null,
+): CreateWorldRequest => {
+  const request: CreateWorldRequest = {
+    difficulty: context.runtime.state.draft.difficulty,
+    mode: context.runtime.state.draft.mode,
+    name: worldNameLabel(
+      context.runtime.state.draft,
+      translateUiMessage(uiLanguageForElement(context.dom.root), 'menu.world-name.default'),
+    ),
+    seed,
+  }
+  if (worldType === null) {
+    return request
+  }
+  return { ...request, worldType }
+}
+
+const dispatchWorldCreation = (
+  context: MainMenuRenderContext,
+  onCreateWorld: (request: CreateWorldRequest) => void,
+  seed: CreateWorldRequest['seed'],
+): void => {
+  const selectedWorldType = selectedWorldTypeForRequest(context.runtime.model)
+  if (selectedWorldType.kind === 'unavailable') {
+    return
+  }
+  let worldType: string | null = null
+  if (selectedWorldType.kind === 'selected') {
+    worldType = selectedWorldType.value
+  }
+  onCreateWorld(buildCreateWorldRequest(context, seed, worldType))
+}
+
+const submitWorldCreation = (context: MainMenuRenderContext): void => {
+  const { onCreateWorld } = context.callbacks
+  if (typeof onCreateWorld !== 'function') {
+    return
+  }
+  const seed = readWorldSeed(context)
+  if (seed === null) {
+    return
+  }
+  dispatchWorldCreation(context, onCreateWorld, seed)
+}
+
+const bindRootActions = (context: MainMenuRenderContext): void => {
+  bindButton(context, context.dom.rootButtons['single-player'], () => transitionMainMenuPanel(context, 'load-world'))
+  const multiplayer = context.callbacks.onOpenMultiplayer
+  if (typeof multiplayer === 'function') {
+    bindButton(context, context.dom.rootButtons.multiplayer, multiplayer)
+  }
+  const settings = context.callbacks.onOpenSettings
+  if (typeof settings === 'function') {
+    bindButton(context, context.dom.rootButtons.settings, settings)
+  }
+  const exit = context.callbacks.onExit
+  if (typeof exit === 'function') {
+    bindButton(context, context.dom.rootButtons.exit, exit)
+  }
+}
+
+const cycleDifficulty = (context: MainMenuRenderContext): void => {
+  const index = DIFFICULTIES.indexOf(context.runtime.state.draft.difficulty)
+  const next = DIFFICULTIES[(index + NEXT_INDEX) % DIFFICULTIES.length]
+  if (typeof next !== 'undefined') {
+    updateMainMenuState(context, setWorldDifficulty(context.runtime.state, next))
+  }
+}
+
+const cycleWorldType = (context: MainMenuRenderContext): void => {
+  const options = context.runtime.model.worldTypes
+  if (options.length === EMPTY_COUNT) {
+    return
+  }
+  const currentIndex = options.findIndex((option) => option.value === context.runtime.model.worldType)
+  const next = options[(currentIndex + NEXT_INDEX) % options.length]
+  if (typeof next !== 'undefined') {
+    updateMainMenuState(context, setWorldType(context.runtime.state, next.value))
+  }
+}
+
+const bindWorldFormActions = (context: MainMenuRenderContext): void => {
+  const { form } = context.dom
+  bindButton(context, form.gameModeButton, () => updateMainMenuState(context, cycleWorldMode(context.runtime.state)))
+  bindButton(context, form.difficultyButton, () => cycleDifficulty(context))
+  bindButton(context, form.worldTypeButton, () => cycleWorldType(context))
+  bindButton(context, form.backButton, () => transitionMainMenuPanel(context, 'load-world'))
+  bindButton(context, form.createButton, () => submitWorldCreation(context))
+  bindListener({
+    context,
+    element: form.worldNameInput,
+    listener: () => updateMainMenuState(context, nameWorld(context.runtime.state, form.worldNameInput.value)),
+    type: 'input',
+  })
+  bindListener({
+    context,
+    element: form.seedInput,
+    listener: () => {
+    writeAttribute(form.seedInvalid)
+    writeHidden(form.seedErrorHidden, true)
+    updateMainMenuState(context, seedWorld(context.runtime.state, form.seedInput.value))
     },
-  }
-  const rootButtons = createRootEntryButtons(shell.panels.root.root, ctx)
-
-  const newWorld = createNewWorldSection(
-    { bindings, ctx, parent: shell.panels['new-world'].root, rootButton: () => requireRootButton(rootButtons, 'new-world') },
-  )
-  const loadWorld = createLoadWorldSection(
-    { bindings, ctx, parent: shell.panels['load-world'].root, rootButton: () => requireRootButton(rootButtons, 'load-world') },
-  )
-
-  bindRootEntryButtons(rootButtons, {
-    bindings,
-    ctx,
-    firstSavedWorldButton: loadWorld.firstSavedWorldButton,
-    worldNameInput: newWorld.worldNameInput,
+    type: 'input',
   })
-
-  const renderModel = createRenderModel({
-    box,
-    listDeps: { callbacks, ctx, parent: loadWorld.savedWorldList, rows: loadWorld.rows },
-    loadWorld,
-    newWorld,
-    panelFlag: attributeCell(shell.root, 'data-menu-showing'),
-    panels: shell.panels,
-  })
-
-  transitionRef = (next: MainMenuState, focusTarget: DomInteractiveElement): void => {
-    renderModel(mainMenuViewModel(next, box.savedWorlds))
-    focusTarget.focus()
-    callbacks.onStateChange(next)
-  }
-
-  return renderModel
 }
 
-/** Build an operable menu without taking ownership of persistence or routing. */
+const bindWorldListActions = (context: MainMenuRenderContext): void => {
+  bindButton(context, context.dom.worldList.createWorldButton, () => transitionMainMenuPanel(context, 'new-world', context.dom.form.worldNameInput))
+  bindButton(context, context.dom.worldList.backButton, () => transitionMainMenuPanel(context, 'root'))
+}
+
+const bindMainMenuActions = (context: MainMenuRenderContext): void => {
+  bindRootActions(context)
+  bindWorldFormActions(context)
+  bindWorldListActions(context)
+}
+
 export const createMainMenuView = (
   factory: DomElementFactory,
   parent: DomElement,
-  callbacks: MainMenuCallbacks = NOOP_CALLBACKS,
+  callbacks: MainMenuCallbacks = {},
 ): MainMenuView => {
-  const ctx: MountContext = { cleanups: [], factory }
-  const shell = createMainMenuShell(factory, parent)
-  const renderModel = assembleMainMenu(ctx, shell, callbacks)
-
+  const dom = buildMenuElements({ callbacks, factory, parent })
+  const runtime = createRuntime()
+  const context: MainMenuRenderContext = { callbacks, dom, factory, listeners: [], runtime }
+  const render = (model: MainMenuViewModel): void => renderMainMenu(context, model)
+  bindMainMenuActions(context)
   return {
     destroy: (): void => {
-      for (const cleanup of ctx.cleanups.splice(ZERO).reverse()) {
-        cleanup()
+      while (context.listeners.length > EMPTY_COUNT) {
+        context.listeners.pop()?.()
       }
+      writeHidden(dom.rootHidden, true)
     },
-    render: renderModel,
-    root: shell.root,
+    render,
+    root: dom.root,
   }
 }

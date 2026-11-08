@@ -33,7 +33,13 @@ describe('sessionHref', () => {
 
 describe('createSessionHref', () => {
   it('round-trips Unicode and reserved characters in creation metadata', () => {
-    const request: CreateWorldRequest = { mode: 'survival', name: '鉱山 & Plains / 100%?' }
+    const request: CreateWorldRequest = {
+      mode: 'survival',
+      name: '鉱山 & Plains / 100%?',
+      seed: { kind: 'fixed', value: 73 },
+      difficulty: 'hard',
+      worldType: 'standard',
+    }
     const href = createSessionHref('world-123', request)
     const parsed = new URLSearchParams(new URL(href, 'https://example.test').search)
 
@@ -41,13 +47,28 @@ describe('createSessionHref', () => {
     expect(parsed.get('create')).toBe('1')
     expect(parsed.get('name')).toBe(request.name)
     expect(parsed.get('mode')).toBe('survival')
+    expect(parsed.get('difficulty')).toBe('hard')
+    expect(parsed.get('worldType')).toBe('standard')
+    expect(parsed.get('seedKind')).toBe('fixed')
+    expect(parsed.get('seed')).toBe('73')
   })
 
-  it('carries the creative mode through unchanged', () => {
-    const href = createSessionHref('id', { mode: 'creative', name: 'Flat World' })
+  it('carries all options and a random seed without inventing a numeric seed', () => {
+    const request: CreateWorldRequest = {
+      mode: 'creative',
+      name: 'Flat World',
+      seed: { kind: 'random' },
+      difficulty: 'peaceful',
+      worldType: 'flat-like-host-option',
+    }
+    const href = createSessionHref('id', request)
     const parsed = new URLSearchParams(new URL(href, 'https://example.test').search)
 
     expect(parsed.get('mode')).toBe('creative')
+    expect(parsed.get('difficulty')).toBe('peaceful')
+    expect(parsed.get('worldType')).toBe('flat-like-host-option')
+    expect(parsed.get('seedKind')).toBe('random')
+    expect(parsed.has('seed')).toBe(false)
   })
 })
 

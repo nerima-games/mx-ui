@@ -93,10 +93,11 @@ export const writeLocalizedText = (
 export const writeLocalizedTextUsing = (
   cell: TextCell,
   resolve: (language: UiLanguage) => UiMessageText,
+  language: UiLanguage = languageFor(cell.element),
 ): void => {
   const state = stateFor(cell.element)
   state.text = { cell, resolve }
-  writeText(cell, resolve(languageFor(cell.element)))
+  writeText(cell, resolve(language))
 }
 
 export const writeLocalizedAchievementTitle = (cell: TextCell, achievement: AchievementId): void => {

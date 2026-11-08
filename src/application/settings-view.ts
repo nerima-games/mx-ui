@@ -11,6 +11,7 @@ import {
   COLOR_VISION_CHOICES,
   DIFFICULTY_CHOICES,
   GRAPHICS_PRESET_CHOICES,
+  LANGUAGE_CHOICES,
   type NumericSettingView,
   REDUCED_MOTION_CHOICES,
   type SettingChoice,
@@ -21,15 +22,17 @@ import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElem
 import { KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import { type SettingsServiceApi, isValidSettings } from '@nerima-games/mc-sim'
-import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
 import {
   inheritUiLanguage,
   setLocalizedAttribute,
   setLocalizedText,
   writeLocalizedAttribute,
   writeLocalizedText,
+  writeLocalizedTextUsing,
 } from './ui-localization.js'
 import { Effect } from 'effect'
+import { keyDisplayName } from '../domain/key-display-name.js'
 
 export type SettingsView = {
   readonly root: DomElement
@@ -38,12 +41,14 @@ export type SettingsView = {
 
 export type SettingsSliderField =
   | 'mouseSensitivity'
+  | 'renderDistance'
   | 'masterVolume'
+  | 'musicVolume'
   | 'sfxVolume'
   | 'fovDegrees'
   | 'uiScale'
 
-export type SettingsChoiceField = 'difficulty' | 'graphicsPreset' | 'reducedMotion' | 'colorVisionCorrection'
+export type SettingsChoiceField = 'difficulty' | 'graphicsPreset' | 'reducedMotion' | 'colorVisionCorrection' | 'language'
 export type SettingsToggleField = 'audioEnabled' | 'captionsEnabled'
 
 export type SettingsSliderValue = SettingsViewModel[SettingsSliderField]['value']
@@ -108,6 +113,8 @@ const SLIDER_MESSAGE_KEY: Readonly<Record<SliderField, UiMessageKey>> = {
   fovDegrees: 'settings.field-of-view',
   masterVolume: 'settings.master-volume',
   mouseSensitivity: 'settings.look-sensitivity',
+  musicVolume: 'settings.music-volume',
+  renderDistance: 'settings.render-distance',
   sfxVolume: 'settings.sfx-volume',
   uiScale: 'settings.ui-scale',
 }
@@ -116,6 +123,7 @@ const CHOICE_MESSAGE_KEY: Readonly<Record<ChoiceField, UiMessageKey>> = {
   colorVisionCorrection: 'settings.color-vision',
   difficulty: 'settings.difficulty',
   graphicsPreset: 'settings.graphics-preset',
+  language: 'settings.language',
   reducedMotion: 'settings.reduced-motion',
 }
 
@@ -139,6 +147,10 @@ const CHOICE_VALUE_MESSAGE_KEY: Readonly<{
     low: 'settings.choice.graphics.low',
     medium: 'settings.choice.graphics.medium',
     ultra: 'settings.choice.graphics.ultra',
+  },
+  language: {
+    en: 'settings.choice.language.en',
+    ja: 'settings.choice.language.ja',
   },
   reducedMotion: {
     full: 'settings.choice.motion.full',
@@ -220,6 +232,7 @@ type SettingsElements = {
 
 const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('section')
+  inheritUiLanguage(parent, root)
   root.setAttribute('data-mx-ui', 'settings')
   declarePalette(root)
   root.style.setProperty('background-color', PALETTE_VAR.surface)
@@ -280,14 +293,27 @@ const createSliderOutput = (factory: DomElementFactory, row: DomElement, field: 
   return output
 }
 
-const createSliderInput = (factory: DomElementFactory, row: DomElement, field: SliderField): DomInputElement => {
-  const input: DomInputElement = factory.createElement('input')
+const settingAttribute = (field: SliderField): string => {
+  let setting: string = field
+  if (field === 'fovDegrees') {
+    setting = 'fieldOfView'
+  }
+  return setting
+}
+
+const setSliderInputAttributes = (input: DomInputElement, field: SliderField): void => {
   input.setAttribute('type', 'range')
   input.setAttribute('data-settings-field', field)
+  input.setAttribute('data-setting', settingAttribute(field))
   input.setAttribute('data-focus-group', `settings-slider-${field}`)
   input.setAttribute('data-focus-index', '0')
   input.setAttribute('data-focus-columns', '1')
   setLocalizedAttribute(input, 'aria-label', SLIDER_MESSAGE_KEY[field])
+}
+
+const createSliderInput = (factory: DomElementFactory, row: DomElement, field: SliderField): DomInputElement => {
+  const input: DomInputElement = factory.createElement('input')
+  setSliderInputAttributes(input, field)
   row.appendChild(input)
   return input
 }
@@ -456,6 +482,8 @@ const createSliderControls = (
   fovDegrees: createSlider(context, 'fovDegrees'),
   masterVolume: createSlider(context, 'masterVolume'),
   mouseSensitivity: createSlider(context, 'mouseSensitivity'),
+  musicVolume: createSlider(context, 'musicVolume'),
+  renderDistance: createSlider(context, 'renderDistance'),
   sfxVolume: createSlider(context, 'sfxVolume'),
   uiScale: createSlider(context, 'uiScale'),
 })
@@ -469,6 +497,7 @@ const createChoiceControls = (
   }),
   difficulty: createChoice(context, { choices: DIFFICULTY_CHOICES, field: 'difficulty' }),
   graphicsPreset: createChoice(context, { choices: GRAPHICS_PRESET_CHOICES, field: 'graphicsPreset' }),
+  language: createChoice(context, { choices: LANGUAGE_CHOICES, field: 'language' }),
   reducedMotion: createChoice(context, { choices: REDUCED_MOTION_CHOICES, field: 'reducedMotion' }),
 })
 
@@ -562,8 +591,10 @@ const writeChoice = (elements: ChoiceElements, selectedValue: string): void => {
 }
 
 const writeSliders = (elements: SliderControls, model: SettingsViewModel): void => {
+  writeSlider(elements.renderDistance, model.renderDistance)
   writeSlider(elements.mouseSensitivity, model.mouseSensitivity)
   writeSlider(elements.masterVolume, model.masterVolume)
+  writeSlider(elements.musicVolume, model.musicVolume)
   writeSlider(elements.sfxVolume, model.sfxVolume)
   writeSlider(elements.fovDegrees, model.fovDegrees)
   writeSlider(elements.uiScale, model.uiScale)
@@ -574,6 +605,7 @@ const writeChoices = (elements: ChoiceControls, model: SettingsViewModel): void 
   writeChoice(elements.graphicsPreset, model.graphicsPreset)
   writeChoice(elements.reducedMotion, model.reducedMotion)
   writeChoice(elements.colorVisionCorrection, model.colorVisionCorrection)
+  writeChoice(elements.language, model.language)
 }
 
 const writeToggles = (elements: ToggleControls, model: SettingsViewModel): void => {
@@ -589,28 +621,42 @@ type BindingRenderContext = {
   readonly actions: SettingsViewActions | undefined
   readonly elements: Map<string, BindingRowElements>
   readonly rows: SettingsViewModel['bindingRows']
+  readonly language: SettingsViewModel['language']
 }
 
-const bindingNameValue = (code: string | undefined): string | Readonly<{ key: UiMessageKey }> => {
+const bindingNameValue = (
+  code: string | undefined,
+  language: SettingsViewModel['language'],
+): string | Readonly<{ key: UiMessageKey }> => {
   if (typeof code === 'undefined') {
     return { key: 'settings.unbound' }
   }
-  return code
+  return keyDisplayName(code, language)
 }
 
-const writeBindingRows = ({ actions, factory, root, elements, rows }: BindingRenderContext): void => {
+const writeBindingRows = ({ actions, factory, root, elements, rows, language }: BindingRenderContext): void => {
   for (const row of rows) {
-    const binding = elements.get(row.action) ?? createBindingRow({ actions, factory, root }, row.action)
-    elements.set(row.action, binding)
-    if (typeof row.code === 'undefined') {
+    const { action, code } = row
+    const binding = elements.get(action) ?? createBindingRow({ actions, factory, root }, action)
+    elements.set(action, binding)
+    if (typeof code === 'undefined') {
       writeLocalizedText(binding.value, 'settings.unbound')
     } else {
-      writeText(binding.value, row.code)
+      writeLocalizedTextUsing(
+        binding.value,
+        (activeLanguage) => keyDisplayName(code, activeLanguage),
+        language,
+      )
     }
-    writeLocalizedAttribute(binding.accessibleName, 'settings.change-key', {
-      key: bindingNameValue(row.code),
+    const accessibleNameValues: UiMessageValues = {
+      key: bindingNameValue(code, language),
       label: { key: actionMessageKey(row.action) },
-    })
+    }
+    writeLocalizedAttribute(binding.accessibleName, 'settings.change-key', accessibleNameValues)
+    writeAttribute(
+      binding.accessibleName,
+      translateUiMessage(language, 'settings.change-key', accessibleNameValues),
+    )
   }
 }
 
@@ -626,7 +672,14 @@ const renderSettingsModel = ({ actions, factory, root, elements, model }: Settin
   writeSliders(elements.sliders, model)
   writeChoices(elements.choices, model)
   writeToggles(elements.toggles, model)
-  writeBindingRows({ actions, elements: elements.bindingRows, factory, root, rows: model.bindingRows })
+  writeBindingRows({
+    actions,
+    elements: elements.bindingRows,
+    factory,
+    language: model.language,
+    root,
+    rows: model.bindingRows,
+  })
 }
 
 const isBindableAction = <Action extends string>(

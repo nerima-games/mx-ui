@@ -20,8 +20,8 @@ const SNAPSHOT = {
   uiScale: 1.25,
 }
 
-const model = () => {
-  const result = settingsViewModel(SNAPSHOT, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS)
+const model = (language: 'en' | 'ja' = 'en') => {
+  const result = settingsViewModel(SNAPSHOT, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS, language)
   if (Result.isSuccess(result)) {
     return result.success
   }
@@ -39,6 +39,13 @@ describe('createSettingsView', () => {
     expect(root.find('data-settings-field', 'mouseSensitivity')?.value).toBe('1')
     expect(root.find('data-settings-field-output', 'mouseSensitivity')?.textContent).toBe('1×')
     expect(root.find('data-settings-field', 'masterVolume')?.value).toBe('0.8')
+    expect(root.find('data-settings-field', 'musicVolume')?.value).toBe(String(DEFAULT_SETTINGS.musicVolume))
+    expect(root.find('data-settings-field-output', 'musicVolume')?.textContent).toBe(
+      `${String(Math.round(DEFAULT_SETTINGS.musicVolume * 100))}%`,
+    )
+    expect(root.find('data-settings-field', 'renderDistance')?.value).toBe(String(DEFAULT_SETTINGS.renderDistance))
+    expect(root.find('data-settings-field', 'renderDistance')?.attributes.get('min')).toBe('2')
+    expect(root.find('data-settings-field', 'renderDistance')?.attributes.get('max')).toBe('16')
     expect(root.find('data-settings-field-output', 'masterVolume')?.textContent).toBe('80%')
     expect(root.find('data-settings-field', 'sfxVolume')?.value).toBe('1')
     expect(root.find('data-settings-field', 'fovDegrees')?.value).toBe('92')
@@ -50,10 +57,10 @@ describe('createSettingsView', () => {
 
     const bindingButtons = root.findAll('data-interaction-target', 'settings-binding')
     expect(bindingButtons).toHaveLength(21)
-    expect(root.find('data-binding-action', 'moveForward')?.textContent).toBe('KeyW')
-    expect(root.find('data-binding-action', 'attack')?.textContent).toBe(TEST_DEFAULT_BINDINGS.attack)
+    expect(root.find('data-binding-action', 'moveForward')?.textContent).toBe('W')
+    expect(root.find('data-binding-action', 'attack')?.textContent).toBe('Left click')
     expect(root.find('data-binding-action', 'moveForward')?.attributes.get('aria-label')).toBe(
-      'Change Move forward key (currently KeyW)',
+      'Change Move forward key (currently W)',
     )
     expect(root.find('data-binding-action', 'escape')).toBeUndefined()
   })
@@ -70,6 +77,9 @@ describe('createSettingsView', () => {
       String(DEFAULT_SETTINGS.captionsEnabled),
     )
     expect(root.find('data-setting-value', 'hard')?.attributes.get('aria-pressed')).toBe('true')
+    expect(root.find('data-setting-value', 'en')?.attributes.get('aria-pressed')).toBe('true')
+    expect(root.findAll('data-mx-ui', 'settings-graphicsPreset-row')).toHaveLength(1)
+    expect(root.findAll('data-settings-field', 'graphicsQuality')).toHaveLength(0)
     expect(root.find('data-setting-value', 'high')?.attributes.get('aria-pressed')).toBe('true')
     expect(root.find('data-setting-value', 'reduced')?.attributes.get('aria-pressed')).toBe('true')
     expect(root.find('data-setting-value', 'off')?.attributes.get('aria-pressed')).toBe('true')
@@ -100,7 +110,7 @@ describe('createSettingsView', () => {
 
     view.render(viewModel)
     expect(root.find('data-binding-action', 'moveForward')?.attributes.get('aria-label')).toBe(
-      'Change Move forward key (currently KeyW)',
+      'Change Move forward key (currently W)',
     )
 
     view.render({
@@ -153,5 +163,32 @@ describe('createSettingsView', () => {
     view.render(model())
 
     expect(root.listenersInTree()).toStrictEqual([])
+  })
+
+  it('forwards slider and choice changes and localizes key names after a language change', () => {
+    const factory = fakeDocument()
+    const host = factory.createElement('main')
+    const sliderChanges: Array<readonly [string, number]> = []
+    const choiceChanges: Array<readonly [string, string]> = []
+    const view = createSettingsView(factory, host, {
+      onChoiceChange: (field, value) => choiceChanges.push([field, String(value)]),
+      onSliderChange: (field, value) => sliderChanges.push([field, value]),
+    })
+    const root = fakeElement(view.root)
+    view.render(model())
+
+    const music = root.find('data-settings-field', 'musicVolume')
+    if (music === undefined) {
+      throw new Error('Missing music volume slider')
+    }
+    music.value = '0.75'
+    music.dispatch('input')
+    root.find('data-setting-value', 'ja')?.dispatch('click')
+
+    expect(sliderChanges).toStrictEqual([['musicVolume', 0.75]])
+    expect(choiceChanges).toStrictEqual([['language', 'ja']])
+
+    view.render(model('ja'))
+    expect(root.find('data-binding-action', 'attack')?.textContent).toBe('左クリック')
   })
 })

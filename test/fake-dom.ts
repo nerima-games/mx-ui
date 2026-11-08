@@ -238,6 +238,25 @@ export const fakeElement = (element: unknown): FakeElement => {
 }
 
 export class FakeInteractiveElement extends FakeElement implements DomInteractiveElement {
+  removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
+    if (callback === null) {
+      return
+    }
+    const callbacks = this.eventListeners.get(type) ?? []
+    const callbackIndex = callbacks.indexOf(callback)
+    if (callbackIndex < 0) {
+      return
+    }
+    callbacks.splice(callbackIndex, 1)
+    if (callbacks.length === 0) {
+      this.eventListeners.delete(type)
+    }
+    const listenerIndex = this.listeners.indexOf(type)
+    if (listenerIndex >= 0) {
+      this.listeners.splice(listenerIndex, 1)
+    }
+  }
+
   focus(): void {
     this.record('focus', 'focus', undefined)
   }

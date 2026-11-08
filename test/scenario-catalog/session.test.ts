@@ -133,7 +133,9 @@ const scenario = (screen: string, id: string) => {
 
 const visibleSavedWorldCount = (root: FakeElement): number =>
   Array.from(root.walk()).filter(
-    (element) => element.attributes.has('data-session-id') && !element.attributes.has('hidden'),
+    (element) =>
+      element.attributes.get('data-mx-ui') === 'menu-world-row-container' &&
+      !element.attributes.has('hidden'),
   ).length
 
 afterEach(() => {
@@ -148,6 +150,7 @@ describe('session scenario catalog', () => {
     const ids = SESSION_SCENARIOS.map(({ screen, id }) => `${screen}/${id}`)
     expect(ids).toStrictEqual([
       'main-menu/root-panel',
+      'main-menu/host-intents',
       'main-menu/new-world-survival',
       'main-menu/new-world-creative',
       'main-menu/new-world-long-name',
@@ -157,6 +160,7 @@ describe('session scenario catalog', () => {
       'main-menu/load-world-name-boundaries',
       'pause/paused',
       'settings/valid-boundaries',
+      'settings/host-updates',
       'settings/invalid-nan-fov',
       'settings/invalid-high-fov',
       'onboarding/open',
@@ -167,13 +171,14 @@ describe('session scenario catalog', () => {
       'session-overlays/factory-settings-open',
       'session-overlays/factory-debug-hud-open',
       'session-overlays/factory-settings-debug-open',
+      'chat/keyboard-intents',
     ])
     expect(new Set(ids).size).toBe(SESSION_SCENARIOS.length)
     expect(new Set(SESSION_SCENARIOS.map(({ screen }) => screen))).toStrictEqual(
-      new Set(['main-menu', 'pause', 'settings', 'onboarding', 'session-overlays']),
+      new Set(['main-menu', 'pause', 'settings', 'onboarding', 'session-overlays', 'chat']),
     )
 
-    for (const screen of ['pause', 'settings', 'onboarding', 'session-overlays']) {
+    for (const screen of ['pause', 'settings', 'onboarding', 'session-overlays', 'chat']) {
       expect(defaultScenarioForScreen(screen)?.screen).toBe(screen)
       expect(SESSION_SCENARIOS.filter((entry) => entry.screen === screen && entry.isDefault)).toHaveLength(1)
     }
@@ -184,7 +189,12 @@ describe('session scenario catalog', () => {
   it('mounts fake-DOM scenarios and releases their listeners and timers on dispose', () => {
     vi.useFakeTimers()
 
-    for (const entry of SESSION_SCENARIOS.filter(({ id }) => !id.startsWith('factory-'))) {
+    for (const entry of SESSION_SCENARIOS.filter(
+      ({ id, screen }) =>
+        !id.startsWith('factory-') &&
+        !(screen === 'settings' && id === 'host-updates') &&
+        screen !== 'chat',
+    )) {
       const { context, host } = makeContext()
       const mounted = entry.mount(context)
       const root = fakeElement(mounted.root)
@@ -196,6 +206,46 @@ describe('session scenario catalog', () => {
 
       expect(root.listenersInTree()).toStrictEqual([])
       expect(vi.getTimerCount()).toBe(0)
+    }
+  })
+
+  it('mounts the native settings host-update scenario and removes its event listener on dispose', () => {
+    const browserDom = new JSDOM()
+    const { document } = browserDom.window
+    vi.stubGlobal('document', document)
+
+    try {
+      const { context, host } = makeNativeContext(document)
+      const mounted = scenario('settings', 'host-updates').mount(context)
+      const mountPoint = host.querySelector<HTMLElement>('[data-settings-host-mount]')
+      if (mountPoint === null) {
+        throw new Error('Missing settings host mount point')
+      }
+      const removeListener = vi.spyOn(mountPoint, 'removeEventListener')
+
+      mounted.dispose()
+
+      expect(removeListener).toHaveBeenCalledWith('settings-host-update', expect.any(Function))
+    } finally {
+      browserDom.window.close()
+    }
+  })
+
+  it('mounts the native chat scenario and removes its keyboard listener on dispose', () => {
+    const browserDom = new JSDOM()
+    const { document } = browserDom.window
+    vi.stubGlobal('document', document)
+
+    try {
+      const { context } = makeNativeContext(document)
+      const removeListener = vi.spyOn(document, 'removeEventListener')
+      const mounted = scenario('chat', 'keyboard-intents').mount(context)
+
+      mounted.dispose()
+
+      expect(removeListener).toHaveBeenCalledWith('keydown', expect.any(Function))
+    } finally {
+      browserDom.window.close()
     }
   })
 
@@ -260,9 +310,12 @@ describe('session scenario catalog', () => {
         expect(factoryRoot).not.toBeNull()
         expect(debugHud?.hidden).toBe(!debugHudOpen)
         expect(settingsDialog?.hidden).toBe(!settingsOpen)
-        expect(settingsDialog?.querySelectorAll('input[type="range"]')).toHaveLength(4)
+        expect(settingsDialog?.querySelectorAll('input[type="range"]')).toHaveLength(7)
+        expect(settingsDialog?.querySelectorAll('[data-interaction-target="settings-choice"]')).toHaveLength(17)
+        expect(settingsDialog?.querySelectorAll('[data-interaction-target="settings-binding"]')).toHaveLength(21)
+        expect(settingsDialog?.querySelectorAll('[data-interaction-target="settings-toggle"]')).toHaveLength(2)
         if (settingsOpen) {
-          expect(document.activeElement).toBe(settingsDialog?.querySelector('input[type="range"]'))
+          expect(document.activeElement).toBe(settingsDialog?.querySelector('input[data-setting="mouseSensitivity"]'))
         }
         mounted.dispose()
       }
@@ -306,7 +359,12 @@ describe('session scenario catalog', () => {
     ]
 
     for (const { sessionId, name } of expectedWorlds) {
-      expect(root.find('data-session-id', sessionId)?.attributes.get('aria-label')).toBe(
+      const loadButton = Array.from(root.walk()).find(
+        (element) =>
+          element.attributes.get('data-mx-ui') === 'menu-world-row' &&
+          element.attributes.get('data-session-id') === sessionId,
+      )
+      expect(loadButton?.attributes.get('aria-label')).toBe(
         `Load ${name} (${sessionId})`,
       )
     }

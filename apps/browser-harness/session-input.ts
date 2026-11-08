@@ -9,7 +9,7 @@ import {
 } from '../../src/application/settings-view.js'
 import type { InventoryAction, InventoryDragTarget } from '../../src/application/inventory-actions.js'
 import type { UiMount } from '../../src/application/ui-mount.js'
-import { settingsViewModel, type SettingsViewModel } from '../../src/domain/settings-view-model.js'
+import { settingsViewModel, type SettingsViewModel, type SettingsViewModelFailure } from '../../src/domain/settings-view-model.js'
 
 const REMAPPABLE_ACTIONS = ['jump', 'sneak'] as const
 type RemappableAction = (typeof REMAPPABLE_ACTIONS)[number]
@@ -144,7 +144,7 @@ const formatAction = (action: InventoryAction): string => JSON.stringify(action)
 
 const renderSettings = (
   view: ReturnType<typeof createSettingsView>,
-  model: Result.Result<SettingsViewModel<RemappableAction>, { readonly _tag: 'InvalidSettingsSnapshot' }>,
+  model: Result.Result<SettingsViewModel<RemappableAction>, SettingsViewModelFailure>,
 ): void => {
   if (!Result.isSuccess(model)) {
     throw new Error('Expected the session settings snapshot to be valid')

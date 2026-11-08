@@ -10,6 +10,7 @@ import {
   UI_LANGUAGES,
   UI_MESSAGES,
   UI_TRANSLATION_KEY_COUNT,
+  initialMainMenuState,
   ItemDisplayNameSchema,
   type ItemDisplayNameResolver,
   type UiLanguage,
@@ -20,6 +21,8 @@ import {
   createSettingsView,
   decodeUiLanguage,
   inventoryViewModel,
+  mainMenuViewModel,
+  type WorldTypeOption,
   inputActionMessageKey,
   resolveItemDisplayName,
   enchantingTableViewModel,
@@ -87,6 +90,9 @@ describe('UI language', () => {
 
   it('updates mounted English and Japanese menu text, aria labels, and placeholders', () => {
     const host = document.createElement('main')
+    const worldTypes: ReadonlyArray<WorldTypeOption> = [
+      { label: { en: 'Standard', ja: '標準' }, value: 'standard' },
+    ]
     let createdWorldName = ''
     const menu = createMainMenuView(document, host, {
       onCreateWorld: ({ name }) => {
@@ -96,6 +102,9 @@ describe('UI language', () => {
       onOpenSettings: () => undefined,
       onStateChange: () => undefined,
     })
+    menu.render(mainMenuViewModel(initialMainMenuState, [], worldTypes))
+    host.querySelector<HTMLButtonElement>('[data-menu-entry="single-player"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-new-world"]')?.click()
     const inventory = createInventoryView(document, host)
     const carriedStack = itemStack('stone', 1)
     if (Result.isFailure(carriedStack)) {
@@ -109,12 +118,12 @@ describe('UI language', () => {
       )
     }
     renderInventory('en')
-    const newWorldButton = host.querySelector('[data-menu-entry="new-world"]')
+    const newWorldButton = host.querySelector('[data-mx-ui="menu-new-world"]')
     const worldNameInput = host.querySelector<HTMLInputElement>('[data-mx-ui="menu-world-name"]')
     const carriedItem = host.querySelector('[data-mx-ui="carried"] [data-mx-ui="slot-item"]')
 
     expect(newWorldButton?.textContent).toBe('Create New World')
-    expect(worldNameInput?.getAttribute('placeholder')).toBe('New World')
+    expect(worldNameInput?.getAttribute('placeholder')).toBe('World name')
     expect(carriedItem?.textContent).toBe('en:stone')
 
     expect(Result.isSuccess(applyUiLanguage(host, 'ja'))).toBe(true)
@@ -122,15 +131,26 @@ describe('UI language', () => {
     expect(carriedItem?.textContent).toBe('ja:stone')
     expect(newWorldButton?.textContent).toBe('新しいワールドを作成')
     expect(newWorldButton?.getAttribute('aria-label')).toBe('新しいワールドを作成')
-    expect(worldNameInput?.getAttribute('placeholder')).toBe('新しいワールド')
-    host.querySelector<HTMLButtonElement>('[data-menu-action="confirm"]')?.click()
+    expect(worldNameInput?.getAttribute('placeholder')).toBe('ワールド名')
+    host.querySelector<HTMLButtonElement>('[data-menu-panel="new-world"] [data-menu-action="confirm"]')?.click()
     expect(createdWorldName).toBe('新しいワールド')
 
     expect(Result.isSuccess(applyUiLanguage(host, 'en'))).toBe(true)
     expect(newWorldButton?.textContent).toBe('Create New World')
-    expect(worldNameInput?.getAttribute('placeholder')).toBe('New World')
+    expect(worldNameInput?.getAttribute('placeholder')).toBe('World name')
     expect(Result.isFailure(applyUiLanguage(host, 'fr'))).toBe(true)
     expect(newWorldButton?.textContent).toBe('Create New World')
+    menu.destroy()
+  })
+
+  it('inherits the parent language when the menu is mounted after localization', () => {
+    const host = document.createElement('main')
+    expect(Result.isSuccess(applyUiLanguage(host, 'ja'))).toBe(true)
+
+    const menu = createMainMenuView(document, host)
+    menu.render(mainMenuViewModel(initialMainMenuState))
+
+    expect(host.querySelector('[data-menu-entry="single-player"]')?.textContent).toBe('シングルプレイ')
     menu.destroy()
   })
 

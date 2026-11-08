@@ -21,14 +21,28 @@ import {
 import { achievementToastFromEvent } from '../src/domain/achievement-toast'
 import type { InventoryInteractionTarget } from '../src/application/inventory-view'
 import { makeUiFrameState, uiModule, uiStages } from '../src/stages/registration'
-import { initialMainMenuState, mainMenuViewModel, type SavedWorld } from '../src/domain/main-menu'
+import {
+  initialMainMenuState,
+  mainMenuViewModel,
+  type SavedWorld,
+  type UnreadableSave,
+  type WorldTypeOption,
+} from '../src/domain/main-menu'
 import {
   emptyInventorySnapshot,
   inventoryViewModel,
   type InventoryViewModel,
 } from '../src/domain/inventory-view-model'
 import { DeltaTimeSecs } from '@nerima-games/mc-kernel'
-import { DomainEventBus, SPAWN_VITALS, VitalsSchema, itemStack as makeItemStack } from '@nerima-games/mc-sim'
+import {
+  DEFAULT_SETTINGS,
+  DomainEventBus,
+  MAX_RENDER_DISTANCE,
+  MIN_RENDER_DISTANCE,
+  SPAWN_VITALS,
+  VitalsSchema,
+  itemStack as makeItemStack,
+} from '@nerima-games/mc-sim'
 import { achievementEvent, untrustedAchievementEvent } from './helpers/achievement-event'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 import { DEFAULT_UI_SETTINGS } from '../src/application/session-overlays'
@@ -63,6 +77,16 @@ const testItemStack = (
   expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
 }
 const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [{ sessionId: 'session-1', name: 'Cliff House' }]
+const WORLD_TYPES: ReadonlyArray<WorldTypeOption> = [
+  { label: { en: 'Standard', ja: '標準' }, value: 'standard' },
+]
+const UNREADABLE_SAVE: UnreadableSave = {
+  _tag: 'SaveDecodeError',
+  format: 'mc-save',
+  key: 'broken-save',
+  reason: 'Invalid data',
+  version: 1,
+}
 
 afterEach(async () => {
   await Promise.all(testScopes.map((scope) => Effect.runPromise(Scope.close(scope, Exit.void))))
@@ -195,12 +219,16 @@ describe('UiMount', () => {
     await Effect.runPromise(runtime.start)
 
     const settingsButton = host.querySelector<HTMLElement>('[data-menu-entry="settings"]')
-    expect(settingsButton?.textContent).toBe('Options...')
+    expect(settingsButton?.textContent).toBe('Settings')
     const result = runtime.updateLanguage('ja')
 
     expect(Result.isSuccess(result)).toBe(true)
-    expect(settingsButton?.textContent).toBe('設定...')
-    expect(settingsButton?.getAttribute('aria-label')).toBe('設定...')
+    expect(settingsButton?.textContent).toBe('設定')
+    expect(settingsButton?.getAttribute('aria-label')).toBe('設定')
+
+    runtime.openSettings()
+    expect(host.querySelector('[data-settings-field="language"][data-setting-value="ja"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(host.querySelector('[data-settings-field="language"][data-setting-value="en"]')?.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('uses a language selected before mount for the initial UI', async () => {
@@ -211,7 +239,7 @@ describe('UiMount', () => {
     expect(Result.isSuccess(runtime.updateLanguage('ja'))).toBe(true)
     await Effect.runPromise(runtime.start)
 
-    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定...')
+    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定')
   })
 
   it('renders achievement events from the mounted subscriber and closes it on stop', async () => {
@@ -401,7 +429,7 @@ describe('UiMount', () => {
       name,
       value,
     ) {
-      if (name === 'data-menu-showing') {
+      if (name === 'data-world-type-options') {
         throw new Error('render failed')
       }
       return original.call(this, name, value)
@@ -442,7 +470,7 @@ describe('UiMount', () => {
       name,
       value,
     ) {
-      if (name === 'data-menu-showing') {
+      if (name === 'data-world-type-options') {
         throw new Error('render failed')
       }
       return originalSetAttribute.call(this, name, value)
@@ -524,10 +552,14 @@ describe('UiMount', () => {
     expect(dialog?.hidden).toBe(false)
     expect(dialog?.getAttribute('role')).toBe('dialog')
     expect(document.activeElement?.getAttribute('data-setting')).toBe('mouseSensitivity')
+    expect(dialog?.querySelectorAll('input[type="range"]')).toHaveLength(7)
+    expect(dialog?.querySelectorAll('[data-interaction-target="settings-choice"]')).toHaveLength(17)
+    expect(dialog?.querySelectorAll('[data-interaction-target="settings-binding"]')).toHaveLength(21)
+    expect(dialog?.querySelectorAll('[data-interaction-target="settings-toggle"]')).toHaveLength(2)
 
     const changes = [
       ['mouseSensitivity', '1.25', onMouseSensitivityChange],
-      ['renderDistance', '20', onRenderDistanceChange],
+      ['renderDistance', String(MAX_RENDER_DISTANCE), onRenderDistanceChange],
       ['fieldOfView', '90', onFieldOfViewChange],
       ['masterVolume', '0.4', onMasterVolumeChange],
     ] as const
@@ -540,10 +572,83 @@ describe('UiMount', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
       expect(callback).toHaveBeenLastCalledWith(Number(value))
     }
+    expect(host.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.max).toBe(String(MAX_RENDER_DISTANCE))
 
     document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Escape' }))
     expect(dialog?.hidden).toBe(true)
     expect(document.activeElement).toBe(trigger)
+  })
+
+  it('applies selected language, scale, color correction, and motion settings through the mounted view', async () => {
+    const host = document.createElement('main')
+    const canvas = document.createElement('canvas')
+    host.appendChild(canvas)
+    document.body.appendChild(host)
+    const onSettingsChange = vi.fn()
+    const onLanguageChange = vi.fn()
+    const runtime = makeUiMount({
+      colorVisionTarget: canvas,
+      initialSettingsSnapshot: DEFAULT_SETTINGS,
+      root: host,
+      settingsCallbacks: { onLanguageChange, onSettingsChange },
+    })
+    await Effect.runPromise(runtime.start)
+
+    const mounted = runtime.current()
+    if (mounted === undefined) {
+      throw new Error('Expected a mounted session')
+    }
+    const setMotion = vi.spyOn(mounted.hud, 'setMotion')
+    runtime.openSettings()
+    const dialog = host.querySelector<HTMLElement>('[data-mx-ui="settings"]')
+
+    dialog?.querySelector<HTMLButtonElement>('[data-settings-field="language"][data-setting-value="ja"]')?.click()
+    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定')
+    expect(onLanguageChange).toHaveBeenCalledExactlyOnceWith('ja')
+
+    dialog?.querySelector<HTMLButtonElement>('[data-settings-field="reducedMotion"][data-setting-value="reduced"]')?.click()
+    expect(setMotion).toHaveBeenCalledWith('reduced')
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ reducedMotion: 'reduced' }))
+
+    dialog?.querySelector<HTMLButtonElement>('[data-settings-field="colorVisionCorrection"][data-setting-value="protanopia"]')?.click()
+    expect(canvas.getAttribute('data-color-vision')).toBe('protanopia')
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ colorVisionCorrection: 'protanopia' }))
+
+    const scale = dialog?.querySelector<HTMLInputElement>('[data-setting="uiScale"]')
+    if (scale === null || typeof scale === 'undefined') {
+      throw new Error('Missing UI scale input')
+    }
+    scale.value = '1.25'
+    scale.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(mounted.root.style.getPropertyValue('zoom')).toBe('1.25')
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1.25 }))
+  })
+
+  it('connects settings focus groups to document arrow key navigation', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+    runtime.openSettings()
+
+    const dialog = host.querySelector<HTMLElement>('[data-mx-ui="settings"]')
+    const choices = Array.from(
+      dialog?.querySelectorAll<HTMLButtonElement>(
+        '[data-settings-field="difficulty"][data-interaction-target="settings-choice"]',
+      ) ?? [],
+    )
+    const selectedIndex = choices.findIndex((choice) => choice.getAttribute('aria-pressed') === 'true')
+    const current = choices[selectedIndex]
+    const next = choices[selectedIndex + 1]
+    if (current === undefined || next === undefined) {
+      throw new Error('Expected an adjacent difficulty choice')
+    }
+    current.focus()
+
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowRight' })
+    current.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(next)
   })
 
   it('uses typed focus navigation, native button activation, and Escape focus restoration', async () => {
@@ -583,7 +688,7 @@ describe('UiMount', () => {
 
     const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
     document.dispatchEvent(escape)
-    expect(escape.defaultPrevented).toBe(false)
+    expect(escape.defaultPrevented).toBe(true)
     expect(inventory?.hasAttribute('hidden')).toBe(true)
     expect(document.activeElement).toBe(trigger)
   })
@@ -938,35 +1043,88 @@ describe('UiMount', () => {
     expect(dialog?.hidden).toBe(true)
   })
 
-  it('forwards menu callbacks: creating a world, changing panels, and loading a world the host supplies later', async () => {
-    // `buildMenuCallbacks` wraps every `MainMenuCallbacks` entry mx-ui does not
-    // own extra behaviour for (`onCreateWorld`, `onLoadWorld`, `onStateChange`)
-    // in a passthrough closure. `onOpenSettings` is covered elsewhere by every
-    // test that opens settings through the menu button; these three are not
-    // exercised by anything else in this file. `onLoadWorld` specifically needs
-    // a saved world to click, and `buildMountedViews` always mounts the menu
-    // with an empty list — a host repopulates it the same way mx-compose would,
-    // through `current().mainMenu`, the same view object mx-ui itself rendered.
+  it('forwards every host-owned menu callback through UiMount', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const onCreateWorld = vi.fn()
     const onLoadWorld = vi.fn()
+    const onDeleteWorld = vi.fn()
+    const onDeleteUnreadableSave = vi.fn()
+    const onExportWorld = vi.fn()
+    const onOpenMultiplayer = vi.fn()
+    const onExit = vi.fn()
     const onStateChange = vi.fn()
     const runtime = makeUiMount({
-      menuCallbacks: { onCreateWorld, onLoadWorld, onStateChange, onOpenSettings: () => undefined },
+      menuCallbacks: {
+        onCreateWorld,
+        onDeleteUnreadableSave,
+        onDeleteWorld,
+        onExit,
+        onExportWorld,
+        onLoadWorld,
+        onOpenMultiplayer,
+        onOpenSettings: () => undefined,
+        onStateChange,
+      },
       root: host,
     })
     await Effect.runPromise(runtime.start)
 
-    host.querySelector<HTMLButtonElement>('[data-menu-entry="new-world"]')?.click()
+    runtime.current()?.mainMenu.render(mainMenuViewModel(initialMainMenuState, SAVED_WORLDS, WORLD_TYPES, [UNREADABLE_SAVE]))
+
+    host.querySelector<HTMLButtonElement>('[data-menu-entry="single-player"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-new-world"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-menu-panel="new-world"] [data-menu-action="confirm"]')?.click()
+    expect(onCreateWorld).toHaveBeenCalledExactlyOnceWith({
+      difficulty: 'normal',
+      mode: 'survival',
+      name: 'New World',
+      seed: { kind: 'random' },
+      worldType: 'standard',
+    })
     expect(onStateChange).toHaveBeenCalledWith(expect.objectContaining({ panel: 'new-world' }))
 
-    host.querySelector<HTMLButtonElement>('[data-menu-action="confirm"]')?.click()
-    expect(onCreateWorld).toHaveBeenCalledOnce()
-
-    runtime.current()?.mainMenu.render(mainMenuViewModel(initialMainMenuState, SAVED_WORLDS))
-    host.querySelector<HTMLButtonElement>('[data-session-id="session-1"]')?.click()
+    runtime.current()?.mainMenu.render(mainMenuViewModel(initialMainMenuState, SAVED_WORLDS, WORLD_TYPES, [UNREADABLE_SAVE]))
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-world-row"][data-session-id="session-1"]')?.click()
     expect(onLoadWorld).toHaveBeenCalledExactlyOnceWith(SAVED_WORLDS[0])
+
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-world-export"]')?.click()
+    expect(onExportWorld).toHaveBeenCalledExactlyOnceWith(SAVED_WORLDS[0])
+
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-world-delete"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-world-delete-confirm"]')?.click()
+    expect(onDeleteWorld).toHaveBeenCalledExactlyOnceWith(SAVED_WORLDS[0])
+
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-unreadable-delete"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-unreadable-delete-confirm"]')?.click()
+    expect(onDeleteUnreadableSave).toHaveBeenCalledExactlyOnceWith(UNREADABLE_SAVE)
+
+    runtime.current()?.mainMenu.render(mainMenuViewModel(initialMainMenuState))
+    host.querySelector<HTMLButtonElement>('[data-menu-entry="multiplayer"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-menu-entry="exit"]')?.click()
+    expect(onOpenMultiplayer).toHaveBeenCalledOnce()
+    expect(onExit).toHaveBeenCalledOnce()
+  })
+
+  it('disables host-owned menu actions when no callback is connected', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const menu = runtime.current()?.mainMenu
+    menu?.render(mainMenuViewModel(initialMainMenuState, SAVED_WORLDS, WORLD_TYPES))
+    host.querySelector<HTMLButtonElement>('[data-menu-entry="single-player"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-world-row"][data-session-id="session-1"]')?.click()
+
+    expect(host.querySelector<HTMLButtonElement>('[data-menu-entry="multiplayer"]')?.disabled).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-menu-entry="exit"]')?.disabled).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-menu-panel="load-world"] [data-mx-ui="menu-world-row"]')?.disabled).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-world-delete"]')?.disabled).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-world-export"]')?.disabled).toBe(true)
+
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-new-world"]')?.click()
+    expect(host.querySelector<HTMLButtonElement>('[data-menu-panel="new-world"] [data-menu-action="confirm"]')?.disabled).toBe(true)
   })
 
   it('closes an open inventory through the top-level API and restores focus, and no-ops when already closed', async () => {
@@ -1059,9 +1217,57 @@ describe('UiMount', () => {
     await Effect.runPromise(runtime.start)
     expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('1.25')
 
+    const invalid = runtime.updateSettings({
+      fieldOfView: 90,
+      masterVolume: 0.5,
+      mouseSensitivity: 2,
+      renderDistance: MAX_RENDER_DISTANCE + 1,
+      uiScale: 1.25,
+    })
+    expect(invalid).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsSnapshot' }))
+
+    const valid = runtime.updateSettings({
+      fieldOfView: 90,
+      masterVolume: 0.5,
+      mouseSensitivity: 2,
+      renderDistance: MAX_RENDER_DISTANCE,
+      uiScale: 1.25,
+    })
+    expect(Result.isSuccess(valid)).toBe(true)
+
     runtime.openSettings()
     expect(host.querySelector<HTMLInputElement>('[data-setting="fieldOfView"]')?.value).toBe('90')
-    expect(host.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.value).toBe('20')
+    expect(host.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.value).toBe(String(MAX_RENDER_DISTANCE))
+    expect(host.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.max).toBe(String(MAX_RENDER_DISTANCE))
+  })
+
+  it('property: updateSettings accepts exactly integer render distances in the sim range', () => {
+    const runtime = makeRawUiMount({ root: document.createElement('main') })
+    fc.assert(
+      fc.property(
+        fc.double({
+          max: MAX_RENDER_DISTANCE + 2,
+          min: MIN_RENDER_DISTANCE - 2,
+          noDefaultInfinity: true,
+          noNaN: true,
+        }),
+        (renderDistance) => {
+          const expectedValid =
+            Number.isInteger(renderDistance) &&
+            renderDistance >= MIN_RENDER_DISTANCE &&
+            renderDistance <= MAX_RENDER_DISTANCE
+          const result = runtime.updateSettings({
+            fieldOfView: DEFAULT_SETTINGS.fovDegrees,
+            masterVolume: DEFAULT_SETTINGS.masterVolume,
+            mouseSensitivity: DEFAULT_SETTINGS.mouseSensitivity,
+            renderDistance,
+            uiScale: DEFAULT_UI_SETTINGS.uiScale,
+          })
+          return Result.isSuccess(result) === expectedValid
+        },
+      ),
+      { numRuns: 40, seed: 20261109 },
+    )
   })
 
   it('applies valid UI scale updates to every owned surface and rejects values outside its range', async () => {
