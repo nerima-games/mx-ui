@@ -98,10 +98,10 @@ test('trade offers follow native tab order and emit offers from Enter and Space'
   const trade = page.locator('[data-trade-browser-host] [data-mx-ui="trade"]')
   const host = page.locator('[data-trade-browser-host]')
   const availableOffer = trade.getByRole('button', {
-    name: '4 minecraft:wheat -> 1 minecraft:emerald (2/7)',
+    name: '4 minecraft:wheat → 1 minecraft:emerald (2/7)',
   })
   const unavailableOffer = trade.getByRole('button', {
-    name: '3 minecraft:potato -> 1 minecraft:emerald (6/7)',
+    name: '3 minecraft:potato → 1 minecraft:emerald (6/7)',
   })
   const close = trade.getByRole('button', { name: 'Close' })
   const status = trade.getByRole('status')

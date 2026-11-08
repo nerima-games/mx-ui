@@ -41,6 +41,7 @@ import {
   FOCUS_RING_SHADOW_WIDTH,
   FOCUS_RING_WIDTH,
   setSlotButtonView,
+  setSlotFocusTarget,
   updateSlotElement,
 } from '../src/application/slot-element'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
@@ -474,6 +475,25 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     expect(fakeElement(slot.root).attributes.has('aria-checked')).toBe(false)
   })
 
+  it('uses a plain accessible label and keeps malformed focus columns from removing navigation metadata', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+
+    setSlotFocusTarget(slot, { columns: 0, group: 'test-slots', index: 0 })
+    setSlotButtonView(slot, {
+      disabled: false,
+      focused: false,
+      label: 'Stone, 1',
+      tabStop: true,
+    })
+
+    const root = fakeElement(slot.root)
+    expect(root.attributes.get('aria-label')).toBe('Stone, 1')
+    expect(root.attributes.get('data-focus-group')).toBe('test-slots')
+    expect(root.attributes.get('data-focus-columns')).toBe('1')
+    expect(root.attributes.get('tabindex')).toBe('0')
+  })
+
   it('draws NO ring until somebody says where the keyboard is', () => {
     // A ring means "the keyboard is here". Drawing one at mount would make it
     // decoration, which is the 「後ろに何も無いフック」 DN-UI-1a rejects from the
@@ -559,18 +579,21 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
-  it('REGRESSION: making a slot focusable did not add a listener or a way to move focus', () => {
-    // The half that is still mc-render's, pinned from three directions.
-    // `application/dom-surface.ts` has no `addEventListener` (so nothing can
-    // observe focus) and no `focus()` (so nothing can move it), and both
-    // absences are what keep the Escape decision single (DN-UI-4/DN-UI-13c).
+  it('exposes named native hotbar radios without renderer-owned listeners', () => {
     const { view, root, parent } = mount()
     view.render(hudViewModel(SPAWN_VITALS))
     view.setKeyboardFocus(2)
 
     expect(root.listenersInTree()).toStrictEqual([])
     expect(parent.listenersInTree()).toStrictEqual([])
-    expect('focus' in (root.findAll('data-mx-ui', 'slot')[0] ?? {})).toBe(false)
+    const [firstSlot] = root.findAll('data-mx-ui', 'slot')
+    expect(firstSlot?.attributes.get('role')).toBe('radio')
+    expect(
+      typeof firstSlot === 'object' &&
+        firstSlot !== null &&
+        'focus' in firstSlot &&
+        typeof firstSlot.focus === 'function',
+    ).toBe(true)
   })
 })
 

@@ -86,28 +86,30 @@ const capture = (
   return result.stdout;
 };
 
-// mx-ui declares no `exports` subpaths — docs/public-api.md's contract is the
-// single barrel (`index.ts`); a subpath would need its own line in that
-// document before it could be added here (see the repository's hard rule
-// against adding subpaths just to satisfy this script). So, unlike
-// mc-kernel's copy of this script, there is no per-subpath domain-entrypoint
-// reconciliation: only "does the declared root export resolve, at runtime and
-// in type-space, to the contract docs/public-api.md §5 names".
+// The root barrel is the TypeScript API. The font stylesheet is the only
+// explicit asset subpath; docs/public-api.md documents both entries.
 const exportEntries = Object.entries(manifest.exports ?? {});
-if (exportEntries.length !== 1 || exportEntries[0][0] !== ".") {
+if (
+  exportEntries.length !== 2 ||
+  !Object.hasOwn(manifest.exports, ".") ||
+  !Object.hasOwn(manifest.exports, "./assets/game-font.css")
+) {
   throw new Error(
-    "package.json#exports must declare exactly the root entry '.' — mx-ui has no subpath contract (docs/public-api.md)",
+    "package.json#exports must declare the root entry '.' and font stylesheet './assets/game-font.css' (docs/public-api.md)",
   );
 }
 
 const targetPaths = new Set();
 for (const [subpath, target] of exportEntries) {
-  if (typeof target !== "object" || target === null) {
+  if (typeof target === "string") {
+    targetPaths.add(target);
+  } else if (typeof target !== "object" || target === null) {
     throw new Error(`Unsupported export declaration for ${subpath}`);
-  }
-  for (const field of ["types", "import", "default"]) {
-    if (typeof target[field] === "string") {
-      targetPaths.add(target[field]);
+  } else {
+    for (const field of ["types", "import", "default"]) {
+      if (typeof target[field] === "string") {
+        targetPaths.add(target[field]);
+      }
     }
   }
 }
@@ -153,6 +155,16 @@ try {
       throw new Error(
         `Package archive is missing export target ${archiveEntry}`,
       );
+    }
+  }
+
+  for (const assetPath of [
+    "package/assets/PixelMplus12-Regular.ttf",
+    "package/assets/MPLUS-FONT-LICENSE.txt",
+    "package/assets/game-font.css",
+  ]) {
+    if (!archiveEntries.has(assetPath)) {
+      throw new Error(`Package archive is missing font asset ${assetPath}`);
     }
   }
 
@@ -206,9 +218,9 @@ try {
   //
   // One internal-visible module is the deliberate exception:
   // `application/palette-css.ts` (docs/public-api.md §5 lists it 内部(可視)).
-  // mx-ui ships no stylesheet asset — colour tokens exist only as the CSS
-  // custom-property writes `declarePalette` performs at runtime
-  // (src/application/palette-css.ts). The unit suite proves that behaviour
+  // Colour tokens exist only as the CSS custom-property writes `declarePalette`
+  // performs at runtime (src/application/palette-css.ts); the font stylesheet
+  // shipped in `assets/` does not replace that behavior. The unit suite proves it
   // against `src/`; it cannot prove dist/ still has it, because there is no
   // separate styling file for a bundler to drop or a build step to tree-shake
   // — the "did dist/ ship what src/ promises" question this script exists to
@@ -255,6 +267,27 @@ try {
     }
     if (typeof module.applyColorVision !== 'function' || typeof module.colorVisionCell !== 'function') {
       throw new Error('The root export does not expose the accessibility-dom contract');
+    }
+    if (typeof module.createColorVisionFilterController !== 'function') {
+      throw new Error('The root export does not expose createColorVisionFilterController');
+    }
+    if (typeof module.applyUiScale !== 'function' || module.UI_SCALE_MIN !== 0.75 || module.UI_SCALE_MAX !== 1.5) {
+      throw new Error('The root export does not expose the validated UI scale contract');
+    }
+    if (typeof module.createMotionPreferenceController !== 'function') {
+      throw new Error('The root export does not expose createMotionPreferenceController');
+    }
+    if (typeof module.focusTargetForElement !== 'function' || typeof module.moveFocusTarget !== 'function') {
+      throw new Error('The root export does not expose the typed keyboard focus resolver and mover');
+    }
+    if (typeof module.applyUiLanguage !== 'function' || !Array.isArray(module.UI_LANGUAGES) || module.UI_LANGUAGES.join(',') !== 'en,ja') {
+      throw new Error('The root export does not expose the English/Japanese localization contract');
+    }
+    if (typeof module.UI_TRANSLATION_KEY_COUNT !== 'number' || module.UI_TRANSLATION_KEY_COUNT <= 0) {
+      throw new Error('The root export does not expose UI_TRANSLATION_KEY_COUNT');
+    }
+    if (module.GAME_FONT_FAMILY !== 'PixelMplus12' || module.GAME_FONT_STYLESHEET_EXPORT !== '@nerima-games/mx-ui/assets/game-font.css') {
+      throw new Error('The root export does not expose the bundled game-font contract');
     }
     if (typeof module.declarePalette !== 'function') {
       throw new Error('The root export does not expose declarePalette');
@@ -347,6 +380,21 @@ import {
   createSaveIndicator,
   applyColorVision,
   colorVisionCell,
+  createColorVisionFilterController,
+  applyUiScale,
+  createMotionPreferenceController,
+  focusTargetForElement,
+  moveFocusTarget,
+  applyUiLanguage,
+  UI_LANGUAGES,
+  UiLanguageSchema,
+  UI_TRANSLATION_KEY_COUNT,
+  GAME_FONT_FAMILY,
+  GAME_FONT_STYLESHEET_EXPORT,
+  type ColorVisionFilterController,
+  type MotionPreferenceController,
+  type UiLanguage,
+  type InventoryNavigationDirection,
   declarePalette,
   PALETTE_TOKEN_NAMES,
   PALETTE_PROPERTY,
@@ -379,6 +427,19 @@ const inventoryViewType: typeof createInventoryView = createInventoryView
 const saveIndicatorType: typeof createSaveIndicator = createSaveIndicator
 const colorVisionType: typeof applyColorVision = applyColorVision
 const colorVisionCellType: typeof colorVisionCell = colorVisionCell
+const colorVisionFilterType: typeof createColorVisionFilterController = createColorVisionFilterController
+const uiScaleType: typeof applyUiScale = applyUiScale
+const motionPreferenceType: typeof createMotionPreferenceController = createMotionPreferenceController
+const focusResolverType: typeof focusTargetForElement = focusTargetForElement
+const focusMoverType: typeof moveFocusTarget = moveFocusTarget
+const keyboardDirection: InventoryNavigationDirection = 'right'
+const mountFocusType: UiMount['moveFocus'] = (direction) => direction === keyboardDirection
+const uiLanguageType: typeof applyUiLanguage = applyUiLanguage
+const uiLanguages: ReadonlyArray<UiLanguage> = UI_LANGUAGES
+const uiLanguageSchema: typeof UiLanguageSchema = UiLanguageSchema
+const uiTranslationKeyCount: number = UI_TRANSLATION_KEY_COUNT
+const gameFontFamily: string = GAME_FONT_FAMILY
+const gameFontStylesheet: string = GAME_FONT_STYLESHEET_EXPORT
 
 // Styling type probe: declarePalette takes a DomElement, satisfied here with
 // no cast — the same "structural type, no \`as\`" discipline
@@ -413,6 +474,19 @@ void inventoryViewType
 void saveIndicatorType
 void colorVisionType
 void colorVisionCellType
+void colorVisionFilterType
+void uiScaleType
+void motionPreferenceType
+void focusResolverType
+void focusMoverType
+void keyboardDirection
+void mountFocusType
+void uiLanguageType
+void uiLanguages
+void uiLanguageSchema
+void uiTranslationKeyCount
+void gameFontFamily
+void gameFontStylesheet
 void paletteTokenNames
 void paletteProperty
 void paletteValue

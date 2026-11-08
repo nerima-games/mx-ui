@@ -93,8 +93,8 @@ describe('createTradeView', () => {
     expect(root.children.map(({ tagName }) => tagName)).toStrictEqual(['h2', 'div', 'p', 'button'])
     expect(root.find('data-mx-ui', 'trade-profession')?.textContent).toBe('Farmer')
     expect(offers.map(({ textContent }) => textContent)).toStrictEqual([
-      '4 minecraft:wheat -> 1 minecraft:emerald (2/7)',
-      '3 minecraft:potato -> 1 minecraft:emerald (6/7)',
+      '4 minecraft:wheat → 1 minecraft:emerald (2/7)',
+      '3 minecraft:potato → 1 minecraft:emerald (6/7)',
     ])
     expect(offers.map(({ attributes }) => attributes.get('type'))).toStrictEqual(['button', 'button'])
     expect(offers.map(({ attributes }) => attributes.has('tabindex'))).toStrictEqual([false, false])

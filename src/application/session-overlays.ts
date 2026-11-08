@@ -1,3 +1,7 @@
+import { type TextCell, textCell } from './dom-write.js'
+import { setLocalizedAttribute, setLocalizedText, writeLocalizedText } from './ui-localization.js'
+import type { UiMessageKey } from '../domain/ui-language.js'
+
 export type DebugHudSnapshot = {
   readonly fps: number
   readonly coordinates: Readonly<{ worldX: number; worldY: number; worldZ: number }>
@@ -50,7 +54,7 @@ export type SessionOverlays = {
 
 type SettingDefinition = {
   readonly key: keyof UiSettings
-  readonly label: string
+  readonly labelKey: UiMessageKey
   readonly min: number
   readonly max: number
   readonly step: number
@@ -60,7 +64,7 @@ type SettingDefinition = {
 const SETTING_DEFINITIONS: ReadonlyArray<SettingDefinition> = [
   {
     key: 'mouseSensitivity',
-    label: 'Mouse sensitivity',
+    labelKey: 'settings.mouse-sensitivity',
     max: 2,
     min: 0.1,
     notify: (callbacks, value) => callbacks.onMouseSensitivityChange?.(value),
@@ -68,7 +72,7 @@ const SETTING_DEFINITIONS: ReadonlyArray<SettingDefinition> = [
   },
   {
     key: 'renderDistance',
-    label: 'Render distance',
+    labelKey: 'settings.render-distance',
     max: 32,
     min: 2,
     notify: (callbacks, value) => callbacks.onRenderDistanceChange?.(value),
@@ -76,7 +80,7 @@ const SETTING_DEFINITIONS: ReadonlyArray<SettingDefinition> = [
   },
   {
     key: 'fieldOfView',
-    label: 'Field of view',
+    labelKey: 'settings.field-of-view',
     max: 110,
     min: 30,
     notify: (callbacks, value) => callbacks.onFieldOfViewChange?.(value),
@@ -84,7 +88,7 @@ const SETTING_DEFINITIONS: ReadonlyArray<SettingDefinition> = [
   },
   {
     key: 'masterVolume',
-    label: 'Master volume',
+    labelKey: 'settings.master-volume',
     max: 1,
     min: 0,
     notify: (callbacks, value) => callbacks.onMasterVolumeChange?.(value),
@@ -107,15 +111,32 @@ const NON_FINITE_FALLBACK = 0
 
 /** How many decimal places the debug HUD prints a coordinate to. */
 const DECIMAL_PLACES = 1
+const FOCUS_MEMBER_COLUMNS = 1
+const FOCUS_MEMBER_INDEX = 0
 
-const facingLine = (facing: string | undefined): string => {
-  if (typeof facing === 'undefined') {
-    return ''
-  }
-  return `\nFacing: ${facing}`
+type FocusMemberAttributes = {
+  readonly element: HTMLElement
+  readonly group: string
+  readonly index: number
+  readonly columns: number
 }
 
-const debugHudText = (snapshot: DebugHudSnapshot): string => {
+const setFocusMemberAttributes = ({ columns, element, group, index }: FocusMemberAttributes): void => {
+  element.setAttribute('data-focus-group', group)
+  element.setAttribute('data-focus-index', String(index))
+  element.setAttribute('data-focus-columns', String(columns))
+}
+
+const debugHudMessageKey = (facing: string | undefined): UiMessageKey => {
+  if (typeof facing === 'undefined') {
+    return 'debug.session'
+  }
+  return 'debug.session-facing'
+}
+
+const debugHudMessage = (
+  snapshot: DebugHudSnapshot,
+): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number>> }> => {
   const { coordinates, chunk } = snapshot
   const fps = finite(snapshot.fps, NON_FINITE_FALLBACK).toFixed(DECIMAL_PLACES)
   const posX = finite(coordinates.worldX, NON_FINITE_FALLBACK).toFixed(DECIMAL_PLACES)
@@ -123,7 +144,15 @@ const debugHudText = (snapshot: DebugHudSnapshot): string => {
   const posZ = finite(coordinates.worldZ, NON_FINITE_FALLBACK).toFixed(DECIMAL_PLACES)
   const chunkX = finite(chunk.chunkX, NON_FINITE_FALLBACK)
   const chunkZ = finite(chunk.chunkZ, NON_FINITE_FALLBACK)
-  return `FPS: ${fps}\nXYZ: ${posX} / ${posY} / ${posZ}\nChunk: ${chunkX} / ${chunkZ}${facingLine(snapshot.facing)}`
+  return {
+    key: debugHudMessageKey(snapshot.facing),
+    values: {
+      chunk: `${chunkX} / ${chunkZ}`,
+      coordinates: `${posX} / ${posY} / ${posZ}`,
+      facing: snapshot.facing ?? '',
+      fps,
+    },
+  }
 }
 
 const applySettingsToInputs = (
@@ -146,7 +175,7 @@ const buildDebugHud = (document: Document, root: HTMLElement): HTMLElement => {
   const debugHud = document.createElement('output')
   debugHud.setAttribute('data-mx-ui', 'debug-hud')
   debugHud.setAttribute('role', 'region')
-  debugHud.setAttribute('aria-label', 'Debug information')
+  setLocalizedAttribute(debugHud, 'aria-label', 'debug.overlay')
   debugHud.hidden = true
   debugHud.style.whiteSpace = 'pre'
   root.appendChild(debugHud)
@@ -158,7 +187,7 @@ const buildSettingsDialog = (document: Document, root: HTMLElement): HTMLElement
   settingsDialog.setAttribute('data-mx-ui', 'settings')
   settingsDialog.setAttribute('role', 'dialog')
   settingsDialog.setAttribute('aria-modal', 'true')
-  settingsDialog.setAttribute('aria-label', 'Settings')
+  setLocalizedAttribute(settingsDialog, 'aria-label', 'pause.dialog.options')
   settingsDialog.hidden = true
   root.appendChild(settingsDialog)
   return settingsDialog
@@ -166,7 +195,7 @@ const buildSettingsDialog = (document: Document, root: HTMLElement): HTMLElement
 
 const appendSettingsTitle = (document: Document, settingsDialog: HTMLElement): void => {
   const title = document.createElement('h2')
-  title.textContent = 'Settings'
+  setLocalizedText(title, 'pause.title.options')
   settingsDialog.appendChild(title)
 }
 
@@ -181,6 +210,16 @@ type SettingInputBuild = {
   readonly cleanup: () => void
 }
 
+const listenForSettingInput = (
+  input: HTMLInputElement,
+  definition: SettingDefinition,
+  callbacks: UiSettingsCallbacks,
+): (() => void) => {
+  const onInput = (): void => definition.notify(callbacks, input.valueAsNumber)
+  input.addEventListener('input', onInput)
+  return () => input.removeEventListener('input', onInput)
+}
+
 const buildRangeInput = (
   document: Document,
   definition: SettingDefinition,
@@ -191,11 +230,16 @@ const buildRangeInput = (
   input.min = String(definition.min)
   input.max = String(definition.max)
   input.step = String(definition.step)
-  input.setAttribute('aria-label', definition.label)
+  setLocalizedAttribute(input, 'aria-label', definition.labelKey)
   input.setAttribute('data-setting', definition.key)
-  const onInput = (): void => definition.notify(callbacks, input.valueAsNumber)
-  input.addEventListener('input', onInput)
-  return { cleanup: () => input.removeEventListener('input', onInput), input }
+  setFocusMemberAttributes({
+    columns: FOCUS_MEMBER_COLUMNS,
+    element: input,
+    group: `settings-slider-${definition.key}`,
+    index: FOCUS_MEMBER_INDEX,
+  })
+  const cleanup = listenForSettingInput(input, definition, callbacks)
+  return { cleanup, input }
 }
 
 const mountSettingInput = (
@@ -204,7 +248,7 @@ const mountSettingInput = (
   input: HTMLInputElement,
 ): void => {
   const label = context.document.createElement('label')
-  label.textContent = definition.label
+  setLocalizedText(label, definition.labelKey)
   label.appendChild(input)
   context.settingsDialog.appendChild(label)
 }
@@ -242,8 +286,14 @@ const buildSettingInputs = (context: SettingInputContext): SettingInputsResult =
 const buildCloseButton = (document: Document, settingsDialog: HTMLElement): HTMLButtonElement => {
   const closeButton = document.createElement('button')
   closeButton.type = 'button'
-  closeButton.textContent = 'Close settings'
-  closeButton.setAttribute('aria-label', 'Close settings')
+  setFocusMemberAttributes({
+    columns: FOCUS_MEMBER_COLUMNS,
+    element: closeButton,
+    group: 'settings-actions',
+    index: FOCUS_MEMBER_INDEX,
+  })
+  setLocalizedText(closeButton, 'settings.close')
+  setLocalizedAttribute(closeButton, 'aria-label', 'settings.close')
   settingsDialog.appendChild(closeButton)
   return closeButton
 }
@@ -251,6 +301,7 @@ const buildCloseButton = (document: Document, settingsDialog: HTMLElement): HTML
 type OverlaysDom = {
   readonly root: HTMLElement
   readonly debugHud: HTMLElement
+  readonly debugHudText: TextCell
   readonly settingsDialog: HTMLElement
   readonly closeButton: HTMLButtonElement
   readonly inputs: ReadonlyArray<SettingInput>
@@ -264,7 +315,7 @@ const buildDom = (document: Document, parent: HTMLElement, callbacks: UiSettings
   appendSettingsTitle(document, settingsDialog)
   const { cleanups, inputs } = buildSettingInputs({ callbacks, document, settingsDialog })
   const closeButton = buildCloseButton(document, settingsDialog)
-  return { cleanups, closeButton, debugHud, inputs, root, settingsDialog }
+  return { cleanups, closeButton, debugHud, debugHudText: textCell(debugHud), inputs, root, settingsDialog }
 }
 
 const toggleSettingsVisibility = (
@@ -306,7 +357,6 @@ const wireEventListeners = (context: OverlaysWiringContext): void => {
       event.preventDefault()
       toggleSettingsVisibility(dom.settingsDialog, openSettings, closeSettings)
     } else if (event.key === 'Escape' && !dom.settingsDialog.hidden) {
-      event.preventDefault()
       closeSettings()
     } else if (dom.settingsDialog.hidden) {
       delegateKeyDown?.(event)
@@ -327,7 +377,8 @@ const wireOverlaysBehavior = (
   let restoreFocus: HTMLElement | null = null
 
   const updateDebug = (snapshot: DebugHudSnapshot): void => {
-    dom.debugHud.textContent = debugHudText(snapshot)
+    const message = debugHudMessage(snapshot)
+    writeLocalizedText(dom.debugHudText, message.key, message.values)
   }
   const updateSettings = (settings: UiSettings): void => {
     applySettingsToInputs(dom.inputs, settings)

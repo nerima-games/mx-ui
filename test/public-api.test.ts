@@ -32,8 +32,11 @@ import type {
   DebugOverlayModel,
   DebugOverlaySnapshot,
   DebugOverlayView,
+  ColorVisionFilterController,
+  ColorVisionMode,
   FramesPerSecond,
   GpuTimeMilliseconds,
+  InventoryNavigationDirection,
   OnboardingCallbacks,
   OnboardingInput,
   OnboardingIntent,
@@ -49,6 +52,12 @@ import type {
   TradeView,
   TradeViewActions,
   TradeViewIntent,
+  UiLanguage,
+  UiLanguageFailure,
+  UiMount,
+  MotionPreference,
+  MotionPreferenceController,
+  MotionSetting,
   UiQaDebugOverlayState,
   UiQaNamespace,
   UiQaSnapshot,
@@ -133,6 +142,38 @@ describe('public API surface', () => {
       for (const name of accessibility) {
         expect(Object.keys(ui)).toContain(name)
       }
+    }),
+  )
+
+  it.effect('exports the UI4 language, font, scale, and live accessibility APIs', () =>
+    Effect.sync(() => {
+      const ui4Apis = [
+        'UI_LANGUAGES',
+        'UiLanguageSchema',
+        'decodeUiLanguage',
+        'UI_TRANSLATION_KEY_COUNT',
+        'applyUiLanguage',
+        'GAME_FONT_FAMILY',
+        'GAME_FONT_STACK',
+        'GAME_FONT_STYLESHEET_EXPORT',
+        'applyUiScale',
+        'UI_SCALE_MIN',
+        'UI_SCALE_MAX',
+        'createColorVisionFilterController',
+        'createMotionPreferenceController',
+        'focusTargetForElement',
+        'moveFocusTarget',
+        'inventoryFocusTargetForElement',
+      ]
+
+      for (const name of ui4Apis) {
+        expect(Object.keys(ui)).toContain(name)
+      }
+      expect(Object.keys(ui)).not.toContain('setSlotFocusTarget')
+      expect(ui.UI_LANGUAGES).toStrictEqual(['en', 'ja'])
+      expect(ui.UI_SCALE_MIN).toBe(0.75)
+      expect(ui.UI_SCALE_MAX).toBe(1.5)
+      expect(ui.UI_TRANSLATION_KEY_COUNT).toBe(382)
     }),
   )
 
@@ -226,6 +267,27 @@ describe('public API surface', () => {
       ]
       const typeContract: StreamTypes | undefined = undefined
       expect(typeContract).toBeUndefined()
+    }),
+  )
+
+  it.effect('keeps the UI4 type contracts available from the package root', () =>
+    Effect.sync(() => {
+      type Ui4Types = [
+        UiLanguage,
+        UiLanguageFailure,
+        ColorVisionMode,
+        MotionSetting,
+        MotionPreference,
+        ColorVisionFilterController,
+        MotionPreferenceController,
+        InventoryNavigationDirection,
+        UiMount,
+      ]
+      const ui4Types: Ui4Types | undefined = undefined
+      expect(ui4Types).toBeUndefined()
+
+      const moveFocus: UiMount['moveFocus'] = (_direction: InventoryNavigationDirection) => true
+      expect(moveFocus('right')).toBe(true)
     }),
   )
 

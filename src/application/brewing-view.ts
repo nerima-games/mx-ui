@@ -5,7 +5,9 @@ import {
 } from '../domain/brewing-view-model.js'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
-import { type TextCell, textCell, writeText } from './dom-write.js'
+import { type TextCell, textCell } from './dom-write.js'
+import { type UiLanguage, translateUiMessage } from '../domain/ui-language.js'
+import { setLocalizedText, writeLocalizedTextUsing } from './ui-localization.js'
 
 const PROGRESS_DECIMAL_PLACES = 1
 
@@ -34,7 +36,7 @@ type BrewingControlContext = Readonly<{
 
 type BrewingIntentControl = Readonly<{
   readonly intent: BrewingIntent
-  readonly label: string
+  readonly labelKey: 'brewing.insert-selected-item' | 'brewing.collect-bottle' | 'brewing.drink-potion'
   readonly operation: BrewingOperation
 }>
 
@@ -67,7 +69,7 @@ const createIntentButton = (
   button.setAttribute('type', 'button')
   button.setAttribute('data-mx-ui', 'brewing-control')
   button.setAttribute('data-brewing-operation', control.operation)
-  button.textContent = control.label
+  setLocalizedText(button, control.labelKey)
   button.addEventListener('click', () => context.actions.onIntent(control.intent))
   context.root.appendChild(button)
   return button
@@ -82,7 +84,7 @@ const createCloseControl = (
   button.setAttribute('type', 'button')
   button.setAttribute('data-mx-ui', 'brewing-control')
   button.setAttribute('data-brewing-operation', 'close')
-  button.textContent = 'Close'
+  setLocalizedText(button, 'brewing.close')
   button.addEventListener('click', () => actions.onIntent({ _tag: 'Close' }))
   root.appendChild(button)
   return button
@@ -97,17 +99,17 @@ const createControls = (
   const controls: ReadonlyArray<BrewingIntentControl> = [
     {
       intent: { _tag: 'InsertSelectedItem' },
-      label: 'Insert selected item',
+      labelKey: 'brewing.insert-selected-item',
       operation: 'insert-selected-item',
     },
     {
       intent: { _tag: 'CollectBottle' },
-      label: 'Collect bottle',
+      labelKey: 'brewing.collect-bottle',
       operation: 'collect-bottle',
     },
     {
       intent: { _tag: 'DrinkPotion' },
-      label: 'Drink potion',
+      labelKey: 'brewing.drink-potion',
       operation: 'drink-potion',
     },
   ]
@@ -117,32 +119,49 @@ const createControls = (
   createCloseControl(factory, root, actions)
 }
 
-const summaryText = (model: BrewingViewModel): string => {
+const summaryText = (language: UiLanguage, model: BrewingViewModel): string => {
   const stackLabel = (stack: BrewingViewModel['fuel']): string => {
     if (!stack) {
-      return 'Empty'
+      return translateUiMessage(language, 'brewing.empty')
     }
-    return `${String(stack.item)} × ${String(stack.count)}`
+    return translateUiMessage(language, 'brewing.stack', {
+      count: stack.count,
+      item: stack.item,
+    })
   }
   const bottleText = model.bottles
-    .map((bottle) => `${bottle.label}: ${stackLabel(bottle.stack)}`)
+    .map((bottle) => translateUiMessage(language, 'brewing.bottle-stack', {
+      bottle: translateUiMessage(language, bottle.messageId),
+      stack: stackLabel(bottle.stack),
+    }))
     .join(' | ')
-  const fuelText = `${String(model.fuelCharges)} charges (${stackLabel(model.fuel)})`
-  return `Fuel: ${fuelText} | ${bottleText} | Ingredient: ${stackLabel(model.ingredient)}`
+  const fuelText = translateUiMessage(language, 'brewing.fuel-charges', {
+    charges: model.fuelCharges,
+    stack: stackLabel(model.fuel),
+  })
+  return translateUiMessage(language, 'brewing.status-line', {
+    bottles: bottleText,
+    fuel: fuelText,
+    ingredient: stackLabel(model.ingredient),
+  })
 }
 
-const progressText = (progress: BrewingProgressView): string => {
+const progressText = (language: UiLanguage, progress: BrewingProgressView): string => {
   if (!('remainingSecs' in progress)) {
-    return 'Idle'
+    return translateUiMessage(language, 'brewing.idle')
   }
-  return `Brewing: ${progress.remainingSecs.toFixed(PROGRESS_DECIMAL_PLACES)}s remaining`
+  return translateUiMessage(language, 'brewing.progress', {
+    seconds: progress.remainingSecs.toFixed(PROGRESS_DECIMAL_PLACES),
+  })
 }
 
-const statusText = (progress: BrewingProgressView): string => {
+const statusText = (language: UiLanguage, progress: BrewingProgressView): string => {
   if (!('remainingSecs' in progress)) {
-    return 'Brewing Stand idle'
+    return translateUiMessage(language, 'brewing.stand-idle')
   }
-  return `Brewing in progress, ${progress.remainingSecs.toFixed(PROGRESS_DECIMAL_PLACES)} seconds remaining`
+  return translateUiMessage(language, 'brewing.stand-progress', {
+    seconds: progress.remainingSecs.toFixed(PROGRESS_DECIMAL_PLACES),
+  })
 }
 
 const createStatusCell = (factory: DomElementFactory, root: DomElement): TextCell => {
@@ -161,7 +180,7 @@ const createBrewingParts = (
   actions: BrewingViewActions,
 ): BrewingParts => {
   const title = factory.createElement('h2')
-  title.textContent = 'Brewing Stand'
+  setLocalizedText(title, 'brewing.stand')
   root.appendChild(title)
 
   const summary = createTextElement(factory, root, 'brewing-summary')
@@ -175,9 +194,9 @@ const createBrewingParts = (
 }
 
 const renderBrewingParts = (parts: BrewingParts, model: BrewingViewModel): void => {
-  writeText(parts.summary, summaryText(model))
-  writeText(parts.progress, progressText(model.progress))
-  writeText(parts.status, statusText(model.progress))
+  writeLocalizedTextUsing(parts.summary, (language) => summaryText(language, model))
+  writeLocalizedTextUsing(parts.progress, (language) => progressText(language, model.progress))
+  writeLocalizedTextUsing(parts.status, (language) => statusText(language, model.progress))
 }
 
 export const createBrewingView = (

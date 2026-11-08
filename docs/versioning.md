@@ -23,17 +23,6 @@ mount 面（[public-api.md](./public-api.md) §4-1）でルート要素を渡し
 mount 面は実装済みだが、mc-compose が実際に消費してゲームを起動したという事実はまだない。
 したがって、机上で 1.0.0 を切る根拠は無い。
 
-plan.md §6 Step 3(歴史的な記録。当時の「APIロック4週間無変更」ゲートは
-その後 API_STANDARD.md §4 / RELEASE_STANDARD.md §4 により廃止され、
-maintainer の裁量判断に置き換えられている):
-
-> 界面が安定した(APIロック4週間無変更)リポジトリから GitHub Packages 等へ npm 公開 + changesets 運用に切り替え。
-> それまでは dev-meta workspace 統合で開発。
-
-plan.md §8 のリスク表も同じことを別角度から:
-
-> **新規構築初期は全界面が高churn** → npm公開を遅らせ dev-meta workspace で開発。bump連鎖を構造的に回避
-
 ## 3. 公開先とボトムアップ publish-then-pin
 
 ### 公開先
@@ -87,28 +76,26 @@ changeset(`major` bump)を書く運びになる。
 
 `package.json` を正とする現行の出荷面は次の通り:
 
-1. `pnpm build` が `tsconfig.release.json` で `dist/` を生成する
-2. `main` / `types` / `exports["."]` は、それぞれ `dist/index.js` / `dist/index.d.ts` を指す
-3. `files` は `dist`、`LICENSE`、`README.md` のみを含む。CSS、フォント、アイコン画像、`docs/` は含まない
-4. `pnpm package:verify` が packed tarball の root export を実行時と型空間で検証する
-5. `.github/workflows/release.yaml` の publish job が GitHub Packages へ公開する
+1. `pnpm build` uses `tsconfig.release.json` to generate `dist/`
+2. `main`, `types`, and `exports["."]` point to `dist/index.js` and `dist/index.d.ts`, respectively
+3. `exports` publishes the root JavaScript and declarations plus `./assets/game-font.css`
+4. `files` includes `dist`, `assets`, `LICENSE`, and `README.md`. `assets` contains the stylesheet, font, and font license; `docs/` is excluded
+5. `pnpm package:verify` checks the packed tarball's export targets and font assets, then installs it in a consumer and verifies the root API at runtime and during type checking
+6. The publish job in `.github/workflows/release.yaml` publishes to GitHub Packages
 
-変更時は `package.json`、`scripts/verify-package.mjs`、workflow の実装を確認し、
-この文書に現在の版数や依存版を重複して記載しない。
+When updating the package, check the implementation in `package.json`, `scripts/verify-package.mjs`, and the workflow.
+Do not duplicate the current package or dependency versions in this document.
 
-### mx-ui だけが抱える面倒だった話 — 決着済み、CSS ファイルは無い
+### UI assets and DOM styling
 
-**この節はもともと plan.md §5.3 / §7 を根拠に「mx-ui は CSS とフォント/アイコンを
-同梱しなければならない」と書いていた。** その前提は
-`application/palette-css.ts` と `application/accessibility-dom.ts` が実装される前の
-scaffold 時点（2026-07-26）のもので、実装（2026-08-03）の後も更新されていなかった。
-以下が実装の到達点であり、上の前提を置き換える。
+The package includes the game UI font stylesheet, `PixelMplus12-Regular.ttf`, and the M+ Fonts license file in `assets/`.
+Loading the stylesheet from the `@nerima-games/mx-ui/assets/game-font.css` package export applies the font to `[data-mx-ui]` elements.
+Importing the root API does not load the stylesheet.
 
-**結論: mx-ui は外部スタイルシートもフォントもアイコン画像も同梱しない。全スタイリングが
-`dist/` の JS そのものである。** `files` に足すディレクトリは無く、`exports` にサブパスは
-要らない — [public-api.md](./public-api.md) §5 の一覧そのものが唯一の出荷物である。
+The stylesheet only declares the font face and UI font stack.
+mx-ui continues to write palette values and layout through inline styles on the root and its elements, and it renders icons with Unicode glyphs.
 
-理由は 3 つの独立した設計判断で、どれも「後で足す」ではなく「最初から JS 側でやる」を選んだ:
+The stylesheet and JavaScript have separate roles:
 
 1. **色（パレット）はスタイルシートではなくカスタムプロパティを、mount された root に
    実行時に書く。** `application/palette-css.ts` 冒頭の "THE DECISION" が理由を書いている
@@ -124,28 +111,16 @@ scaffold 時点（2026-07-26）のもので、実装（2026-08-03）の後も更
    `setProperty` / `removeProperty` しか持たない。クラス名でスタイルを当てる経路
    （`classList` 経由の外部 CSS）はそもそも `DomElement` の契約に存在しない
    （`dom-surface.ts` の型定義コメントが `classList` を明示的に「無い」ものとして挙げている）。
-3. **アイコンは画像でもアイコンフォントでもなく Unicode グリフである。** `♡ ♥`（heart）
-   と `○ ●`（shank）を hollow/solid の 2 レイヤーに重ね、幅を clip して満タン/半分/空を表現する
-   （`application/icon-element.ts`）。ホストページのフォントをそのまま使うので、
-   同梱すべきフォントファイルが存在しない。
+3. **Icons use Unicode glyphs.** `application/icon-element.ts` overlays hollow and solid `♡ ♥` (heart) and `○ ●` (shank) glyphs, then clips their width to show full, half, or empty states.
+   UI text can use the bundled PixelMplus12 font; the icons do not need separate image assets.
 
-**DN-UI-1a の SVG `feColorMatrix` フィルタも、この節が書かれた時点では未決だったが、
-実装時に決着している。** 参照実装と同じ分担を採った:
-このリポジトリが決めるのは**値**（`domain/accessibility.ts` の `colorVisionMatrix` /
-`colorVisionMatrixValues` / `COLOR_VISION_FILTER_COLOR_SPACE`、いずれもプレーンな JS
-export）で、`<filter><feColorMatrix values="…"/></filter>` という **defs ブロックそのもの**と
-それを canvas だけに効かせる CSS ルールは mc-compose 側の資産のままである
-（[design-notes.md](./design-notes.md) DN-UI-1a、`application/accessibility-dom.ts` 冒頭コメント）。
-mx-ui がここで defs を組み立てるには `createElementNS` が要り、
-それは自分が所有していないドキュメントの中に defs ブロックを持つことになる —
-`applyColorVision` が `DomAttributeTarget`（属性 1 個だけ書ける最小の受け口）しか
-受け取らない理由はこれである。行列を JS で export した時点で「値を出荷物として渡す」は
-すでに満たされており、渡し方として SVG マークアップを追加で出荷する必要は無い。
+`domain/accessibility.ts` owns the color-vision correction matrices.
+`createColorVisionFilterController(root, target)` creates per-instance SVG filter definitions inside the mount root and applies an inline filter and `data-color-vision` attribute only to the supplied canvas.
+`off` and `dispose()` restore the canvas attribute and inline filter captured when the controller was created.
+This does not require another stylesheet asset.
 
-**検証済みの到達性。** `declarePalette` と `PALETTE_VAR` は
-[public-api.md](./public-api.md) §5 のバレルから export されており、`pnpm pack` で作った
-実アーカイブをインストールしてこの 2 つを呼ぶと、実際の `#rrggbb` / `rgba(...)` 文字列が
-返る（`scripts/verify-package.mjs` の runtime probe と同じ形の追加確認で実測済み）。
+`pnpm package:verify` checks the stylesheet export and font and license files in the package archive.
+It also installs the packed package into a temporary consumer and verifies the root API's runtime and type exports and palette functions.
 `test-browser/dom-surface.spec.ts` の
 `the palette reaches the document as VALUES › every custom property is declared on an
 mx-ui root and resolves` が同じ主張を実ブラウザで固定している。
@@ -156,7 +131,7 @@ mx-ui root and resolves` が同じ主張を実ブラウザで固定している�
 | --- | --- |
 | `StageRegistration` の形、`makeUiStages` / `makeUiFrameState` のシグネチャ | **はい** |
 | `UI_STAGE_IDS` / `UPSTREAM_STAGE_IDS` の値の変更・削除 | **はい**（mc-compose の順序表が名前で参照する） |
-| 将来の mount 面 | **はい** |
+| Changes to the `UiMount` / `UiMountOptions` / `makeUiMount` host integration contract | **Yes** |
 | ビューモデルの型・`iconRow` の戻り値 | いいえ |
 | 字幕キューの内部・`MAX_VISIBLE_CAPTIONS` の値 | いいえ |
 | モーダルスタック・アクセシビリティ関数 | いいえ |

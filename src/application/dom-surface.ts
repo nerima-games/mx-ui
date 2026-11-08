@@ -92,9 +92,10 @@
  * フレーム側単一ハンドラ(mc-render の入力設計と対)」. `domain/modal-stack.ts` is that
  * single decision, and a renderer that attaches its own key handler makes it two.
  * `test/hud-view.test.ts` asserts at runtime that no listener is registered. The
- * menu uses native buttons and inputs, so only those factory overloads expose
- * click/input registration and focus. No keyboard event is exposed: browser
- * button semantics turn Enter and Space into click without a second key handler.
+ * Menus, the HUD, inventory and station views use native buttons and inputs, so
+ * only those factory overloads expose click/input registration and focus. No
+ * keyboard event is exposed: browser button semantics turn Enter and Space
+ * into click without a second key handler.
  *
  * Also absent: `removeChild`, `remove`, `innerHTML`, `classList`, `querySelector`
  * and `document.body`. Removal is done by toggling `hidden`, so the element tree

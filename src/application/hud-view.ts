@@ -87,7 +87,7 @@ import {
   hotbarSlotIndex,
 } from '../domain/hud-view-model.js'
 import {
-  ICON_ROW_LABEL,
+  ICON_ROW_MESSAGE_KEY,
   type IconElement,
   type IconKind,
   createIconElement,
@@ -106,6 +106,8 @@ import {
   setSlotTabStop,
   updateSlotElement,
 } from './slot-element.js'
+import { setLocalizedAttribute, setLocalizedText, writeLocalizedAttribute } from './ui-localization.js'
+import type { UiMessageKey } from '../domain/ui-language.js'
 
 /**
  * How long the XP bar takes to slide, at full motion.
@@ -221,7 +223,7 @@ const createIconRow = (
   // Characters. `ICON_ROW_LABEL` says why this is the row's job rather than each
   // Icon's; static, so it costs nothing on the frame path.
   container.setAttribute('role', 'group')
-  container.setAttribute('aria-label', ICON_ROW_LABEL[kind])
+  setLocalizedAttribute(container, 'aria-label', ICON_ROW_MESSAGE_KEY[kind])
   parent.appendChild(container)
   return { container, icons: [], kind }
 }
@@ -259,12 +261,18 @@ const renderIconRow = (
   }
 }
 
-const hotbarSlotName = (index: number, view: SlotView): string => {
+const hotbarSlotName = (
+  index: number,
+  view: SlotView,
+): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number>> }> => {
   const displayIndex = String(index + INDEX_INCREMENT)
   if (typeof view.itemId === 'undefined') {
-    return `Hotbar slot ${displayIndex}, empty`
+    return { key: 'hud.hotbar-slot-empty', values: { slot: displayIndex } }
   }
-  return `Hotbar slot ${displayIndex}, ${view.itemId}, ${view.countLabel ?? '1'}`
+  return {
+    key: 'hud.hotbar-slot-item',
+    values: { count: view.countLabel ?? '1', item: view.itemId, slot: displayIndex },
+  }
 }
 
 const updateHotbarSlotName = (slot: SlotElement, index: number, view: SlotView): void => {
@@ -275,7 +283,8 @@ const updateHotbarSlotName = (slot: SlotElement, index: number, view: SlotView):
     slot.itemText.previous !== itemText ||
     slot.countText.previous !== countText
   ) {
-    writeAttribute(slot.ariaLabel, hotbarSlotName(index, view))
+    const label = hotbarSlotName(index, view)
+    writeLocalizedAttribute(slot.ariaLabel, label.key, label.values)
   }
 }
 
@@ -392,7 +401,7 @@ const createHotbarGroup = (factory: DomElementFactory, root: DomElement): DomEle
   // The hotbar group needs one accessible name because its visible label is a
   // Sibling `<span>`, not a label for the slot widget.
   hotbarGroup.setAttribute('role', 'group')
-  hotbarGroup.setAttribute('aria-label', 'Hotbar')
+  setLocalizedAttribute(hotbarGroup, 'aria-label', 'hud.hotbar')
   root.appendChild(hotbarGroup)
   return hotbarGroup
 }
@@ -401,7 +410,7 @@ const createHotbarRadioGroup = (factory: DomElementFactory, group: DomElement): 
   const hotbarRadioGroup = factory.createElement('div')
   hotbarRadioGroup.setAttribute('data-mx-ui', 'hotbar-radio-group')
   hotbarRadioGroup.setAttribute('role', 'radiogroup')
-  hotbarRadioGroup.setAttribute('aria-label', 'Hotbar slots')
+  setLocalizedAttribute(hotbarRadioGroup, 'aria-label', 'hud.hotbar-slots')
   hotbarRadioGroup.setAttribute('aria-orientation', 'horizontal')
   // The hotbar is ONE tab stop, so it needs one accessible name. DN-UI-1c records
   // The reference discovering the same thing about its rebind fields: 「the
@@ -461,7 +470,7 @@ const createHudRespawnButton = (factory: DomElementFactory, death: DomElement): 
   const respawn = factory.createElement('button')
   respawn.setAttribute('data-mx-ui', 'respawn')
   respawn.setAttribute('type', 'button')
-  respawn.textContent = 'Respawn'
+  setLocalizedText(respawn, 'hud.respawn')
   death.appendChild(respawn)
 }
 
@@ -470,11 +479,17 @@ type HudDeathElements = {
   readonly deathHidden: AttributeCell
 }
 
+const createHudDeathLabel = (factory: DomElementFactory, death: DomElement): void => {
+  const deathLabel = factory.createElement('span')
+  setLocalizedText(deathLabel, 'hud.you-died')
+  death.appendChild(deathLabel)
+}
+
 const createHudDeathOverlay = (factory: DomElementFactory, root: DomElement): HudDeathElements => {
   const death = factory.createElement('div')
   death.setAttribute('data-mx-ui', 'death')
   death.style.setProperty('color', PALETTE_VAR.statusAlert)
-  death.textContent = 'You died'
+  createHudDeathLabel(factory, death)
   createHudRespawnButton(factory, death)
   death.setAttribute('hidden', '')
   root.appendChild(death)

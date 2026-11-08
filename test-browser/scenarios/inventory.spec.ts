@@ -71,7 +71,7 @@ test.describe('inventory scenarios', () => {
       } else if (scenario.id === 'stack-100-rejected') {
         await expect(inventory.getByRole('note')).toContainText('Count 100 is rejected')
       } else if (scenario.id === 'accessibility-name-role-state') {
-        const slot = inventory.getByRole('button', { name: 'hotbar slot 1, stone, 64' })
+        const slot = inventory.getByRole('button', { name: 'Hotbar slot 1, stone, 64' })
         await expect(slot).toHaveAttribute('aria-disabled', 'false')
         await expect(slot).toHaveAttribute('tabindex', '0')
         const output = inventory.getByRole('button', { name: 'Crafting output, no matching recipe' })

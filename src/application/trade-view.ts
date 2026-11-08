@@ -13,9 +13,24 @@ import {
   type TradeViewIntent,
   tradeViewModel,
 } from '../domain/trade-view-model.js'
+import { inheritUiLanguage, setLocalizedText, writeLocalizedText } from './ui-localization.js'
 import type { TradeSnapshot } from '../domain/trade-snapshot.js'
 
 type TradeViewModel = ReturnType<typeof tradeViewModel>
+
+type TradeRenderContext = {
+  readonly actions: TradeViewActions
+  readonly factory: DomElementFactory
+  readonly offerList: DomElement
+  readonly offers: Array<TradeOfferElement>
+  readonly profession: TextCell
+  readonly status: TextCell
+}
+
+const PROFESSION_MESSAGE_KEY: Readonly<Record<TradeViewModel['profession'], 'trade.profession.farmer' | 'trade.profession.toolsmith'>> = {
+  farmer: 'trade.profession.farmer',
+  toolsmith: 'trade.profession.toolsmith',
+}
 
 export type TradeView = {
   readonly root: DomElement
@@ -68,7 +83,7 @@ const createCloseButton = (
   const close = factory.createElement('button')
   close.setAttribute('type', 'button')
   close.setAttribute('data-mx-ui', 'trade-close')
-  close.textContent = 'Close'
+  setLocalizedText(close, 'trade.close')
   close.addEventListener('click', () => {
     actions.onIntent({ _tag: 'CloseTradeUi' })
   })
@@ -110,7 +125,7 @@ const renderTradeOffer = (
   model: TradeViewModel,
   offer: TradeViewModel['offers'][number],
 ): void => {
-  writeText(element.label, offer.label)
+  writeLocalizedText(element.label, 'trade.offer', offer.labelMessage)
   writeHidden(element.hidden, false)
 
   if (offer.disabled) {
@@ -137,6 +152,22 @@ const updateTradeOffer = (element: TradeOfferElement, model: TradeViewModel, ind
   renderTradeOffer(element, model, offer)
 }
 
+const renderTradeModel = (context: TradeRenderContext, model: TradeViewModel): void => {
+  writeLocalizedText(context.profession, PROFESSION_MESSAGE_KEY[model.profession])
+  writeText(context.status, model.status)
+
+  while (context.offers.length < model.offers.length) {
+    const element = createTradeOfferElement(context.factory, context.actions)
+    inheritUiLanguage(context.offerList, element.button)
+    context.offerList.appendChild(element.button)
+    context.offers.push(element)
+  }
+
+  for (const [index, element] of context.offers.entries()) {
+    updateTradeOffer(element, model, index)
+  }
+}
+
 export const createTradeView = (
   factory: DomElementFactory,
   parent: DomElement,
@@ -152,21 +183,14 @@ export const createTradeView = (
   const offers: Array<TradeOfferElement> = []
 
   return {
-    render: (snapshot: TradeSnapshot): void => {
-      const model = tradeViewModel(snapshot)
-      writeText(profession, model.professionLabel)
-      writeText(status, model.status)
-
-      while (offers.length < model.offers.length) {
-        const element = createTradeOfferElement(factory, actions)
-        offerList.appendChild(element.button)
-        offers.push(element)
-      }
-
-      for (const [index, element] of offers.entries()) {
-        updateTradeOffer(element, model, index)
-      }
-    },
+    render: (snapshot: TradeSnapshot): void => renderTradeModel({
+      actions,
+      factory,
+      offerList,
+      offers,
+      profession,
+      status,
+    }, tradeViewModel(snapshot)),
     root,
   }
 }

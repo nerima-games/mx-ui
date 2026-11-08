@@ -1,4 +1,5 @@
 import { BREWING_TIME_SECS, type BrewingState } from '@nerima-games/mc-sim'
+import { UI_MESSAGES } from './ui-language.js'
 
 export type BrewingSnapshot = BrewingState
 
@@ -10,7 +11,8 @@ export type BrewingStackView = Readonly<{
 }>
 
 export type BrewingBottleView = Readonly<{
-  readonly label: 'Bottle 1' | 'Bottle 2' | 'Bottle 3'
+  readonly label: string
+  readonly messageId: 'brewing.bottle-1' | 'brewing.bottle-2' | 'brewing.bottle-3'
   readonly stack: BrewingStackView | undefined
 }>
 
@@ -47,9 +49,13 @@ const projectStack = (stack: BrewingState['ingredient']): BrewingStackView | und
 }
 
 const projectBottle = (
-  label: BrewingBottleView['label'],
+  messageId: BrewingBottleView['messageId'],
   stack: BrewingState['bottles'][number],
-): BrewingBottleView => Object.freeze({ label, stack: projectStack(stack) })
+): BrewingBottleView => Object.freeze({
+  label: UI_MESSAGES[messageId].en,
+  messageId,
+  stack: projectStack(stack),
+})
 
 const projectProgress = (seconds: BrewingState['brewProgressSecs']): BrewingProgressView => {
   if (seconds === IDLE_BREW_PROGRESS_SECS) {
@@ -61,9 +67,9 @@ const projectProgress = (seconds: BrewingState['brewProgressSecs']): BrewingProg
 export const brewingViewModel = (snapshot: BrewingSnapshot): BrewingViewModel => {
   const [firstBottle, secondBottle, thirdBottle] = snapshot.bottles
   const bottles: BrewingViewModel['bottles'] = [
-    projectBottle('Bottle 1', firstBottle),
-    projectBottle('Bottle 2', secondBottle),
-    projectBottle('Bottle 3', thirdBottle),
+    projectBottle('brewing.bottle-1', firstBottle),
+    projectBottle('brewing.bottle-2', secondBottle),
+    projectBottle('brewing.bottle-3', thirdBottle),
   ]
 
   return Object.freeze({

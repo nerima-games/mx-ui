@@ -64,12 +64,16 @@ import {
   createSlotElement,
   hideSlotElementAtMount,
   setSlotButtonView,
+  setSlotFocusTarget,
   setSlotHidden,
   updateSlotElement,
 } from './slot-element.js'
+import { clearLocalizedAttribute, inheritUiLanguage, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
 import type { SlotView } from '../domain/hud-view-model.js'
+import type { UiMessageKey } from '../domain/ui-language.js'
 
 type RegionElement = {
+  readonly id: RegionId
   readonly root: DomElement
   readonly grid: DomElement
   readonly hidden: AttributeCell
@@ -99,6 +103,11 @@ export type InventoryInteractionView = {
   readonly status: string
 }
 
+export type InventoryViewActions = {
+  readonly onActivate?: (target: InventoryInteractionTarget, shiftKey: boolean) => void
+  readonly onFocusChange?: (target: InventoryInteractionTarget) => void
+}
+
 const CRAFTING_STATE: Readonly<Record<CraftingOutcomeView['kind'], string>> = {
   match: 'match',
   'no-match': 'no-match',
@@ -111,6 +120,13 @@ const ZERO = 0
 const ONE = 1
 /** The carried stack and the crafting output are each the only slot in their own row. */
 const SOLE_SLOT_INDEX = 0
+const REGION_MESSAGE_KEY: Readonly<Record<RegionId, UiMessageKey>> = {
+  armour: 'inventory.region.armour',
+  'crafting-grid': 'inventory.region.crafting-grid',
+  hotbar: 'hud.hotbar',
+  main: 'inventory.region.main',
+  offhand: 'inventory.region.offhand',
+}
 
 /**
  * Set (or clear) a slot's interactive affordance in one place, so every call
@@ -183,14 +199,18 @@ const createRegion = (
   id: RegionId,
 ): RegionElement => {
   const root = buildRegionRoot(factory, parent, id)
+  inheritUiLanguage(parent, root)
   const grid = buildRegionGrid(factory, root)
+  inheritUiLanguage(root, grid)
   const note = buildRegionNote(factory, root)
+  inheritUiLanguage(root, note)
 
   const region: RegionElement = {
     columns: styleCell(grid, 'grid-template-columns'),
     grid,
     gridHidden: attributeCell(grid, 'hidden'),
     hidden: attributeCell(root, 'hidden'),
+    id,
     noteHidden: attributeCell(note, 'hidden'),
     noteText: textCell(note),
     root,
@@ -201,10 +221,14 @@ const createRegion = (
   return region
 }
 
-const renderUnknownRegion = (region: RegionElement, why: string): void => {
+const renderUnknownRegion = (region: RegionElement, model: Extract<SlotRegion, { readonly kind: 'unknown' }>): void => {
   writeHidden(region.gridHidden, true)
   writeHidden(region.noteHidden, false)
-  writeText(region.noteText, why)
+  if (typeof model.whyMessage === 'undefined') {
+    writeText(region.noteText, model.why)
+  } else {
+    writeLocalizedText(region.noteText, model.whyMessage.key, model.whyMessage.values)
+  }
   for (const slot of region.slots) {
     applyButtonView(slot)
   }
@@ -215,10 +239,33 @@ type RegionElements = {
   readonly region: RegionElement
 }
 
-const ensureRegionSlotCount = (elements: RegionElements, slotCount: number): void => {
+const wireRegionSlot = (
+  slot: SlotElement,
+  target: InventoryInteractionTarget,
+  actions: InventoryViewActions | undefined,
+): void => {
+  if (typeof actions?.onActivate === 'function') {
+    slot.root.addEventListener('click', (event) => {
+      actions.onActivate?.(target, 'shiftKey' in event && event.shiftKey === true)
+    })
+  }
+  if (typeof actions?.onFocusChange === 'function') {
+    slot.root.addEventListener('focus', () => actions.onFocusChange?.(target))
+  }
+}
+
+const ensureRegionSlotCount = (
+  elements: RegionElements,
+  slotCount: number,
+  actions: InventoryViewActions | undefined,
+): void => {
   const { factory, region } = elements
   while (region.slots.length < slotCount) {
-    const slot = createSlotElement(factory, region.slots.length)
+    const index = region.slots.length
+    const slot = createSlotElement(factory, index)
+    inheritUiLanguage(region.grid, slot.root)
+    const target: InventoryInteractionTarget = { index, kind: 'slot', region: region.id }
+    wireRegionSlot(slot, target, actions)
     region.grid.appendChild(slot.root)
     region.slots.push(slot)
   }
@@ -228,12 +275,23 @@ const slotLabel = (
   region: RegionId,
   index: number,
   item: Pick<SlotView, 'itemId' | 'countLabel'>,
-): string => {
-  const displayIndex = index + ONE
+): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
+  const displayIndex = String(index + ONE)
   if (typeof item.itemId === 'undefined') {
-    return `${region} slot ${String(displayIndex)}, empty`
+    return {
+      key: 'inventory.slot-empty',
+      values: { region: { key: REGION_MESSAGE_KEY[region] }, slot: displayIndex },
+    }
   }
-  return `${region} slot ${String(displayIndex)}, ${item.itemId}, ${item.countLabel ?? '1'}`
+  return {
+    key: 'inventory.slot-item',
+    values: {
+      count: item.countLabel ?? '1',
+      item: item.itemId,
+      region: { key: REGION_MESSAGE_KEY[region] },
+      slot: displayIndex,
+    },
+  }
 }
 
 type SlotIdentity = {
@@ -251,20 +309,50 @@ const buildFocusedSlotButtonView = (
   return {
     disabled: false,
     focused: isFocused,
-    label: slotLabel(regionId, index, view),
+    label: '',
+    localizedLabel: slotLabel(regionId, index, view),
     tabStop: isFocused,
   }
 }
 
 type SlotRenderContext = {
   readonly index: number
+  readonly columns: number
   readonly view: SlotView | undefined
   readonly regionId: RegionId
   readonly focused: InventoryInteractionTarget | undefined
 }
 
+const renderRegionSlotFocus = (
+  slot: SlotElement,
+  context: Readonly<{
+    columns: number
+    focused: InventoryInteractionTarget | undefined
+    index: number
+    regionId: RegionId
+    view: SlotView
+  }>,
+): void => {
+  if (typeof context.focused === 'undefined') {
+    applyButtonView(slot)
+    return
+  }
+  applyButtonView(
+    slot,
+    buildFocusedSlotButtonView(
+      { index: context.index, regionId: context.regionId, view: context.view },
+      context.focused,
+    ),
+  )
+  setSlotFocusTarget(slot, {
+    columns: context.columns,
+    group: context.regionId,
+    index: context.index,
+  })
+}
+
 const renderKnownRegionSlot = (slot: SlotElement, context: SlotRenderContext): void => {
-  const { index, view, regionId, focused } = context
+  const { index, columns, view, regionId, focused } = context
   if (typeof view === 'undefined') {
     setSlotHidden(slot, true)
     applyButtonView(slot)
@@ -275,68 +363,95 @@ const renderKnownRegionSlot = (slot: SlotElement, context: SlotRenderContext): v
   // Indices to these region-local ones is not published, and inventing it here
   // Is the one thing this repository must not do.
   updateSlotElement(slot, view)
-  if (typeof focused === 'undefined') {
-    applyButtonView(slot)
-  } else {
-    applyButtonView(slot, buildFocusedSlotButtonView({ index, regionId, view }, focused))
-  }
+  renderRegionSlotFocus(slot, { columns, focused, index, regionId, view })
 }
 
-const renderKnownRegion = (
-  elements: RegionElements,
-  model: Extract<SlotRegion, { readonly kind: 'slots' }>,
-  focused: InventoryInteractionTarget | undefined,
-): void => {
+type KnownRegionRenderContext = Readonly<{
+  elements: RegionElements
+  model: Extract<SlotRegion, { readonly kind: 'slots' }>
+  focused: InventoryInteractionTarget | undefined
+  actions: InventoryViewActions | undefined
+}>
+
+const renderKnownRegion = ({ elements, focused, model, actions }: KnownRegionRenderContext): void => {
   const { region } = elements
   writeHidden(region.gridHidden, false)
   writeHidden(region.noteHidden, true)
   writeStyle(region.columns, `repeat(${String(model.columns)}, 1fr)`)
-  ensureRegionSlotCount(elements, model.slots.length)
+  ensureRegionSlotCount(elements, model.slots.length, actions)
 
   // Over the array; see `caption-view.ts`'s note. `model.slots` keeps its check
   // Because it is the other array and is routinely SHORTER — `region.slots` only
   // Ever grows, so a model with fewer slots than a previous one leaves surplus
   // Squares that have to be hidden rather than left showing stale items.
   for (const [index, slot] of region.slots.entries()) {
-    renderKnownRegionSlot(slot, { focused, index, regionId: model.id, view: model.slots[index] })
+    renderKnownRegionSlot(slot, { columns: model.columns, focused, index, regionId: model.id, view: model.slots[index] })
   }
 }
 
-const renderRegion = (
-  elements: RegionElements,
-  model: SlotRegion,
-  focused: InventoryInteractionTarget | undefined,
-): void => {
+type RegionRenderContext = Readonly<{
+  elements: RegionElements
+  model: SlotRegion
+  focused: InventoryInteractionTarget | undefined
+  actions: InventoryViewActions | undefined
+}>
+
+const renderRegion = ({ elements, focused, model, actions }: RegionRenderContext): void => {
   const { region } = elements
   writeHidden(region.hidden, false)
   writeAttribute(region.stateFlag, model.kind)
 
   if (model.kind === 'unknown') {
-    renderUnknownRegion(region, model.why)
+    renderUnknownRegion(region, model)
     return
   }
-  renderKnownRegion(elements, model, focused)
+  renderKnownRegion({ actions, elements, focused, model })
 }
 
-const outputLabel = (crafting: CraftingOutcomeView): string => {
+const inventoryItemName = (itemId: string | undefined): string | Readonly<{ key: UiMessageKey }> => {
+  if (typeof itemId === 'undefined') {
+    return { key: 'inventory.empty' }
+  }
+  return itemId
+}
+
+type InteractiveCraftingOutcome = Extract<CraftingOutcomeView, { readonly kind: 'match' | 'no-match' }>
+
+const outputLabel = (
+  crafting: InteractiveCraftingOutcome,
+): Readonly<{ key: UiMessageKey; values?: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
   if (crafting.kind === 'match') {
     // `InventoryViewModel` is a published type with no canonical constructor.
     // `inventoryViewModel` always upholds this invariant: `empty` false implies `itemId` defined.
     // A hand-built `crafting.output` can disagree with it.
     // `countLabel`'s own `?? '1'` fallback is genuinely reachable for a match of one.
-    return `Crafting output, ${crafting.output.itemId ?? 'empty'}, ${crafting.output.countLabel ?? '1'}`
+    return {
+      key: 'inventory.crafting-output-item',
+      values: {
+        count: crafting.output.countLabel ?? '1',
+        item: inventoryItemName(crafting.output.itemId),
+      },
+    }
   }
-  return 'Crafting output, no matching recipe'
+  return { key: 'inventory.crafting-output-no-match' }
 }
 
-const carriedItemLabel = (carriedView: SlotView | undefined): string => {
+const carriedItemLabel = (
+  carriedView: SlotView | undefined,
+): Readonly<{ key: UiMessageKey; values?: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
   if (typeof carriedView === 'undefined') {
-    return 'Carried item, empty'
+    return { key: 'inventory.carried-empty' }
   }
   // Same published-type reasoning as `outputLabel` above.
   // A hand-built `InventoryViewModel` can hand this a `carriedView` whose `itemId` disagrees with
   // `empty`. `countLabel`'s own `?? '1'` fallback is genuinely reachable for a carried stack of one.
-  return `Carried item, ${carriedView.itemId ?? 'empty'}, ${carriedView.countLabel ?? '1'}`
+  return {
+    key: 'inventory.carried-item',
+    values: {
+      count: carriedView.countLabel ?? '1',
+      item: inventoryItemName(carriedView.itemId),
+    },
+  }
 }
 
 const validFocusTarget = (
@@ -434,16 +549,23 @@ type InventoryViewElements = {
 }
 
 type RenderContext = {
+  readonly elements: InventoryViewElements
+  readonly actions: InventoryViewActions | undefined
   readonly model: InventoryViewModel
   readonly interaction: InventoryInteractionView | undefined
   readonly focused: InventoryInteractionTarget | undefined
 }
 
-const syncModelRegions = (
-  elements: Pick<InventoryViewElements, 'factory' | 'root' | 'regions'>,
-  model: InventoryViewModel,
-  focused: InventoryInteractionTarget | undefined,
-): ReadonlySet<RegionId> => {
+type InventoryRenderInput = Omit<RenderContext, 'focused'>
+
+type RegionSyncContext = Readonly<{
+  elements: Pick<InventoryViewElements, 'factory' | 'root' | 'regions'>
+  model: InventoryViewModel
+  focused: InventoryInteractionTarget | undefined
+  actions: InventoryViewActions | undefined
+}>
+
+const syncModelRegions = ({ elements, model, focused, actions }: RegionSyncContext): ReadonlySet<RegionId> => {
   const { factory, root, regions } = elements
   const seen = new Set<RegionId>()
   for (const regionModel of model.regions) {
@@ -453,7 +575,7 @@ const syncModelRegions = (
     if (typeof existing === 'undefined') {
       regions.set(regionModel.id, element)
     }
-    renderRegion({ factory, region: element }, regionModel, focused)
+    renderRegion({ actions, elements: { factory, region: element }, focused, model: regionModel })
   }
   return seen
 }
@@ -474,10 +596,10 @@ const hideUnseenRegions = (
 
 const renderRegions = (
   elements: Pick<InventoryViewElements, 'factory' | 'root' | 'regions'>,
-  context: Pick<RenderContext, 'model' | 'focused'>,
+  context: Pick<RenderContext, 'model' | 'focused' | 'actions'>,
 ): void => {
-  const { model, focused } = context
-  const seen = syncModelRegions(elements, model, focused)
+  const { actions, model, focused } = context
+  const seen = syncModelRegions({ actions, elements, focused, model })
   hideUnseenRegions(elements.regions, seen)
 }
 
@@ -496,11 +618,12 @@ const writeCarriedAttributes = (
   if (typeof interaction === 'undefined') {
     writeOptionalAttribute(carried.role)
     writeOptionalAttribute(carried.ariaLive)
-    writeOptionalAttribute(carried.ariaLabel)
+    clearLocalizedAttribute(carried.ariaLabel)
   } else {
     writeOptionalAttribute(carried.role, 'status')
     writeOptionalAttribute(carried.ariaLive, 'polite')
-    writeOptionalAttribute(carried.ariaLabel, carriedItemLabel(carriedView))
+    const label = carriedItemLabel(carriedView)
+    writeLocalizedAttribute(carried.ariaLabel, label.key, label.values)
   }
 }
 
@@ -541,10 +664,12 @@ const applyCraftingOutputButtonView = (output: SlotElement, context: RenderConte
   if (typeof interaction === 'undefined' || model.crafting.kind === 'unknown') {
     applyButtonView(output)
   } else {
+    setSlotFocusTarget(output, { group: 'crafting-output', index: SOLE_SLOT_INDEX })
     applyButtonView(output, {
       disabled: model.crafting.kind === 'no-match',
       focused: outputFocused,
-      label: outputLabel(model.crafting),
+      label: '',
+      localizedLabel: outputLabel(model.crafting),
       tabStop: outputFocused,
     })
   }
@@ -555,17 +680,28 @@ const renderCraftingOutput = (elements: CraftingElements, context: RenderContext
   applyCraftingOutputButtonView(elements.output, context)
 }
 
-const renderInventoryView = (
-  elements: InventoryViewElements,
-  model: InventoryViewModel,
-  interaction: InventoryInteractionView | undefined,
-): void => {
+const renderInventoryView = ({ elements, model, interaction, actions }: InventoryRenderInput): void => {
   const focused = resolveFocusedTarget(model, interaction)
-  const context: RenderContext = { focused, interaction, model }
+  const context: RenderContext = { actions, elements, focused, interaction, model }
   renderRegions(elements, context)
   renderCarriedSlot(elements.carried, context)
   writeText(elements.statusText, interaction?.status ?? '')
   renderCraftingOutput(elements, context)
+}
+
+const wireCraftingOutput = (
+  output: SlotElement,
+  actions: InventoryViewActions | undefined,
+): void => {
+  const outputTarget: InventoryInteractionTarget = { kind: 'crafting-output' }
+  if (typeof actions?.onActivate === 'function') {
+    output.root.addEventListener('click', (event) => {
+      actions.onActivate?.(outputTarget, 'shiftKey' in event && event.shiftKey === true)
+    })
+  }
+  if (typeof actions?.onFocusChange === 'function') {
+    output.root.addEventListener('focus', () => actions.onFocusChange?.(outputTarget))
+  }
 }
 
 const buildInventoryRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
@@ -584,11 +720,13 @@ const buildInventoryRoot = (factory: DomElementFactory, parent: DomElement): Dom
 const buildInventoryViewElements = (
   factory: DomElementFactory,
   parent: DomElement,
+  actions: InventoryViewActions | undefined,
 ): InventoryViewElements => {
   const root = buildInventoryRoot(factory, parent)
   const regions = new Map<RegionId, RegionElement>()
   const carried = buildCarriedSlot(factory, root)
   const { craftingState, output } = buildCraftingOutput(factory, root)
+  wireCraftingOutput(output, actions)
   const statusText = buildStatusText(factory, root)
   return {
     carried,
@@ -604,11 +742,12 @@ const buildInventoryViewElements = (
 export const createInventoryView = (
   factory: DomElementFactory,
   parent: DomElement,
+  actions?: InventoryViewActions,
 ): InventoryView => {
-  const elements = buildInventoryViewElements(factory, parent)
+  const elements = buildInventoryViewElements(factory, parent, actions)
   return {
     render: (model: InventoryViewModel, interaction?: InventoryInteractionView): void =>
-      renderInventoryView(elements, model, interaction),
+      renderInventoryView({ actions, elements, interaction, model }),
     root: elements.root,
   }
 }

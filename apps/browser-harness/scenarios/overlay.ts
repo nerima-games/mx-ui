@@ -235,9 +235,13 @@ const extremeDebugValues: DebugOverlayModel = {
   latestGpuTimeMs: Schema.decodeUnknownSync(GpuTimeMillisecondsSchema)(-0.5),
 }
 
-const makeToast = (title: string, icon = 'minecraft:wooden_pickaxe'): AchievementToast =>
+const makeToast = (
+  title: string,
+  icon = 'minecraft:wooden_pickaxe',
+  achievement = 'minecraft:story/mine_stone',
+): AchievementToast =>
   Schema.decodeUnknownSync(AchievementToastSchema)({
-    achievement: Schema.decodeUnknownSync(AchievementIdSchema)('minecraft:story/mine_stone'),
+    achievement: Schema.decodeUnknownSync(AchievementIdSchema)(achievement),
     icon: Schema.decodeUnknownSync(AchievementToastIconSchema)(icon),
     player: Schema.decodeUnknownSync(EntityIdSchema)('player:one'),
     tick: Schema.decodeUnknownSync(SimulationTickSchema)(7),
@@ -379,7 +383,7 @@ const captionBoundaryEvents = captionTexts.map((text) => captionEvent(text, 0, u
 
 const toastSequence = (context: Parameters<ScenarioDefinition['mount']>[0]): ScenarioMount => {
   const first = makeToast('Stone Age')
-  const second = makeToast('Getting an Upgrade', 'minecraft:iron_pickaxe')
+  const second = makeToast('Getting an Upgrade', 'minecraft:iron_pickaxe', 'minecraft:story/upgrade_tools')
   const view = createAchievementToastView(context.factory, context.host)
   const secondAt = OVERLAY_TIME_BOUNDARIES.achievementToastSecondAtSecs
   const expiresAt = OVERLAY_TIME_BOUNDARIES.achievementToastDismissalSecs

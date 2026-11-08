@@ -15,14 +15,11 @@
  * more, which is why the inventory screen imports this one.
  *
  * ---------------------------------------------------------------------------
- * A slot is now a thing to LOOK AT and to REACH — but still not to press
+ * A slot is a native button when the owning view makes it interactive
  * ---------------------------------------------------------------------------
  *
- * This header used to say 「no listener, no `tabindex`, no focus management」, and
- * two thirds of that survive. The `tabindex` was wrong, and `FOCUS_RING` sitting
- * in `GUARDED_TOKENS` with nothing referencing it was the evidence: a token whose
- * guarantee is measured and whose colour reaches no element is a guarantee about
- * numbers (`test/palette-css.test.ts`, DN-UI-13g).
+ * A native button gets Enter and Space activation from the browser. The view
+ * supplies its click callback, while mc-render supplies typed direction intents.
  *
  * The three things are separable, and only one of them is mc-render's:
  *
@@ -30,19 +27,12 @@
  *   | -------------------------------------- | -------------------- | --------- |
  *   | a slot CAN hold focus                  | `setAttribute`       | mx-ui     |
  *   | what focus LOOKS like                  | `style.setProperty`  | mx-ui     |
- *   | the keystroke that MOVES focus         | `addEventListener`   | mc-render |
- *   | telling mx-ui where focus went         | —                    | mc-render |
+ *   | direction conversion                   | —                    | mc-render |
+ *   | focus membership and DOM movement      | `focus()`            | mx-ui     |
+ *   | button activation                      | native button event  | host      |
  *
- * The first two need nothing that is not already in `application/dom-surface.ts`,
- * which is the whole argument: a focus RING is a rendering concern. The surface
- * was not widened by a single member to build it — and specifically it did NOT
- * grow `focus()` or `addEventListener`, which are the two verbs that would let
- * this file move focus or observe it. Both are input, and input is mc-render's
- * (plan.md §2.3-2) with the decision at frame level (DN-UI-4).
- *
- * Pressing is still not here. An interactive host may ask this projection to
- * expose button semantics, but activation still needs a key or pointer event and
- * that half has not moved into mx-ui.
+ * A native button provides Enter and Space activation without mx-ui consuming
+ * those keys. Its click event reaches the action callback supplied by the host.
  */
 import {
   type AttributeCell,
@@ -59,7 +49,9 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
-import type { DomElement, DomElementFactory } from './dom-surface.js'
+import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
+import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { clearLocalizedAttribute, writeLocalizedAttribute } from './ui-localization.js'
 import { PALETTE_VAR } from './palette-css.js'
 import type { SlotView } from '../domain/hud-view-model.js'
 
@@ -132,8 +124,8 @@ export const FOCUS_RING_SHADOW_WIDTH = '5px'
  *      only the second one is what a player navigating by keyboard needs.
  *   3. **The one tab stop in this repository is a 4px target.** WCAG 2.2 §2.5.8
  *      (Target Size, Minimum) asks for 24 x 24 CSS pixels for anything operable
- *      by pointer. A slot is not activatable (see this file's header) but it IS
- *      reachable and it IS the thing a player aims at on a touch screen.
+ *      by pointer. A slot is both reachable and activatable, so its target size
+ *      must stay usable on touch screens.
  *
  * ---------------------------------------------------------------------------
  * WHY 24 AND NOT THE 48 `docs/e2e-triage.md` #34 NAMES
@@ -165,9 +157,11 @@ export const FOCUS_RING_SHADOW_WIDTH = '5px'
  * Every write is at MOUNT and none is on the frame path.
  */
 export const SLOT_TARGET_MIN_SIZE = '24px'
+const DEFAULT_FOCUS_COLUMNS = 1
+const FIRST_INDEX = 0
 
 export type SlotElement = {
-  readonly root: DomElement
+  readonly root: DomInteractiveElement
   readonly hiddenFlag: AttributeCell
   readonly itemText: TextCell
   readonly itemTitle: AttributeCell
@@ -187,11 +181,16 @@ export type SlotElement = {
   readonly role: AttributeCell
   readonly ariaLabel: AttributeCell
   readonly ariaDisabled: AttributeCell
+  readonly disabled: AttributeCell
   readonly ariaLive: AttributeCell
+  readonly focusGroup: AttributeCell
+  readonly focusIndex: AttributeCell
+  readonly focusColumns: AttributeCell
 }
 
 export type SlotButtonView = {
   readonly label: string
+  readonly localizedLabel?: Readonly<{ key: UiMessageKey; values?: UiMessageValues }>
   readonly disabled: boolean
   readonly tabStop: boolean
   readonly focused: boolean
@@ -210,18 +209,38 @@ const radioStateCells = new WeakMap<SlotElement, RadioStateCells>()
  * so the token VALUES live on the mounted root (see `application/palette-css.ts`)
  * and appear nowhere in this subtree.
  */
-const createSlotRoot = (factory: DomElementFactory, index: number): DomElement => {
-  const root = factory.createElement('div')
-  root.setAttribute('data-mx-ui', 'slot')
-  root.setAttribute('data-slot-index', String(index))
+const styleSlotRootBase = (root: DomInteractiveElement): void => {
+  root.style.setProperty('appearance', 'none')
+  root.style.setProperty('padding', '0')
+  root.style.setProperty('margin', '0')
+  root.style.setProperty('font', 'inherit')
+  root.style.setProperty('color', PALETTE_VAR.ink)
+  root.style.setProperty('text-align', 'inherit')
   root.style.setProperty('position', 'relative')
   root.style.setProperty('background-color', PALETTE_VAR.slotFill)
   root.style.setProperty('border-style', 'solid')
+}
+
+const styleSlotRootTargetSize = (root: DomInteractiveElement): void => {
   // The floor, not a size. See `SLOT_TARGET_MIN_SIZE`: `min-*` leaves a host
   // Free to make slots bigger, and a slot whose content box is zero tall takes
   // Its focus ring and its `weight` distinguisher down with it.
   root.style.setProperty('min-width', SLOT_TARGET_MIN_SIZE)
   root.style.setProperty('min-height', SLOT_TARGET_MIN_SIZE)
+}
+
+const styleSlotRoot = (root: DomInteractiveElement): void => {
+  styleSlotRootBase(root)
+  styleSlotRootTargetSize(root)
+}
+
+const createSlotRoot = (factory: DomElementFactory, index: number): DomInteractiveElement => {
+  const root = factory.createElement('button')
+  root.setAttribute('type', 'button')
+  root.setAttribute('disabled', '')
+  root.setAttribute('data-mx-ui', 'slot')
+  root.setAttribute('data-slot-index', String(index))
+  styleSlotRoot(root)
   return root
 }
 
@@ -258,13 +277,15 @@ const createSlotDurability = (
   factory: DomElementFactory,
   root: DomElement,
 ): SlotDurabilityElements => {
-  const durabilityTrack = factory.createElement('div')
+  const durabilityTrack = factory.createElement('span')
   durabilityTrack.setAttribute('data-mx-ui', 'slot-durability')
+  durabilityTrack.style.setProperty('display', 'block')
   durabilityTrack.style.setProperty('background-color', PALETTE_VAR.meterTrack)
   root.appendChild(durabilityTrack)
 
-  const durabilityFill = factory.createElement('div')
+  const durabilityFill = factory.createElement('span')
   durabilityFill.setAttribute('data-mx-ui', 'slot-durability-fill')
+  durabilityFill.style.setProperty('display', 'block')
   durabilityTrack.appendChild(durabilityFill)
 
   return {
@@ -303,7 +324,7 @@ const styleFocusRingAppearance = (focusRing: DomElement): void => {
 }
 
 const createSlotFocusRing = (factory: DomElementFactory, root: DomElement): AttributeCell => {
-  const focusRing = factory.createElement('div')
+  const focusRing = factory.createElement('span')
   focusRing.setAttribute('data-mx-ui', 'slot-focus-ring')
   focusRing.setAttribute('hidden', '')
   styleFocusRingGeometry(focusRing)
@@ -327,10 +348,14 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
     borderWeight: styleCell(root, 'border-width'),
     countText: count.text,
     countTitle: count.title,
+    disabled: attributeCell(root, 'disabled'),
     durabilityColor: durability.color,
     durabilityHidden: durability.hidden,
     durabilityWidth: durability.width,
     emptyFlag: attributeCell(root, 'data-empty'),
+    focusColumns: attributeCell(root, 'data-focus-columns'),
+    focusGroup: attributeCell(root, 'data-focus-group'),
+    focusIndex: attributeCell(root, 'data-focus-index'),
     focusRingHidden,
     hiddenFlag: attributeCell(root, 'hidden'),
     itemText: item.text,
@@ -350,6 +375,7 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
   // Seeded: a slot has no `tabindex` until somebody makes it part of a focus
   // Group, so an inventory slot stays exactly as unfocusable as it was.
   slot.focusRingHidden.previous = ''
+  slot.disabled.previous = ''
 
   return slot
 }
@@ -396,6 +422,26 @@ export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
   }
 }
 
+/** Mark an interactive slot's DOM membership for the mc-render focus adapter. */
+type SlotFocusTarget = Readonly<{ group: string; index: number; columns?: number }>
+
+export const setSlotFocusTarget = (slot: SlotElement, target: SlotFocusTarget): void => {
+  const requestedColumns = target.columns ?? DEFAULT_FOCUS_COLUMNS
+  let validColumns = DEFAULT_FOCUS_COLUMNS
+  if (Number.isSafeInteger(requestedColumns) && requestedColumns > FIRST_INDEX) {
+    validColumns = requestedColumns
+  }
+  writeAttribute(slot.focusGroup, target.group)
+  writeAttribute(slot.focusIndex, String(target.index))
+  writeAttribute(slot.focusColumns, String(validColumns))
+}
+
+const clearSlotFocusTarget = (slot: SlotElement): void => {
+  writeAttribute(slot.focusGroup)
+  writeAttribute(slot.focusIndex)
+  writeAttribute(slot.focusColumns)
+}
+
 /**
  * Draw, or stop drawing, the keyboard focus ring on this slot.
  *
@@ -431,9 +477,11 @@ const writeRadioState = (state: RadioStateCells, selected: boolean): void => {
 
 const clearSlotButtonView = (slot: SlotElement): void => {
   writeAttribute(slot.role)
-  writeAttribute(slot.ariaLabel)
+  clearLocalizedAttribute(slot.ariaLabel)
   writeAttribute(slot.ariaDisabled)
+  writeAttribute(slot.disabled, '')
   writeAttribute(slot.tabStop)
+  clearSlotFocusTarget(slot)
   setSlotKeyboardFocus(slot, false)
   clearRadioState(slot)
 }
@@ -449,6 +497,22 @@ const updateRadioState = (slot: SlotElement, selected: boolean): void => {
   writeRadioState(state, selected)
 }
 
+/** `''` when present, otherwise no attribute at all. */
+const presenceValue = (present: boolean): string | undefined => {
+  if (present) {
+    return ''
+  }
+  return
+}
+
+const writeSlotButtonLabel = (slot: SlotElement, view: SlotButtonView): void => {
+  if (typeof view.localizedLabel === 'undefined') {
+    writeAttribute(slot.ariaLabel, view.label)
+    return
+  }
+  writeLocalizedAttribute(slot.ariaLabel, view.localizedLabel.key, view.localizedLabel.values)
+}
+
 /** Project optional button semantics without taking ownership of activation. */
 export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): void => {
   if (typeof view === 'undefined') {
@@ -456,19 +520,12 @@ export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): voi
     return
   }
   writeAttribute(slot.role, 'button')
-  writeAttribute(slot.ariaLabel, view.label)
+  writeSlotButtonLabel(slot, view)
   writeAttribute(slot.ariaDisabled, String(view.disabled))
+  writeAttribute(slot.disabled, presenceValue(view.disabled))
   setSlotTabStop(slot, view.tabStop)
   setSlotKeyboardFocus(slot, view.focused)
   clearRadioState(slot)
-}
-
-/** `''` when present, otherwise no attribute at all. */
-const presenceValue = (present: boolean): string | undefined => {
-  if (present) {
-    return ''
-  }
-  return
 }
 
 const selectionColor = (selected: boolean): string => {

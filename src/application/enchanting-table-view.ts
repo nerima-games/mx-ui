@@ -21,11 +21,18 @@ import {
 } from '../domain/enchanting-table-view-model.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
+  SUPPORTED_VANILLA_ENCHANTMENT_IDS,
+  type SupportedVanillaEnchantmentId,
+} from '@nerima-games/mc-kernel/domain/enchantment'
+import {
   type SlotElement,
   createSlotElement,
   setSlotButtonView,
+  setSlotFocusTarget,
   updateSlotElement,
 } from './slot-element.js'
+import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { setLocalizedAttribute, setLocalizedText, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
 
 export type EnchantingInteractionView = {
   readonly focusedTarget: EnchantingOperationTarget
@@ -42,6 +49,8 @@ export type EnchantingTableView = {
 
 export type EnchantingTableViewActions = {
   readonly onActivate: (target: EnchantingOperationTarget) => void
+  readonly onClose?: () => void
+  readonly onFocusChange?: (target: EnchantingOperationTarget) => void
 }
 
 type OfferElement = {
@@ -56,12 +65,74 @@ type OfferElement = {
   readonly ariaLabel: AttributeCell
 }
 
-const SLOT_LABEL: Readonly<Record<EnchantingSlotId, string>> = {
-  item: 'Enchanting item',
-  lapis: 'Lapis lazuli',
+const SLOT_MESSAGE_KEY: Readonly<Record<EnchantingSlotId, UiMessageKey>> = {
+  item: 'enchanting.item',
+  lapis: 'enchanting.lapis',
 }
 
-const slotAriaLabel = (slot: EnchantingSlotView): string => {
+const ENCHANTING_FOCUS_COLUMNS = 2
+const LAST_ENCHANTMENT_ID_PART = -1
+
+const ENCHANTMENT_MESSAGE_KEY: Readonly<Record<SupportedVanillaEnchantmentId, UiMessageKey>> = {
+  aqua_affinity: 'enchanting.name.aqua-affinity',
+  bane_of_arthropods: 'enchanting.name.bane-of-arthropods',
+  binding_curse: 'enchanting.name.binding-curse',
+  blast_protection: 'enchanting.name.blast-protection',
+  breach: 'enchanting.name.breach',
+  channeling: 'enchanting.name.channeling',
+  density: 'enchanting.name.density',
+  depth_strider: 'enchanting.name.depth-strider',
+  efficiency: 'enchanting.name.efficiency',
+  feather_falling: 'enchanting.name.feather-falling',
+  fire_aspect: 'enchanting.name.fire-aspect',
+  fire_protection: 'enchanting.name.fire-protection',
+  flame: 'enchanting.name.flame',
+  fortune: 'enchanting.name.fortune',
+  frost_walker: 'enchanting.name.frost-walker',
+  impaling: 'enchanting.name.impaling',
+  infinity: 'enchanting.name.infinity',
+  knockback: 'enchanting.name.knockback',
+  looting: 'enchanting.name.looting',
+  loyalty: 'enchanting.name.loyalty',
+  luck_of_the_sea: 'enchanting.name.luck-of-the-sea',
+  lunge: 'enchanting.name.lunge',
+  lure: 'enchanting.name.lure',
+  mending: 'enchanting.name.mending',
+  multishot: 'enchanting.name.multishot',
+  piercing: 'enchanting.name.piercing',
+  power: 'enchanting.name.power',
+  projectile_protection: 'enchanting.name.projectile-protection',
+  protection: 'enchanting.name.protection',
+  punch: 'enchanting.name.punch',
+  quick_charge: 'enchanting.name.quick-charge',
+  respiration: 'enchanting.name.respiration',
+  riptide: 'enchanting.name.riptide',
+  sharpness: 'enchanting.name.sharpness',
+  silk_touch: 'enchanting.name.silk-touch',
+  smite: 'enchanting.name.smite',
+  soul_speed: 'enchanting.name.soul-speed',
+  sweeping_edge: 'enchanting.name.sweeping-edge',
+  swift_sneak: 'enchanting.name.swift-sneak',
+  thorns: 'enchanting.name.thorns',
+  unbreaking: 'enchanting.name.unbreaking',
+  vanishing_curse: 'enchanting.name.vanishing-curse',
+  wind_burst: 'enchanting.name.wind-burst',
+}
+
+const isSupportedEnchantmentId = (value: string): value is SupportedVanillaEnchantmentId =>
+  SUPPORTED_VANILLA_ENCHANTMENT_IDS.some((id) => id === value)
+
+const enchantmentNameValue = (id: string): UiMessageValues[string] => {
+  const unnamespacedId = id.split(':').at(LAST_ENCHANTMENT_ID_PART)
+  if (typeof unnamespacedId !== 'undefined' && isSupportedEnchantmentId(unnamespacedId)) {
+    return { key: ENCHANTMENT_MESSAGE_KEY[unnamespacedId] }
+  }
+  return id
+}
+
+const slotAriaLabel = (
+  slot: EnchantingSlotView,
+): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
   // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts)
   // Guarantees the two always agree. Checking the field this function actually reads lets
   // TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a
@@ -70,18 +141,27 @@ const slotAriaLabel = (slot: EnchantingSlotView): string => {
   // `countLabel` stays `??`-guarded: unlike `itemId`, it is genuinely absent for a real, in-repo
   // Stack of exactly one.
   if (typeof slot.itemId === 'undefined') {
-    return `${SLOT_LABEL[slot.id]}, empty`
+    return { key: 'enchanting.slot-empty', values: { slot: { key: SLOT_MESSAGE_KEY[slot.id] } } }
   }
-  return `${SLOT_LABEL[slot.id]}, ${slot.itemId}, ${slot.countLabel ?? '1'}`
+  return {
+    key: 'enchanting.slot-item',
+    values: { count: slot.countLabel ?? '1', item: slot.itemId, slot: { key: SLOT_MESSAGE_KEY[slot.id] } },
+  }
 }
 
-const offerLabel = (offer: EnchantingOfferView): string => {
+const offerLabel = (offer: EnchantingOfferView): Readonly<{ key: UiMessageKey; values?: UiMessageValues }> => {
   if (typeof offer.enchantmentId === 'undefined') {
-    return 'Unavailable enchantment offer'
+    return { key: 'enchanting.offer-unavailable' }
   }
-  return `${offer.enchantmentId} ${String(offer.enchantmentLevel)}; ${String(
-    offer.levelCost,
-  )} levels; ${String(offer.lapisCost)} lapis`
+  return {
+    key: 'enchanting.offer',
+    values: {
+      cost: offer.levelCost,
+      enchantment: enchantmentNameValue(offer.enchantmentId),
+      lapis: offer.lapisCost,
+      level: offer.enchantmentLevel,
+    },
+  }
 }
 
 const resolveFocusedTarget = (
@@ -136,6 +216,9 @@ const createOfferRoot = (
   root.setAttribute('data-mx-ui', 'enchanting-offer')
   root.setAttribute('data-interaction-target', 'enchanting-operation')
   root.setAttribute('data-operation-target', id)
+  root.setAttribute('data-focus-group', 'enchanting-operation')
+  root.setAttribute('data-focus-index', String(ENCHANTING_OPERATION_TARGETS.indexOf(id)))
+  root.setAttribute('data-focus-columns', String(ENCHANTING_FOCUS_COLUMNS))
   return root
 }
 
@@ -202,7 +285,7 @@ const updateOfferElement = (
   const label = offerLabel(offer)
   const disabled =
     typeof offer.enchantmentId === 'undefined' || typeof offer.rejectionReason !== 'undefined'
-  writeText(element.label, label)
+  writeLocalizedText(element.label, label.key, label.values)
   writeText(element.rejection, offer.rejectionReason ?? '')
   writeHidden(element.rejectionHidden, typeof offer.rejectionReason === 'undefined')
   writeAttribute(element.tabStop, tabStopValue(interactionView.focused))
@@ -212,7 +295,7 @@ const updateOfferElement = (
   )
   writeAttribute(element.disabled, presenceValue(disabled))
   writeAttribute(element.ariaDisabled, trueFalseValue(disabled))
-  writeAttribute(element.ariaLabel, label)
+  writeLocalizedAttribute(element.ariaLabel, label.key, label.values)
 }
 
 const createEnchantingRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
@@ -234,15 +317,57 @@ const createEnchantingSlotGrid = (factory: DomElementFactory, root: DomElement):
   return slotGrid
 }
 
+const createEnchantingCloseButton = (
+  factory: DomElementFactory,
+  root: DomElement,
+  actions: EnchantingTableViewActions | undefined,
+): void => {
+  if (typeof actions?.onClose !== 'function') {
+    return
+  }
+  const close: DomInteractiveElement = factory.createElement('button')
+  close.setAttribute('type', 'button')
+  close.setAttribute('data-mx-ui', 'enchanting-close')
+  setLocalizedAttribute(close, 'aria-label', 'enchanting.close')
+  setLocalizedText(close, 'enchanting.close')
+  close.addEventListener('click', actions.onClose)
+  root.appendChild(close)
+}
+
+const configureEnchantingSlot = (slot: SlotElement, id: EnchantingSlotId): void => {
+  const focusIndex = ENCHANTING_OPERATION_TARGETS.indexOf(id)
+  setSlotFocusTarget(slot, {
+    columns: ENCHANTING_FOCUS_COLUMNS,
+    group: 'enchanting-operation',
+    index: focusIndex,
+  })
+  slot.root.setAttribute('data-enchanting-slot', id)
+  slot.root.setAttribute('data-interaction-target', 'enchanting-operation')
+  slot.root.setAttribute('data-operation-target', id)
+}
+
+const wireEnchantingSlot = (
+  slot: SlotElement,
+  id: EnchantingSlotId,
+  actions: EnchantingTableViewActions | undefined,
+): void => {
+  if (typeof actions !== 'undefined') {
+    slot.root.addEventListener('click', () => actions.onActivate(id))
+  }
+  if (typeof actions?.onFocusChange === 'function') {
+    slot.root.addEventListener('focus', () => actions.onFocusChange?.(id))
+  }
+}
+
 const createEnchantingSlots = (
   factory: DomElementFactory,
   slotGrid: DomElement,
+  actions: EnchantingTableViewActions | undefined,
 ): Array<SlotElement> => {
   const createEnchantingSlot = (id: EnchantingSlotId, index: number): SlotElement => {
     const slot = createSlotElement(factory, index)
-    slot.root.setAttribute('data-enchanting-slot', id)
-    slot.root.setAttribute('data-interaction-target', 'enchanting-operation')
-    slot.root.setAttribute('data-operation-target', id)
+    configureEnchantingSlot(slot, id)
+    wireEnchantingSlot(slot, id, actions)
     slotGrid.appendChild(slot.root)
     return slot
   }
@@ -268,6 +393,9 @@ const createEnchantingOffers = (
         actions.onActivate(id)
       })
     }
+    if (typeof actions?.onFocusChange === 'function') {
+      offer.root.addEventListener('focus', () => actions.onFocusChange?.(id))
+    }
     offerList.appendChild(offer.root)
     return offer
   }
@@ -290,8 +418,9 @@ export const createEnchantingTableView = (
   actions?: EnchantingTableViewActions,
 ): EnchantingTableView => {
   const root = createEnchantingRoot(factory, parent)
+  createEnchantingCloseButton(factory, root, actions)
   const slotGrid = createEnchantingSlotGrid(factory, root)
-  const slots = createEnchantingSlots(factory, slotGrid)
+  const slots = createEnchantingSlots(factory, slotGrid, actions)
 
   const offerList = createEnchantingOfferList(factory, root)
   const offers = createEnchantingOffers(factory, offerList, actions)
@@ -309,7 +438,8 @@ export const createEnchantingTableView = (
       setSlotButtonView(slotElement, {
         disabled: false,
         focused: typeof interaction !== 'undefined' && focused,
-        label: slotAriaLabel(slot),
+        label: '',
+        localizedLabel: slotAriaLabel(slot),
         tabStop: focused,
       })
     }

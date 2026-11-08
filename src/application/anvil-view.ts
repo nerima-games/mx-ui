@@ -15,14 +15,17 @@ import {
   writeHidden,
   writeText,
 } from './dom-write.js'
-import type { DomElement, DomElementFactory, DomInputElement } from './dom-surface.js'
+import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotElement,
   createSlotElement,
   setSlotButtonView,
+  setSlotFocusTarget,
   updateSlotElement,
 } from './slot-element.js'
+import { setLocalizedAttribute, setLocalizedText, writeLocalizedText } from './ui-localization.js'
+import type { UiMessageKey } from '../domain/ui-language.js'
 
 export type AnvilInteractionView = {
   readonly focusedTarget: AnvilOperationTarget
@@ -34,20 +37,34 @@ export type AnvilView = {
   readonly render: (model: AnvilViewModel, interaction?: AnvilInteractionView) => void
 }
 
-const SLOT_LABEL: Readonly<Record<AnvilSlotId, string>> = {
-  output: 'Anvil output',
-  'primary-input': 'Anvil primary input',
-  'secondary-input': 'Anvil secondary input',
+export type AnvilViewActions = {
+  readonly onActivate?: (target: AnvilOperationTarget) => void
+  readonly onClose?: () => void
+  readonly onFocusChange?: (target: AnvilOperationTarget) => void
+  readonly onNameChange?: (value: string) => void
 }
 
-const slotAriaLabel = (slot: AnvilSlotView): string => {
+const SLOT_MESSAGE_KEY: Readonly<Record<AnvilSlotId, UiMessageKey>> = {
+  output: 'anvil.output',
+  'primary-input': 'anvil.primary-input',
+  'secondary-input': 'anvil.secondary-input',
+}
+
+const ANVIL_OPERATION_COLUMNS = 4
+
+const slotAriaLabel = (
+  slot: AnvilSlotView,
+): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
   // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts) guarantees the two always agree.
   // Checking the field this function actually reads lets TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a check on `empty` alone could never let the type system prove impossible.
   // `countLabel` stays `??`-guarded: unlike `itemId`, it is genuinely absent for a real, in-repo stack of exactly one (`slotCountLabel`, same file).
   if (typeof slot.itemId === 'undefined') {
-    return `${SLOT_LABEL[slot.id]}, empty`
+    return { key: 'anvil.slot-empty', values: { slot: { key: SLOT_MESSAGE_KEY[slot.id] } } }
   }
-  return `${SLOT_LABEL[slot.id]}, ${slot.itemId}, ${slot.countLabel ?? '1'}`
+  return {
+    key: 'anvil.slot-item',
+    values: { count: slot.countLabel ?? '1', item: slot.itemId, slot: { key: SLOT_MESSAGE_KEY[slot.id] } },
+  }
 }
 
 const resolveFocusedTarget = (requested: AnvilOperationTarget): AnvilOperationTarget => {
@@ -95,12 +112,63 @@ const createAnvilGrid = (factory: DomElementFactory, root: DomElement): DomEleme
   return grid
 }
 
-const createAnvilSlots = (factory: DomElementFactory, grid: DomElement): Array<SlotElement> => {
+const createAnvilCloseButton = (
+  factory: DomElementFactory,
+  root: DomElement,
+  actions: AnvilViewActions | undefined,
+): void => {
+  if (typeof actions?.onClose !== 'function') {
+    return
+  }
+  const close: DomInteractiveElement = factory.createElement('button')
+  close.setAttribute('type', 'button')
+  close.setAttribute('data-mx-ui', 'anvil-close')
+  setLocalizedAttribute(close, 'aria-label', 'anvil.close')
+  setLocalizedText(close, 'anvil.close')
+  close.addEventListener('click', actions.onClose)
+  root.appendChild(close)
+}
+
+const createAnvilRootWithCloseButton = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  actions: AnvilViewActions | undefined,
+): DomElement => {
+  const root = createAnvilRoot(factory, parent)
+  createAnvilCloseButton(factory, root, actions)
+  return root
+}
+
+const configureAnvilSlot = (slot: SlotElement, id: AnvilSlotId): void => {
+  const focusIndex = ANVIL_OPERATION_TARGETS.indexOf(id)
+  setSlotFocusTarget(slot, {
+    columns: ANVIL_OPERATION_COLUMNS,
+    group: 'anvil-operation',
+    index: focusIndex,
+  })
+  slot.root.setAttribute('data-anvil-slot', id)
+  slot.root.setAttribute('data-interaction-target', 'anvil-operation')
+  slot.root.setAttribute('data-operation-target', id)
+}
+
+const wireAnvilSlot = (slot: SlotElement, id: AnvilSlotId, actions: AnvilViewActions | undefined): void => {
+  if (typeof actions?.onActivate === 'function') {
+    slot.root.addEventListener('click', () => actions.onActivate?.(id))
+  }
+  if (typeof actions?.onFocusChange === 'function') {
+    slot.root.addEventListener('focus', () => actions.onFocusChange?.(id))
+  }
+}
+
+const createAnvilSlots = (
+  factory: DomElementFactory,
+  grid: DomElement,
+  actions: AnvilViewActions | undefined,
+): Array<SlotElement> => {
   const createAnvilSlot = (id: AnvilSlotId, index: number): SlotElement => {
     const slot = createSlotElement(factory, index)
-    slot.root.setAttribute('data-anvil-slot', id)
-    slot.root.setAttribute('data-interaction-target', 'anvil-operation')
-    slot.root.setAttribute('data-operation-target', id)
+    configureAnvilSlot(slot, id)
+    wireAnvilSlot(slot, id, actions)
     grid.appendChild(slot.root)
     return slot
   }
@@ -114,13 +182,34 @@ type AnvilNameInput = {
   readonly title: AttributeCell
 }
 
-const createAnvilNameInput = (factory: DomElementFactory, root: DomElement): AnvilNameInput => {
-  const nameInput: DomInputElement = factory.createElement('input')
+const configureAnvilNameInput = (nameInput: DomInputElement): void => {
   nameInput.setAttribute('type', 'text')
   nameInput.setAttribute('data-mx-ui', 'anvil-name')
   nameInput.setAttribute('data-interaction-target', 'anvil-operation')
   nameInput.setAttribute('data-operation-target', 'name')
-  nameInput.setAttribute('aria-label', 'Item name')
+  nameInput.setAttribute('data-focus-group', 'anvil-operation')
+  nameInput.setAttribute('data-focus-index', String(ANVIL_OPERATION_TARGETS.indexOf('name')))
+  nameInput.setAttribute('data-focus-columns', String(ANVIL_OPERATION_COLUMNS))
+  setLocalizedAttribute(nameInput, 'aria-label', 'anvil.item-name')
+}
+
+const wireAnvilNameInput = (nameInput: DomInputElement, actions: AnvilViewActions | undefined): void => {
+  if (typeof actions?.onNameChange === 'function') {
+    nameInput.addEventListener('input', () => actions.onNameChange?.(nameInput.value))
+  }
+  if (typeof actions?.onFocusChange === 'function') {
+    nameInput.addEventListener('focus', () => actions.onFocusChange?.('name'))
+  }
+}
+
+const createAnvilNameInput = (
+  factory: DomElementFactory,
+  root: DomElement,
+  actions: AnvilViewActions | undefined,
+): AnvilNameInput => {
+  const nameInput: DomInputElement = factory.createElement('input')
+  configureAnvilNameInput(nameInput)
+  wireAnvilNameInput(nameInput, actions)
   root.appendChild(nameInput)
   return {
     focused: attributeCell(nameInput, 'data-focused'),
@@ -133,7 +222,7 @@ const createAnvilNameInput = (factory: DomElementFactory, root: DomElement): Anv
 const createAnvilLevelCost = (factory: DomElementFactory, root: DomElement): TextCell => {
   const levelCost = factory.createElement('div')
   levelCost.setAttribute('data-mx-ui', 'anvil-level-cost')
-  levelCost.setAttribute('aria-label', 'Level cost')
+  setLocalizedAttribute(levelCost, 'aria-label', 'anvil.level-cost')
   root.appendChild(levelCost)
   return textCell(levelCost)
 }
@@ -181,13 +270,17 @@ const createAnvilStatusElements = (
   return { levelCostText, rejection, statusText }
 }
 
-/** Creates a listener-free anvil projection. The host owns every interaction. */
-export const createAnvilView = (factory: DomElementFactory, parent: DomElement): AnvilView => {
-  const root = createAnvilRoot(factory, parent)
+/** Projects anvil state and wires optional native operation actions. */
+export const createAnvilView = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  actions?: AnvilViewActions,
+): AnvilView => {
+  const root = createAnvilRootWithCloseButton(factory, parent, actions)
   const grid = createAnvilGrid(factory, root)
-  const slots = createAnvilSlots(factory, grid)
+  const slots = createAnvilSlots(factory, grid, actions)
 
-  const name = createAnvilNameInput(factory, root)
+  const name = createAnvilNameInput(factory, root, actions)
   let previousName = ''
 
   const statusElements = createAnvilStatusElements(factory, root)
@@ -203,7 +296,8 @@ export const createAnvilView = (factory: DomElementFactory, parent: DomElement):
       setSlotButtonView(slotElement, {
         disabled: false,
         focused: typeof interaction !== 'undefined' && focused,
-        label: slotAriaLabel(slot),
+        label: '',
+        localizedLabel: slotAriaLabel(slot),
         tabStop: focused,
       })
     }
@@ -236,7 +330,9 @@ export const createAnvilView = (factory: DomElementFactory, parent: DomElement):
       name.focused,
       focusedFlagValue(typeof interaction !== 'undefined' && nameIsFocused),
     )
-    writeText(statusElements.levelCostText, `Level cost: ${String(model.levelCost)}`)
+    writeLocalizedText(statusElements.levelCostText, 'anvil.level-cost-value', {
+      cost: model.levelCost,
+    })
     writeText(statusElements.rejection.text, model.rejectionReason ?? '')
     writeHidden(statusElements.rejection.hidden, typeof model.rejectionReason === 'undefined')
     writeText(statusElements.statusText, interaction?.status ?? '')

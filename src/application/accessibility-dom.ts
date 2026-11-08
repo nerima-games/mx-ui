@@ -1,15 +1,25 @@
+import {
+  type ColorVisionMode,
+  type MotionPreference,
+  type MotionSetting,
+  colorVisionAttribute,
+  decodeMotionSetting,
+  resolveMotionPreference,
+} from '../domain/accessibility.js'
+import { Result, Schema } from 'effect'
+import type { DomAttributeTarget } from './dom-surface.js'
+
 /**
- * The colour-vision switch, applied — to the canvas and to nothing else.
+ * DOM projections for accessibility preferences.
  *
  * ---------------------------------------------------------------------------
  * The half that was missing
  * ---------------------------------------------------------------------------
  *
- * DN-UI-1a splits the daltonisation asset in two: `domain/accessibility.ts`
- * decides the VALUES (the attribute string, and the twenty numbers behind it),
- * and a DOM layer decides the SCOPE. There was no DOM layer, so
- * `COLOR_VISION_FILTER_TARGET = 'canvas'` was a constant nobody consumed. This
- * file consumes it.
+ * `domain/accessibility.ts` decides the colour-vision values and motion
+ * preference. `color-vision-filters.ts` builds the SVG definitions and applies
+ * them to a supplied canvas. The small attribute projection below remains
+ * available to hosts that key their own CSS off the setting.
  *
  * The scope is the whole point. plan.md §3.13 says 「canvasのみに適用」 and
  * `domain/accessibility.ts` explains the failure it avoids: applying the
@@ -18,28 +28,20 @@
  * to read than the one you started with, and text whose contrast ratio no longer
  * meets the standard it was designed to」.
  *
- * So `applyColorVision` takes a `DomAttributeTarget`, not a `DomElement`. It can
- * set an attribute and it cannot build into, style or append to what it is
- * given, because mc-render owns that element (plan.md §3.9). And it is the only
- * function in `application/` that touches an element mx-ui did not create.
+ * So `applyColorVision` takes a `DomAttributeTarget`, not a `DomElement`. That
+ * attribute-only helper cannot build into, style or append to what it is given.
+ * The filter controller has the narrower style write it needs and receives the
+ * target explicitly; it never finds a canvas or applies a filter to UI chrome.
  *
  * ---------------------------------------------------------------------------
- * What is NOT here: the filter itself
+ * How the attribute helper relates to the filter
  * ---------------------------------------------------------------------------
  *
- * The `<filter><feColorMatrix values="…"/></filter>` is not built by this file,
- * and that is the same split the reference made
- * (`packages/presentation/hud/color-vision.ts:1-3`: 「the actual filters …live in
- * index.html; this just flips the body data attribute the CSS rules key on」).
- * `colorVisionMatrixValues(mode)` produces the twenty numbers, and
- * `COLOR_VISION_FILTER_COLOR_SPACE` produces the one word that separates a
- * correction from a washed-out scene. Both are exported from `domain/`; the host
- * page installs them. Building SVG here would need `createElementNS` in
- * `application/dom-surface.ts` and would put mx-ui in charge of a defs block
- * inside a document it does not own.
+ * `color-vision-filters.ts` builds the `<filter><feColorMatrix values="…"/></filter>`
+ * definitions from domain constants and appends them under the supplied mx-ui
+ * root. This helper only projects the legacy data attribute; it does not create
+ * or scope SVG filters itself.
  */
-import { type ColorVisionMode, colorVisionAttribute } from '../domain/accessibility.js'
-import type { DomAttributeTarget } from './dom-surface.js'
 
 /**
  * The attribute name, matching the reference's
@@ -102,4 +104,111 @@ export const applyColorVision = (cell: ColorVisionCell, mode: ColorVisionMode): 
   }
   cell.previous = value
   cell.target.setAttribute(COLOR_VISION_ATTRIBUTE, value)
+}
+
+// ---------------------------------------------------------------------------
+// Reduced motion
+// ---------------------------------------------------------------------------
+
+export const REDUCED_MOTION_MEDIA_QUERY = '(prefers-reduced-motion: reduce)' as const
+
+/** The change-listener surface shared by `MediaQueryList` and small test fakes. */
+export type MotionMediaQuery = {
+  readonly matches: boolean
+  addEventListener(type: 'change', listener: () => void): void
+  removeEventListener(type: 'change', listener: () => void): void
+}
+
+export type MotionPreferenceControllerFailure =
+  | Schema.SchemaError
+  | { readonly _tag: 'MotionPreferenceControllerDisposed' }
+
+export type MotionPreferenceController = {
+  readonly update: (setting: unknown) => Result.Result<MotionSetting, MotionPreferenceControllerFailure>
+  readonly dispose: () => void
+}
+
+type MotionPreferenceState = {
+  disposed: boolean
+  setting: MotionSetting
+}
+
+type MotionPreferenceProjection = {
+  readonly onChange: (preference: MotionPreference) => void
+  readonly query: MotionMediaQuery
+  readonly state: MotionPreferenceState
+}
+
+const projectMotionPreference = (
+  projection: MotionPreferenceProjection,
+): void => {
+  projection.onChange(resolveMotionPreference(projection.state.setting, projection.query.matches))
+}
+
+const updateMotionSetting = (
+  projection: MotionPreferenceProjection,
+  input: unknown,
+): Result.Result<MotionSetting, MotionPreferenceControllerFailure> => {
+  const decoded = decodeMotionSetting(input)
+  if (Result.isFailure(decoded)) {
+    return decoded
+  }
+  if (projection.state.disposed) {
+    return Result.fail({ _tag: 'MotionPreferenceControllerDisposed' })
+  }
+
+  projection.state.setting = decoded.success
+  projectMotionPreference(projection)
+  return decoded
+}
+
+const disposeMotionPreference = (
+  projection: MotionPreferenceProjection,
+  onSystemChange: () => void,
+): void => {
+  if (projection.state.disposed) {
+    return
+  }
+  projection.state.disposed = true
+  projection.query.removeEventListener('change', onSystemChange)
+}
+
+const makeMotionPreferenceController = (
+  query: MotionMediaQuery,
+  initialSetting: MotionSetting,
+  onChange: (preference: MotionPreference) => void,
+): MotionPreferenceController => {
+  const projection: MotionPreferenceProjection = {
+    onChange,
+    query,
+    state: { disposed: false, setting: initialSetting },
+  }
+  const onSystemChange = (): void => {
+    if (!projection.state.disposed && projection.state.setting === 'system') {
+      projectMotionPreference(projection)
+    }
+  }
+  const update = (input: unknown): Result.Result<MotionSetting, MotionPreferenceControllerFailure> =>
+    updateMotionSetting(projection, input)
+  const dispose = (): void => disposeMotionPreference(projection, onSystemChange)
+
+  projectMotionPreference(projection)
+  query.addEventListener('change', onSystemChange)
+  return { dispose, update }
+}
+
+/**
+ * Project a setting immediately and follow system changes while it is selected.
+ * The owner creates the `MediaQueryList` and disposes this controller with its UI.
+ */
+export const createMotionPreferenceController = (
+  query: MotionMediaQuery,
+  initialSetting: unknown,
+  onChange: (preference: MotionPreference) => void,
+): Result.Result<MotionPreferenceController, Schema.SchemaError> => {
+  const initial = decodeMotionSetting(initialSetting)
+  if (Result.isFailure(initial)) {
+    return Result.fail(initial.failure)
+  }
+  return Result.succeed(makeMotionPreferenceController(query, initial.success, onChange))
 }

@@ -12,6 +12,7 @@
  * return the ATTRIBUTE VALUES and DURATIONS a DOM layer should apply, which is
  * what keeps them testable under `environment: 'node'`.
  */
+import { Result, Schema } from 'effect'
 import type { Settings } from '@nerima-games/mc-sim'
 
 // ---------------------------------------------------------------------------
@@ -30,12 +31,19 @@ export type ColorVisionMode = Settings['colorVisionCorrection']
 
 const ZERO = 0
 
-export const COLOR_VISION_MODES: ReadonlyArray<ColorVisionMode> = [
+export const COLOR_VISION_MODES: readonly ['off', 'protanopia', 'deuteranopia', 'tritanopia'] = [
   'off',
   'protanopia',
   'deuteranopia',
   'tritanopia',
-]
+] as const satisfies ReadonlyArray<ColorVisionMode>
+
+const literalsSchema = Schema.Literals
+const colorVisionModeSchema: Schema.Literals<typeof COLOR_VISION_MODES> = literalsSchema(COLOR_VISION_MODES)
+export const ColorVisionModeSchema: typeof colorVisionModeSchema = colorVisionModeSchema
+const decodeColorVisionModeSchema: (input: unknown) => Result.Result<ColorVisionMode, Schema.SchemaError> =
+  Schema.decodeUnknownResult(ColorVisionModeSchema)
+export const decodeColorVisionMode: typeof decodeColorVisionModeSchema = decodeColorVisionModeSchema
 
 /**
  * WHERE THE FILTER GOES, and why it is not "everywhere".
@@ -49,14 +57,14 @@ export const COLOR_VISION_MODES: ReadonlyArray<ColorVisionMode> = [
  *
  * The reference applied it by flipping a `data-color-vision` attribute on
  * `<body>` and letting a CSS rule scope the SVG filter to the canvas
- * (`packages/presentation/hud/color-vision.ts:1-3`: 「the actual filters (SVG
- * feColorMatrix daltonization) live in index.html; this just flips the body data
- * attribute the CSS rules key on」). Same design here: this module decides the
- * attribute value, the stylesheet decides the scope.
+ * (`packages/presentation/hud/color-vision.ts:1-3`). mx-ui retains that
+ * attribute projection for host stylesheets, and its DOM adapter also builds
+ * per-instance SVG definitions and applies them directly to the supplied canvas.
+ * That keeps the scope explicit and leaves UI chrome outside the pixel transform.
  */
 export const COLOR_VISION_FILTER_TARGET = 'canvas' as const
 
-/** The `<body data-color-vision>` value, or absent to remove the attribute. */
+/** The `data-color-vision` value, or absent to remove the attribute. */
 export const colorVisionAttribute = (mode: ColorVisionMode): string | undefined => {
   if (mode === 'off') {
     return
@@ -91,9 +99,9 @@ export const colorVisionAttribute = (mode: ColorVisionMode): string | undefined 
  *     `environment: 'node'` like every other derivation in this directory. The
  *     reference could not test them at all — they were markup.
  *
- * The split with the DOM layer is unchanged and is the one DN-UI-1a describes:
- * this module decides the VALUES, the stylesheet decides the SCOPE
- * (`COLOR_VISION_FILTER_TARGET`).
+ * The split with the DOM layer is: this module owns the matrix VALUES, while the
+ * application layer builds SVG definitions and applies them only to the target
+ * named by `COLOR_VISION_FILTER_TARGET`.
  *
  * ---------------------------------------------------------------------------
  * What the numbers are
@@ -119,9 +127,20 @@ export const colorVisionAttribute = (mode: ColorVisionMode): string | undefined 
  * over-brightens midtones (reference comment, `index.html:448-450`). The
  * attribute is one word and is the difference between a correction and a
  * washed-out scene, so it is carried over as a named constant rather than left
- * for the stylesheet to remember.
+ * for the DOM adapter to remember.
  */
 export const COLOR_VISION_FILTER_COLOR_SPACE = 'sRGB' as const
+
+export const UI_SCALE_MIN = 0.75
+export const UI_SCALE_MAX = 1.5
+const uiScaleSchema: Schema.Finite = Schema.Finite.check(
+  Schema.isBetween({ maximum: UI_SCALE_MAX, minimum: UI_SCALE_MIN }),
+)
+export const UiScaleSchema: typeof uiScaleSchema = uiScaleSchema
+export type UiScale = Schema.Schema.Type<typeof UiScaleSchema>
+const decodeUiScaleSchema: (input: unknown) => Result.Result<UiScale, Schema.SchemaError> =
+  Schema.decodeUnknownResult(UiScaleSchema)
+export const decodeUiScale: typeof decodeUiScaleSchema = decodeUiScaleSchema
 
 /** SRGB channels in 0–1, the units `feColorMatrix` operates in. */
 export type RgbChannels = readonly [number, number, number]
@@ -189,30 +208,39 @@ const TRITANOPIA_CORRECTION: ColorVisionMatrix = [
   ZERO, ZERO, ZERO, IDENTITY, ZERO,
 ]
 
+export type ColorVisionCorrectionMode = Exclude<ColorVisionMode, 'off'>
+
+const CORRECTION_BY_MODE: Readonly<Record<ColorVisionCorrectionMode, ColorVisionMatrix>> = {
+  deuteranopia: DEUTERANOPIA_CORRECTION,
+  protanopia: PROTANOPIA_CORRECTION,
+  tritanopia: TRITANOPIA_CORRECTION,
+}
+
 /**
  * The matrix for a mode, or `undefined` for `off`.
  *
- * `off` returns `undefined` for the same reason `colorVisionAttribute` does:
- * there is no identity filter to install, there is no filter. The two functions
- * agree on `off` by construction, and a DOM layer that removes the attribute
- * and leaves a filter behind — or the reverse — is the bug this shape prevents.
+ * `off` returns `undefined` because there is no identity filter to install.
+ * `colorVisionAttribute` also omits `off`; the application controller coordinates
+ * restoring the target's previous attribute and inline filter state.
  */
 export const colorVisionMatrix = (mode: ColorVisionMode): ColorVisionMatrix | undefined => {
-  if (mode === 'protanopia') {
-    return PROTANOPIA_CORRECTION
+  if (mode === 'off') {
+    return
   }
-  if (mode === 'deuteranopia') {
-    return DEUTERANOPIA_CORRECTION
-  }
-  if (mode === 'tritanopia') {
-    return TRITANOPIA_CORRECTION
-  }
-  return
+  return CORRECTION_BY_MODE[mode]
 }
 
+/** The `<feColorMatrix values>` string for a correction mode. */
+export const colorVisionCorrectionMatrixValues = (mode: ColorVisionCorrectionMode): string =>
+  CORRECTION_BY_MODE[mode].join(' ')
+
 /** The `<feColorMatrix values>` string, ready for the DOM layer. */
-export const colorVisionMatrixValues = (mode: ColorVisionMode): string | undefined =>
-  colorVisionMatrix(mode)?.join(' ')
+export const colorVisionMatrixValues = (mode: ColorVisionMode): string | undefined => {
+  if (mode === 'off') {
+    return
+  }
+  return colorVisionCorrectionMatrixValues(mode)
+}
 
 /**
  * Apply a correction to one colour.
@@ -289,6 +317,14 @@ export const applyColorVisionMatrix = (
 
 /** What the player chose. `system` defers to the OS preference. */
 export type MotionSetting = Settings['reducedMotion']
+
+const MOTION_SETTINGS: readonly ['system', 'full', 'reduced'] = ['system', 'full', 'reduced']
+
+const motionSettingSchema: Schema.Literals<typeof MOTION_SETTINGS> = literalsSchema(MOTION_SETTINGS)
+export const MotionSettingSchema: typeof motionSettingSchema = motionSettingSchema
+const decodeMotionSettingSchema: (input: unknown) => Result.Result<MotionSetting, Schema.SchemaError> =
+  Schema.decodeUnknownResult(MotionSettingSchema)
+export const decodeMotionSetting: typeof decodeMotionSettingSchema = decodeMotionSettingSchema
 
 /** What the UI actually does. */
 export type MotionPreference = 'full' | 'reduced'

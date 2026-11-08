@@ -2,10 +2,10 @@
 
 ## 1. mx-ui には stage 登録とは別に mount 面が要る
 
-stage を登録するだけでは UI を表示できない。ホストの mc-compose が次のことを行う:
+Registering a stage does not display the UI; the mc-compose host must:
 
-1. UI が描画する DOM ルートを渡す。
-2. セッションの状態に応じて、どの画面を開くか決める。
+1. Provide the DOM root where the UI will render.
+2. Choose which screen to display based on the session state.
 
 この mount 面は `makeUiMount` として実装済みである。`mc-compose` の browser session が要求する
 `name` / `start` / `stop` と構造互換であり、循環依存を作らずにそのまま runtime module として渡せる。
@@ -35,14 +35,14 @@ mx-ui は `GameModule` と `StageRegistration` を mc-kernel から直接 import
 import も依存も発生しない。だから `after: [StageId('sim:physics')]` は「mc-sim の物理の後で走らせてほしい」を
 mc-sim の stage モジュールを import せずに表現できる。
 
-これは `test/stage-registration.test.ts` で 2 方向から固定してある:
+The following tests pin this contract from both sides:
 
-- `REGRESSION: a registration carries constraints and nothing else — no priority, no index`
-  — 各登録のキーが `['after', 'id', 'run']` ちょうどであることを検査する。
-  優先度も添字も**書く場所が無い**。
-- `REGRESSION: exports nothing that would let a consumer resolve a total stage order`
-  （`test/public-api.test.ts`）— `sortStages` / `stageOrder` / `totalOrder` / `framePipeline` / `runFrame`
-  のいずれも export していないことを検査する。全順序を解ける道具を配らない。
+- `test/stage-registration.test.ts`: `REGRESSION: a registration carries constraints and nothing else — no priority, no index`
+  This test checks that each registration has exactly the `['after', 'id', 'run']` keys.
+  There is **no place to declare a priority or index**.
+- `test/public-api.test.ts`: `REGRESSION: exports nothing that would let a consumer resolve a total stage order`
+  This test checks that the package exports none of `sortStages`, `stageOrder`, `totalOrder`, `framePipeline`, or `runFrame`.
+  The package does not expose a tool for resolving the total order.
 
 ## 3. 標準 stage 順序と、mx-ui が埋める枠
 
@@ -68,20 +68,15 @@ input
 **そして、この骨格自体は誰も宣言しない。** これは mc-compose が所有する全順序の形であって、
 どの体験モジュールも全順序を宣言しない。
 
-### 3-1. `after: [render:post-fx]` を宣言しない理由
+### 3-1. Why mx-ui does not declare an ordering constraint after mc-render
 
-§4.2 は `hud-sync` を `post-fx` の**後**に置いている。そう書いてあるのだから、そう宣言したくなる。しない。
-
-1. **mc-render は mx-ui の親ではない**（[architecture.md](./architecture.md) §6）。
-2. より本質的に、**大域的な位置は mc-compose が言うべきことである**。
-   モジュールは他のモジュールを見ていないので、自分の絶対位置を正しく決められない。
+1. **mc-render is not a parent in the runtime dependency graph** ([architecture.md](./architecture.md) §6). mx-ui imports only focus-navigation types from mc-render.
+2. **mc-compose owns global ordering.** A module does not see the other modules, so it cannot determine its absolute position correctly.
 
 mx-ui 自身の正しさが要求しているのは「HUD が**このフレームの**シミュレーションを反映すること」だけで、
 それは `after: [StageId('sim:physics')]` が既に言っている。
 `stages/stage-ids.ts` のコメントがこの区別をそのまま書いており、
-`test/stage-registration.test.ts` の
-`REGRESSION: mx-ui does not order itself against mc-render either, though §4.2 puts hud-sync after post-fx`
-が `render:` 接頭辞のエッジがゼロであることを固定している。
+`test/stage-registration.test.ts` verifies that this module registers no `after` edge with a `render:` prefix. Although [plan.md](../plan.md) §4.2 places `hud-sync` after `post-fx`, mc-compose owns that global ordering.
 
 ## 4. `GameModule` を実装した（`uiModule`）
 
@@ -105,25 +100,55 @@ export const uiModule: GameModule<never, never, never> = {
 
 ### 4-1. mount 面
 
-`makeUiMount` はホストが所有する DOM ルートを受け取り、mx-ui が所有する子コンテナに HUD、inventory、
-main menu を初期描画する:
+`makeUiMount` receives a host-owned DOM root and initially renders the HUD, inventory, and main menu into an mx-ui-owned child container.
 
 ```typescript
+export type UiMountedViews = {
+  readonly root: HTMLElement
+  readonly hud: HudView
+  readonly inventory: InventoryView
+  readonly mainMenu: MainMenuView
+  readonly overlays: SessionOverlays
+  readonly achievementToast: AchievementToastView
+}
+
+export type UiMountOptions = {
+  readonly root: HTMLElement
+  readonly motion?: MotionPreference
+  readonly initialLanguage?: UiLanguage
+  readonly menuCallbacks?: MainMenuCallbacks
+  readonly initialSettings?: UiSettings
+  readonly settingsCallbacks?: UiSettingsCallbacks
+  readonly initialDebugSnapshot?: DebugHudSnapshot
+  readonly onInventoryActivate?: (target: InventoryInteractionTarget) => void
+  readonly onInventoryAction?: (action: InventoryAction) => void
+}
+
 export type UiMount = {
   readonly name: string
-  readonly start: Effect.Effect<typeof uiModule, UiMountError>
-  readonly stop: Effect.Effect<void, UiMountError>
+  readonly start: Effect.Effect<
+    typeof uiModule,
+    UiMountError | Schema.SchemaError,
+    DomainEventBus | Scope.Scope
+  >
+  readonly stop: Effect.Effect<void, UiMountError | Schema.SchemaError>
   readonly current: () => UiMountedViews | undefined
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
   readonly updateSettings: (settings: UiSettings) => void
+  readonly updateLanguage: (language: unknown) => Result.Result<UiLanguage, UiLanguageFailure>
   readonly openSettings: () => void
   readonly closeSettings: () => void
   readonly openInventory: (model?: InventoryViewModel) => void
   readonly closeInventory: () => void
   readonly updateInventory: (model: InventoryViewModel) => void
   readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
-  readonly activateInventoryFocus: () => boolean
+  readonly moveFocus: (direction: InventoryNavigationDirection) => boolean
+  readonly activateInventoryFocus: (kind?: 'click' | 'shift-click') => boolean
+  readonly dragInventorySlot: (source: InventoryDragTarget, target: InventoryDragTarget) => boolean
+  readonly updateInventoryActionState: (state: InventoryActionState) => void
 }
+
+export const makeUiMount: (options: UiMountOptions) => UiMount
 
 export class UiMountError {
   readonly _tag: 'UiMountError'
@@ -134,34 +159,41 @@ export class UiMountError {
 }
 ```
 
-The host passes a real `HTMLElement` as the mount root. mx-ui uses the structural `DomElementFactory` and `DomElement` types only for the child elements it creates inside that root.
+`makeUiMount` accepts options and returns a mount handle.
+The host passes a real `HTMLElement` as the root; mx-ui uses the structural `DomElementFactory` and `DomElement` types for children it creates inside that root.
 
-Failures from `start` and `stop` are returned in Effect's error channel as `UiMountError`.
-This tagged value has `_tag`, `name`, `message`, and `cause`; it does not extend native `Error`.
+`current()` returns the mounted view handles, or `undefined` before mount.
+The returned handle contains `root`, `hud`, `inventory`, `mainMenu`, `overlays`, and `achievementToast`.
+Failures from `start` and `stop` are returned through Effect's error channel as `UiMountError | Schema.SchemaError`; `start` requires `DomainEventBus | Scope.Scope`.
+`UiMountError` is a tagged value with `_tag`, `name`, `message`, and `cause`; it does not extend native `Error`.
 
-設計上の制約は次の通り:
+The mount has these design constraints:
 
 1. **`HTMLElement` を要求する。** global `document` は参照せず、渡された root の `ownerDocument` だけを使う。
 2. **`start` は再入可能。** 既存 mount を解体してから作り直し、途中失敗時は作成済み DOM と listener をロールバックする。
 3. **`stop` は冪等。** mx-ui が作った子コンテナだけを外し、ホストに元からある子要素は保持する。
 4. **画面更新口は view handle と typed snapshot。** HUD / inventory / main menu は `current()` の view handle、
    F1 デバッグ HUD と設定値は `updateDebug` / `updateSettings` をホストが駆動する。
-5. **セッションキーは mount adapter が所有する。** F1 はデバッグ HUD、F10 は設定画面を切り替え、Escape は設定画面を閉じる。
-   listener は常に root の `ownerDocument` に登録し、再 mount / stop / 初期化失敗で解除する。
+5. **The mount adapter routes key events.** F1 toggles the debug HUD, and F10 toggles settings.
+   Escape closes the visible settings screen and delegates to the inventory only when settings are closed.
+   Listeners attach to the root's `ownerDocument` and are removed on remount, stop, and initialization failure.
 6. **設定変更は typed callback でホストへ返す。** mouse sensitivity、render distance、field of view、master volume の
    所有権はホスト側にあり、mx-ui は入力と通知だけを担う。
-7. **ゲームパッドはホストがポーリングする。** mx-ui は Gamepad API やボタン割り当てを所有せず、ホストが
-   `moveInventoryFocus` / `activateInventoryFocus` に意味上のコマンドを渡す。矢印キーも同じ移動関数を使い、
-   region の列数、未知 region のスキップ、crafting output への遷移を一貫させる。
+7. **Gamepad and arrow-key input crosses the host boundary.** mx-ui does not own the Gamepad API or key-code conversion.
+   mc-render converts arrow-key codes to `FocusNavigationDirection`, which the host passes to `moveFocus`.
+   `focusTargetForElement` resolves a DOM element to mc-render's `FocusTarget` (`{ group, index }`). Pass it to mc-render as the `FocusTargetForElement` resolver, then route arrow-key directions to `UiMount.moveFocus`.
+   Within the inventory, `moveFocus` handles region columns, skips unknown regions, and moves to the crafting output.
+   Use `moveInventoryFocus` and `activateInventoryFocus` for semantic inventory commands such as gamepad actions.
+   The browser owns Tab. The DOM tab order contains a close button when the view receives `onClose`, followed by the current roving grid tab stop; arrow keys move within the grid.
+   mx-ui does not capture Tab or override native Enter and Space behavior for buttons and inputs.
 
 ## 5. `index.ts` の主な可視 export
 
-`index.ts` は `application/`、`domain/`、`stages/` から export する。この節は契約面と
-主要な可視 export を分類するもので、完全な実装一覧は `src/index.ts` と build 後の declaration を正とする:
+`index.ts` exports symbols from `application/`, `domain/`, and `stages/`.
+This section classifies the contract surface and major visible exports; see `src/index.ts` and the built declarations for the complete implementation list.
 
-- **契約** — mc-compose が消費する。変更は破壊的変更（[versioning.md](./versioning.md) §5）。
-- **内部(可視)** — このリポジトリ自身のプレビューとテストのために export しているだけ。
-  変更は破壊的変更では**ない**。
+- **Contract** APIs are consumed by mc-compose; changing them is a breaking change ([versioning.md](./versioning.md) §5).
+- **Internal (visible)** APIs are exported only for this repository's previews and tests; changing them is **not** a breaking change.
 
 ### `stages/registration.ts`
 
@@ -190,20 +222,7 @@ This tagged value has `_tag`, `name`, `message`, and `cause`; it does not extend
 mc-kernel から import する。mx-ui の root barrel はこれらを再 export しないため、利用側も型の owner である
 `@nerima-games/mc-kernel` から import する。`test/public-api.test.ts` が再 export されないことを検査する。
 
-### 5-1. ではなぜインベントリのミラーは**載せる**のか
-
-`domain/inventory-view-model.ts` も mc-sim の `Inventory` / `Slot` / `ItemStack` をローカル再掲している。
-それは `export *` されている。**逆の判断であり、意図的である。**
-
-判断を分けているのは**ミラーが何を指しているか**である。
-
-| ミラー | 指しているもの | バレル | 削除・置換のコスト |
-| --- | --- | --- | --- |
-| `mx-gameplay/domain/chunk-store-port.ts` | mc-worldgen の**サービス**（`Context.Tag`） | 載せない | 他リポジトリのサービスの再公開。タグキー衝突という実害もある |
-| `domain/inventory-view-model.ts` のミラー | 本リポジトリの純粋関数の**引数型** | **載せる** | mc-compose は `inventoryViewModel` を呼ばない → §5 の表で MINOR |
-| `VitalsSnapshot` | 同上 | **載っている** | 同上 |
-
-### `domain/hud-view-model.ts` — すべて内部(可視)
+### `domain/hud-view-model.ts` (all exports are internal (visible))
 
 | export | 種別 |
 | --- | --- |
@@ -212,22 +231,22 @@ mc-kernel から import する。mx-ui の root barrel はこれらを再 export
 | `iconRow` / `hudViewModel` / `slotView` / `hotbarSlotIndex` | 純粋関数 |
 | `spawnSnapshot` | プレビュー・テスト用のリテラル |
 
-`hotbarSlotIndex` は mc-sim の `clampHotbarIndex` を再 export し、HUD の選択位置とキーボード focus に同じ規則を使う。`slotView` は inventory と hotbar の slot を同じ view type に変換する。これらの view model export は内部(可視)なので、変更は [versioning.md](./versioning.md) §5 の破壊的変更に分類しない。
+`hotbarSlotIndex` re-exports mc-sim's `clampHotbarIndex`, so the HUD selection and keyboard focus use the same rule. `slotView` converts inventory and hotbar slots to the same view type.
 
-### `domain/inventory-view-model.ts` — すべて内部(可視)
+### `domain/inventory-view-model.ts` (all exports are internal (visible))
 
 | export | 種別 |
 | --- | --- |
-| `INVENTORY_SLOT_COUNT`（36、mc-sim のミラー）/ `INVENTORY_MAIN_COLUMNS` / `INVENTORY_MAIN_ROWS` / `INVENTORY_MAIN_SLOT_COUNT` | 定数 |
-| `MirroredItemId` / `MirroredItemStack` / `MirroredSlot` / `MirroredInventory` | type（**mc-sim のミラー**、provisional） |
+| `INVENTORY_SLOT_COUNT` (imported from and re-exported by mc-sim) / `INVENTORY_MAIN_COLUMNS` / `INVENTORY_MAIN_ROWS` / `INVENTORY_MAIN_SLOT_COUNT` | constants |
 | `CraftingSnapshot` / `CraftingResultSnapshot` / `InventorySnapshot` | type |
 | `RegionId` / `SlotRegion` / `CraftingOutcomeView` / `MergeTargets` / `InventoryViewModel` | type |
 | `inventoryViewModel` / `slotSnapshotOf` / `regionOf` | 純粋関数 |
 | `emptyInventorySnapshot` | プレビュー・テスト用のリテラル |
 
-**ミラーがバレルに載る理由**は §5-1 に書く。
+`Inventory`, `Slot`, and `ItemStack` are imported directly from mc-sim and are not re-exported from this barrel.
+mx-ui publishes the types and functions that project state for display.
 
-### `domain/palette.ts` — すべて内部(可視)
+### `domain/palette.ts` (all exports are internal (visible))
 
 | export | 種別 |
 | --- | --- |
@@ -243,27 +262,76 @@ mc-kernel から import する。mx-ui の root barrel はこれらを再 export
 **このモジュールはスタイルシートではない。** 値と、値を検査する算術だけである。
 `document` を触らないので、palette math は Node environment でテストできる。`simulateColorVision` は補正の効果を予測し、`domain/accessibility.ts` の `colorVisionMatrix` は DOM に適用する補正行列を作る。
 
-### `application/**` — DOM 層。**契約(暫定)** と 内部(可視) が混在する
+### 5-2. UI4 host-facing presentation APIs
 
-`application/` は `domain/` の射影を要素にする層である。`domain/` を import し、
-**逆は無い**（`test/dom-surface.test.ts` が固定）。
+These APIs define how mc-compose persists settings and projects them into the UI.
+mc-sim continues to own persisted settings and game state.
+
+| API | Input and result | Host responsibility |
+| --- | --- | --- |
+| `UiLanguage` / `UI_LANGUAGES` / `UiLanguageSchema` | `'en' \| 'ja'` | Store the selected language. Kernel owns item and block names; this UI dictionary does not contain them. |
+| `decodeUiLanguage(input)` | `unknown` → `Result<UiLanguage, UiLanguageFailure>` | Decode persisted input and return an unsupported-language failure instead of silently choosing the default. |
+| `UiMountOptions.initialLanguage` / `UiMount.updateLanguage(input)` | Initial value and runtime update; updates validate `unknown` and return `Result` | Pass locale changes while the mount is active. |
+| `applyUiLanguage(root, input)` | Localized DOM subtree and `unknown` | Update text and aria attributes within a subtree when using an independent view. |
+| `GAME_FONT_FAMILY` / `GAME_FONT_STACK` / `GAME_FONT_STYLESHEET_EXPORT` | Bundled font name and package export path | Load `@nerima-games/mx-ui/assets/game-font.css` on screens that need it. |
+| `UI_SCALE_MIN` / `UI_SCALE_MAX` / `applyUiScale(style, input)` | `0.75` to `1.5`; out-of-range and non-numeric values return a typed failure | Apply mc-sim's `uiScale` setting to the mx-ui root style. |
+| `ColorVisionMode` / `createColorVisionFilterController(root, target)` | `off` / `protanopia` / `deuteranopia` / `tritanopia`; controller provides `apply(mode: unknown)` / `dispose()` | Pass the UI root and render canvas. The controller creates instance-specific SVG definitions inside the root and applies the filter only to the canvas. `off` and `dispose()` restore the original attribute and inline filter. |
+| `MotionSetting` / `MotionPreference` / `createMotionPreferenceController(query, initialSetting, onChange)` | Settings `system` / `full` / `reduced` → effective preference `full` / `reduced` | Pass `matchMedia('(prefers-reduced-motion: reduce)')` and update HUD or view motion in the callback. Call `dispose()` when the screen closes. |
+| `focusTargetForElement(target)` / `UiMount.moveFocus(direction)` | mx-ui resolves a DOM target to mc-render's `FocusTarget`; the direction uses the `InventoryNavigationDirection` alias of `FocusNavigationDirection` | Pass the resolver to mc-render and route its arrow-key intent back to the mount. |
+| `bossHealthBarViewModel(snapshot, language?)` / `strongholdLocatorViewModel(snapshot, language?)` / `portalEyeProgressViewModel(inserted, language?)` | End HUD view models in the selected language; defaults to `'en'` | Pass the `UiLanguage` used for display. An empty boss name returns a localized default. |
+| `dragonDefeatRewardNotification(snapshot, language?)` | `UiLanguage`, defaulting to `'en'` | Returns the Ender Dragon reward title, XP text, and aria label in the selected language. |
+| `SettingsViewActions.onClose?` / station `*ViewActions.onClose?` | `() => void` | Supplying the callback adds a native close button and connects it to the host's screen transition. |
+
+`UI_MESSAGES` and `ACHIEVEMENT_TITLES` store English and Japanese text for each entry.
+`UI_TRANSLATION_KEY_COUNT` reports the combined key count, and tests check that both languages cover every entry.
+`UiMountOptions` accepts `initialLanguage`; after mount, `updateLanguage` switches all localized text and aria attributes.
+
+`GAME_FONT_STYLESHEET_EXPORT` is the CSS package export path; importing the root API does not load the CSS or font file.
+The stylesheet uses `PixelMplus12-Regular.ttf`, distributed with its license in `assets/MPLUS-FONT-LICENSE.txt`.
+Product names are outside the UI dictionary.
+
+`SettingsViewActions.onSliderChange` returns `uiScale` and its number to the host.
+`onChoiceChange` returns the selected `reducedMotion` or `colorVisionCorrection` value, which the host persists through mc-sim's Settings schema.
+Language is held by the host through `initialLanguage` and `updateLanguage`, not in mc-sim Settings.
+
+Keyboard focus uses mc-render-owned `FocusTarget` and `FocusNavigationDirection` types.
+`focusTargetForElement` resolves a DOM element to mc-render's `FocusTarget`. Pass it to mc-render as the `FocusTargetForElement` resolver, then route arrow-key directions to `UiMount.moveFocus`.
+The user agent owns Tab; mx-ui does not capture Tab, Enter, Space, or arrow keys in its keydown listener.
+mc-render converts arrow-key codes, while mx-ui and the host UI boundary own DOM focus membership and `.focus()`.
+Inventory, container, furnace, anvil, enchanting, and settings controls use native buttons and inputs; the host connects each view's `*ViewActions` callbacks.
+
+Chest slots belong to one `chest-storage-slots` focus group arranged in nine columns, with the slot count matching the open container.
+Arrow-key navigation crosses between the chest, player main inventory, and hotbar groups.
+The browser handles Tab movement between a close button (when the view receives `onClose`) and the current roving tab stop.
+While the anvil name input is active, the host leaves arrow keys to the browser for caret movement.
+The host's topmost overlay handler dispatches Escape once to close the active screen; it also owns focus restoration.
+
+`applyUiScale` uses CSS `zoom`.
+MDN marks this property as Baseline 2024 and notes that older browsers may not support it: [MDN `zoom`](https://developer.mozilla.org/en-US/docs/Web/CSS/zoom).
+
+### `application/**` (DOM layer; includes both **provisional contract** and **internal (visible)** APIs)
+
+`application/` turns `domain/` projections into DOM elements. It imports `domain/`, with no reverse dependency; `test/dom-surface.test.ts` pins this boundary.
 
 | モジュール | export | 種別 | 分類 |
 | --- | --- | --- | --- |
-| `application/dom-surface.ts` | `DomNode` / `DomStyle` / `DomElement` / `DomElementFactory` / `DomAttributeTarget` | type | **契約(暫定)** — mc-compose が `document` を渡すときの受け口 |
+| `application/dom-surface.ts` | `DomNode` / `DomStyle` / `DomElement` / `DomElementFactory` / `DomAttributeTarget` | type | **Provisional contract** (structural DOM boundary used to create child elements inside the host-provided root) |
 | `application/hud-view.ts` | `createHudView` / `HudView`（`render` / `setMotion` / `setKeyboardFocus`）/ `EXPERIENCE_TRANSITION_MS` | 関数 + type + 定数 | **契約(暫定)** |
 | `application/caption-view.ts` | `createCaptionView` / `CaptionView` | 関数 + type | **契約(暫定)** |
 | `application/inventory-view.ts` | `createInventoryView` / `InventoryView` | 関数 + type | **契約(暫定)** |
 | `application/save-indicator.ts` | `createSaveIndicator` / `SaveIndicator` / `SAVE_MESSAGES` / `SAVE_STATUS_GLYPH` / `SAVE_STATUS_LABEL` | 関数 + type + 定数 | **契約(暫定)** |
-| `application/accessibility-dom.ts` | `COLOR_VISION_ATTRIBUTE` / `ColorVisionCell` / `colorVisionCell` / `applyColorVision` | 定数 + type + 関数 | **契約(暫定)** — canvas は mc-render のものだから |
+| `application/accessibility-dom.ts` | `COLOR_VISION_ATTRIBUTE` / `ColorVisionCell` / `colorVisionCell` / `applyColorVision` / `createMotionPreferenceController` | constants + type + functions | **Provisional contract** |
+| `application/color-vision-filters.ts` | `ColorVisionFilterFailure` / `ColorVisionFilterController` / `createColorVisionFilterController` | type + functions | **Provisional contract** (creates SVG filters inside the root and applies them only to the specified canvas) |
+| `application/ui-scale.ts` | `UI_SCALE_PROPERTY` / `applyUiScale` | constants + functions | **Provisional contract** |
+| `application/game-font.ts` | `GAME_FONT_FAMILY` / `GAME_FONT_STACK` / `GAME_FONT_STYLESHEET_EXPORT` | constants | **Provisional contract** |
 | `application/palette-css.ts` | `PALETTE_PROPERTY_PREFIX` / `PALETTE_PROPERTY` / `PALETTE_SOURCE` / `PALETTE_VALUE` / `PALETTE_VAR` / `PALETTE_TOKEN_NAMES` / `PaletteTokenName` / `declarePalette` | 定数 + type + 関数 | 内部(可視) |
 | `application/dom-write.ts` | `TextCell` / `StyleCell` / `PercentCell` / `AttributeCell` と各 `*Cell` / `write*` / `clearStyle` | type + 関数 | 内部(可視) |
-| `application/slot-element.ts` | `SlotElement` / `createSlotElement` / `updateSlotElement` / `setSlotHidden` / `hideSlotElementAtMount` / `setSlotTabStop` / `setSlotKeyboardFocus` / `DURABILITY_LOW_PERCENT` / `FOCUS_RING_WIDTH` / `FOCUS_RING_SHADOW_WIDTH` | type + 関数 + 定数 | 内部(可視) |
+| `application/slot-element.ts` | `SlotElement` / `SlotButtonView` / `createSlotElement` / `updateSlotElement` / `setSlotButtonView` / `setSlotHidden` / `hideSlotElementAtMount` / `setSlotTabStop` / `setSlotKeyboardFocus` / `DURABILITY_LOW_PERCENT` / `SLOT_TARGET_MIN_SIZE` / `FOCUS_RING_WIDTH` / `FOCUS_RING_SHADOW_WIDTH` | type + functions + constants | Internal (visible) |
 | `application/icon-element.ts` | `IconKind` / `IconElement` / `createIconElement` / `updateIconElement` / `retireIconElement` | type + 関数 | 内部(可視) |
 
 ### Achievement toast
 
-この API は、`src/domain/achievement-toast.ts` の payload schema と event projection、`src/application/achievement-toast-view.ts` の DOM view、および `src/application/achievement-toast-subscriber.ts` の event-bus subscription から成る。各 module の export は `src/index.ts` の root barrel に含まれる。まだ mc-compose が利用していない API は「契約(暫定)」、subscriber の内部 projection は「内部(可視)」に分類する。
+This API consists of the payload schema and event projection in `src/domain/achievement-toast.ts`, the DOM view in `src/application/achievement-toast-view.ts`, and the event-bus subscription in `src/application/achievement-toast-subscriber.ts`. Each module's exports are included in the root barrel at `src/index.ts`. APIs not yet consumed by mc-compose are **provisional contracts**; the subscriber's internal projection is **internal (visible)**.
 
 | モジュール | export | 種別 | 分類 | 振る舞い |
 | --- | --- | --- | --- | --- |
@@ -278,9 +346,8 @@ mc-sim 0.7.0 の `DomainEvent` は mc-kernel 0.12.0 の広い achievement brand 
 表示名と item icon は mx-ui が所有し、表示表は有限 catalog の全 `AchievementId` literal を key にした `Record<AchievementId, AdvancementDisplay>` にする。
 `minecraft:story/form_obsidian` は “Ice Bucket Challenge” の ID として含み、存在しない `minecraft:story/obtain_obsidian` は含まない。
 
-**「契約(暫定)」**は、mc-compose などの host がまだ消費していない API を示す。最初の consumer が付くまでは、
-既存 consumer を壊す互換性変更は発生しない。各 API の現時点の分類は上の表を参照し、release の versioning は
-[versioning.md](./versioning.md) §5 に従う。
+**Provisional contract** identifies an API that is not yet consumed by a host such as mc-compose. Until it has a consumer,
+compatibility changes cannot break an existing consumer. See the table above for each API's current classification; release versioning follows [versioning.md](./versioning.md) §5.
 
 ### なぜ `HTMLElement` ではなく構造型なのか
 
@@ -303,7 +370,7 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
 実 `lib.dom.d.ts` に対して fixture をコンパイルして診断 0 件を assert する（mc-render と同じ手口）。
 
 
-### `domain/caption.ts` — すべて内部(可視)
+### `domain/caption.ts` (all exports are internal (visible))
 
 | export | 種別 |
 | --- | --- |
@@ -312,7 +379,7 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
 | `emptyCaptionQueue` | 定数 |
 | `receiveCaption` / `expireCaptions` / `captionLines` | 純粋関数 |
 
-### `domain/save-status.ts` — すべて内部(可視)
+### `domain/save-status.ts` (all exports are internal (visible))
 
 | export | 種別 |
 | --- | --- |
@@ -325,18 +392,19 @@ mc-render の理由（DOM lib が無い）とは**別物**である。
 **stage は増やしていない**——字幕と違って刈り取るキューが無く、
 失効は読み取り時に経過時間を引いて判定するからである。
 
-### `domain/accessibility.ts` — すべて内部(可視)
+### `domain/accessibility.ts` (all exports are internal (visible))
 
 | export | 種別 |
 | --- | --- |
-| `ColorVisionMode` / `ColorVisionMatrix` / `RgbChannels` / `MotionSetting` / `MotionPreference` / `InputAction` / `KeyBindings` / `RebindResult` | type |
-| `COLOR_VISION_MODES` / `COLOR_VISION_FILTER_TARGET` / `COLOR_VISION_FILTER_COLOR_SPACE` / `REBIND_CLEAR_KEYS` | 定数 |
-| `colorVisionAttribute` / `colorVisionMatrix` / `colorVisionMatrixValues` / `applyColorVisionMatrix` / `resolveMotionPreference` / `animationDurationMs` / `shouldAnimate` / `rebind` / `unboundActions` | 純粋関数 |
+| `ColorVisionMode` / `ColorVisionCorrectionMode` / `ColorVisionMatrix` / `RgbChannels` / `UiScale` / `MotionSetting` / `MotionPreference` / `InputAction` / `KeyBindings` / `RebindResult` | type |
+| `ColorVisionModeSchema` / `UiScaleSchema` / `MotionSettingSchema` | schema |
+| `COLOR_VISION_MODES` / `COLOR_VISION_FILTER_TARGET` / `COLOR_VISION_FILTER_COLOR_SPACE` / `UI_SCALE_MIN` / `UI_SCALE_MAX` / `REBIND_CLEAR_KEYS` | constants |
+| `decodeColorVisionMode` / `decodeUiScale` / `decodeMotionSetting` | decoder |
+| `colorVisionAttribute` / `colorVisionMatrix` / `colorVisionCorrectionMatrixValues` / `colorVisionMatrixValues` / `applyColorVisionMatrix` / `resolveMotionPreference` / `animationDurationMs` / `shouldAnimate` / `rebind` / `unboundActions` | pure functions |
 
-`colorVisionMatrix` 以下の 3 つと `COLOR_VISION_FILTER_COLOR_SPACE` は
-**`feColorMatrix` による色覚補正を実装する関数と定数**である。補正を有効にする UI とフィルターの両方を提供する。
+`domain/accessibility.ts` provides color-correction matrix values, UI-scale decoding, and pure projections of reduced-motion preferences. `application/color-vision-filters.ts` creates SVG filter definitions and applies them to the canvas.
 
-### `domain/modal-stack.ts` — すべて内部(可視)
+### `domain/modal-stack.ts` (all exports are internal (visible))
 
 | export | 種別 |
 | --- | --- |
@@ -353,11 +421,5 @@ export されているのに公開 API ではない、というのは矛盾に�
   `exposes the same implementations through the barrel as through the modules` がこの対応を検査する。
 - **公開 API ではない理由**: mc-compose はこれらを使わない。使わないものを変えても mc-compose は壊れない。
   だから `iconRow` の戻り値を変えても **MINOR bump で済む**（[versioning.md](./versioning.md) §5）。
-
-別の回帰テストは**不在**を固定する —
-`REGRESSION: does not republish mc-kernel’s vocabulary as its own` が
-`StageId` と `DeltaTimeSecs` がバレルに現れないことを assert する。
-「見えるが公開ではない」の管理はドキュメントでできるが、
-「所有していないものを公開する」はドキュメントでは止められない——消えるのが約束だからである。
 
 アクセシビリティ関数の root exports はプレビューとテストで使うが、契約 API としては分類しない。存在は `test/public-api.test.ts` の export checks で固定する。

@@ -52,8 +52,8 @@ describe('createEnchantingTableView', () => {
     ])
     const labels = root.findAll('data-mx-ui', 'enchanting-offer-label')
     expect(labels.map(({ textContent }) => textContent)).toStrictEqual([
-      'minecraft:sharpness 3; 12 levels; 1 lapis',
-      'minecraft:unbreaking 2; 18 levels; 2 lapis',
+      'Sharpness 3; 12 levels; 1 lapis',
+      'Unbreaking 2; 18 levels; 2 lapis',
       'Unavailable enchantment offer',
     ])
     const rejections = root.findAll('data-mx-ui', 'enchanting-offer-rejection')

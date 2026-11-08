@@ -13,8 +13,18 @@ import {
   type UiSettingsCallbacks,
   createSessionOverlays,
 } from './session-overlays.js'
-import { Effect, Exit, Schema } from 'effect'
-import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../domain/hud-view-model.js'
+import {
+  DEFAULT_UI_LANGUAGE,
+  type UiLanguage,
+  type UiLanguageFailure,
+  decodeUiLanguage,
+} from '../domain/ui-language.js'
+import { Effect, Exit, Result, Schema } from 'effect'
+import {
+  HOTBAR_SLOT_COUNT,
+  hudViewModel,
+  spawnSnapshot,
+} from '../domain/hud-view-model.js'
 import { type HudView, createHudView } from './hud-view.js'
 import {
   type InventoryAction,
@@ -30,7 +40,9 @@ import {
 } from './inventory-view.js'
 import {
   type InventoryNavigationDirection,
+  focusTargetForElement as focusTargetForUiElement,
   inventoryTargets,
+  moveFocusTarget,
   moveInventoryTarget,
   sameInventoryTarget,
 } from './inventory-navigation.js'
@@ -48,9 +60,11 @@ import { finishToastSubscriptionClose, finishUiMountCleanup } from './ui-mount-c
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import type { AchievementToast } from '../domain/achievement-toast.js'
 import { DomainEventBus } from '@nerima-games/mc-sim'
+import type { FocusTarget } from '@nerima-games/mc-render'
 import type { MotionPreference } from '../domain/accessibility.js'
 import { UiMountError } from './ui-mount-error.js'
 import type { UiQaSnapshot } from '../domain/ui-qa.js'
+import { applyUiLanguage } from './ui-localization.js'
 import { createUiModuleInstance } from './ui-module-instance.js'
 import { uiModule } from '../stages/registration.js'
 
@@ -71,6 +85,7 @@ export type UiMountedViews = {
 export type UiMountOptions = {
   readonly root: HTMLElement
   readonly motion?: MotionPreference
+  readonly initialLanguage?: UiLanguage
   readonly menuCallbacks?: MainMenuCallbacks
   readonly initialSettings?: UiSettings
   readonly settingsCallbacks?: UiSettingsCallbacks
@@ -91,12 +106,14 @@ export type UiMount = {
   readonly current: () => UiMountedViews | undefined
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
   readonly updateSettings: (settings: UiSettings) => void
+  readonly updateLanguage: (language: unknown) => Result.Result<UiLanguage, UiLanguageFailure>
   readonly openSettings: () => void
   readonly closeSettings: () => void
   readonly openInventory: (model?: InventoryViewModel) => void
   readonly closeInventory: () => void
   readonly updateInventory: (model: InventoryViewModel) => void
   readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
+  readonly moveFocus: (direction: InventoryNavigationDirection) => boolean
   readonly activateInventoryFocus: (kind?: 'click' | 'shift-click') => boolean
   readonly dragInventorySlot: (
     source: InventoryDragTarget,
@@ -105,29 +122,7 @@ export type UiMount = {
   readonly updateInventoryActionState: (state: InventoryActionState) => void
 }
 
-const inventoryDirectionForKey = (key: string): InventoryNavigationDirection | null => {
-  switch (key) {
-    case 'ArrowDown':
-      return 'down'
-    case 'ArrowLeft':
-      return 'left'
-    case 'ArrowRight':
-      return 'right'
-    case 'ArrowUp':
-      return 'up'
-    default:
-      return null
-  }
-}
-
 const ZERO = 0
-const FOCUS_STEP_FORWARD = 1
-const FOCUS_STEP_BACKWARD = -1
-
-type NonEmptyArray<Element> = readonly [Element, ...Element[]]
-
-const isNonEmpty = <Element>(values: readonly Element[]): values is NonEmptyArray<Element> =>
-  values.length !== ZERO
 
 export const inventoryTargetAt = (
   targets: ReadonlyArray<InventoryInteractionTarget>,
@@ -145,6 +140,7 @@ type UiMountSession = {
   achievementToast?: AchievementToast
   mounted: UiMountedViews | null
   settings: UiSettings
+  language: UiLanguage
   debugSnapshot: DebugHudSnapshot
   inventoryModel: InventoryViewModel
   inventoryOpen: boolean
@@ -163,44 +159,6 @@ const restoreFocusTarget = (active: Element | null): HTMLElement | null => {
   return null
 }
 
-/** `event.shiftKey ? -1 : 1`, named — Shift reverses the Tab cycle direction. */
-const focusStep = (shiftKey: boolean): number => {
-  if (shiftKey) {
-    return FOCUS_STEP_BACKWARD
-  }
-  return FOCUS_STEP_FORWARD
-}
-
-/** `event.shiftKey ? 'shift-click' : 'click'`, named. */
-const clickKind = (shiftKey: boolean): 'click' | 'shift-click' => {
-  if (shiftKey) {
-    return 'shift-click'
-  }
-  return 'click'
-}
-
-/** The next Tab-cycle target, wrapping, or nothing when the region is empty. */
-const cycleInventoryFocus = (
-  inventoryModel: InventoryViewModel,
-  currentFocus: InventoryInteractionTarget,
-  shiftKey: boolean,
-): InventoryInteractionTarget | null => {
-  const targets = inventoryTargets(inventoryModel)
-  // `session.inventoryModel` starts as `inventoryViewModel(emptyInventorySnapshot)`.
-  // Every real `updateInventory` caller replaces it with another model built the same way.
-  // Both always have a non-empty `hotbar` and `main` region.
-  // But `InventoryViewModel` is host-suppliable directly.
-  // So a hand-built or persisted one can leave `targets` empty.
-  if (!isNonEmpty(targets)) {
-    return null
-  }
-  const currentIndex = targets.findIndex((target) => sameInventoryTarget(target, currentFocus))
-  const direction = focusStep(shiftKey)
-  const nextIndex = (currentIndex + direction + targets.length) % targets.length
-  // Tab is a keyboard hot path; keep the next-target lookup O(1) as the inventory grows.
-  return inventoryTargetAt(targets, nextIndex)
-}
-
 /** Where keyboard focus lands after a render: the crafting output, or a real slot. */
 const inventoryFocusTarget = (
   root: HTMLElement | null,
@@ -214,19 +172,28 @@ const inventoryFocusTarget = (
     ?.querySelectorAll<HTMLElement>('[data-mx-ui="slot"]')[focus.index]
 }
 
+const isEditableKeyboardTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof Element)) {
+    return false
+  }
+  const tagName = target.tagName.toLowerCase()
+  if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+    return true
+  }
+  return target instanceof HTMLElement && target.isContentEditable
+}
+
 /** Everything a keyboard handler needs, gathered so each handler takes one argument. */
 type InventoryKeyContext = {
   readonly session: UiMountSession
-  readonly inventory: InventoryView
   readonly closeInventory: () => void
   readonly openInventory: () => void
-  readonly renderInventory: (view: InventoryView, focus?: boolean) => void
-  readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
-  readonly activateInventoryFocus: (kind?: 'click' | 'shift-click') => boolean
 }
 
 const handleToggleKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  event.preventDefault()
+  if (isEditableKeyboardTarget(event.target)) {
+    return false
+  }
   if (ctx.session.inventoryOpen) {
     ctx.closeInventory()
   } else {
@@ -235,37 +202,9 @@ const handleToggleKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolea
   return true
 }
 
-const handleEscapeKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  event.preventDefault()
+const handleEscapeKey = (_event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
   ctx.closeInventory()
   return true
-}
-
-const handleTabKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  const nextFocus = cycleInventoryFocus(ctx.session.inventoryModel, ctx.session.inventoryFocus, event.shiftKey)
-  // `nextFocus` is `null` only when `cycleInventoryFocus` saw zero targets.
-  // See that function's comment on the same hand-built-model precondition.
-  if (nextFocus === null) {
-    return false
-  }
-  event.preventDefault()
-  ctx.session.inventoryFocus = nextFocus
-  ctx.renderInventory(ctx.inventory, true)
-  return true
-}
-
-const handleArrowKeyEvent = (
-  event: KeyboardEvent,
-  ctx: InventoryKeyContext,
-  direction: InventoryNavigationDirection,
-): boolean => {
-  event.preventDefault()
-  return ctx.moveInventoryFocus(direction)
-}
-
-const handleActivateKeyEvent = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  event.preventDefault()
-  return ctx.activateInventoryFocus(clickKind(event.shiftKey))
 }
 
 type KeyHandler = {
@@ -275,11 +214,6 @@ type KeyHandler = {
 
 const INVENTORY_KEY_HANDLERS: ReadonlyArray<KeyHandler> = [
   { handle: handleEscapeKey, matches: (event) => event.key === 'Escape' },
-  { handle: handleTabKeyEvent, matches: (event) => event.key === 'Tab' },
-  {
-    handle: handleActivateKeyEvent,
-    matches: (event) => event.key === 'Enter' || event.key === ' ',
-  },
 ]
 
 /**
@@ -287,10 +221,6 @@ const INVENTORY_KEY_HANDLERS: ReadonlyArray<KeyHandler> = [
  * open — same priority order the original sequential `if` chain used.
  */
 const dispatchOpenInventoryKey = (event: KeyboardEvent, ctx: InventoryKeyContext): boolean => {
-  const direction = inventoryDirectionForKey(event.key)
-  if (direction !== null) {
-    return handleArrowKeyEvent(event, ctx, direction)
-  }
   const handler = INVENTORY_KEY_HANDLERS.find(({ matches }) => matches(event))
   if (typeof handler === 'undefined') {
     return false
@@ -416,7 +346,10 @@ const createAchievementToastLifecycle = (session: UiMountSession) => {
   return { close, read, start }
 }
 
-export const makeUiMount = (options: UiMountOptions): UiMount => {
+const createMountState = (options: UiMountOptions): Readonly<{
+  session: UiMountSession
+  toastLifecycle: ReturnType<typeof createAchievementToastLifecycle>
+}> => {
   const session: UiMountSession = {
     debugSnapshot: options.initialDebugSnapshot ?? DEFAULT_DEBUG_HUD_SNAPSHOT,
     inventoryActionState: { kind: 'idle' },
@@ -424,18 +357,45 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     inventoryModel: inventoryViewModel(emptyInventorySnapshot),
     inventoryOpen: false,
     inventoryRestoreFocus: null,
+    language: options.initialLanguage ?? DEFAULT_UI_LANGUAGE,
     mounted: null,
     settings: options.initialSettings ?? DEFAULT_UI_SETTINGS,
     toastScope: null,
     toastSubscription: null,
   }
-  const toastLifecycle = createAchievementToastLifecycle(session)
+  return { session, toastLifecycle: createAchievementToastLifecycle(session) }
+}
+
+const isInventoryFocusTarget = (session: UiMountSession, target: FocusTarget): boolean => {
+  if (!session.inventoryOpen) {
+    return false
+  }
+  if (target.group === 'crafting-output') {
+    session.inventoryFocus = { kind: 'crafting-output' }
+    return true
+  }
+  const region = session.inventoryModel.regions.find((candidate) => candidate.id === target.group)
+  if (region?.kind !== 'slots' || target.index >= region.slots.length) {
+    return false
+  }
+  session.inventoryFocus = { index: target.index, kind: 'slot', region: region.id }
+  return true
+}
+
+const activationKind = (shiftKey: boolean): 'click' | 'shift-click' => {
+  if (shiftKey) {
+    return 'shift-click'
+  }
+  return 'click'
+}
+
+export const makeUiMount = (options: UiMountOptions): UiMount => {
+  const { session, toastLifecycle } = createMountState(options)
 
   const renderInventory = (view: InventoryView, focus = false): void => {
     const targets = inventoryTargets(session.inventoryModel)
-    // The `targets[ZERO] ?? { kind: 'crafting-output' }` tail runs only after `targets.find` fails.
-    // `targets` is empty only for a hand-built model.
-    // See `cycleInventoryFocus`'s comment on the same precondition.
+    // Host-assembled models can have no navigable slot. Retain an inert target
+    // Until a later render supplies one.
     session.inventoryFocus =
       targets.find((target) => sameInventoryTarget(target, session.inventoryFocus)) ??
       targets[ZERO] ?? { kind: 'crafting-output' }
@@ -458,6 +418,17 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     session.inventoryFocus = moveInventoryTarget(session.inventoryModel, session.inventoryFocus, direction)
     renderInventory(view, true)
     return true
+  }
+
+  const moveFocus = (direction: InventoryNavigationDirection): boolean => {
+    const target = focusTargetForUiElement(options.root.ownerDocument.activeElement)
+    if (typeof target === 'undefined') {
+      return false
+    }
+    if (isInventoryFocusTarget(session, target)) {
+      return moveInventoryFocus(direction)
+    }
+    return moveFocusTarget(options.root, target, direction)
   }
 
   const activateInventoryFocus = (kind: 'click' | 'shift-click' = 'click'): boolean => {
@@ -517,7 +488,16 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       ),
     )
 
-    const inventory = createInventoryView(document, ownedRoot)
+    const inventory = createInventoryView(document, ownedRoot, {
+      onActivate: (target, shiftKey) => {
+        session.inventoryFocus = target
+        activateInventoryFocus(activationKind(shiftKey))
+      },
+      onFocusChange: (target) => {
+        session.inventoryFocus = target
+        renderInventory(inventory)
+      },
+    })
     inventory.root.setAttribute('hidden', '')
     renderInventory(inventory)
 
@@ -549,12 +529,8 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     }
     const handleInventoryKey = (event: KeyboardEvent): boolean =>
       dispatchInventoryKey(event, {
-        activateInventoryFocus,
         closeInventory,
-        inventory,
-        moveInventoryFocus,
         openInventory,
-        renderInventory,
         session,
       })
 
@@ -585,6 +561,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
           )
           partial.mainMenu = mainMenu
           mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
+          applyUiLanguage(ownedRoot, session.language)
           return { achievementToast, hud, inventory, mainMenu, overlays, root: ownedRoot }
         },
       })
@@ -624,6 +601,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       return session.mounted
     },
     dragInventorySlot,
+    moveFocus,
     moveInventoryFocus,
     name: '@nerima-games/mx-ui',
     openInventory: (model) => {
@@ -670,6 +648,17 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       if (view) {
         renderInventory(view)
       }
+    },
+    updateLanguage: (input) => {
+      const decoded = decodeUiLanguage(input)
+      if (Result.isFailure(decoded)) {
+        return decoded
+      }
+      session.language = decoded.success
+      if (session.mounted !== null) {
+        return applyUiLanguage(session.mounted.root, decoded.success)
+      }
+      return decoded
     },
     updateSettings: (nextSettings) => {
       session.settings = nextSettings

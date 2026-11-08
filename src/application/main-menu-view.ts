@@ -23,6 +23,7 @@ import {
   openPanel,
   worldNameLabel,
 } from '../domain/main-menu.js'
+import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
 import type {
   DomElement,
   DomElementFactory,
@@ -30,42 +31,50 @@ import type {
   DomInteractiveElement,
 } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import {
+  inheritUiLanguage,
+  setLocalizedAttribute,
+  setLocalizedText,
+  uiLanguageForElement,
+  writeLocalizedAttribute,
+  writeLocalizedText,
+} from './ui-localization.js'
 
 export const MAIN_MENU_TITLE = 'nerima-games'
 
 export const ROOT_ENTRY_LABEL: Readonly<Record<RootEntry, string>> = {
-  'load-world': 'Select World',
-  'new-world': 'Create New World',
-  settings: 'Options...',
+  'load-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.load-world'),
+  'new-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.new-world'),
+  settings: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.root.settings'),
 }
 
 export const GAME_MODE_LABEL: Readonly<Record<GameMode, string>> = {
-  creative: 'Creative',
-  survival: 'Survival',
+  creative: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.mode.creative'),
+  survival: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.mode.survival'),
 }
 
 export const MENU_PANEL_LABEL: Readonly<Record<MenuPanel, string>> = {
-  'load-world': 'Select world',
-  'new-world': 'Create new world',
-  root: 'Main menu',
+  'load-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.load-world'),
+  'new-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.new-world'),
+  root: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.root'),
 }
 
-export const MENU_FIELD_LABEL = {
-  'game-mode': 'Game mode',
-  'world-name': 'World name',
+export const MENU_FIELD_LABEL: Readonly<Record<'game-mode' | 'world-name', string>> = {
+  'game-mode': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.field.game-mode'),
+  'world-name': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.field.world-name'),
 } as const
 
 export type MenuField = keyof typeof MENU_FIELD_LABEL
 
-export const MENU_ACTION_LABEL = {
-  back: 'Back',
-  cancel: 'Cancel',
-  confirm: 'Confirm',
+export const MENU_ACTION_LABEL: Readonly<Record<'back' | 'cancel' | 'confirm', string>> = {
+  back: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.back'),
+  cancel: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.cancel'),
+  confirm: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.action.confirm'),
 } as const
 
 export type MenuAction = keyof typeof MENU_ACTION_LABEL
 
-export const EMPTY_SAVE_LIST_NOTE = 'No saved worlds'
+export const EMPTY_SAVE_LIST_NOTE: string = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.worlds.empty')
 
 /** @deprecated The menu now distinguishes a host-supplied empty list directly. */
 export const NO_SAVE_LIST_NOTE =
@@ -154,6 +163,14 @@ const addManagedListener = (
   ctx.cleanups.push(() => target.removeEventListener?.(spec.type, spec.handler))
 }
 
+const PANEL_MESSAGE_KEY: Readonly<Record<MenuPanel, UiMessageKey>> = {
+  'load-world': 'menu.panel.load-world',
+  'new-world': 'menu.panel.new-world',
+  root: 'menu.panel.root',
+}
+
+const panelMessageKey = (panel: MenuPanel): UiMessageKey => PANEL_MESSAGE_KEY[panel]
+
 const createPanel = (
   factory: DomElementFactory,
   parent: DomElement,
@@ -161,12 +178,12 @@ const createPanel = (
 ): PanelElement => {
   const root = factory.createElement('section')
   setAttributes(root, {
-    'aria-label': MENU_PANEL_LABEL[panel],
     'data-menu-panel': panel,
     'data-mx-ui': 'menu-panel',
     hidden: '',
     role: 'group',
   })
+  setLocalizedAttribute(root, 'aria-label', panelMessageKey(panel))
   parent.appendChild(root)
 
   const element: PanelElement = { hidden: attributeCell(root, 'hidden'), panel, root }
@@ -176,8 +193,18 @@ const createPanel = (
 
 type ButtonSpec = {
   readonly role: string
-  readonly label: string
+  readonly localizedKey?: UiMessageKey
   readonly onClick?: () => void
+}
+
+const styleButton = (button: DomElement): void => {
+  button.style.setProperty('color', PALETTE_VAR.ink)
+  button.style.setProperty('background-color', PALETTE_VAR.surfaceRaised)
+}
+
+const localizeButton = (button: DomElement, key: UiMessageKey): void => {
+  setLocalizedText(button, key)
+  setLocalizedAttribute(button, 'aria-label', key)
 }
 
 const createButton = (
@@ -186,10 +213,12 @@ const createButton = (
   spec: ButtonSpec,
 ): DomInteractiveElement => {
   const button = ctx.factory.createElement('button')
-  setAttributes(button, { 'aria-label': spec.label, 'data-mx-ui': spec.role, type: 'button' })
-  button.style.setProperty('color', PALETTE_VAR.ink)
-  button.style.setProperty('background-color', PALETTE_VAR.surfaceRaised)
-  button.textContent = spec.label
+  inheritUiLanguage(parent, button)
+  setAttributes(button, { 'data-mx-ui': spec.role, type: 'button' })
+  styleButton(button)
+  if (typeof spec.localizedKey !== 'undefined') {
+    localizeButton(button, spec.localizedKey)
+  }
   if (spec.onClick) {
     addManagedListener(ctx, button, { handler: spec.onClick, type: 'click' })
   }
@@ -202,8 +231,12 @@ const modelState = (model: MainMenuViewModel): MainMenuState => ({
   panel: model.panel,
 })
 
-const modeAriaLabel = (mode: GameMode): string =>
-  `${MENU_FIELD_LABEL['game-mode']}: ${GAME_MODE_LABEL[mode]}`
+const MODE_MESSAGE_KEY: Readonly<Record<GameMode, 'menu.mode.creative' | 'menu.mode.survival'>> = {
+  creative: 'menu.mode.creative',
+  survival: 'menu.mode.survival',
+}
+
+const modeMessageKey = (mode: GameMode): 'menu.mode.creative' | 'menu.mode.survival' => MODE_MESSAGE_KEY[mode]
 
 const savedWorldListState = (count: number): string => {
   if (count === ZERO) {
@@ -251,11 +284,15 @@ const createMainMenuShell = (factory: DomElementFactory, parent: DomElement): Ma
   return { panels, root }
 }
 
-const createFieldCaption = (ctx: MountContext, parent: DomElement, text: string): void => {
+const createFieldCaption = (
+  ctx: MountContext,
+  parent: DomElement,
+  key: 'menu.field.game-mode' | 'menu.field.world-name',
+): void => {
   const caption = ctx.factory.createElement('span')
   caption.setAttribute('data-mx-ui', 'menu-field-caption')
   caption.style.setProperty('color', PALETTE_VAR.inkMuted)
-  caption.textContent = text
+  setLocalizedText(caption, key)
   parent.appendChild(caption)
 }
 
@@ -264,15 +301,15 @@ const createWorldNameField = (
   parent: DomElement,
   bindings: MenuBindings,
 ): DomInputElement => {
-  createFieldCaption(ctx, parent, MENU_FIELD_LABEL['world-name'])
+  createFieldCaption(ctx, parent, 'menu.field.world-name')
 
   const input: DomInputElement = ctx.factory.createElement('input')
   setAttributes(input, {
-    'aria-label': MENU_FIELD_LABEL['world-name'],
     'data-mx-ui': 'menu-world-name',
-    placeholder: 'New World',
     type: 'text',
   })
+  setLocalizedAttribute(input, 'aria-label', 'menu.field.world-name')
+  setLocalizedAttribute(input, 'placeholder', 'menu.world-name.default')
   addManagedListener(ctx, input, {
     handler: () => {
       bindings.box.state = nameWorld(bindings.box.state, input.value)
@@ -295,17 +332,21 @@ const createModeButton = (
   bindings: MenuBindings,
 ): ModeButtonElements => {
   const modeButton = createButton(ctx, parent, {
-    label: GAME_MODE_LABEL.survival,
+    localizedKey: 'menu.mode.survival',
     onClick: () => {
       bindings.transition(cycleWorldMode(bindings.box.state), modeButton)
     },
     role: 'menu-game-mode',
   })
-  modeButton.setAttribute('aria-label', modeAriaLabel('survival'))
+  setLocalizedAttribute(modeButton, 'aria-label', 'menu.mode.aria', {
+    mode: { key: 'menu.mode.survival' },
+  })
   const modeText = textCell(modeButton)
   modeText.previous = GAME_MODE_LABEL.survival
   const modeAccessibleName = attributeCell(modeButton, 'aria-label')
-  modeAccessibleName.previous = modeAriaLabel('survival')
+  modeAccessibleName.previous = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.mode.aria', {
+    mode: { key: 'menu.mode.survival' },
+  })
   return { accessibleName: modeAccessibleName, text: modeText }
 }
 
@@ -318,7 +359,7 @@ type MenuSectionContext = {
 
 const createCancelButton = ({ ctx, parent, bindings, rootButton }: MenuSectionContext): void => {
   const cancelButton = createButton(ctx, parent, {
-    label: MENU_ACTION_LABEL.cancel,
+    localizedKey: 'menu.action.cancel',
     onClick: () => {
       bindings.transition(
         backToRoot(bindings.box.state),
@@ -330,17 +371,20 @@ const createCancelButton = ({ ctx, parent, bindings, rootButton }: MenuSectionCo
   cancelButton.setAttribute('data-menu-action', 'cancel')
 }
 
-const createConfirmButton = (
-  ctx: MountContext,
-  parent: DomElement,
-  bindings: MenuBindings,
-): void => {
+type ConfirmButtonContext = {
+  readonly ctx: MountContext
+  readonly parent: DomElement
+  readonly bindings: MenuBindings
+  readonly defaultWorldName: () => string
+}
+
+const createConfirmButton = ({ ctx, parent, bindings, defaultWorldName }: ConfirmButtonContext): void => {
   const confirmButton = createButton(ctx, parent, {
-    label: MENU_ACTION_LABEL.confirm,
+    localizedKey: 'menu.action.confirm',
     onClick: () => {
       bindings.callbacks.onCreateWorld({
         mode: bindings.box.state.draft.mode,
-        name: worldNameLabel(bindings.box.state.draft),
+        name: worldNameLabel(bindings.box.state.draft, defaultWorldName()),
       })
     },
     role: 'menu-action',
@@ -357,7 +401,12 @@ const createNewWorldSection = ({ ctx, parent, bindings, rootButton }: MenuSectio
   const worldNameInput = createWorldNameField(ctx, parent, bindings)
   const modeElements = createModeButton(ctx, parent, bindings)
   createCancelButton({ bindings, ctx, parent, rootButton })
-  createConfirmButton(ctx, parent, bindings)
+  createConfirmButton({
+    bindings,
+    ctx,
+    defaultWorldName: () => translateUiMessage(uiLanguageForElement(worldNameInput), 'menu.world-name.default'),
+    parent,
+  })
   return { modeElements, worldNameInput }
 }
 
@@ -375,7 +424,7 @@ const createEmptyNote = (ctx: MountContext, parent: DomElement): AttributeCell =
   const emptyNote = ctx.factory.createElement('p')
   emptyNote.setAttribute('data-mx-ui', 'menu-note')
   emptyNote.style.setProperty('color', PALETTE_VAR.inkFaint)
-  emptyNote.textContent = EMPTY_SAVE_LIST_NOTE
+  setLocalizedText(emptyNote, 'menu.worlds.empty')
   parent.appendChild(emptyNote)
   return attributeCell(emptyNote, 'hidden')
 }
@@ -395,7 +444,7 @@ const createLoadWorldSection = ({ ctx, parent, bindings, rootButton }: MenuSecti
   const rows = new Map<string, SavedWorldRow>()
 
   const backButton = createButton(ctx, parent, {
-    label: MENU_ACTION_LABEL.back,
+    localizedKey: 'menu.action.back',
     onClick: () => {
       bindings.transition(
         backToRoot(bindings.box.state),
@@ -436,9 +485,11 @@ type SavedWorldRowLabels = {
 const createSavedWorldRowLabels = (ctx: MountContext, button: DomElement): SavedWorldRowLabels => {
   const name = ctx.factory.createElement('span')
   name.setAttribute('data-mx-ui', 'menu-world-name')
+  inheritUiLanguage(button, name)
   button.appendChild(name)
   const sessionId = ctx.factory.createElement('span')
   sessionId.setAttribute('data-mx-ui', 'menu-world-session-id')
+  inheritUiLanguage(button, sessionId)
   button.appendChild(sessionId)
   return { name, sessionId }
 }
@@ -446,7 +497,6 @@ const createSavedWorldRowLabels = (ctx: MountContext, button: DomElement): Saved
 const createSavedWorldRow = (deps: SavedWorldListDeps, world: SavedWorld): SavedWorldRow => {
   let loadWorld = noop
   const button = createButton(deps.ctx, deps.parent, {
-    label: '',
     onClick: () => loadWorld(),
     role: 'menu-world-row',
   })
@@ -493,13 +543,21 @@ type RootEntryContext = {
   readonly firstSavedWorldButton: () => DomInteractiveElement
 }
 
+const ROOT_ENTRY_MESSAGE_KEY: Readonly<Record<RootEntry, UiMessageKey>> = {
+  'load-world': 'menu.root.load-world',
+  'new-world': 'menu.root.new-world',
+  settings: 'menu.root.settings',
+}
+
+const rootEntryMessageKey = (entry: RootEntry): UiMessageKey => ROOT_ENTRY_MESSAGE_KEY[entry]
+
 const createRootEntryButton = (
   parent: DomElement,
   entry: RootEntry,
   ctx: MountContext,
 ): DomInteractiveElement => {
   const button = createButton(ctx, parent, {
-    label: ROOT_ENTRY_LABEL[entry],
+    localizedKey: rootEntryMessageKey(entry),
     role: 'menu-entry',
   })
   button.setAttribute('data-menu-entry', entry)
@@ -570,15 +628,20 @@ const applyNewWorldSection = (newWorld: NewWorldSection, model: MainMenuViewMode
   if (newWorld.worldNameInput.value !== model.worldNameInput) {
     newWorld.worldNameInput.value = model.worldNameInput
   }
-  writeText(newWorld.modeElements.text, GAME_MODE_LABEL[model.mode])
-  writeAttribute(newWorld.modeElements.accessibleName, modeAriaLabel(model.mode))
+  writeLocalizedText(newWorld.modeElements.text, modeMessageKey(model.mode))
+  writeLocalizedAttribute(newWorld.modeElements.accessibleName, 'menu.mode.aria', {
+    mode: { key: modeMessageKey(model.mode) },
+  })
 }
 
 const applySavedWorldRow = (row: SavedWorldRow, world: SavedWorld): void => {
   writeHidden(row.hidden, false)
   writeText(row.name, world.name)
   writeText(row.sessionId, world.sessionId)
-  writeAttribute(row.accessibleName, `Load ${world.name} (${world.sessionId})`)
+  writeLocalizedAttribute(row.accessibleName, 'menu.world-row.aria', {
+    name: world.name,
+    sessionId: world.sessionId,
+  })
 }
 
 const hideStaleSavedWorldRows = (

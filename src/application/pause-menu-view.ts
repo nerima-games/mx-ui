@@ -4,6 +4,11 @@ import {
   writeAttribute,
   writeHidden,
 } from './dom-write.js'
+import {
+  DEFAULT_UI_LANGUAGE,
+  type UiMessageKey,
+  translateUiMessage,
+} from '../domain/ui-language.js'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import { type ModalStack, topOf } from '../domain/modal-stack.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
@@ -17,12 +22,13 @@ import {
   pauseMenuViewModel,
   resumePauseMenu,
 } from '../domain/pause-menu-view-model.js'
+import { setLocalizedAttribute, setLocalizedText } from './ui-localization.js'
 
-export const PAUSE_MENU_ACTION_LABEL = {
-  closeSettings: 'Close',
-  resume: 'Back to Game',
-  saveAndQuit: 'Save and Quit to Title',
-  settings: 'Options...',
+export const PAUSE_MENU_ACTION_LABEL: Readonly<Record<'closeSettings' | 'resume' | 'saveAndQuit' | 'settings', string>> = {
+  closeSettings: translateUiMessage(DEFAULT_UI_LANGUAGE, 'pause.close'),
+  resume: translateUiMessage(DEFAULT_UI_LANGUAGE, 'pause.back-to-game'),
+  saveAndQuit: translateUiMessage(DEFAULT_UI_LANGUAGE, 'pause.save-and-quit'),
+  settings: translateUiMessage(DEFAULT_UI_LANGUAGE, 'pause.options'),
 } as const
 
 export type PauseMenuCallbacks = {
@@ -79,7 +85,7 @@ const addManagedClick = (
 
 type ButtonOptions = {
   readonly action: string
-  readonly label: string
+  readonly labelKey: UiMessageKey
   readonly parent: DomElement
   readonly testId?: string
 }
@@ -90,25 +96,25 @@ const setOptionalTestId = (button: DomInteractiveElement, testId: string | undef
   }
 }
 
-const createButton = (context: MountContext, { action, label, parent, testId }: ButtonOptions): DomInteractiveElement => {
+const createButton = (context: MountContext, { action, labelKey, parent, testId }: ButtonOptions): DomInteractiveElement => {
   const button = context.factory.createElement('button')
-  button.setAttribute('aria-label', label)
+  setLocalizedAttribute(button, 'aria-label', labelKey)
   button.setAttribute('data-mx-ui', 'pause-menu-action')
   button.setAttribute('data-pause-action', action)
   setOptionalTestId(button, testId)
   button.setAttribute('type', 'button')
   button.style.setProperty('color', PALETTE_VAR.ink)
-  button.textContent = label
+  setLocalizedText(button, labelKey)
   parent.appendChild(button)
   return button
 }
 
 type DialogOptions = {
-  readonly ariaLabel: string
+  readonly ariaLabelKey: UiMessageKey
   readonly dataName: string
   readonly testId?: string
   readonly titleTag: 'h1' | 'h2'
-  readonly title: string
+  readonly titleKey: UiMessageKey
   readonly titleName: string
 }
 
@@ -123,7 +129,7 @@ const createPauseMenuRoot = (context: MountContext, parent: DomElement): DomElem
 
 const createDialogPanel = (context: MountContext, root: DomElement, options: DialogOptions): DomElement => {
   const panel = context.factory.createElement('section')
-  panel.setAttribute('aria-label', options.ariaLabel)
+  setLocalizedAttribute(panel, 'aria-label', options.ariaLabelKey)
   panel.setAttribute('data-mx-ui', options.dataName)
   if (options.testId) {
     panel.setAttribute('data-testid', options.testId)
@@ -137,7 +143,7 @@ const createDialogPanel = (context: MountContext, root: DomElement, options: Dia
 const appendDialogTitle = (context: MountContext, panel: DomElement, options: DialogOptions): void => {
   const title = context.factory.createElement(options.titleTag)
   title.setAttribute('data-mx-ui', options.titleName)
-  title.textContent = options.title
+  setLocalizedText(title, options.titleKey)
   panel.appendChild(title)
 }
 
@@ -150,10 +156,10 @@ type PausePanelElements = {
 
 const createPausePanel = (context: MountContext, root: DomElement): PausePanelElements => {
   const options: DialogOptions = {
-    ariaLabel: 'Game menu',
+    ariaLabelKey: 'pause.dialog.game-menu',
     dataName: 'pause-panel',
     testId: 'pause-overlay',
-    title: 'Game Menu',
+    titleKey: 'pause.title.game-menu',
     titleName: 'pause-title',
     titleTag: 'h1',
   }
@@ -161,19 +167,19 @@ const createPausePanel = (context: MountContext, root: DomElement): PausePanelEl
   appendDialogTitle(context, pausePanel, options)
   const resumeButton = createButton(context, {
     action: 'resume',
-    label: PAUSE_MENU_ACTION_LABEL.resume,
+    labelKey: 'pause.back-to-game',
     parent: pausePanel,
     testId: 'resume-button',
   })
   const settingsButton = createButton(context, {
     action: 'settings',
-    label: PAUSE_MENU_ACTION_LABEL.settings,
+    labelKey: 'pause.options',
     parent: pausePanel,
     testId: 'options-button',
   })
   const saveAndQuitButton = createButton(context, {
     action: 'save-and-quit',
-    label: PAUSE_MENU_ACTION_LABEL.saveAndQuit,
+    labelKey: 'pause.save-and-quit',
     parent: pausePanel,
     testId: 'save-quit-button',
   })
@@ -187,9 +193,9 @@ type SettingsPanelElements = {
 
 const createSettingsPanel = (context: MountContext, root: DomElement): SettingsPanelElements => {
   const options: DialogOptions = {
-    ariaLabel: 'Options',
+    ariaLabelKey: 'pause.dialog.options',
     dataName: 'pause-settings-modal',
-    title: 'Options',
+    titleKey: 'pause.title.options',
     titleName: 'pause-settings-title',
     titleTag: 'h2',
   }
@@ -197,7 +203,7 @@ const createSettingsPanel = (context: MountContext, root: DomElement): SettingsP
   appendDialogTitle(context, settingsPanel, options)
   const closeSettingsButton = createButton(context, {
     action: 'close-settings',
-    label: PAUSE_MENU_ACTION_LABEL.closeSettings,
+    labelKey: 'pause.close',
     parent: settingsPanel,
   })
   return { closeSettingsButton, settingsPanel }

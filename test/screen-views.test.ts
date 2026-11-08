@@ -34,7 +34,7 @@ import { describe, expect, it } from 'vitest'
 import type { CaptionEvent } from '@nerima-games/mc-audio'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
 import { captionLines, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
-import { emptyInventorySnapshot, inventoryViewModel } from '../src/domain/inventory-view-model'
+import { emptyInventorySnapshot, inventoryViewModel, type SlotRegion } from '../src/domain/inventory-view-model'
 import { itemStack as makeItemStack } from '@nerima-games/mc-sim'
 import { Result } from 'effect'
 import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
@@ -184,11 +184,31 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const armour = root.find('data-region', 'armour')
     expect(armour?.attributes.get('data-region-state')).toBe('unknown')
     expect(armour?.find('data-mx-ui', 'region-grid')?.attributes.get('hidden')).toBe('')
-    expect(armour?.find('data-mx-ui', 'region-note')?.textContent).toContain('armour rack')
+    expect(armour?.find('data-mx-ui', 'region-note')?.textContent).toBe(
+      'Armour slots are unavailable',
+    )
 
     const main = root.find('data-region', 'main')
     expect(main?.attributes.get('data-region-state')).toBe('slots')
     expect(main?.findAll('data-mx-ui', 'slot')).toHaveLength(27)
+  })
+
+  it('preserves a host-supplied unknown-region reason when no localization key is available', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel(emptyInventorySnapshot)
+    const hostReason: SlotRegion = { id: 'armour', kind: 'unknown', why: 'Armour data is unavailable' }
+    const model = {
+      ...base,
+      regions: base.regions.map((region) => region.id === 'armour' ? hostReason : region),
+    }
+
+    view.render(model)
+
+    expect(fakeElement(view.root).find('data-region', 'armour')?.find('data-mx-ui', 'region-note')?.textContent).toBe(
+      'Armour data is unavailable',
+    )
   })
 
   it('REGRESSION: a region that BECOMES unknown clears the interactive squares its earlier `slots` render built', () => {

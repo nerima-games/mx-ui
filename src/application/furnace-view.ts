@@ -9,7 +9,7 @@ import {
   writePercent,
   writeText,
 } from './dom-write.js'
-import type { DomElement, DomElementFactory } from './dom-surface.js'
+import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import {
   FURNACE_SLOT_IDS,
   type FurnaceSlotId,
@@ -21,8 +21,11 @@ import {
   type SlotElement,
   createSlotElement,
   setSlotButtonView,
+  setSlotFocusTarget,
   updateSlotElement,
 } from './slot-element.js'
+import { setLocalizedAttribute, setLocalizedText } from './ui-localization.js'
+import type { UiMessageKey } from '../domain/ui-language.js'
 
 export type FurnaceInteractionView = {
   readonly focusedSlot: FurnaceSlotId
@@ -34,19 +37,29 @@ export type FurnaceView = {
   readonly render: (model: FurnaceViewModel, interaction?: FurnaceInteractionView) => void
 }
 
+export type FurnaceViewActions = {
+  readonly onActivate?: (target: FurnaceSlotId) => void
+  readonly onClose?: () => void
+  readonly onFocusChange?: (target: FurnaceSlotId) => void
+}
+
 type ProgressElement = {
   readonly now: AttributeCell
   readonly valueText: AttributeCell
   readonly width: PercentCell
 }
 
-const SLOT_LABEL: Readonly<Record<FurnaceSlotId, string>> = {
-  fuel: 'Furnace fuel',
-  input: 'Furnace input',
-  output: 'Furnace output',
+const SLOT_MESSAGE_KEY: Readonly<Record<FurnaceSlotId, UiMessageKey>> = {
+  fuel: 'furnace.fuel',
+  input: 'furnace.input',
+  output: 'furnace.output',
 }
 
-const slotAriaLabel = (slot: FurnaceSlotView): string => {
+const FURNACE_COLUMNS = 3
+
+const slotAriaLabel = (
+  slot: FurnaceSlotView,
+): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
   // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts)
   // Guarantees the two always agree. Checking the field this function actually reads lets
   // TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a
@@ -55,16 +68,26 @@ const slotAriaLabel = (slot: FurnaceSlotView): string => {
   // `countLabel` stays `??`-guarded: unlike `itemId`, it is genuinely absent for a real, in-repo
   // Stack of exactly one.
   if (typeof slot.itemId === 'undefined') {
-    return `${SLOT_LABEL[slot.id]}, empty`
+    return {
+      key: 'furnace.slot-empty',
+      values: { slot: { key: SLOT_MESSAGE_KEY[slot.id] } },
+    }
   }
-  return `${SLOT_LABEL[slot.id]}, ${slot.itemId}, ${slot.countLabel ?? '1'}`
+  return {
+    key: 'furnace.slot-item',
+    values: {
+      count: slot.countLabel ?? '1',
+      item: slot.itemId,
+      slot: { key: SLOT_MESSAGE_KEY[slot.id] },
+    },
+  }
 }
 
-const progressLabel = (kind: 'cook' | 'burn'): string => {
+const progressLabelKey = (kind: 'cook' | 'burn'): UiMessageKey => {
   if (kind === 'cook') {
-    return 'Cooking progress'
+    return 'furnace.cooking-progress'
   }
-  return 'Fuel remaining'
+  return 'furnace.fuel-remaining'
 }
 
 const createProgressTrack = (
@@ -75,7 +98,7 @@ const createProgressTrack = (
   const root = factory.createElement('div')
   root.setAttribute('data-mx-ui', `furnace-${kind}-progress`)
   root.setAttribute('role', 'progressbar')
-  root.setAttribute('aria-label', progressLabel(kind))
+  setLocalizedAttribute(root, 'aria-label', progressLabelKey(kind))
   root.setAttribute('aria-valuemin', '0')
   root.setAttribute('aria-valuemax', '100')
   root.style.setProperty('background-color', PALETTE_VAR.meterTrack)
@@ -130,20 +153,53 @@ const createFurnaceGrid = (factory: DomElementFactory, root: DomElement): DomEle
   const grid = factory.createElement('div')
   grid.setAttribute('data-mx-ui', 'furnace-slots')
   grid.style.setProperty('display', 'grid')
-  grid.style.setProperty('grid-template-columns', 'repeat(3, minmax(0, 1fr))')
+  grid.style.setProperty('grid-template-columns', `repeat(${String(FURNACE_COLUMNS)}, minmax(0, 1fr))`)
   root.appendChild(grid)
   return grid
+}
+
+const createFurnaceCloseButton = (
+  factory: DomElementFactory,
+  root: DomElement,
+  actions: FurnaceViewActions | undefined,
+): void => {
+  if (typeof actions?.onClose !== 'function') {
+    return
+  }
+  const close: DomInteractiveElement = factory.createElement('button')
+  close.setAttribute('type', 'button')
+  close.setAttribute('data-mx-ui', 'furnace-close')
+  setLocalizedAttribute(close, 'aria-label', 'furnace.close')
+  setLocalizedText(close, 'furnace.close')
+  close.addEventListener('click', actions.onClose)
+  root.appendChild(close)
+}
+
+const wireFurnaceSlot = (
+  slot: SlotElement,
+  id: FurnaceSlotId,
+  actions: FurnaceViewActions | undefined,
+): void => {
+  slot.root.setAttribute('data-furnace-slot', id)
+  slot.root.setAttribute('data-interaction-target', 'furnace-slot')
+  slot.root.setAttribute('data-interaction-slot', id)
+  if (typeof actions?.onActivate === 'function') {
+    slot.root.addEventListener('click', () => actions.onActivate?.(id))
+  }
+  if (typeof actions?.onFocusChange === 'function') {
+    slot.root.addEventListener('focus', () => actions.onFocusChange?.(id))
+  }
 }
 
 const createFurnaceSlots = (
   factory: DomElementFactory,
   grid: DomElement,
+  actions: FurnaceViewActions | undefined,
 ): Array<SlotElement> => {
   const createFurnaceSlot = (id: FurnaceSlotId, index: number): SlotElement => {
     const slot = createSlotElement(factory, index)
-    slot.root.setAttribute('data-furnace-slot', id)
-    slot.root.setAttribute('data-interaction-target', 'furnace-slot')
-    slot.root.setAttribute('data-interaction-slot', id)
+    setSlotFocusTarget(slot, { columns: FURNACE_COLUMNS, group: 'furnace', index })
+    wireFurnaceSlot(slot, id, actions)
     grid.appendChild(slot.root)
     return slot
   }
@@ -171,14 +227,16 @@ const resolveFocusedSlot = (requested: FurnaceSlotId): FurnaceSlotId => {
   return 'input'
 }
 
-/** Creates a listener-free furnace projection. The host owns every interaction. */
+/** Projects furnace state and wires optional native slot actions. */
 export const createFurnaceView = (
   factory: DomElementFactory,
   parent: DomElement,
+  actions?: FurnaceViewActions,
 ): FurnaceView => {
   const root = createFurnaceRoot(factory, parent)
+  createFurnaceCloseButton(factory, root, actions)
   const grid = createFurnaceGrid(factory, root)
-  const slots = createFurnaceSlots(factory, grid)
+  const slots = createFurnaceSlots(factory, grid, actions)
 
   const cook = createProgress(factory, root, 'cook')
   const burn = createProgress(factory, root, 'burn')
@@ -195,7 +253,8 @@ export const createFurnaceView = (
         setSlotButtonView(slotElement, {
           disabled: false,
           focused: typeof interaction !== 'undefined' && focused,
-          label: slotAriaLabel(slot),
+          label: '',
+          localizedLabel: slotAriaLabel(slot),
           tabStop: focused,
         })
       }

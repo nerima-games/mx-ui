@@ -1,4 +1,5 @@
 /** Presentation projection for the settings owned and held by mc-sim. */
+import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from './ui-language.js'
 import { DIFFICULTIES, type Difficulty } from '@nerima-games/mc-kernel/domain/game-mode'
 import {
   GRAPHICS_QUALITIES,
@@ -80,21 +81,46 @@ const COLOR_VISION_CORRECTIONS: ReadonlyArray<ColorVisionCorrection> = [
   'deuteranopia',
   'tritanopia',
 ]
-const titleLabel = (value: string): string => value.replace(/^./u, (firstCharacter) => firstCharacter.toUpperCase())
+const DIFFICULTY_MESSAGE_KEY: Readonly<Record<Difficulty, UiMessageKey>> = {
+  easy: 'settings.choice.difficulty.easy',
+  hard: 'settings.choice.difficulty.hard',
+  normal: 'settings.choice.difficulty.normal',
+  peaceful: 'settings.choice.difficulty.peaceful',
+}
+
+const GRAPHICS_MESSAGE_KEY: Readonly<Record<GraphicsPreset, UiMessageKey>> = {
+  high: 'settings.choice.graphics.high',
+  low: 'settings.choice.graphics.low',
+  medium: 'settings.choice.graphics.medium',
+  ultra: 'settings.choice.graphics.ultra',
+}
+
+const MOTION_MESSAGE_KEY: Readonly<Record<ReducedMotionSetting, UiMessageKey>> = {
+  full: 'settings.choice.motion.full',
+  reduced: 'settings.choice.motion.reduced',
+  system: 'settings.choice.motion.system',
+}
+
+const COLOR_VISION_MESSAGE_KEY: Readonly<Record<ColorVisionCorrection, UiMessageKey>> = {
+  deuteranopia: 'settings.choice.color.deuteranopia',
+  off: 'settings.choice.color.off',
+  protanopia: 'settings.choice.color.protanopia',
+  tritanopia: 'settings.choice.color.tritanopia',
+}
 
 export const DIFFICULTY_CHOICES: ReadonlyArray<SettingChoice<Difficulty>> = DIFFICULTIES.map(
-  (value) => Object.freeze({ label: titleLabel(value), value }),
+  (value) => Object.freeze({ label: translateUiMessage(DEFAULT_UI_LANGUAGE, DIFFICULTY_MESSAGE_KEY[value]), value }),
 )
 
 export const GRAPHICS_PRESET_CHOICES: ReadonlyArray<SettingChoice<GraphicsPreset>> = GRAPHICS_QUALITIES.map(
-  (value) => Object.freeze({ label: titleLabel(value), value }),
+  (value) => Object.freeze({ label: translateUiMessage(DEFAULT_UI_LANGUAGE, GRAPHICS_MESSAGE_KEY[value]), value }),
 )
 
 export const REDUCED_MOTION_CHOICES: ReadonlyArray<SettingChoice<ReducedMotionSetting>> =
-  REDUCED_MOTION_SETTINGS.map((value) => Object.freeze({ label: value, value }))
+  REDUCED_MOTION_SETTINGS.map((value) => Object.freeze({ label: translateUiMessage(DEFAULT_UI_LANGUAGE, MOTION_MESSAGE_KEY[value]), value }))
 
 export const COLOR_VISION_CHOICES: ReadonlyArray<SettingChoice<ColorVisionCorrection>> =
-  COLOR_VISION_CORRECTIONS.map((value) => Object.freeze({ label: value, value }))
+  COLOR_VISION_CORRECTIONS.map((value) => Object.freeze({ label: translateUiMessage(DEFAULT_UI_LANGUAGE, COLOR_VISION_MESSAGE_KEY[value]), value }))
 
 const numericField = (
   value: number,

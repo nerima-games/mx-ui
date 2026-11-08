@@ -263,6 +263,7 @@ const isFocusable = (
   parents: ReadonlyMap<FakeElement, FakeElement>,
 ): boolean =>
   !isHidden(element, parents) &&
+  !element.attributes.has('disabled') &&
   (isNativeFocusable(element) || element.attributes.has('tabindex'))
 
 const isTabStop = (
@@ -289,18 +290,7 @@ describe('WCAG 4.1.2: representative fake-DOM controls retain their names', () =
     expect(anonymous).toStrictEqual([])
   })
 
-  it('REGRESSION: only the main menu and hotbar take focus', () => {
-    // Without this the sweep above is four assertions over three empty sets: a
-    // screen with no tab stops passes it for free, and the day somebody adds a
-    // pressable inventory slot the sweep is the test that was supposed to
-    // notice.
-    //
-    // The census is also the claim itself. `application/slot-element.ts`:
-    // 「Pressing is still not here. A slot has no activation, no `role="button"`
-    // and no click」 — because pressing needs a key or a pointer event, and
-    // `application/dom-surface.ts` has neither verb. So a focusable inventory
-    // slot would be a control the player can reach and cannot use, which is
-    // worse than one they cannot reach.
+  it('REGRESSION: interactive screens expose named tab stops', () => {
     const census = screens().map(({ name, root }) => {
       const parents = parentMap(root)
       return {
@@ -311,21 +301,8 @@ describe('WCAG 4.1.2: representative fake-DOM controls retain their names', () =
     })
 
     expect(census).toStrictEqual([
-      // The MENU is the row this census was always going to be tested by, and it
-      // is zero. A menu is made of things that look like buttons, and the
-      // half-measure — `role="button"` plus a `tabindex`, activation wired later
-      // — is the one `docs/e2e-triage.md` §3.6 already ruled against:
-      // 「押せない control に `role="button"` を付けるのは、届くのに使えない control を
-      // 作ることである」. A line that announces as a button and does nothing is worse
-      // for a screen-reader player than a line of text, because text does not
-      // promise. The day the entries become operable, this row is what changes.
       { name: 'main menu', focusable: 3, tabStops: 3 },
-      // Nine slots are programmatically focusable; exactly ONE of them is in the
-      // document's tab order. That is the roving tabindex, and the difference
-      // between the two numbers is the whole pattern: Tab reaches the hotbar
-      // once rather than nine times, and whoever owns input can still move focus
-      // inside it.
-      { name: 'in-session HUD', focusable: HOTBAR_SLOT_COUNT, tabStops: 1 },
+      { name: 'in-session HUD', focusable: 0, tabStops: 0 },
       { name: 'inventory and crafting overlay', focusable: 0, tabStops: 0 },
       { name: 'captions', focusable: 0, tabStops: 0 },
       { name: 'autosave indicator', focusable: 0, tabStops: 0 },

@@ -96,6 +96,32 @@ describe('UiMount', () => {
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
+  it('updates the mounted menu in the selected language', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const settingsButton = host.querySelector<HTMLElement>('[data-menu-entry="settings"]')
+    expect(settingsButton?.textContent).toBe('Options...')
+    const result = runtime.updateLanguage('ja')
+
+    expect(Result.isSuccess(result)).toBe(true)
+    expect(settingsButton?.textContent).toBe('設定...')
+    expect(settingsButton?.getAttribute('aria-label')).toBe('設定...')
+  })
+
+  it('uses a language selected before mount for the initial UI', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+
+    expect(Result.isSuccess(runtime.updateLanguage('ja'))).toBe(true)
+    await Effect.runPromise(runtime.start)
+
+    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定...')
+  })
+
   it('renders achievement events from the mounted subscriber and closes it on stop', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
@@ -363,7 +389,7 @@ describe('UiMount', () => {
     const debug = host.querySelector<HTMLElement>('[data-mx-ui="debug-hud"]')
     expect(debug?.hidden).toBe(true)
     expect(debug?.getAttribute('role')).toBe('region')
-    expect(debug?.getAttribute('aria-label')).toBe('Debug information')
+    expect(debug?.getAttribute('aria-label')).toBe('Debug overlay')
     expect(debug?.getAttribute('aria-live')).toBeNull()
     document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'F1' }))
     expect(debug?.hidden).toBe(false)
@@ -428,7 +454,7 @@ describe('UiMount', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
-  it('traps inventory focus, activates the focused slot, and restores focus', async () => {
+  it('uses typed focus navigation, native button activation, and Escape focus restoration', async () => {
     const host = document.createElement('main')
     const trigger = document.createElement('button')
     host.appendChild(trigger)
@@ -445,32 +471,86 @@ describe('UiMount', () => {
     const first = inventory?.querySelector<HTMLElement>('[tabindex="0"]')
     expect(document.activeElement).toBe(first)
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+    const tab = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Tab' })
+    first?.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(first)
+
+    expect(runtime.moveFocus('right')).toBe(true)
     const second = inventory?.querySelector<HTMLElement>('[tabindex="0"]')
     expect(second).not.toBe(first)
     expect(document.activeElement).toBe(second)
-
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
-    )
-    expect(inventory?.querySelector<HTMLElement>('[tabindex="0"]')).toBe(first)
-    expect(document.activeElement).toBe(first)
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Enter' }))
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: ' ' }))
-    expect(onInventoryActivate).toHaveBeenCalledTimes(2)
+    expect(second?.tagName).toBe('BUTTON')
+    second?.click()
+    expect(onInventoryActivate).toHaveBeenCalledTimes(1)
     expect(onInventoryActivate).toHaveBeenLastCalledWith({
-      index: 0,
+      index: 1,
       kind: 'slot',
       region: 'hotbar',
     })
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Escape' }))
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    document.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(false)
     expect(inventory?.hasAttribute('hidden')).toBe(true)
     expect(document.activeElement).toBe(trigger)
   })
 
-  it('wraps real Tab focus from the last target to the first in both directions', async () => {
+  it('does not toggle inventory while an editable control owns the E key', async () => {
+    const host = document.createElement('main')
+    const input = document.createElement('input')
+    const textarea = document.createElement('textarea')
+    const select = document.createElement('select')
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    Object.defineProperty(editable, 'isContentEditable', { value: true })
+    host.append(input, textarea, select, editable)
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
+    for (const control of [input, textarea, select, editable]) {
+      control.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'e' }))
+      expect(inventory?.hasAttribute('hidden')).toBe(true)
+    }
+
+    const button = document.createElement('button')
+    host.append(button)
+    button.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'e' }))
+    expect(inventory?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('routes focus in non-inventory groups while inventory is closed or open', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const mountedRoot = runtime.current()?.root
+    if (mountedRoot === undefined) {
+      throw new Error('expected a mounted session')
+    }
+    const first = document.createElement('button')
+    const second = document.createElement('button')
+    for (const [button, index] of [[first, 0], [second, 1]] as const) {
+      button.setAttribute('data-focus-group', 'station')
+      button.setAttribute('data-focus-index', String(index))
+      button.setAttribute('data-focus-columns', '2')
+      mountedRoot.append(button)
+    }
+
+    first.focus()
+    expect(runtime.moveFocus('right')).toBe(true)
+    expect(document.activeElement).toBe(second)
+
+    runtime.openInventory()
+    first.focus()
+    expect(runtime.moveFocus('right')).toBe(true)
+    expect(document.activeElement).toBe(second)
+  })
+
+  it('leaves forward and reverse Tab traversal to the browser', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const runtime = makeUiMount({ root: host })
@@ -481,21 +561,22 @@ describe('UiMount', () => {
     if (inventory === null) {
       throw new Error('The inventory view should be mounted')
     }
-    const targets = inventory.querySelectorAll<HTMLElement>('[role="button"]')
-    expect(targets.length).toBeGreaterThan(2)
+    const first = inventory.querySelector<HTMLElement>('[tabindex="0"]')
+    first?.focus()
+    const forward = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Tab' })
+    const reverse = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Tab',
+      shiftKey: true,
+    })
 
-    for (let step = 1; step < targets.length; step += 1) {
-      document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
-    }
-    expect(document.activeElement).toBe(targets.item(targets.length - 1))
+    document.dispatchEvent(forward)
+    document.dispatchEvent(reverse)
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
-    expect(document.activeElement).toBe(targets.item(0))
-
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
-    )
-    expect(document.activeElement).toBe(targets.item(targets.length - 1))
+    expect(forward.defaultPrevented).toBe(false)
+    expect(reverse.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(first)
   })
 
   it('REGRESSION: closing the inventory via a key does not throw when nothing was focused to restore', async () => {
@@ -527,8 +608,7 @@ describe('UiMount', () => {
     }
   })
 
-  // eslint-disable-next-line max-statements -- Covers the complete focus and activation flow.
-  it('shares spatial inventory navigation between arrow keys and controller commands', async () => {
+  it('shares spatial inventory navigation between typed focus and controller commands', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const onInventoryActivate = vi.fn()
@@ -539,16 +619,18 @@ describe('UiMount', () => {
     expect(runtime.activateInventoryFocus()).toBe(false)
     runtime.openInventory()
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'ArrowRight' }))
+    expect(runtime.moveFocus('right')).toBe(true)
+    expect(runtime.moveFocus('down')).toBe(true)
     expect(runtime.moveInventoryFocus('down')).toBe(true)
     expect(runtime.activateInventoryFocus()).toBe(true)
     expect(onInventoryActivate).toHaveBeenLastCalledWith({
-      index: 1,
+      index: 10,
       kind: 'slot',
       region: 'main',
     })
     const focused = host.querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')
-    expect(focused?.getAttribute('aria-label')).toContain('main slot 2')
+    expect(focused?.getAttribute('data-focus-group')).toBe('main')
+    expect(focused?.getAttribute('data-focus-index')).toBe('10')
     expect(document.activeElement).toBe(focused)
     expect(runtime.moveInventoryFocus('up')).toBe(true)
   })
@@ -568,6 +650,24 @@ describe('UiMount', () => {
         [{ kind: 'click', target: { index: 0, kind: 'slot', region: 'hotbar' } }],
         [{ kind: 'shift-click', target: { index: 0, kind: 'slot', region: 'hotbar' } }],
       ])
+    })
+
+    it('turns a shifted inventory slot click into a shift-click action', async () => {
+      const host = document.createElement('main')
+      document.body.appendChild(host)
+      const onInventoryAction = vi.fn()
+      const runtime = makeUiMount({ onInventoryAction, root: host })
+      await Effect.runPromise(runtime.start)
+      runtime.openInventory()
+
+      const slot = host.querySelector<HTMLElement>('[data-region="main"] [data-mx-ui="slot"]')
+      expect(slot).not.toBeNull()
+      slot?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+
+      expect(onInventoryAction).toHaveBeenCalledExactlyOnceWith({
+        kind: 'shift-click',
+        target: { index: 0, kind: 'slot', region: 'main' },
+      })
     })
 
     it('emits equipment drag actions in equip and unequip directions', async () => {
@@ -903,62 +1003,39 @@ describe('UiMount', () => {
     expect(runtime.current()).toBeUndefined()
   })
 
-  it('recognizes all four arrow keys, not just the one the other navigation test happens to use', async () => {
+  it('moves in all four directions through the typed focus API', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const runtime = makeUiMount({ root: host })
     await Effect.runPromise(runtime.start)
     runtime.openInventory()
 
-    const focusedRegion = () =>
-      host
-        .querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')
-        ?.closest('[data-region]')
-        ?.getAttribute('data-region')
+    const currentTarget = () => {
+      const active = document.activeElement
+      if (!(active instanceof Element)) {
+        return undefined
+      }
+      return {
+        group: active.getAttribute('data-focus-group'),
+        index: active.getAttribute('data-focus-index'),
+      }
+    }
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'ArrowDown' }))
-    expect(focusedRegion()).toBe('main')
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'ArrowRight' }))
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'ArrowLeft' }))
-    expect(focusedRegion()).toBe('main')
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'ArrowUp' }))
-    expect(focusedRegion()).toBe('hotbar')
+    expect(runtime.moveFocus('right')).toBe(true)
+    expect(currentTarget()).toStrictEqual({ group: 'hotbar', index: '1' })
+    expect(runtime.moveFocus('down')).toBe(true)
+    expect(currentTarget()).toStrictEqual({ group: 'main', index: '1' })
+    expect(runtime.moveFocus('left')).toBe(true)
+    expect(currentTarget()).toStrictEqual({ group: 'main', index: '0' })
+    expect(runtime.moveFocus('up')).toBe(true)
+    expect(currentTarget()).toStrictEqual({ group: 'hotbar', index: '0' })
   })
 
-  it('emits a shift-click action from Shift+Enter and Shift+Space, not only through the direct API', async () => {
-    const host = document.createElement('main')
-    document.body.appendChild(host)
-    const onInventoryAction = vi.fn()
-    const runtime = makeUiMount({ onInventoryAction, root: host })
-    await Effect.runPromise(runtime.start)
-    runtime.openInventory()
-
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { cancelable: true, key: 'Enter', shiftKey: true }),
-    )
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { cancelable: true, key: ' ', shiftKey: true }),
-    )
-
-    expect(onInventoryAction.mock.calls).toStrictEqual([
-      [{ kind: 'shift-click', target: { index: 0, kind: 'slot', region: 'hotbar' } }],
-      [{ kind: 'shift-click', target: { index: 0, kind: 'slot', region: 'hotbar' } }],
-    ])
-  })
-
-  it('Shift+Tab wraps focus onto the crafting output when a match makes it navigable', async () => {
-    // `inventoryTargets` (inventory-navigation.ts) appends `{ kind: 'crafting-output' }` LAST,
-    // and only once `model.crafting.kind === 'match'`. Shift+Tab from the first real target wraps
-    // backward onto whatever is last — this is the one path that sends real keyboard focus onto the
-    // crafting-output square instead of a `{ focused: { kind: 'crafting-output' } }` passed directly
-    // to `render()`, which is how every other test in this file reaches that state.
+  it('routes focus through the crafting output using typed grid directions', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const runtime = makeUiMount({ root: host })
     await Effect.runPromise(runtime.start)
-
     runtime.updateInventory(
       inventoryViewModel({
         ...emptyInventorySnapshot,
@@ -971,11 +1048,11 @@ describe('UiMount', () => {
     )
     runtime.openInventory()
 
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
-    )
-
     const output = host.querySelector<HTMLElement>('[data-mx-ui="crafting-output"]')
+    output?.focus()
+    expect(runtime.moveFocus('up')).toBe(true)
+    expect(document.activeElement?.getAttribute('data-focus-group')).toBe('crafting-grid')
+    expect(runtime.moveFocus('down')).toBe(true)
     expect(document.activeElement).toBe(output)
   })
 
@@ -1021,36 +1098,20 @@ describe('UiMount', () => {
     expect(onInventoryAction).not.toHaveBeenCalled()
   })
 
-  it('REGRESSION: Tab does not move focus into the inventory while it is closed', async () => {
-    // `dispatchInventoryKey` gates every handler but `E` behind ONE check —
-    // `!ctx.session.inventoryOpen` — and the internal `closeInventory`/
-    // `openInventory` closures it feeds deliberately carry NO guard of their
-    // own, trusting that single check (see the comments beside them in
-    // ui-mount.ts). If that one gate were ever weakened, every OTHER test in
-    // this file would still pass, because all of them open the inventory
-    // before dispatching Tab/Arrow/Enter — none presses a navigation key
-    // while the inventory is closed, which is the ordinary case: a player
-    // pressing Tab while just walking around. A regression here would move
-    // keyboard focus into the (still hidden) inventory and hijack the key.
-    //
-    // Asserted as a focus change scoped to THIS test's own `host`, not as
-    // `event.defaultPrevented` on the shared document-level event: earlier
-    // tests in this file open an inventory and never call `runtime.stop()`,
-    // so their `document`-level keydown listener is still attached when this
-    // test runs and can independently set `defaultPrevented` on ANY key —
-    // that would make a global check flaky depending on test order. A stale
-    // listener's DOM targets are already detached (removed by `afterEach`),
-    // so `.focus()` calls from a leaked listener cannot land inside this
-    // test's own, still-attached `host` — which is what makes this
-    // assertion order-independent.
+  it('leaves Tab alone while the inventory is closed', async () => {
     const host = document.createElement('main')
+    const trigger = document.createElement('button')
+    host.appendChild(trigger)
     document.body.appendChild(host)
     const runtime = makeUiMount({ root: host })
     await Effect.runPromise(runtime.start)
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
+    trigger.focus()
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Tab' })
+    trigger.dispatchEvent(event)
 
-    expect(host.contains(document.activeElement)).toBe(false)
+    expect(event.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(trigger)
     expect(
       host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')?.hasAttribute('hidden'),
     ).toBe(true)
@@ -1079,12 +1140,7 @@ describe('UiMount', () => {
     expect(document.activeElement).not.toBe(svgIcon)
   })
 
-  it('falls back to the first real target when a host-pushed model drops the currently focused one', async () => {
-    // `renderInventory`'s `targets.find(...) ?? targets[ZERO] ?? { kind: 'crafting-output' }` only
-    // takes its first fallback when the session's remembered focus no longer names anything in the
-    // new model's targets. Every other test in this file updates the inventory without disturbing
-    // the target the focus already points at; this one moves focus onto the crafting output and
-    // then pushes a model where the match — and the crafting-output target with it — is gone.
+  it('falls back to the first real target when a host-pushed model drops the focused output', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const runtime = makeUiMount({ root: host })
@@ -1101,10 +1157,9 @@ describe('UiMount', () => {
       }),
     )
     runtime.openInventory()
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
-    )
-    expect(document.activeElement).toBe(host.querySelector('[data-mx-ui="crafting-output"]'))
+    const output = host.querySelector<HTMLElement>('[data-mx-ui="crafting-output"]')
+    output?.focus()
+    expect(document.activeElement).toBe(output)
 
     runtime.updateInventory(inventoryViewModel(emptyInventorySnapshot))
 
@@ -1190,7 +1245,7 @@ describe('UiMount', () => {
     expect(dialog?.hidden).toBe(true)
   })
 
-  it('Tab does nothing against a hand-built model with no navigable target', async () => {
+  it('returns false when typed focus navigation has no target in a hand-built model', async () => {
     // `InventoryViewModel` is host-suppliable directly — `inventoryTargets` can only ever see zero
     // targets for one that was hand-built or replayed from persistence rather than produced by
     // `inventoryViewModel`, which always seeds a non-empty `hotbar` and `main`.
@@ -1208,9 +1263,8 @@ describe('UiMount', () => {
     runtime.updateInventory(empty)
     runtime.openInventory()
 
-    const before = host.querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')
-    document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Tab' }))
-    expect(host.querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')).toBe(before)
+    expect(runtime.moveFocus('left')).toBe(false)
+    expect(host.querySelector('[data-mx-ui="inventory"] [tabindex="0"]')).toBeNull()
   })
 
   it('does not activate a hand-built offhand target beyond the one real offhand slot', async () => {
@@ -1243,11 +1297,13 @@ describe('UiMount', () => {
     runtime.updateInventory(widenedOffhand)
     runtime.openInventory()
 
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { cancelable: true, key: 'Tab', shiftKey: true }),
+    const malformedSlot = host.querySelector<HTMLElement>(
+      '[data-region="offhand"] [data-focus-index="1"]',
     )
+    malformedSlot?.focus()
+    expect(runtime.moveFocus('right')).toBe(true)
     const focused = host.querySelector<HTMLElement>('[data-mx-ui="inventory"] [tabindex="0"]')
-    expect(focused?.closest('[data-region]')?.getAttribute('data-region')).toBe('offhand')
+    expect(focused).toBe(malformedSlot)
 
     expect(runtime.activateInventoryFocus()).toBe(false)
     expect(onInventoryAction).not.toHaveBeenCalled()

@@ -33,6 +33,7 @@
  * it as its own field, and `slotSnapshotOf` remains the one place that
  * attaches it.
  */
+import { DEFAULT_UI_LANGUAGE, type UiMessageKey, type UiMessageValues, translateUiMessage } from './ui-language.js'
 import {
   HOTBAR_SLOT_COUNT,
   type HotbarSlotSnapshot,
@@ -157,6 +158,7 @@ export type SlotRegion =
       readonly id: RegionId
       /** Shown to the developer, not to the player. */
       readonly why: string
+      readonly whyMessage?: Readonly<{ key: UiMessageKey; values?: UiMessageValues }>
     }
 
 export type CraftingOutcomeView =
@@ -294,7 +296,8 @@ const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
     return {
       id: 'crafting-grid',
       kind: 'unknown',
-      why: 'mc-sim supplied no crafting grid for this container',
+      why: translateUiMessage(DEFAULT_UI_LANGUAGE, 'inventory.unknown-crafting-grid'),
+      whyMessage: { key: 'inventory.unknown-crafting-grid' },
     }
   }
   const columns = Math.floor(crafting.gridWidth)
@@ -302,10 +305,12 @@ const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
     // A grid width this module cannot interpret is not a 2x2 with a typo. It
     // Is a container shape mx-ui does not know, and guessing one would draw a
     // Player's crafting square over something else entirely.
+    const values = { width: crafting.gridWidth }
     return {
       id: 'crafting-grid',
       kind: 'unknown',
-      why: `unreadable grid width ${String(crafting.gridWidth)}`,
+      why: translateUiMessage(DEFAULT_UI_LANGUAGE, 'inventory.unreadable-grid-width', values),
+      whyMessage: { key: 'inventory.unreadable-grid-width', values },
     }
   }
   return projectRegion({
@@ -326,7 +331,8 @@ const armourRegion = (armour: ReadonlyArray<Slot> | undefined): SlotRegion => {
     return {
       id: 'armour',
       kind: 'unknown',
-      why: "mc-sim's Inventory is a flat slot array with no armour rack; drawing empty squares would claim the player is wearing nothing",
+      why: translateUiMessage(DEFAULT_UI_LANGUAGE, 'inventory.unknown-armour-rack'),
+      whyMessage: { key: 'inventory.unknown-armour-rack' },
     }
   }
   return projectRegion({
@@ -344,7 +350,8 @@ const offhandRegion = (offhand: Slot | null): SlotRegion => {
     return {
       id: 'offhand',
       kind: 'unknown',
-      why: "mc-sim has no offhand slot; an empty square would claim the player's offhand is empty",
+      why: translateUiMessage(DEFAULT_UI_LANGUAGE, 'inventory.unknown-offhand-slot'),
+      whyMessage: { key: 'inventory.unknown-offhand-slot' },
     }
   }
   return projectRegion({
