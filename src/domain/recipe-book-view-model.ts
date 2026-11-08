@@ -44,7 +44,7 @@ export type RecipePlacementOperation = Readonly<{
 }>
 
 export type RecipePlacementFailure =
-  | Readonly<{ readonly _tag: 'InvalidGridWidth'; readonly gridWidth: number }>
+  | Readonly<{ readonly _tag: 'InvalidGridWidth'; readonly gridWidth: unknown }>
   | Readonly<{ readonly _tag: 'RecipeDoesNotFitGrid'; readonly recipeId: RecipeId; readonly gridWidth: RecipeGridWidth }>
 
 const ingredientsOf = (recipe: Recipe): ReadonlyArray<CraftingIngredient> => {
@@ -301,7 +301,7 @@ export const recipeBookViewModel = (
 
 export const recipePlacementOperationOf = (
   recipe: Recipe,
-  gridWidth: number,
+  gridWidth: unknown,
 ): Result.Result<RecipePlacementOperation, RecipePlacementFailure> => {
   if (gridWidth !== GRID_WIDTH_TWO && gridWidth !== GRID_WIDTH_THREE) {
     return Result.fail({ _tag: 'InvalidGridWidth', gridWidth })

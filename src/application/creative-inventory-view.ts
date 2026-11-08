@@ -3,8 +3,11 @@ import {
   type CreativeInventoryItem,
   type CreativeInventoryViewModel,
   type CreativeItemCategoryFilter,
+  type CreativeSearchQuery,
+  CreativeSearchQuerySchema,
   type CreativeTakeItemOperation,
   creativeInventoryViewModel,
+  creativeSearchQueryOf,
   creativeTakeOperationOf,
 } from '../domain/creative-inventory-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
@@ -32,7 +35,12 @@ import {
   writeHidden,
   writeStyle,
 } from './dom-write.js'
-import { inheritUiLanguage, setLocalizedAttribute, uiLanguageForElement, writeLocalizedText } from './ui-localization.js'
+import {
+  inheritUiLanguage,
+  setLocalizedAttribute,
+  uiLanguageForElement,
+  writeLocalizedText,
+} from './ui-localization.js'
 import type { ItemIconResolver } from '../domain/item-icon.js'
 import { Result } from 'effect'
 import { applyUiScale } from './ui-scale.js'
@@ -40,7 +48,7 @@ import { itemDisplayNameText } from './item-display-name.js'
 import { slotView } from '../domain/hud-view-model.js'
 
 export type CreativeInventoryViewActions = Readonly<{
-  readonly onSearchChange?: (query: string) => void
+  readonly onSearchChange?: (query: CreativeSearchQuery) => void
   readonly onCategoryChange?: (category: CreativeItemCategoryFilter) => void
   readonly onTake?: (operation: CreativeTakeItemOperation) => void
 }>
@@ -316,7 +324,8 @@ const createItemButton = ({ factory, root, grid, actions, item, index }: CreateI
 }
 
 const createItemButtons = ({ factory, root, grid, actions, options }: CreateItemButtonsOptions): ReadonlyArray<ItemButton> => {
-  const allItems = creativeInventoryViewModel('', ALL_CATEGORY, options?.displayNameResolver).items
+  const emptyQuery = CreativeSearchQuerySchema.make('')
+  const allItems = creativeInventoryViewModel(emptyQuery, ALL_CATEGORY, options?.displayNameResolver).items
   return allItems.map((item, index) => createItemButton({ actions, factory, grid, index, item, options, root }))
 }
 
@@ -431,7 +440,11 @@ const connectSearch = (
   actions: CreativeInventoryViewActions | undefined,
 ): void => {
   state.parts.search.addEventListener('input', () => {
-    const query = state.parts.search.value
+    const parsedQuery = creativeSearchQueryOf(state.parts.search.value)
+    if (Result.isFailure(parsedQuery)) {
+      return
+    }
+    const query = parsedQuery.success
     const next = creativeInventoryViewModel(query, state.currentModel.category, searchResolver)
     renderCreativeModel(state, next)
     actions?.onSearchChange?.(query)
@@ -445,7 +458,11 @@ const connectCategoryButtons = (
 ): void => {
   for (const { category, root: button } of state.parts.categoryButtons) {
     button.addEventListener('click', () => {
-      const next = creativeInventoryViewModel(state.parts.search.value, category, searchResolver)
+      const parsedQuery = creativeSearchQueryOf(state.parts.search.value)
+      if (Result.isFailure(parsedQuery)) {
+        return
+      }
+      const next = creativeInventoryViewModel(parsedQuery.success, category, searchResolver)
       renderCreativeModel(state, next)
       actions?.onCategoryChange?.(category)
     })
@@ -468,7 +485,7 @@ export const createCreativeInventoryView = (
     root: parts.root,
   })
   const state: CreativeRenderState = {
-    currentModel: creativeInventoryViewModel('', ALL_CATEGORY, searchResolver),
+    currentModel: creativeInventoryViewModel(CreativeSearchQuerySchema.make(''), ALL_CATEGORY, searchResolver),
     itemButtons,
     options,
     parts,

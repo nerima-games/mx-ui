@@ -1,17 +1,21 @@
+import { Brand, Result } from 'effect'
 import { type ItemType, isItemType } from '@nerima-games/mc-kernel'
-import { Result } from 'effect'
+
+export type ItemIconUrl = string & Brand.Brand<'ItemIconUrl'>
+export type ItemIconAtlasOffset = number & Brand.Brand<'ItemIconAtlasOffset'>
+export type ItemIconAtlasDimension = number & Brand.Brand<'ItemIconAtlasDimension'>
 
 export type ItemIcon =
-  | Readonly<{ readonly kind: 'url'; readonly url: string }>
+  | Readonly<{ readonly kind: 'url'; readonly url: ItemIconUrl }>
   | Readonly<{
       readonly kind: 'atlas'
-      readonly url: string
-      readonly [X_COORDINATE]: number
-      readonly [Y_COORDINATE]: number
-      readonly width: number
-      readonly height: number
-      readonly atlasWidth: number
-      readonly atlasHeight: number
+      readonly url: ItemIconUrl
+      readonly [X_COORDINATE]: ItemIconAtlasOffset
+      readonly [Y_COORDINATE]: ItemIconAtlasOffset
+      readonly width: ItemIconAtlasDimension
+      readonly height: ItemIconAtlasDimension
+      readonly atlasWidth: ItemIconAtlasDimension
+      readonly atlasHeight: ItemIconAtlasDimension
     }>
 
 export type ItemIconFailure =
@@ -20,7 +24,7 @@ export type ItemIconFailure =
   | Readonly<{ readonly _tag: 'InvalidItemIcon' }>
 
 export type ItemIconResolverFailure = Readonly<{ readonly _tag: 'ItemIconUnavailable' }>
-export type ItemIconResolver = (itemType: ItemType) => Result.Result<ItemIcon, ItemIconResolverFailure>
+export type ItemIconResolver = (itemType: ItemType) => Result.Result<unknown, ItemIconResolverFailure>
 type ItemIconResolverCallback = (itemType: ItemType) => unknown
 
 export type ItemIconView = Readonly<{
@@ -41,6 +45,13 @@ const FAILURE_RESULT_PROTOTYPE = Object.getPrototypeOf(Result.fail(null))
 const X_COORDINATE: 'x' = 'x'
 const Y_COORDINATE: 'y' = 'y'
 const SINGLE_KEY = 1
+
+const ItemIconAtlasOffsetBrand = Brand.make<ItemIconAtlasOffset>(
+  (value) => Number.isSafeInteger(value) && value >= ZERO && value <= MAX_ATLAS_DIMENSION,
+)
+const ItemIconAtlasDimensionBrand = Brand.make<ItemIconAtlasDimension>(
+  (value) => Number.isSafeInteger(value) && value > ZERO && value <= MAX_ATLAS_DIMENSION,
+)
 
 const itemTypeFromId = (input: unknown): ItemType | undefined => {
   if (typeof input !== 'string') {
@@ -179,6 +190,8 @@ const absoluteImageUrl = (input: unknown): Result.Result<string, ItemIconFailure
   return acceptedImageUrl(parsed.success)
 }
 
+const ItemIconUrlBrand = Brand.make<ItemIconUrl>((input) => Result.isSuccess(absoluteImageUrl(input)))
+
 const validPositiveCoordinate = (value: number): boolean => Number.isSafeInteger(value) && value > ZERO
 const validNonnegativeCoordinate = (value: number): boolean => Number.isSafeInteger(value) && value >= ZERO
 
@@ -187,6 +200,15 @@ const ATLAS_REQUIRED_KEYS = ATLAS_KEYS
 const URL_ICON_KEYS = 2
 
 type AtlasGeometry = Readonly<{
+  readonly [X_COORDINATE]: ItemIconAtlasOffset
+  readonly [Y_COORDINATE]: ItemIconAtlasOffset
+  readonly width: ItemIconAtlasDimension
+  readonly height: ItemIconAtlasDimension
+  readonly atlasWidth: ItemIconAtlasDimension
+  readonly atlasHeight: ItemIconAtlasDimension
+}>
+
+type UnbrandedAtlasGeometry = Readonly<{
   readonly [X_COORDINATE]: number
   readonly [Y_COORDINATE]: number
   readonly width: number
@@ -195,7 +217,7 @@ type AtlasGeometry = Readonly<{
   readonly atlasHeight: number
 }>
 
-const atlasGeometry = (record: DataRecord): AtlasGeometry | undefined => {
+const unbrandedAtlasGeometry = (record: DataRecord): UnbrandedAtlasGeometry | undefined => {
   const { x: coordinateX, y: coordinateY, width, height, atlasWidth, atlasHeight } = record
   if (
     typeof coordinateX !== 'number' || !validNonnegativeCoordinate(coordinateX) ||
@@ -219,16 +241,39 @@ const atlasGeometry = (record: DataRecord): AtlasGeometry | undefined => {
   }
 }
 
-const decodeAtlasIcon = (input: unknown, url: string): Result.Result<ItemIcon, ItemIconFailure> => {
-  const parsedAtlas = dataRecord(input, ATLAS_KEYS, ATLAS_REQUIRED_KEYS)
-  if (Result.isFailure(parsedAtlas)) {
-    return Result.fail(parsedAtlas.failure)
-  }
-  const geometry = atlasGeometry(parsedAtlas.success)
+const atlasGeometry = (record: DataRecord): Result.Result<AtlasGeometry, ItemIconFailure> => {
+  const geometry = unbrandedAtlasGeometry(record)
   if (typeof geometry === 'undefined') {
     return Result.fail(INVALID_ITEM_ICON)
   }
   const { x: coordinateX, y: coordinateY, width, height, atlasWidth, atlasHeight } = geometry
+  if (
+    !ItemIconAtlasOffsetBrand.is(coordinateX) || !ItemIconAtlasOffsetBrand.is(coordinateY) ||
+    !ItemIconAtlasDimensionBrand.is(width) || !ItemIconAtlasDimensionBrand.is(height) ||
+    !ItemIconAtlasDimensionBrand.is(atlasWidth) || !ItemIconAtlasDimensionBrand.is(atlasHeight)
+  ) {
+    return Result.fail(INVALID_ITEM_ICON)
+  }
+  return Result.succeed({
+    atlasHeight,
+    atlasWidth,
+    height,
+    width,
+    [X_COORDINATE]: coordinateX,
+    [Y_COORDINATE]: coordinateY,
+  })
+}
+
+const decodeAtlasIcon = (input: unknown, url: ItemIconUrl): Result.Result<ItemIcon, ItemIconFailure> => {
+  const parsedAtlas = dataRecord(input, ATLAS_KEYS, ATLAS_REQUIRED_KEYS)
+  if (Result.isFailure(parsedAtlas)) {
+    return Result.fail(parsedAtlas.failure)
+  }
+  const parsedGeometry = atlasGeometry(parsedAtlas.success)
+  if (Result.isFailure(parsedGeometry)) {
+    return Result.fail(parsedGeometry.failure)
+  }
+  const { x: coordinateX, y: coordinateY, width, height, atlasWidth, atlasHeight } = parsedGeometry.success
   return Result.succeed({
     atlasHeight,
     atlasWidth,
@@ -241,7 +286,7 @@ const decodeAtlasIcon = (input: unknown, url: string): Result.Result<ItemIcon, I
   })
 }
 
-const decodeUrlIcon = (common: DataRecord, url: string): Result.Result<ItemIcon, ItemIconFailure> => {
+const decodeUrlIcon = (common: DataRecord, url: ItemIconUrl): Result.Result<ItemIcon, ItemIconFailure> => {
   if (Object.keys(common).length !== URL_ICON_KEYS) {
     return Result.fail(INVALID_ITEM_ICON)
   }
@@ -252,6 +297,9 @@ const decodeCommonIcon = (input: unknown, common: DataRecord): Result.Result<Ite
   const imageUrl = absoluteImageUrl(common['url'])
   if (Result.isFailure(imageUrl)) {
     return Result.fail(imageUrl.failure)
+  }
+  if (!ItemIconUrlBrand.is(imageUrl.success)) {
+    return Result.fail(INVALID_ITEM_ICON)
   }
   if (common['kind'] === 'url') {
     return decodeUrlIcon(common, imageUrl.success)

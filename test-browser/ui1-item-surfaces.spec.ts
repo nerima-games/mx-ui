@@ -69,7 +69,7 @@ test(UI1_ITEM_SURFACE_SCENARIO_REFERENCE, async ({ page }, testInfo) => {
   await page.route('https://items.test/apple.svg', (route) => route.fulfill({
     status: 200,
     contentType: 'image/svg+xml',
-    body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="9" r="6" fill="#df5548"/><path d="M8 3c1-2 3-2 4-2-1 2-2 3-4 3" fill="#477c42"/></svg>',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="9" r="6" fill="#df5548"/><path d="M8 3c1-2 3-2 4-2-1 2-2 3-4 3" fill="#477c42"/></svg>',
   }))
 
   await page.evaluate(async ({
@@ -189,5 +189,5 @@ test(UI1_ITEM_SURFACE_SCENARIO_REFERENCE, async ({ page }, testInfo) => {
   await expect(tooltip).toContainText(ITEM_DISPLAY_NAMES.apple.ja)
 
   const afterScreenshot = testInfo.outputPath('ui1-after-item-surfaces.png')
-  await page.locator('[data-ui1-item-surfaces]').screenshot({ path: afterScreenshot })
+  await page.screenshot({ path: afterScreenshot })
 })

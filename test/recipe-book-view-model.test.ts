@@ -160,6 +160,10 @@ describe('recipe book view model', () => {
     expect(recipePlacementOperationOf(large, 4)).toStrictEqual(
       Result.fail({ _tag: 'InvalidGridWidth', gridWidth: 4 }),
     )
+    const unexpectedGridWidth = { columns: 4 }
+    expect(recipePlacementOperationOf(large, unexpectedGridWidth)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidGridWidth', gridWidth: unexpectedGridWidth }),
+    )
   })
 
   it('accepts both grid sizes for a one-slot recipe', () => {

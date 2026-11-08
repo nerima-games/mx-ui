@@ -1,11 +1,12 @@
+import { type Brand, Option, Result, Schema } from 'effect'
 import {
+  type DisplayNames,
   ITEM_DISPLAY_NAMES,
   ITEM_TYPES,
   type ItemType,
   isItemType,
 } from '@nerima-games/mc-kernel'
 import { type ItemDisplayNameResolver, resolveItemDisplayName } from './item-display-name.js'
-import { Option, Result } from 'effect'
 
 export const CREATIVE_ITEM_CATEGORIES = [
   'building',
@@ -22,10 +23,25 @@ export const CREATIVE_ITEM_CATEGORIES = [
 export type CreativeItemCategory = (typeof CREATIVE_ITEM_CATEGORIES)[number]
 export type CreativeItemCategoryFilter = CreativeItemCategory | 'all'
 
+export type CreativeSearchQuery = string & Brand.Brand<'CreativeSearchQuery'>
+export const CreativeSearchQuerySchema: Schema.Codec<CreativeSearchQuery, string> =
+  Schema.String.pipe(Schema.brand('CreativeSearchQuery'))
+export type CreativeSearchQueryFailure = Readonly<{ readonly _tag: 'InvalidCreativeSearchQuery' }>
+
+export const creativeSearchQueryOf = (
+  input: unknown,
+): Result.Result<CreativeSearchQuery, CreativeSearchQueryFailure> => {
+  const decoded = Schema.decodeUnknownResult(CreativeSearchQuerySchema)(input)
+  if (Result.isFailure(decoded)) {
+    return Result.fail({ _tag: 'InvalidCreativeSearchQuery' })
+  }
+  return Result.succeed(decoded.success)
+}
+
 export type CreativeInventoryItem = Readonly<{
   readonly itemId: ItemType
   readonly category: CreativeItemCategory
-  readonly displayNames: Readonly<{ readonly en: string; readonly ja: string }>
+  readonly displayNames: DisplayNames
 }>
 
 export type CreativeInventoryCategoryView = Readonly<{
@@ -34,7 +50,7 @@ export type CreativeInventoryCategoryView = Readonly<{
 }>
 
 export type CreativeInventoryViewModel = Readonly<{
-  readonly query: string
+  readonly query: CreativeSearchQuery
   readonly category: CreativeItemCategoryFilter
   readonly categories: ReadonlyArray<CreativeInventoryCategoryView>
   readonly items: ReadonlyArray<CreativeInventoryItem>
@@ -411,7 +427,7 @@ const matchesSearch = (
 }
 
 export const creativeInventoryViewModel = (
-  query: string,
+  query: CreativeSearchQuery,
   category: CreativeItemCategoryFilter = 'all',
   resolver?: ItemDisplayNameResolver,
 ): CreativeInventoryViewModel => {

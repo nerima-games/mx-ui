@@ -1,15 +1,17 @@
-import { ITEM_DISPLAY_NAMES, isItemType } from '@nerima-games/mc-kernel'
+import { EnchantmentLevel, ITEM_DISPLAY_NAMES, isItemType } from '@nerima-games/mc-kernel'
 import * as fc from 'fast-check'
 import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
+import { itemDisplayNameText, itemDisplayNameValue } from '../src/application/item-display-name'
+import { createHudView } from '../src/application/hud-view'
 import { createSlotElement, setSlotKeyboardFocus, updateSlotElement } from '../src/application/slot-element'
-import { slotView } from '../src/domain/hud-view-model'
+import { HOTBAR_SLOT_COUNT, hudViewModel, slotView, spawnSnapshot } from '../src/domain/hud-view-model'
 import {
   defaultItemDisplayNameResolver,
   itemDisplayNameView,
   resolveItemDisplayName,
 } from '../src/domain/item-display-name'
-import { type ItemIcon, resolveItemIcon } from '../src/domain/item-icon'
+import { resolveItemIcon } from '../src/domain/item-icon'
 import { fakeDocument, fakeElement } from './fake-dom'
 
 describe('item presentation', () => {
@@ -75,6 +77,54 @@ describe('item presentation', () => {
     expect(defaultItemDisplayNameResolver('stone', 'en')).toStrictEqual(Result.succeed(ITEM_DISPLAY_NAMES.stone.en))
   })
 
+  it('keeps a host display name when a Result crosses a structured-clone boundary', () => {
+    const view = slotView(
+      { itemId: 'stone', count: 2 },
+      0,
+      {
+        selectedIndex: 0,
+        itemDisplayNameOptions: {
+          language: 'en',
+          resolver: () => Result.succeed('Host Stone'),
+        },
+      },
+    )
+    const { itemDisplayName } = view
+    expect(itemDisplayName).toBeDefined()
+    if (typeof itemDisplayName === 'undefined') {
+      return
+    }
+
+    const clonedResult = structuredClone(itemDisplayName.result)
+    expect(clonedResult).toStrictEqual({ success: 'Host Stone' })
+    const serializedView = {
+      ...view,
+      itemDisplayName: {
+        language: itemDisplayName.language,
+        result: clonedResult,
+      },
+    }
+    expect(itemDisplayNameText(serializedView, 'en')).toBe('Host Stone')
+    expect(itemDisplayNameValue(serializedView, 'en')).toBe('Host Stone')
+
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    updateSlotElement(slot, serializedView)
+    expect(fakeElement(slot.root).find('data-mx-ui', 'slot-item')?.textContent).toBe('Host Stone')
+
+    const parent = fakeElement(factory.createElement('main'))
+    const hud = createHudView(factory, parent, 'full')
+    const emptyHotbar = Array.from({ length: HOTBAR_SLOT_COUNT }, (): undefined => undefined)
+    const model = hudViewModel(spawnSnapshot, emptyHotbar, 0)
+    hud.render({
+      ...model,
+      hotbar: model.hotbar.map((hotbarSlot, index) => index === 0 ? serializedView : hotbarSlot),
+    })
+    expect(fakeElement(hud.root).findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
+      'Hotbar slot 1, Host Stone, 2',
+    )
+  })
+
   it('accepts absolute icon URLs and bounded atlas rectangles', () => {
     const noResolver = slotView({ itemId: 'stone', count: 1 }, 0, 0)
     expect(noResolver.itemIcon).toStrictEqual({
@@ -102,7 +152,14 @@ describe('item presentation', () => {
   })
 
   it('property: arbitrary identifiers yield a validated icon or an expected typed failure', () => {
-    const icon: ItemIcon = { kind: 'url', url: 'https://assets.example/item.png' }
+    const resolvedIcon = resolveItemIcon('stone', () =>
+      Result.succeed({ kind: 'url', url: 'https://assets.example/item.png' }),
+    )
+    expect(Result.isSuccess(resolvedIcon)).toBe(true)
+    if (Result.isFailure(resolvedIcon)) {
+      return
+    }
+    const icon = resolvedIcon.success
     fc.assert(
       fc.property(fc.anything(), (itemId) => {
         const result = resolveItemIcon(itemId, () => Result.succeed(icon))
@@ -187,7 +244,7 @@ describe('item presentation', () => {
         itemId: 'diamond_sword',
         count: 3,
         durability: 0.47,
-        enchantments: { 'minecraft:sharpness': 5 },
+        enchantments: { sharpness: EnchantmentLevel(5) },
       },
       0,
       {

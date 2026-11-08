@@ -1,7 +1,6 @@
 allowBuilds:
   esbuild: true
 overrides:
-  '@nerima-games/mc-kernel': 0.15.0
   '@vitest/mocker': 5.0.5
   launch-editor: 2.14.2
   shell-quote: 1.11.0
