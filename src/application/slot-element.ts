@@ -415,8 +415,8 @@ export const setSlotHidden = (slot: SlotElement, hidden: boolean): void => {
  * inside the group without mx-ui rewriting the attribute first.
  */
 export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
-  writeAttribute(slot.disabled)
   if (tabbable) {
+    writeAttribute(slot.disabled)
     writeAttribute(slot.tabStop, '0')
   } else {
     writeAttribute(slot.tabStop, '-1')

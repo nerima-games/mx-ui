@@ -6,7 +6,7 @@ import {
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import { type TextCell, textCell } from './dom-write.js'
-import { type UiLanguage, translateUiMessage } from '../domain/ui-language.js'
+import { type UiLanguage, type UiMessageText, translateUiMessage } from '../domain/ui-language.js'
 import { setLocalizedText, writeLocalizedTextUsing } from './ui-localization.js'
 
 const PROGRESS_DECIMAL_PLACES = 1
@@ -119,7 +119,7 @@ const createControls = (
   createCloseControl(factory, root, actions)
 }
 
-const summaryText = (language: UiLanguage, model: BrewingViewModel): string => {
+const summaryText = (language: UiLanguage, model: BrewingViewModel): UiMessageText => {
   const stackLabel = (stack: BrewingViewModel['fuel']): string => {
     if (!stack) {
       return translateUiMessage(language, 'brewing.empty')
@@ -146,7 +146,7 @@ const summaryText = (language: UiLanguage, model: BrewingViewModel): string => {
   })
 }
 
-const progressText = (language: UiLanguage, progress: BrewingProgressView): string => {
+const progressText = (language: UiLanguage, progress: BrewingProgressView): UiMessageText => {
   if (!('remainingSecs' in progress)) {
     return translateUiMessage(language, 'brewing.idle')
   }
@@ -155,7 +155,7 @@ const progressText = (language: UiLanguage, progress: BrewingProgressView): stri
   })
 }
 
-const statusText = (language: UiLanguage, progress: BrewingProgressView): string => {
+const statusText = (language: UiLanguage, progress: BrewingProgressView): UiMessageText => {
   if (!('remainingSecs' in progress)) {
     return translateUiMessage(language, 'brewing.stand-idle')
   }

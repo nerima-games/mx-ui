@@ -567,6 +567,8 @@ export const createHudView = (
     const focusedIndex = focusedIndexFor(index)
     const tabStopIndex = focusedIndex ?? DEFAULT_TAB_STOP_INDEX
     for (const [slotIndex, slot] of cells.hotbar.entries()) {
+      // Roving tabindex keeps every hotbar radio enabled for keyboard navigation.
+      writeAttribute(slot.disabled)
       setSlotTabStop(slot, slotIndex === tabStopIndex)
       setSlotKeyboardFocus(slot, slotIndex === focusedIndex)
     }

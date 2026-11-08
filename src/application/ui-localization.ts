@@ -4,6 +4,7 @@ import {
   type UiLanguage,
   type UiLanguageFailure,
   type UiMessageKey,
+  type UiMessageText,
   type UiMessageValues,
   decodeUiLanguage,
   translateAchievementTitle,
@@ -26,7 +27,7 @@ export type UiLocalizedAttributeName = 'aria-label' | 'placeholder'
 
 type LocalizedText =
   | Readonly<{ cell: TextCell; key: UiMessageKey; values: UiMessageValues }>
-  | Readonly<{ cell: TextCell; resolve: (language: UiLanguage) => string }>
+  | Readonly<{ cell: TextCell; resolve: (language: UiLanguage) => UiMessageText }>
 
 type LocalizedAchievementTitle = {
   readonly cell: TextCell
@@ -91,7 +92,7 @@ export const writeLocalizedText = (
 /** Use when a sentence combines several localized fragments with dynamic data. */
 export const writeLocalizedTextUsing = (
   cell: TextCell,
-  resolve: (language: UiLanguage) => string,
+  resolve: (language: UiLanguage) => UiMessageText,
 ): void => {
   const state = stateFor(cell.element)
   state.text = { cell, resolve }
@@ -166,7 +167,7 @@ const setLanguageForTree = (root: UiLocalizationRoot, language: UiLanguage): voi
   }
 }
 
-const localizedTextFor = (text: LocalizedText, language: UiLanguage): string => {
+const localizedTextFor = (text: LocalizedText, language: UiLanguage): UiMessageText => {
   if ('resolve' in text) {
     return text.resolve(language)
   }

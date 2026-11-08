@@ -4,8 +4,15 @@ import {
   debugOverlayModel,
 } from '../domain/debug-overlay.js'
 import type { DomElement, DomElementFactory } from './dom-surface.js'
-import { type UiLanguage, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
+import {
+  type UiLanguage,
+  type UiMessageKey,
+  type UiMessageText,
+  UiMessageTextSchema,
+  translateUiMessage,
+} from '../domain/ui-language.js'
 import { setLocalizedAttribute, writeLocalizedTextUsing } from './ui-localization.js'
+import { Schema } from 'effect'
 import { textCell } from './dom-write.js'
 
 export type DebugOverlayView = Readonly<{
@@ -116,8 +123,10 @@ const optionalQuality = (language: UiLanguage, value: string | null): string => 
   return translateUiMessage(language, key)
 }
 
-const debugOverlayText = (language: UiLanguage, model: DebugOverlayModel): string =>
-  [
+const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
+
+const debugOverlayText = (language: UiLanguage, model: DebugOverlayModel): UiMessageText =>
+  decodeUiMessageText([
     translateUiMessage(language, 'debug.fps', { fps: optionalNumber(language, model.fps) }),
     translateUiMessage(language, 'debug.coordinates', { coordinates: coordinateLine(language, model) }),
     translateUiMessage(language, 'debug.chunk', { chunk: translateUiMessage(language, 'debug.none') }),
@@ -129,7 +138,7 @@ const debugOverlayText = (language: UiLanguage, model: DebugOverlayModel): strin
     translateUiMessage(language, 'debug.gpu-timing-supported', { supported: optionalBoolean(language, model.gpuTimingSupported) }),
     translateUiMessage(language, 'debug.gpu-time', { milliseconds: optionalNumber(language, model.latestGpuTimeMs) }),
     translateUiMessage(language, 'debug.quality', { quality: optionalQuality(language, model.qualityPreset) }),
-  ].join('\n')
+  ].join('\n'))
 
 export const createDebugOverlayView = (
   factory: DomElementFactory,
