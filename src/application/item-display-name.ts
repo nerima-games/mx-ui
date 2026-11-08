@@ -1,11 +1,20 @@
-import { type ItemDisplayNameView, resolveItemDisplayName } from '../domain/item-display-name.js'
-import { type UiLanguage, type UiMessageValue, translateUiMessage } from '../domain/ui-language.js'
+import {
+  type ItemDisplayName,
+  type ItemDisplayNameView,
+  resolveItemDisplayName,
+} from '../domain/item-display-name.js'
+import {
+  type UiLanguage,
+  type UiMessageText,
+  type UiMessageValue,
+  translateUiMessage,
+} from '../domain/ui-language.js'
 import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 
 const MINECRAFT_NAMESPACE_PREFIX = 'minecraft:'
 
-const displayNameText = (slot: SlotView['itemDisplayName'], language: UiLanguage): string | undefined => {
+const displayNameText = (slot: SlotView['itemDisplayName'], language: UiLanguage): ItemDisplayName | undefined => {
   if (typeof slot === 'undefined' || slot.language !== language || Result.isFailure(slot.result)) {
     return
   }
@@ -19,7 +28,7 @@ const displayNameText = (slot: SlotView['itemDisplayName'], language: UiLanguage
 export const itemDisplayNameText = (
   slot: Pick<SlotView, 'itemId' | 'itemDisplayName'>,
   language: UiLanguage,
-): string => {
+): ItemDisplayName | UiMessageText | '' => {
   if (typeof slot.itemId === 'undefined') {
     return ''
   }

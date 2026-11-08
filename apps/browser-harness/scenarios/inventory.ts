@@ -7,9 +7,14 @@ import {
   type CraftingSnapshot,
   type InventorySnapshot,
 } from '../../../src/domain/inventory-view-model'
+import type { ItemDisplayNameOptions } from '../../../src/domain/item-display-name'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from '../scenario-types'
 
 const noTime = (): void => undefined
+export const HARNESS_ITEM_DISPLAY_NAME_OPTIONS: ItemDisplayNameOptions = {
+  language: 'en',
+  resolver: (itemType) => Result.succeed(itemType.replaceAll('_', ' ')),
+}
 
 const stack = (count: number): ItemStack => {
   const result = makeItemStack('stone', count)
@@ -59,7 +64,7 @@ const mountInventory = (
   } = {},
 ): ScenarioMount => {
   const view = createInventoryView(context.factory, context.host)
-  const model = inventoryViewModel(snapshot)
+  const model = inventoryViewModel(snapshot, HARNESS_ITEM_DISPLAY_NAME_OPTIONS)
   view.render(model, options.interaction)
   if (options.note !== undefined) {
     const note = context.factory.createElement('p')

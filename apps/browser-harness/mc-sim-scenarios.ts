@@ -5,7 +5,10 @@ import {
   inventoryViewModel,
 } from '../../src/domain/inventory-view-model'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from './scenario-types'
-import { INVENTORY_SCENARIOS as BASE_INVENTORY_SCENARIOS } from './scenarios/inventory'
+import {
+  HARNESS_ITEM_DISPLAY_NAME_OPTIONS,
+  INVENTORY_SCENARIOS as BASE_INVENTORY_SCENARIOS,
+} from './scenarios/inventory'
 
 const noTime = (): void => undefined
 
@@ -35,11 +38,14 @@ const mountMcSimInventory = (context: ScenarioContext): ScenarioMount => {
     focused: { kind: 'slot', region: 'hotbar', index: 0 },
     status,
   }
-  let model = inventoryViewModel(emptyInventorySnapshot)
+  let model = inventoryViewModel(emptyInventorySnapshot, HARNESS_ITEM_DISPLAY_NAME_OPTIONS)
 
   const render = (): void => {
     const inventory = context.runSync(service.snapshot)
-    model = inventoryViewModel({ ...emptyInventorySnapshot, inventory })
+    model = inventoryViewModel(
+      { ...emptyInventorySnapshot, inventory },
+      HARNESS_ITEM_DISPLAY_NAME_OPTIONS,
+    )
     view.render(model, {
       ...interaction,
       status,

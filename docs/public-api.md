@@ -227,7 +227,7 @@ mc-kernel から import する。mx-ui の root barrel はこれらを再 export
 | export | 種別 |
 | --- | --- |
 | `HEALTH_POINTS_PER_HEART` / `DEFAULT_MAX_HEALTH_POINTS` / `DEFAULT_MAX_HUNGER_POINTS` / `HOTBAR_SLOT_COUNT` | 定数 |
-| `IconState` / `HotbarSlotSnapshot` / `VitalsSnapshot` / `SlotView` / `SlotViewOptions` / `HudViewModel` / `HudViewModelOptions` | type |
+| `IconState` / `HotbarSlotSnapshot` / `VitalsSnapshot` / `SlotView` / `HudViewModel` | type |
 | `iconRow` / `hudViewModel` / `slotView` / `hotbarSlotIndex` | 純粋関数 |
 | `spawnSnapshot` | プレビュー・テスト用のリテラル |
 
@@ -274,9 +274,9 @@ mc-sim continues to own persisted settings and game state.
 | `UiMountOptions.initialLanguage` / `UiMount.updateLanguage(input)` | Initial value and runtime update; updates validate `unknown` and return `Result` | Pass locale changes while the mount is active. |
 | `ItemDisplayNameResolver` / `ItemDisplayNameOptions` | `(ItemType, UiLanguage) => Result<string, ItemDisplayNameResolverFailure>`; options carry the active language and resolver | Pass the callback to item-bearing view-model factories. `ItemType` is imported from `@nerima-games/mc-kernel`. |
 | `resolveItemDisplayName(itemId, language, resolver?)` | `unknown` snapshot value → `Result<ItemDisplayName, ItemDisplayNameFailure>` | Validate the item type before calling the resolver. A leading `minecraft:` namespace is removed. Invalid IDs, missing resolvers, resolver failures, empty names, and names containing `minecraft:` return typed failures. |
-| `hudViewModel(vitals, hotbarSlots, selection)` | `selection` is a number or `HudViewModelOptions` with `selectedHotbarSlot` and optional `itemDisplayNameOptions` | Pass the active selection and host resolver in the options object to localize hotbar item text and labels. |
+| `hudViewModel(vitals, hotbarSlots, selection)` | `selection` is a number or an options object with `selectedHotbarSlot` and optional `itemDisplayNameOptions` | Pass the active selection and host resolver in the options object to localize hotbar item text and labels. |
 | `inventoryViewModel` / `chestStorageViewModel` / `furnaceViewModel` / `anvilViewModel` / `enchantingTableViewModel` | Optional `ItemDisplayNameOptions` | Pass the same resolver and language used for the screen. Views show the resolved name in slot text, hover titles, and accessible labels; a failed lookup displays localized “Unknown item” / “不明なアイテム”. |
-| `slotView(slot, index, selection)` | `selection` is a number or `SlotViewOptions` with `selectedIndex` and optional `itemDisplayNameOptions` | Project one slot using the selected index and host resolver. |
+| `slotView(slot, index, selection)` | `selection` is a number or an options object with `selectedIndex` and optional `itemDisplayNameOptions` | Project one slot using the selected index and host resolver. |
 | `applyUiLanguage(root, input)` | Localized DOM subtree and `unknown` | Update text and aria attributes within a subtree when using an independent view. |
 | `GAME_FONT_FAMILY` / `GAME_FONT_STACK` / `GAME_FONT_STYLESHEET_EXPORT` | Bundled font name and package export path | Load `@nerima-games/mx-ui/assets/game-font.css` on screens that need it. |
 | `UI_SCALE_MIN` / `UI_SCALE_MAX` / `applyUiScale(style, input)` | `0.75` to `1.5`; out-of-range and non-numeric values return a typed failure | Apply mc-sim's `uiScale` setting to the mx-ui root style and handle the returned `Result`; invalid values leave the existing style unchanged. |

@@ -28,6 +28,7 @@ import { furnaceViewModel, type FurnaceSnapshot, type FurnaceSlotSnapshot } from
 import { decodeTradeSnapshot, type TradeSnapshot } from '../../../src/domain/trade-snapshot'
 import { tradeViewModel } from '../../../src/domain/trade-view-model'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from '../scenario-types'
+import { HARNESS_ITEM_DISPLAY_NAME_OPTIONS } from './inventory'
 
 const noTime = (): void => undefined
 
@@ -48,7 +49,7 @@ const mountFurnace = (
   status: string,
 ): ScenarioMount => {
   const view = createFurnaceView(context.factory, context.host)
-  const model = furnaceViewModel(snapshot)
+  const model = furnaceViewModel(snapshot, HARNESS_ITEM_DISPLAY_NAME_OPTIONS)
   view.render(model, { focusedSlot: 'input', status })
   const { root } = view
   return { root, setTime: noTime, dispose: () => { root.textContent = '' }, viewModel: () => model }
@@ -280,7 +281,7 @@ const anvilSlot = (itemId: string, count: number, durability?: number): AnvilSlo
 
 const mountAnvil = (context: ScenarioContext, snapshot: AnvilSnapshot, status: string): ScenarioMount => {
   const view = createAnvilView(context.factory, context.host)
-  const model = anvilViewModel(snapshot)
+  const model = anvilViewModel(snapshot, HARNESS_ITEM_DISPLAY_NAME_OPTIONS)
   view.render(model, { focusedTarget: 'primary-input', status })
   const { root } = view
   return { root, setTime: noTime, dispose: () => { root.textContent = '' }, viewModel: () => model }
@@ -396,7 +397,7 @@ const enchantingOffer = (
 
 const mountEnchanting = (context: ScenarioContext, snapshot: EnchantingTableSnapshot, status: string): ScenarioMount => {
   const view = createEnchantingTableView(context.factory, context.host, { onActivate: context.emitIntent })
-  const model = enchantingTableViewModel(snapshot)
+  const model = enchantingTableViewModel(snapshot, HARNESS_ITEM_DISPLAY_NAME_OPTIONS)
   view.render(model, { focusedTarget: 'offer-1', status })
   const { root } = view
   return { root, setTime: noTime, dispose: () => { root.textContent = '' }, viewModel: () => model }
@@ -519,7 +520,7 @@ const mountChest = (
   focusedSlot: { readonly region: 'chest' | 'player'; readonly slot: number } = { region: 'chest', slot: 0 },
 ): ScenarioMount => {
   const view = createChestStorageView(context.factory, context.host)
-  const model = chestStorageViewModel(snapshot)
+  const model = chestStorageViewModel(snapshot, HARNESS_ITEM_DISPLAY_NAME_OPTIONS)
   view.render(model, { focusedSlot, status })
   const { root } = view
   return { root, setTime: noTime, dispose: () => { root.textContent = '' }, viewModel: () => model }

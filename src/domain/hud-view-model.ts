@@ -43,12 +43,12 @@ export type SlotView = {
   readonly empty: boolean
 }
 
-export type SlotViewOptions = Readonly<{
+type SlotViewOptions = Readonly<{
   readonly selectedIndex: number
   readonly itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
 }>
 
-export type HudViewModelOptions = Readonly<{
+type HudViewModelOptions = Readonly<{
   readonly selectedHotbarSlot: number
   readonly itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
 }>
