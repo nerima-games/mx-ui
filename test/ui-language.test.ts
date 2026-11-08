@@ -46,6 +46,13 @@ import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 import { asUiMessageText, asWorldTypeId } from './helpers/ui3-brand-values'
 
 describe('UI language', () => {
+  it('localizes the recipe-book grid guidance in English and Japanese', () => {
+    expect(translateUiMessage('en', 'recipe-book.no-grid-fit')).toBe('Does not fit a crafting grid')
+    expect(translateUiMessage('ja', 'recipe-book.no-grid-fit')).toBe('クラフト枠に配置できません')
+    expect(translateUiMessage('en', 'recipe-book.requires-table')).toBe('Requires a 3×3 grid')
+    expect(translateUiMessage('ja', 'recipe-book.requires-table')).toBe('3×3 のクラフト枠が必要です')
+  })
+
   it('returns typed failures for unsupported inputs through the decoder and mount controller', () => {
     const mount = makeUiMount({ root: document.createElement('main') })
     fc.assert(
@@ -268,9 +275,9 @@ describe('UI language', () => {
     expect(resolverCalls.at(-1)).toStrictEqual({ itemType: 'iron_ingot', language: 'ja' })
     const defaultView = itemDisplayNameView('stone')
     expect(defaultView.language).toBe('en')
-    expect(Result.isFailure(defaultView.result)).toBe(true)
-    if (Result.isFailure(defaultView.result)) {
-      expect(defaultView.result.failure).toStrictEqual({ _tag: 'MissingItemDisplayNameResolver' })
+    expect(Result.isSuccess(defaultView.result)).toBe(true)
+    if (Result.isSuccess(defaultView.result)) {
+      expect(defaultView.result.success).toBe('Stone')
     }
     const resolverFailure = resolveItemDisplayName('stone', 'en', () =>
       Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
@@ -283,7 +290,7 @@ describe('UI language', () => {
     const unknownId = resolveItemDisplayName('minecraft:no_such_item', 'en', resolver)
     expect(Result.isFailure(unknownId)).toBe(true)
     expect(resolverCalls).toHaveLength(callsBeforeUnknown)
-    expect(Result.isFailure(resolveItemDisplayName('stone', 'en'))).toBe(true)
+    expect(Result.isSuccess(resolveItemDisplayName('stone', 'ja'))).toBe(true)
     expect(
       Result.isFailure(resolveItemDisplayName('stone', 'en', () => Result.succeed(''))),
     ).toBe(true)

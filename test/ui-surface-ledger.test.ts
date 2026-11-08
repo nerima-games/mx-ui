@@ -8,9 +8,9 @@ import {
   validateUiSurfaceLedger,
 } from './helpers/ui-surface-ledger'
 
-const registryScenarioIds = SCENARIO_REGISTRY.map(({ screen, id }) =>
-  scenarioReference(screen, id),
-)
+const registryScenarioIds = [
+  ...SCENARIO_REGISTRY.map(({ screen, id }) => scenarioReference(screen, id)),
+]
 
 describe('UI surface ledger', () => {
   it('classifies every public runtime export and accounts for each registry scenario', () => {

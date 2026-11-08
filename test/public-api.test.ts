@@ -34,10 +34,30 @@ import type {
   DebugOverlayView,
   ColorVisionFilterController,
   ColorVisionMode,
+  CreativeInventoryView,
+  CreativeInventoryViewActions,
+  CreativeInventoryViewOptions,
+  CreativeInventoryViewModel,
+  CreativeInventoryCategoryView,
+  CreativeInventoryItem,
+  CreativeItemCategory,
+  CreativeItemCategoryFilter,
+  CreativeTakeItemFailure,
+  CreativeTakeItemOperation,
   FramesPerSecond,
   GpuTimeMilliseconds,
   HudPresentationSnapshot,
   InventoryNavigationDirection,
+  ItemDisplayName,
+  ItemDisplayNameFailure,
+  ItemDisplayNameOptions,
+  ItemDisplayNameResolver,
+  ItemDisplayNameResolverFailure,
+  ItemIcon,
+  ItemIconFailure,
+  ItemIconResolver,
+  ItemIconResolverFailure,
+  ItemIconView,
   OnboardingCallbacks,
   OnboardingInput,
   OnboardingIntent,
@@ -48,6 +68,15 @@ import type {
   PauseMenuView,
   PauseMenuViewModel,
   SelectedHotbarSlot,
+  RecipeBookView,
+  RecipeBookViewActions,
+  RecipeBookViewOptions,
+  RecipeBookEntry,
+  RecipeBookViewModel,
+  RecipeBookViewModelFailure,
+  RecipeGridWidth,
+  RecipePlacementFailure,
+  RecipePlacementOperation,
   TradeProfession,
   TradeSnapshot,
   TradeView,
@@ -174,7 +203,71 @@ describe('public API surface', () => {
       expect(ui.UI_LANGUAGES).toStrictEqual(['en', 'ja'])
       expect(ui.UI_SCALE_MIN).toBe(0.75)
       expect(ui.UI_SCALE_MAX).toBe(1.5)
-      expect(ui.UI_TRANSLATION_KEY_COUNT).toBe(442)
+      expect(ui.UI_TRANSLATION_KEY_COUNT).toBe(465)
+    }),
+  )
+
+  it.effect('exports the item presentation, recipe book, and Creative catalog contracts', () =>
+    Effect.sync(() => {
+      const itemUiApis = [
+        'defaultItemDisplayNameResolver',
+        'resolveItemDisplayName',
+        'resolveItemIcon',
+        'itemIconView',
+        'CREATIVE_ITEM_CATEGORIES',
+        'creativeItemCategoryOf',
+        'creativeInventoryViewModel',
+        'creativeTakeOperationOf',
+        'recipeBookViewModel',
+        'recipeCraftableInInventory',
+        'recipePlacementOperationOf',
+        'createCreativeInventoryView',
+        'createRecipeBookView',
+      ]
+
+      for (const name of itemUiApis) {
+        expect(Object.keys(ui)).toContain(name)
+      }
+      expect(ui.defaultItemDisplayNameResolver).toBeTypeOf('function')
+      expect(ui.resolveItemIcon).toBeTypeOf('function')
+    }),
+  )
+
+  it.effect('keeps the item presentation and screen contracts available from the package root', () =>
+    Effect.sync(() => {
+      type Ui1Types = [
+        ItemDisplayName,
+        ItemDisplayNameFailure,
+        ItemDisplayNameOptions,
+        ItemDisplayNameResolver,
+        ItemDisplayNameResolverFailure,
+        ItemIcon,
+        ItemIconFailure,
+        ItemIconResolver,
+        ItemIconResolverFailure,
+        ItemIconView,
+        CreativeInventoryView,
+        CreativeInventoryViewActions,
+        CreativeInventoryViewOptions,
+        CreativeInventoryCategoryView,
+        CreativeInventoryItem,
+        CreativeInventoryViewModel,
+        CreativeItemCategory,
+        CreativeItemCategoryFilter,
+        CreativeTakeItemFailure,
+        CreativeTakeItemOperation,
+        RecipeBookView,
+        RecipeBookViewActions,
+        RecipeBookViewOptions,
+        RecipeBookEntry,
+        RecipeBookViewModel,
+        RecipeBookViewModelFailure,
+        RecipeGridWidth,
+        RecipePlacementFailure,
+        RecipePlacementOperation,
+      ]
+      const typeContract: Ui1Types | undefined = undefined
+      expect(typeContract).toBeUndefined()
     }),
   )
 
@@ -383,6 +476,8 @@ describe('public API surface', () => {
         // settled twice (`docs/e2e-triage.md` #15): dropping it from the barrel
         // would make it look unbuilt again.
         'createCrosshairView',
+        'createCreativeInventoryView',
+        'createRecipeBookView',
         // The autosave indicator, and the two names a translation layer or a
         // preview needs to reach its strings. It is pinned here because it is the
         // component the palette survey's headline finding is about: `STATUS_OK`

@@ -32,7 +32,15 @@ export const itemDisplayNameText = (
   if (typeof slot.itemId === 'undefined') {
     return ''
   }
-  return displayNameText(slot.itemDisplayName, language) ?? translateUiMessage(language, 'item.unknown')
+  const supplied = displayNameText(slot.itemDisplayName, language)
+  if (typeof supplied !== 'undefined') {
+    return supplied
+  }
+  const resolved = resolveItemDisplayName(slot.itemId, language)
+  if (Result.isSuccess(resolved)) {
+    return resolved.success
+  }
+  return translateUiMessage(language, 'item.unknown')
 }
 
 const displayNameValue = (result: ItemDisplayNameView['result']): UiMessageValue => {
@@ -51,7 +59,9 @@ export const itemDisplayNameValue = (
   }
   const resolved = slot.itemDisplayName
   if (typeof resolved !== 'undefined' && resolved.language === language) {
-    return displayNameValue(resolved.result)
+    if (Result.isSuccess(resolved.result)) {
+      return displayNameValue(resolved.result)
+    }
   }
   const displayName = resolveItemDisplayName(slot.itemId, language)
   return displayNameValue(displayName)
