@@ -107,11 +107,11 @@ describe('inventory scenario catalog', () => {
     const cursor = mountScenario('cursor-stack').root
     expect(cursor.find('data-mx-ui', 'carried')?.attributes.get('role')).toBe('status')
     expect(cursor.find('data-mx-ui', 'carried')?.attributes.get('aria-label')).toBe(
-      'Carried item, Unknown item, 64',
+      'Carried item, stone, 64',
     )
 
     const accessible = mountScenario('accessibility-name-role-state').root
-    const hotbarSlot = accessible.find('aria-label', 'Hotbar slot 1, Unknown item, 64')
+    const hotbarSlot = accessible.find('aria-label', 'Hotbar slot 1, stone, 64')
     expect(hotbarSlot?.attributes.get('role')).toBe('button')
     expect(hotbarSlot?.attributes.get('aria-disabled')).toBe('false')
     expect(hotbarSlot?.attributes.get('tabindex')).toBe('0')
@@ -131,7 +131,7 @@ describe('inventory scenario catalog', () => {
     expect(mountScenario('stack-zero-empty').root.find('data-inventory-scenario-note', '')?.textContent).toContain(
       'Count 0',
     )
-    expect(firstSlot('stack-one')?.find('data-mx-ui', 'slot-item')?.textContent).toBe('Unknown item')
+    expect(firstSlot('stack-one')?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stone')
     expect(firstSlot('stack-one')?.find('data-mx-ui', 'slot-count')?.textContent).toBe('')
     expect(firstSlot('stack-64')?.find('data-mx-ui', 'slot-count')?.textContent).toBe('64')
     expect(firstSlot('stack-99')?.find('data-mx-ui', 'slot-item')?.textContent).toBe('')
