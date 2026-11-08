@@ -35,6 +35,7 @@ import {
 } from '../src/domain/hud-view-model'
 import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../src/domain/palette'
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
+import { itemDisplayNameValue } from '../src/application/item-display-name.js'
 import { writeAttribute } from '../src/application/dom-write'
 import {
   createSlotElement,
@@ -420,6 +421,8 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     // Catches empty hotbar slots that leave a screen reader with no item name.
     const { root, view } = mount()
     view.render(hudViewModel())
+
+    expect(itemDisplayNameValue({ itemId: undefined }, 'en')).toStrictEqual({ key: 'inventory.empty' })
 
     expect(root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
       'Hotbar slot 1, empty',
