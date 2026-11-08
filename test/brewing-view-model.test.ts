@@ -48,9 +48,9 @@ describe('brewingViewModel', () => {
     const model = brewingViewModel(state)
 
     expect(model.bottles).toStrictEqual([
-      { label: 'Bottle 1', stack: { item: waterBottle.item, count: waterBottle.count } },
-      { label: 'Bottle 2', stack: undefined },
-      { label: 'Bottle 3', stack: { item: waterBottle.item, count: waterBottle.count } },
+      { messageId: 'brewing.bottle-1', stack: { item: waterBottle.item, count: waterBottle.count } },
+      { messageId: 'brewing.bottle-2', stack: undefined },
+      { messageId: 'brewing.bottle-3', stack: { item: waterBottle.item, count: waterBottle.count } },
     ])
     expect(model.ingredient).toStrictEqual({ item: ingredient.item, count: ingredient.count })
     expect(model.fuel).toStrictEqual({ count: fuel.count, item: fuel.item })
@@ -70,9 +70,9 @@ describe('brewingViewModel', () => {
     expect(model.fuelCharges).toBe(0)
     expect(model.ingredient).toBeUndefined()
     expect(model.bottles).toStrictEqual([
-      { label: 'Bottle 1', stack: undefined },
-      { label: 'Bottle 2', stack: undefined },
-      { label: 'Bottle 3', stack: undefined },
+      { messageId: 'brewing.bottle-1', stack: undefined },
+      { messageId: 'brewing.bottle-2', stack: undefined },
+      { messageId: 'brewing.bottle-3', stack: undefined },
     ])
     expect(model.progress).toStrictEqual({ _tag: 'Idle' })
   })

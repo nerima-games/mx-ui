@@ -49,6 +49,8 @@
  * a panel that renders an empty promise is the 「hook with nothing behind it」
  * DN-UI-1a rejected. `MenuPanel` grows when the answer arrives.
  */
+import { DEFAULT_UI_LANGUAGE, type UiMessageText, translateUiMessage } from './ui-language.js'
+
 export type MenuPanel = 'root' | 'new-world' | 'load-world'
 
 /** Every panel, for the sweeps that must not miss one. */
@@ -111,7 +113,7 @@ export const cycleGameMode = (mode: GameMode): GameMode => {
  * empty string is a row in a save list that cannot be clicked on, and the player
  * who left the field alone is exactly the player who will not understand why.
  */
-export const DEFAULT_WORLD_NAME = 'New World'
+export const DEFAULT_WORLD_NAME: UiMessageText = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.world-name.default')
 
 /** What the player has entered on the New World card, before confirming. */
 export type NewWorldDraft = {
@@ -133,12 +135,12 @@ export const emptyNewWorldDraft: NewWorldDraft = { mode: 'survival', name: '' }
  */
 const EMPTY_NAME_LENGTH = 0
 
-export const worldNameLabel = (draft: NewWorldDraft): string => {
+export const worldNameLabel = (draft: NewWorldDraft, defaultName: UiMessageText = DEFAULT_WORLD_NAME): string => {
   const trimmed = draft.name.trim()
   if (trimmed.length > EMPTY_NAME_LENGTH) {
     return trimmed
   }
-  return DEFAULT_WORLD_NAME
+  return defaultName
 }
 
 export type MainMenuState = {

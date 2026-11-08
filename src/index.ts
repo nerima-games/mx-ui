@@ -41,6 +41,7 @@
  */
 
 export * from './application/accessibility-dom.js'
+export * from './application/color-vision-filters.js'
 export * from './application/achievement-toast-subscriber.js'
 export * from './application/achievement-toast-view.js'
 export * from './application/anvil-view.js'
@@ -53,6 +54,7 @@ export * from './application/dom-write.js'
 export * from './application/debug-overlay-view.js'
 export * from './application/enchanting-table-view.js'
 export * from './application/furnace-view.js'
+export * from './application/game-font.js'
 export * from './application/hud-view.js'
 export * from './application/icon-element.js'
 export * from './application/inventory-view.js'
@@ -66,9 +68,24 @@ export * from './application/pause-menu-view.js'
 export * from './application/save-indicator.js'
 export * from './application/session-overlays.js'
 export * from './application/settings-view.js'
-export * from './application/slot-element.js'
+export {
+  DURABILITY_LOW_PERCENT,
+  FOCUS_RING_SHADOW_WIDTH,
+  FOCUS_RING_WIDTH,
+  SLOT_TARGET_MIN_SIZE,
+  createSlotElement,
+  hideSlotElementAtMount,
+  setSlotButtonView,
+  setSlotHidden,
+  setSlotKeyboardFocus,
+  setSlotTabStop,
+  updateSlotElement,
+} from './application/slot-element.js'
+export type { SlotButtonView, SlotElement } from './application/slot-element.js'
 export * from './application/trade-view.js'
 export * from './application/ui-mount.js'
+export * from './application/ui-scale.js'
+export { applyUiLanguage } from './application/ui-localization.js'
 export * from './application/ui-qa.js'
 export * from './domain/accessibility.js'
 export * from './domain/achievement-toast.js'
@@ -86,6 +103,7 @@ export * from './domain/furnace-controller.js'
 export * from './domain/fps-counter.js'
 export * from './domain/hud-view-model.js'
 export * from './domain/inventory-view-model.js'
+export * from './domain/item-display-name.js'
 export * from './domain/loading-screen.js'
 export * from './domain/main-menu.js'
 export * from './domain/modal-stack.js'
@@ -98,6 +116,7 @@ export * from './domain/settings-view-model.js'
 export * from './domain/trade-snapshot.js'
 export * from './domain/trade-view-model.js'
 export * from './domain/ui-qa.js'
+export * from './domain/ui-language.js'
 export * from './stages/registration.js'
 export * from './stages/stage-ids.js'
 

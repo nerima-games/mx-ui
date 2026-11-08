@@ -1,0 +1,12 @@
+/* PixelMplus by itouhiro, based on M+ Bitmap Fonts. See MPLUS-FONT-LICENSE.txt. */
+@font-face {
+  font-family: "PixelMplus12";
+  src: url("./PixelMplus12-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+[data-mx-ui] {
+  font-family: "PixelMplus12", ui-monospace, monospace;
+}

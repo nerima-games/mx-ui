@@ -1,4 +1,5 @@
 import { InputAction as inputAction, KeyCode } from '@nerima-games/mc-kernel/domain/settings'
+import type { FocusNavigationDirection } from '@nerima-games/mc-render'
 import { DEFAULT_SETTINGS, makeSettingsService } from '@nerima-games/mc-sim'
 import { Result, type Effect } from 'effect'
 import {
@@ -36,6 +37,16 @@ const INVENTORY_SELECTOR = '[data-mx-ui="inventory"]'
 const SLOT_SELECTOR = '[data-mx-ui="slot"]'
 const HUD_SLOT_SELECTOR = '[data-mx-ui="hud"] [data-mx-ui="slot"]'
 const BINDING_SELECTOR = '[data-interaction-target="settings-binding"]'
+const FOCUS_DIRECTION_BY_CODE: Readonly<Record<string, FocusNavigationDirection>> = {
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowUp: 'up',
+}
+
+const isEditableKeyboardTarget = (target: EventTarget | null): boolean =>
+  target instanceof Element &&
+  target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !== null
 
 type GamepadIntent =
   | { readonly kind: 'navigate'; readonly direction: 'down' | 'left' | 'right' | 'up' }
@@ -301,6 +312,16 @@ export const createSessionInput = async (options: SessionInputOptions): Promise<
     }
   }
 
+  const onFocusNavigationDirection = (event: KeyboardEvent): void => {
+    if (isEditableKeyboardTarget(event.target)) {
+      return
+    }
+    const direction = FOCUS_DIRECTION_BY_CODE[event.code]
+    if (typeof direction !== 'undefined') {
+      runtime?.moveFocus(direction)
+    }
+  }
+
   options.remapRoot.addEventListener('click', onRemapClick)
   options.remapRoot.addEventListener('focusout', onRemapFocusOut)
   document.addEventListener('keydown', onRemapKeyDown, true)
@@ -308,6 +329,7 @@ export const createSessionInput = async (options: SessionInputOptions): Promise<
   return {
     connect: (nextRuntime) => {
       runtime = nextRuntime
+      document.addEventListener('keydown', onFocusNavigationDirection)
       options.root.addEventListener('pointerdown', onPointerDown)
       options.root.addEventListener('pointerup', onPointerUp)
       options.root.addEventListener('dblclick', onDoubleClick)
@@ -319,6 +341,7 @@ export const createSessionInput = async (options: SessionInputOptions): Promise<
       options.remapRoot.removeEventListener('click', onRemapClick)
       options.remapRoot.removeEventListener('focusout', onRemapFocusOut)
       document.removeEventListener('keydown', onRemapKeyDown, true)
+      document.removeEventListener('keydown', onFocusNavigationDirection)
       options.root.removeEventListener('pointerdown', onPointerDown)
       options.root.removeEventListener('pointerup', onPointerUp)
       options.root.removeEventListener('dblclick', onDoubleClick)

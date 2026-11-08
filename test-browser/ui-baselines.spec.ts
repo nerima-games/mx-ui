@@ -8,6 +8,7 @@ import { onboardingViewModel } from '../src/domain/onboarding-view-model'
 import { settingsViewModel, type SettingsViewModel } from '../src/domain/settings-view-model'
 import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from '../test/fixtures/settings-input'
 import { openHarness } from './harness'
+import { browserItemDisplayNameOptions } from './item-display-names'
 
 const debugOverlayViewModule = `/@fs${fileURLToPath(
   new URL('../src/application/debug-overlay-view.ts', import.meta.url),
@@ -117,7 +118,7 @@ const FURNACE_BASELINE_MODEL = furnaceViewModel({
   fuel: { count: 4, itemId: 'minecraft:coal' },
   input: { count: 2, itemId: 'minecraft:iron_ore' },
   output: { count: 2, itemId: 'minecraft:iron_ingot' },
-})
+}, browserItemDisplayNameOptions())
 
 const ONBOARDING_BASELINE_MODEL = onboardingViewModel({
   firstRun: true,

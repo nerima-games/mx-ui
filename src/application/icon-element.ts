@@ -44,6 +44,7 @@ import {
   writeHidden,
   writePercent,
 } from './dom-write.js'
+import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
 import type { DomElement, DomElementFactory } from './dom-surface.js'
 import type { IconState } from '../domain/hud-view-model.js'
 import { PALETTE_VAR } from './palette-css.js'
@@ -86,8 +87,13 @@ const FILL_TOKEN: Readonly<Record<IconKind, string>> = {
  * static, so they cost one `setAttribute` each at mount and nothing per frame.
  */
 export const ICON_ROW_LABEL: Readonly<Record<IconKind, string>> = {
-  heart: 'Health',
-  shank: 'Hunger',
+  heart: translateUiMessage(DEFAULT_UI_LANGUAGE, 'hud.health'),
+  shank: translateUiMessage(DEFAULT_UI_LANGUAGE, 'hud.hunger'),
+}
+
+export const ICON_ROW_MESSAGE_KEY: Readonly<Record<IconKind, UiMessageKey>> = {
+  heart: 'hud.health',
+  shank: 'hud.hunger',
 }
 
 const FILL_PERCENT: Readonly<Record<IconState, number>> = {

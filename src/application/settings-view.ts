@@ -1,4 +1,4 @@
-/** Settings controls projected from the mc-sim snapshot; the host owns interaction. */
+/** Settings controls projected from the mc-sim snapshot with host action callbacks. */
 import {
   type AttributeCell,
   type TextCell,
@@ -17,15 +17,44 @@ import {
   type SettingsSnapshot,
   type SettingsViewModel,
 } from '../domain/settings-view-model.js'
-import type { DomElement, DomElementFactory, DomInputElement } from './dom-surface.js'
+import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
 import { KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import { type SettingsServiceApi, isValidSettings } from '@nerima-games/mc-sim'
+import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import {
+  inheritUiLanguage,
+  setLocalizedAttribute,
+  setLocalizedText,
+  writeLocalizedAttribute,
+  writeLocalizedText,
+} from './ui-localization.js'
 import { Effect } from 'effect'
 
 export type SettingsView = {
   readonly root: DomElement
   readonly render: (model: SettingsViewModel) => void
+}
+
+export type SettingsSliderField =
+  | 'mouseSensitivity'
+  | 'masterVolume'
+  | 'sfxVolume'
+  | 'fovDegrees'
+  | 'uiScale'
+
+export type SettingsChoiceField = 'difficulty' | 'graphicsPreset' | 'reducedMotion' | 'colorVisionCorrection'
+export type SettingsToggleField = 'audioEnabled' | 'captionsEnabled'
+
+export type SettingsSliderValue = SettingsViewModel[SettingsSliderField]['value']
+export type SettingsChoiceValue = SettingsViewModel[SettingsChoiceField]
+
+export type SettingsViewActions<Action extends string = string> = {
+  readonly onClose?: () => void
+  readonly onSliderChange?: (field: SettingsSliderField, value: SettingsSliderValue) => void
+  readonly onChoiceChange?: (field: SettingsChoiceField, value: SettingsChoiceValue) => void
+  readonly onToggleChange?: (field: SettingsToggleField, checked: boolean) => void
+  readonly onBindingActivate?: (action: Action) => void
 }
 
 export type SettingsKeyRemappingFailure = {
@@ -71,63 +100,85 @@ const ariaChecked = (checked: boolean): string => {
   return CHECKED_FALSE
 }
 
-type SliderField =
-  | 'mouseSensitivity'
-  | 'masterVolume'
-  | 'sfxVolume'
-  | 'fovDegrees'
-  | 'uiScale'
+type SliderField = SettingsSliderField
+type ChoiceField = SettingsChoiceField
+type ToggleField = SettingsToggleField
 
-type ChoiceField = 'difficulty' | 'graphicsPreset' | 'reducedMotion' | 'colorVisionCorrection'
-type ToggleField = 'audioEnabled' | 'captionsEnabled'
-
-const SLIDER_LABEL: Readonly<Record<SliderField, string>> = {
-  fovDegrees: 'Field of view',
-  masterVolume: 'Master volume',
-  mouseSensitivity: 'Look sensitivity',
-  sfxVolume: 'SFX volume',
-  uiScale: 'UI scale',
+const SLIDER_MESSAGE_KEY: Readonly<Record<SliderField, UiMessageKey>> = {
+  fovDegrees: 'settings.field-of-view',
+  masterVolume: 'settings.master-volume',
+  mouseSensitivity: 'settings.look-sensitivity',
+  sfxVolume: 'settings.sfx-volume',
+  uiScale: 'settings.ui-scale',
 }
 
-const CHOICE_LABEL: Readonly<Record<ChoiceField, string>> = {
-  colorVisionCorrection: 'Color vision correction',
-  difficulty: 'Difficulty',
-  graphicsPreset: 'Graphics preset',
-  reducedMotion: 'Reduced motion',
+const CHOICE_MESSAGE_KEY: Readonly<Record<ChoiceField, UiMessageKey>> = {
+  colorVisionCorrection: 'settings.color-vision',
+  difficulty: 'settings.difficulty',
+  graphicsPreset: 'settings.graphics-preset',
+  reducedMotion: 'settings.reduced-motion',
 }
 
-const TOGGLE_LABEL: Readonly<Record<ToggleField, string>> = {
-  audioEnabled: 'Audio enabled',
-  captionsEnabled: 'Sound captions',
+const CHOICE_VALUE_MESSAGE_KEY: Readonly<{
+  [Field in ChoiceField]: Readonly<Record<SettingsViewModel[Field], UiMessageKey>>
+}> = {
+  colorVisionCorrection: {
+    deuteranopia: 'settings.choice.color.deuteranopia',
+    off: 'settings.choice.color.off',
+    protanopia: 'settings.choice.color.protanopia',
+    tritanopia: 'settings.choice.color.tritanopia',
+  },
+  difficulty: {
+    easy: 'settings.choice.difficulty.easy',
+    hard: 'settings.choice.difficulty.hard',
+    normal: 'settings.choice.difficulty.normal',
+    peaceful: 'settings.choice.difficulty.peaceful',
+  },
+  graphicsPreset: {
+    high: 'settings.choice.graphics.high',
+    low: 'settings.choice.graphics.low',
+    medium: 'settings.choice.graphics.medium',
+    ultra: 'settings.choice.graphics.ultra',
+  },
+  reducedMotion: {
+    full: 'settings.choice.motion.full',
+    reduced: 'settings.choice.motion.reduced',
+    system: 'settings.choice.motion.system',
+  },
 }
 
-const ACTION_LABEL: Readonly<Record<string, string>> = {
-  attack: 'Attack',
-  escape: 'Pause menu',
-  hotbarSlot1: 'Hotbar slot 1',
-  hotbarSlot2: 'Hotbar slot 2',
-  hotbarSlot3: 'Hotbar slot 3',
-  hotbarSlot4: 'Hotbar slot 4',
-  hotbarSlot5: 'Hotbar slot 5',
-  hotbarSlot6: 'Hotbar slot 6',
-  hotbarSlot7: 'Hotbar slot 7',
-  hotbarSlot8: 'Hotbar slot 8',
-  hotbarSlot9: 'Hotbar slot 9',
-  jump: 'Jump',
-  moveBackward: 'Move backward',
-  moveForward: 'Move forward',
-  moveLeft: 'Move left',
-  moveRight: 'Move right',
-  openChat: 'Chat',
-  openInventory: 'Inventory',
-  pickBlock: 'Pick block',
-  sneak: 'Sneak',
-  sprint: 'Sprint',
-  use: 'Use',
+const TOGGLE_MESSAGE_KEY: Readonly<Record<ToggleField, UiMessageKey>> = {
+  audioEnabled: 'settings.audio-enabled',
+  captionsEnabled: 'settings.sound-captions',
 }
 
-const UNBOUND_LABEL = 'Unbound'
+const ACTION_MESSAGE_KEY: Readonly<Record<string, UiMessageKey>> = {
+  attack: 'settings.action.attack',
+  escape: 'settings.action.pause-menu',
+  hotbarSlot1: 'settings.action.hotbar-1',
+  hotbarSlot2: 'settings.action.hotbar-2',
+  hotbarSlot3: 'settings.action.hotbar-3',
+  hotbarSlot4: 'settings.action.hotbar-4',
+  hotbarSlot5: 'settings.action.hotbar-5',
+  hotbarSlot6: 'settings.action.hotbar-6',
+  hotbarSlot7: 'settings.action.hotbar-7',
+  hotbarSlot8: 'settings.action.hotbar-8',
+  hotbarSlot9: 'settings.action.hotbar-9',
+  jump: 'settings.action.jump',
+  moveBackward: 'settings.action.move-backward',
+  moveForward: 'settings.action.move-forward',
+  moveLeft: 'settings.action.move-left',
+  moveRight: 'settings.action.move-right',
+  openChat: 'settings.action.chat',
+  openInventory: 'settings.action.inventory',
+  pickBlock: 'settings.action.pick-block',
+  sneak: 'settings.action.sneak',
+  sprint: 'settings.action.sprint',
+  use: 'settings.action.use',
+}
+
 const CLEAR_BINDING_CODE = 'Backspace'
+const FIRST_CHOICE_INDEX = 0
 type SliderElements = {
   readonly input: DomInputElement
   readonly output: TextCell
@@ -139,18 +190,17 @@ type SliderElements = {
 
 type ChoiceOptionElements = {
   readonly value: string
+  readonly button: DomInteractiveElement
   readonly selected: AttributeCell
+  readonly tabStop: AttributeCell
 }
 
 type ChoiceElements = ReadonlyArray<ChoiceOptionElements>
 
-type ChoiceFieldOptions = {
-  readonly field: ChoiceField
-  readonly choices: ReadonlyArray<SettingChoice<string>>
-}
-
 type ToggleElements = {
+  readonly button: DomInteractiveElement
   readonly checked: AttributeCell
+  currentValue: boolean
 }
 
 type BindingRowElements = {
@@ -178,29 +228,77 @@ const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement 
   return root
 }
 
-const createFieldCaption = (factory: DomElementFactory, row: DomElement, label: string): void => {
+const createCloseButton = (
+  factory: DomElementFactory,
+  root: DomElement,
+  actions: SettingsViewActions | undefined,
+): void => {
+  if (typeof actions?.onClose !== 'function') {
+    return
+  }
+  const close: DomInteractiveElement = factory.createElement('button')
+  close.setAttribute('type', 'button')
+  close.setAttribute('data-mx-ui', 'settings-close')
+  setLocalizedAttribute(close, 'aria-label', 'settings.close')
+  setLocalizedText(close, 'settings.close')
+  close.addEventListener('click', actions.onClose)
+  root.appendChild(close)
+}
+
+const createFieldCaption = (factory: DomElementFactory, row: DomElement, key: UiMessageKey): void => {
   const caption = factory.createElement('span')
-  caption.textContent = label
+  inheritUiLanguage(row, caption)
+  setLocalizedText(caption, key)
   row.appendChild(caption)
+}
+
+const choiceMessageKey = <Field extends ChoiceField>(
+  field: Field,
+  value: SettingsViewModel[Field],
+): UiMessageKey => CHOICE_VALUE_MESSAGE_KEY[field][value]
+
+type SettingsControlContext = Readonly<{
+  factory: DomElementFactory
+  root: DomElement
+  actions: SettingsViewActions | undefined
+}>
+
+const wireSliderInput = (
+  input: DomInputElement,
+  field: SliderField,
+  actions: SettingsViewActions | undefined,
+): void => {
+  if (typeof actions?.onSliderChange === 'function') {
+    input.addEventListener('input', () => actions.onSliderChange?.(field, Number(input.value)))
+  }
+}
+
+const createSliderOutput = (factory: DomElementFactory, row: DomElement, field: SliderField): DomElement => {
+  const output = factory.createElement('output')
+  output.setAttribute('data-settings-field-output', field)
+  row.appendChild(output)
+  return output
 }
 
 const createSliderInput = (factory: DomElementFactory, row: DomElement, field: SliderField): DomInputElement => {
   const input: DomInputElement = factory.createElement('input')
   input.setAttribute('type', 'range')
   input.setAttribute('data-settings-field', field)
-  input.setAttribute('aria-label', SLIDER_LABEL[field])
+  input.setAttribute('data-focus-group', `settings-slider-${field}`)
+  input.setAttribute('data-focus-index', '0')
+  input.setAttribute('data-focus-columns', '1')
+  setLocalizedAttribute(input, 'aria-label', SLIDER_MESSAGE_KEY[field])
   row.appendChild(input)
   return input
 }
 
-const createSlider = (factory: DomElementFactory, root: DomElement, field: SliderField): SliderElements => {
+const createSlider = ({ actions, factory, root }: SettingsControlContext, field: SliderField): SliderElements => {
   const row = factory.createElement('div')
   row.setAttribute('data-mx-ui', `settings-${field}-row`)
-  createFieldCaption(factory, row, SLIDER_LABEL[field])
+  createFieldCaption(factory, row, SLIDER_MESSAGE_KEY[field])
   const input = createSliderInput(factory, row, field)
-  const output = factory.createElement('output')
-  output.setAttribute('data-settings-field-output', field)
-  row.appendChild(output)
+  wireSliderInput(input, field, actions)
+  const output = createSliderOutput(factory, row, field)
   root.appendChild(row)
   return {
     input,
@@ -212,93 +310,227 @@ const createSlider = (factory: DomElementFactory, root: DomElement, field: Slide
   }
 }
 
-const createChoice = (
-  factory: DomElementFactory,
-  root: DomElement,
-  { field, choices }: ChoiceFieldOptions,
+type ChoiceButtonContext<Field extends ChoiceField> = Readonly<{
+  button: DomInteractiveElement
+  field: Field
+  value: SettingsViewModel[Field]
+  index: number
+  choiceCount: number
+}>
+
+const configureChoiceButtonMembership = <Field extends ChoiceField>({ button, choiceCount, field, index, value }: ChoiceButtonContext<Field>): void => {
+  button.setAttribute('data-interaction-target', 'settings-choice')
+  button.setAttribute('data-settings-field', field)
+  button.setAttribute('data-setting-value', value)
+  button.setAttribute('data-focus-group', `settings-choice-${field}`)
+  button.setAttribute('data-focus-index', String(index))
+  button.setAttribute('data-focus-columns', String(choiceCount))
+}
+
+const configureChoiceButtonLabel = <Field extends ChoiceField>(context: ChoiceButtonContext<Field>): void => {
+  const messageKey = choiceMessageKey(context.field, context.value)
+  const ariaValues = {
+    choice: { key: messageKey },
+    setting: { key: CHOICE_MESSAGE_KEY[context.field] },
+  }
+  setLocalizedAttribute(context.button, 'aria-label', 'settings.choice-aria', ariaValues)
+  setLocalizedText(context.button, messageKey)
+}
+
+const wireChoiceButton = <Field extends ChoiceField>(
+  context: ChoiceOptionContext<Field>,
+  button: DomInteractiveElement,
+): void => {
+  if (typeof context.actions?.onChoiceChange === 'function') {
+    button.addEventListener('click', () => context.actions?.onChoiceChange?.(context.field, context.value))
+  }
+}
+
+type ChoiceOptionContext<Field extends ChoiceField> = Readonly<{
+  factory: DomElementFactory
+  row: DomElement
+  field: Field
+  value: SettingsViewModel[Field]
+  index: number
+  choiceCount: number
+  actions: SettingsViewActions | undefined
+}>
+
+const createChoiceButton = <Field extends ChoiceField>(context: ChoiceOptionContext<Field>): DomInteractiveElement => {
+  const button: DomInteractiveElement = context.factory.createElement('button')
+  inheritUiLanguage(context.row, button)
+  button.setAttribute('type', 'button')
+  const buttonContext = {
+    button,
+    choiceCount: context.choiceCount,
+    field: context.field,
+    index: context.index,
+    value: context.value,
+  }
+  configureChoiceButtonMembership(buttonContext)
+  configureChoiceButtonLabel(buttonContext)
+  wireChoiceButton(context, button)
+  return button
+}
+
+const createChoiceOption = <Field extends ChoiceField>(
+  context: ChoiceOptionContext<Field>,
+): ChoiceOptionElements => {
+  const button = createChoiceButton(context)
+  context.row.appendChild(button)
+  return {
+    button,
+    selected: attributeCell(button, 'aria-pressed'),
+    tabStop: attributeCell(button, 'tabindex'),
+    value: context.value,
+  }
+}
+
+const createChoice = <Field extends ChoiceField>(
+  context: SettingsControlContext,
+  { field, choices }: Readonly<{
+    field: Field
+    choices: ReadonlyArray<SettingChoice<SettingsViewModel[Field]>>
+  }>,
 ): ChoiceElements => {
+  const { actions, factory, root } = context
   const row = factory.createElement('div')
   row.setAttribute('data-mx-ui', `settings-${field}-row`)
   row.setAttribute('role', 'group')
-  row.setAttribute('aria-label', CHOICE_LABEL[field])
+  setLocalizedAttribute(row, 'aria-label', CHOICE_MESSAGE_KEY[field])
   row.setAttribute('data-settings-field', field)
-  createFieldCaption(factory, row, CHOICE_LABEL[field])
-  const options = choices.map(({ label, value }) => {
-    const button = factory.createElement('button')
-    button.setAttribute('type', 'button')
-    button.setAttribute('data-interaction-target', 'settings-choice')
-    button.setAttribute('data-settings-field', field)
-    button.setAttribute('data-setting-value', value)
-    button.setAttribute('aria-label', `${CHOICE_LABEL[field]}: ${label}`)
-    button.textContent = label
-    row.appendChild(button)
-    return { selected: attributeCell(button, 'aria-pressed'), value }
-  })
+  createFieldCaption(factory, row, CHOICE_MESSAGE_KEY[field])
+  const options = choices.map(({ value }, index) => createChoiceOption({
+    actions,
+    choiceCount: choices.length,
+    factory,
+    field,
+    index,
+    row,
+    value,
+  }))
   root.appendChild(row)
   return options
 }
 
-const createToggle = (factory: DomElementFactory, root: DomElement, field: ToggleField): ToggleElements => {
-  const label = TOGGLE_LABEL[field]
-  const button = factory.createElement('button')
+const setFocusMembership = (element: DomElement, group: string): void => {
+  element.setAttribute('data-focus-group', group)
+  element.setAttribute('data-focus-index', '0')
+  element.setAttribute('data-focus-columns', '1')
+}
+
+const configureToggleButton = (
+  button: DomInteractiveElement,
+  root: DomElement,
+  field: ToggleField,
+): void => {
+  const key = TOGGLE_MESSAGE_KEY[field]
+  inheritUiLanguage(root, button)
   button.setAttribute('type', 'button')
   button.setAttribute('role', 'switch')
   button.setAttribute('data-interaction-target', 'settings-toggle')
   button.setAttribute('data-settings-field', field)
-  button.setAttribute('aria-label', label)
-  button.textContent = label
-  root.appendChild(button)
-  return { checked: attributeCell(button, 'aria-checked') }
+  setFocusMembership(button, `settings-toggle-${field}`)
+  button.setAttribute('tabindex', '0')
+  setLocalizedAttribute(button, 'aria-label', key)
+  setLocalizedText(button, key)
 }
 
-const createSliderControls = (factory: DomElementFactory, root: DomElement): SliderControls => ({
-  fovDegrees: createSlider(factory, root, 'fovDegrees'),
-  masterVolume: createSlider(factory, root, 'masterVolume'),
-  mouseSensitivity: createSlider(factory, root, 'mouseSensitivity'),
-  sfxVolume: createSlider(factory, root, 'sfxVolume'),
-  uiScale: createSlider(factory, root, 'uiScale'),
+const createToggle = (context: SettingsControlContext, field: ToggleField): ToggleElements => {
+  const { actions, factory, root } = context
+  const button: DomInteractiveElement = factory.createElement('button')
+  configureToggleButton(button, root, field)
+  const elements: ToggleElements = { button, checked: attributeCell(button, 'aria-checked'), currentValue: false }
+  if (typeof actions?.onToggleChange === 'function') {
+    button.addEventListener('click', () => {
+      actions.onToggleChange?.(field, !elements.currentValue)
+    })
+  }
+  root.appendChild(button)
+  return elements
+}
+
+const createSliderControls = (
+  context: SettingsControlContext,
+): SliderControls => ({
+  fovDegrees: createSlider(context, 'fovDegrees'),
+  masterVolume: createSlider(context, 'masterVolume'),
+  mouseSensitivity: createSlider(context, 'mouseSensitivity'),
+  sfxVolume: createSlider(context, 'sfxVolume'),
+  uiScale: createSlider(context, 'uiScale'),
 })
 
-const createChoiceControls = (factory: DomElementFactory, root: DomElement): ChoiceControls => ({
-  colorVisionCorrection: createChoice(factory, root, {
+const createChoiceControls = (
+  context: SettingsControlContext,
+): ChoiceControls => ({
+  colorVisionCorrection: createChoice(context, {
     choices: COLOR_VISION_CHOICES,
     field: 'colorVisionCorrection',
   }),
-  difficulty: createChoice(factory, root, { choices: DIFFICULTY_CHOICES, field: 'difficulty' }),
-  graphicsPreset: createChoice(factory, root, { choices: GRAPHICS_PRESET_CHOICES, field: 'graphicsPreset' }),
-  reducedMotion: createChoice(factory, root, { choices: REDUCED_MOTION_CHOICES, field: 'reducedMotion' }),
+  difficulty: createChoice(context, { choices: DIFFICULTY_CHOICES, field: 'difficulty' }),
+  graphicsPreset: createChoice(context, { choices: GRAPHICS_PRESET_CHOICES, field: 'graphicsPreset' }),
+  reducedMotion: createChoice(context, { choices: REDUCED_MOTION_CHOICES, field: 'reducedMotion' }),
 })
 
-const createToggleControls = (factory: DomElementFactory, root: DomElement): ToggleControls => ({
-  audioEnabled: createToggle(factory, root, 'audioEnabled'),
-  captionsEnabled: createToggle(factory, root, 'captionsEnabled'),
+const createToggleControls = (
+  context: SettingsControlContext,
+): ToggleControls => ({
+  audioEnabled: createToggle(context, 'audioEnabled'),
+  captionsEnabled: createToggle(context, 'captionsEnabled'),
 })
 
-const actionLabel = (action: string): string => ACTION_LABEL[action] ?? action
+const actionMessageKey = (action: string): UiMessageKey => ACTION_MESSAGE_KEY[action] ?? 'settings.action.unknown'
 
-const createBindingControl = (factory: DomElementFactory, action: string, label: string) => {
-  const button = factory.createElement('button')
+const configureBindingButton = (button: DomInteractiveElement, action: string): void => {
   button.setAttribute('type', 'button')
   button.setAttribute('data-interaction-target', 'settings-binding')
   button.setAttribute('data-binding-action', action)
-  button.setAttribute('aria-label', `Change ${label} key (currently ${UNBOUND_LABEL})`)
+  setFocusMembership(button, `settings-binding-${action}`)
+  button.setAttribute('tabindex', '0')
+}
+
+const wireBindingButton = (
+  button: DomInteractiveElement,
+  action: string,
+  actions: SettingsViewActions | undefined,
+): void => {
+  if (typeof actions?.onBindingActivate === 'function') {
+    button.addEventListener('click', () => actions.onBindingActivate?.(action))
+  }
+}
+
+const createBindingControl = (
+  context: SettingsControlContext,
+  action: string,
+  labelKey: UiMessageKey,
+) => {
+  const button: DomInteractiveElement = context.factory.createElement('button')
+  configureBindingButton(button, action)
+  wireBindingButton(button, action, context.actions)
+  const values: UiMessageValues = { key: { key: 'settings.unbound' }, label: { key: labelKey } }
+  setLocalizedAttribute(button, 'aria-label', 'settings.change-key', values)
   return {
     button,
     elements: {
       accessibleName: attributeCell(button, 'aria-label'),
       value: textCell(button),
-    },
+},
   }
 }
 
-const createBindingRow = (factory: DomElementFactory, root: DomElement, action: string): BindingRowElements => {
-  const label = actionLabel(action)
-  const row = factory.createElement('div')
+const createBindingRow = (
+  context: SettingsControlContext,
+  action: string,
+): BindingRowElements => {
+  const labelKey = actionMessageKey(action)
+  const row = context.factory.createElement('div')
+  inheritUiLanguage(context.root, row)
   row.setAttribute('data-mx-ui', 'settings-binding-row')
-  createFieldCaption(factory, row, label)
-  const { button, elements } = createBindingControl(factory, action, label)
+  createFieldCaption(context.factory, row, labelKey)
+  const { button, elements } = createBindingControl(context, action, labelKey)
+  inheritUiLanguage(row, button)
   row.appendChild(button)
-  root.appendChild(row)
+  context.root.appendChild(row)
   return elements
 }
 
@@ -313,9 +545,19 @@ const writeSlider = (elements: SliderElements, field: NumericSettingView): void 
   writeText(elements.output, field.label)
 }
 
+const choiceTabStopValue = (selected: boolean, hasSelectedValue: boolean, index: number): string => {
+  if (selected || (!hasSelectedValue && index === FIRST_CHOICE_INDEX)) {
+    return '0'
+  }
+  return '-1'
+}
+
 const writeChoice = (elements: ChoiceElements, selectedValue: string): void => {
-  for (const option of elements) {
-    writeAttribute(option.selected, ariaChecked(option.value === selectedValue))
+  const hasSelectedValue = elements.some((option) => option.value === selectedValue)
+  for (const [index, option] of elements.entries()) {
+    const selected = option.value === selectedValue
+    writeAttribute(option.selected, ariaChecked(selected))
+    writeAttribute(option.tabStop, choiceTabStopValue(selected, hasSelectedValue, index))
   }
 }
 
@@ -335,6 +577,8 @@ const writeChoices = (elements: ChoiceControls, model: SettingsViewModel): void 
 }
 
 const writeToggles = (elements: ToggleControls, model: SettingsViewModel): void => {
+  elements.audioEnabled.currentValue = model.audioEnabled
+  elements.captionsEnabled.currentValue = model.captionsEnabled
   writeAttribute(elements.audioEnabled.checked, ariaChecked(model.audioEnabled))
   writeAttribute(elements.captionsEnabled.checked, ariaChecked(model.captionsEnabled))
 }
@@ -342,19 +586,31 @@ const writeToggles = (elements: ToggleControls, model: SettingsViewModel): void 
 type BindingRenderContext = {
   readonly factory: DomElementFactory
   readonly root: DomElement
+  readonly actions: SettingsViewActions | undefined
   readonly elements: Map<string, BindingRowElements>
   readonly rows: SettingsViewModel['bindingRows']
 }
 
-const writeBindingRows = ({ factory, root, elements, rows }: BindingRenderContext): void => {
+const bindingNameValue = (code: string | undefined): string | Readonly<{ key: UiMessageKey }> => {
+  if (typeof code === 'undefined') {
+    return { key: 'settings.unbound' }
+  }
+  return code
+}
+
+const writeBindingRows = ({ actions, factory, root, elements, rows }: BindingRenderContext): void => {
   for (const row of rows) {
-    const binding = elements.get(row.action) ?? createBindingRow(factory, root, row.action)
+    const binding = elements.get(row.action) ?? createBindingRow({ actions, factory, root }, row.action)
     elements.set(row.action, binding)
-    writeText(binding.value, row.code ?? UNBOUND_LABEL)
-    writeAttribute(
-      binding.accessibleName,
-      `Change ${actionLabel(row.action)} key (currently ${row.code ?? UNBOUND_LABEL})`,
-    )
+    if (typeof row.code === 'undefined') {
+      writeLocalizedText(binding.value, 'settings.unbound')
+    } else {
+      writeText(binding.value, row.code)
+    }
+    writeLocalizedAttribute(binding.accessibleName, 'settings.change-key', {
+      key: bindingNameValue(row.code),
+      label: { key: actionMessageKey(row.action) },
+    })
   }
 }
 
@@ -363,13 +619,14 @@ type SettingsRenderContext = {
   readonly root: DomElement
   readonly elements: SettingsElements
   readonly model: SettingsViewModel
+  readonly actions: SettingsViewActions | undefined
 }
 
-const renderSettingsModel = ({ factory, root, elements, model }: SettingsRenderContext): void => {
+const renderSettingsModel = ({ actions, factory, root, elements, model }: SettingsRenderContext): void => {
   writeSliders(elements.sliders, model)
   writeChoices(elements.choices, model)
   writeToggles(elements.toggles, model)
-  writeBindingRows({ elements: elements.bindingRows, factory, root, rows: model.bindingRows })
+  writeBindingRows({ actions, elements: elements.bindingRows, factory, root, rows: model.bindingRows })
 }
 
 const isBindableAction = <Action extends string>(
@@ -487,18 +744,24 @@ export const unbindSettingsKey = <Action extends string>(
   return service.unbindKey(inputAction(action))
 }
 
-/** Creates a listener-free settings projection. The host owns every interaction. */
-export const createSettingsView = (factory: DomElementFactory, parent: DomElement): SettingsView => {
+/** Projects settings and wires optional native action callbacks. */
+export const createSettingsView = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  actions?: SettingsViewActions,
+): SettingsView => {
   const root = createRoot(factory, parent)
+  createCloseButton(factory, root, actions)
+  const context: SettingsControlContext = { actions, factory, root }
   const elements: SettingsElements = {
     bindingRows: new Map(),
-    choices: createChoiceControls(factory, root),
-    sliders: createSliderControls(factory, root),
-    toggles: createToggleControls(factory, root),
+    choices: createChoiceControls(context),
+    sliders: createSliderControls(context),
+    toggles: createToggleControls(context),
   }
 
   return {
-    render: (model: SettingsViewModel): void => renderSettingsModel({ elements, factory, model, root }),
+    render: (model: SettingsViewModel): void => renderSettingsModel({ actions, elements, factory, model, root }),
     root,
   }
 }

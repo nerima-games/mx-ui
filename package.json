@@ -29,10 +29,12 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./assets/game-font.css": "./assets/game-font.css"
   },
   "files": [
     "dist",
+    "assets",
     "LICENSE",
     "README.md"
   ],

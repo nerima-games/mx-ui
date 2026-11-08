@@ -3,6 +3,9 @@ import {
   type OnboardingIntent,
   type OnboardingViewModel,
 } from '../domain/onboarding-view-model.js'
+import { type TextCell, textCell } from './dom-write.js'
+import { type UiMessageKey, inputActionMessageKey } from '../domain/ui-language.js'
+import { inheritUiLanguage, setLocalizedAttribute, setLocalizedText, writeLocalizedText } from './ui-localization.js'
 
 export type OnboardingCallbacks = {
   readonly onIntent: (intent: OnboardingIntent) => void
@@ -22,19 +25,20 @@ type OnboardingElements = {
 type QuickControlRowElements = {
   readonly row: DomElement
   readonly action: DomElement
+  readonly actionText: TextCell
   readonly keys: DomElement
 }
 
 type TextBlockOptions = {
   readonly tag: string
-  readonly text: string
+  readonly key: UiMessageKey
 }
 
 type ActionButtonOptions = {
   readonly action: string
   readonly factory: DomElementFactory
   readonly intent: OnboardingIntent
-  readonly label: string
+  readonly labelKey: UiMessageKey
   readonly onIntent: OnboardingCallbacks['onIntent']
   readonly parent: DomElement
 }
@@ -50,20 +54,20 @@ const createRootElement = (factory: DomElementFactory): DomElement => {
   const root = factory.createElement('section')
   root.setAttribute('data-mx-ui', 'onboarding')
   root.setAttribute('role', 'region')
-  root.setAttribute('aria-label', 'Quick Controls onboarding')
+  setLocalizedAttribute(root, 'aria-label', 'onboarding.aria')
   root.setAttribute('hidden', '')
   return root
 }
 
 const appendTextBlock = (factory: DomElementFactory, parent: DomElement, options: TextBlockOptions): void => {
   const element = factory.createElement(options.tag)
-  element.textContent = options.text
+  setLocalizedText(element, options.key)
   parent.appendChild(element)
 }
 
 const createControlList = (factory: DomElementFactory, root: DomElement): DomElement => {
   const controls = factory.createElement('ul')
-  controls.setAttribute('aria-label', 'Quick Controls')
+  setLocalizedAttribute(controls, 'aria-label', 'onboarding.controls-aria')
   root.appendChild(controls)
   return controls
 }
@@ -71,15 +75,15 @@ const createControlList = (factory: DomElementFactory, root: DomElement): DomEle
 const createActionGroup = (factory: DomElementFactory, root: DomElement): DomElement => {
   const actions = factory.createElement('div')
   actions.setAttribute('role', 'group')
-  actions.setAttribute('aria-label', 'Quick Controls actions')
+  setLocalizedAttribute(actions, 'aria-label', 'onboarding.actions-aria')
   root.appendChild(actions)
   return actions
 }
 
 const createRoot = (factory: DomElementFactory, parent: DomElement): OnboardingElements => {
   const root = createRootElement(factory)
-  appendTextBlock(factory, root, { tag: 'h2', text: 'Quick Controls' })
-  appendTextBlock(factory, root, { tag: 'p', text: 'Use these controls to get started.' })
+  appendTextBlock(factory, root, { key: 'onboarding.title', tag: 'h2' })
+  appendTextBlock(factory, root, { key: 'onboarding.intro', tag: 'p' })
   const controls = createControlList(factory, root)
   const actions = createActionGroup(factory, root)
   parent.appendChild(root)
@@ -91,21 +95,24 @@ const createQuickControlRow = (
   parent: DomElement,
 ): QuickControlRowElements => {
   const row = factory.createElement('li')
+  inheritUiLanguage(parent, row)
   row.setAttribute('hidden', '')
   const action = factory.createElement('span')
+  inheritUiLanguage(row, action)
   row.appendChild(action)
   const keys = factory.createElement('kbd')
   row.appendChild(keys)
   parent.appendChild(row)
-  return { action, keys, row }
+  return { action, actionText: textCell(action), keys, row }
 }
 
-const createActionButton = ({ action, factory, intent, label, onIntent, parent }: ActionButtonOptions): void => {
+const createActionButton = ({ action, factory, intent, labelKey, onIntent, parent }: ActionButtonOptions): void => {
   const button = factory.createElement('button')
+  inheritUiLanguage(parent, button)
   button.setAttribute('type', 'button')
-  button.setAttribute('aria-label', label)
+  setLocalizedAttribute(button, 'aria-label', labelKey)
   button.setAttribute('data-onboarding-action', action)
-  button.textContent = label
+  setLocalizedText(button, labelKey)
   button.addEventListener('click', () => onIntent(intent))
   parent.appendChild(button)
 }
@@ -119,7 +126,7 @@ const createActionButtons = (
     action: 'OpenHowToPlay',
     factory,
     intent: { _tag: 'OpenHowToPlay' },
-    label: 'How to Play',
+    labelKey: 'onboarding.how-to-play',
     onIntent: callbacks.onIntent,
     parent: elements.actions,
   })
@@ -127,7 +134,7 @@ const createActionButtons = (
     action: 'PersistQuickControlsDismissal',
     factory,
     intent: { _tag: 'PersistQuickControlsDismissal' },
-    label: 'Dismiss Quick Controls',
+    labelKey: 'onboarding.dismiss',
     onIntent: callbacks.onIntent,
     parent: elements.actions,
   })
@@ -137,7 +144,9 @@ const writeQuickControlRow = (row: QuickControlRowElements, hint: OnboardingView
   row.row.removeAttribute('hidden')
   row.row.setAttribute('data-onboarding-control', 'true')
   row.row.setAttribute('data-onboarding-control-action', hint.action)
-  row.action.textContent = `${hint.action}: `
+  writeLocalizedText(row.actionText, 'onboarding.action', {
+    action: { key: inputActionMessageKey(hint.action) },
+  })
   row.keys.textContent = hint.keys
 }
 

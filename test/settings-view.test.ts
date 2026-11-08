@@ -75,6 +75,22 @@ describe('createSettingsView', () => {
     expect(root.find('data-setting-value', 'off')?.attributes.get('aria-pressed')).toBe('true')
   })
 
+  it('keeps the first choice reachable if a persisted selection is no longer offered', () => {
+    const factory = fakeDocument()
+    const host = factory.createElement('main')
+    const view = createSettingsView(factory, host)
+    const root = fakeElement(view.root)
+    const viewModel = model()
+
+    view.render({ ...viewModel, reducedMotion: JSON.parse('"legacy-motion-setting"') })
+
+    const choices = root.findAll('data-interaction-target', 'settings-choice').filter(
+      (choice) => choice.attributes.get('data-settings-field') === 'reducedMotion',
+    )
+    expect(choices.map((choice) => choice.attributes.get('tabindex'))).toStrictEqual(['0', '-1', '-1'])
+    expect(choices.every((choice) => choice.attributes.get('aria-pressed') === 'false')).toBe(true)
+  })
+
   it('announces the action and current binding on key buttons', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
@@ -111,7 +127,7 @@ describe('createSettingsView', () => {
     })
 
     expect(root.find('data-binding-action', 'moddedAction')?.attributes.get('aria-label')).toBe(
-      'Change moddedAction key (currently Unbound)',
+      'Change Unknown action key (currently Unbound)',
     )
   })
 

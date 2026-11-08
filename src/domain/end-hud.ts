@@ -1,5 +1,12 @@
 /* eslint-disable no-undefined -- Optional HUD notifications follow the existing public API convention. */
 
+import {
+  DEFAULT_UI_LANGUAGE,
+  type UiLanguage,
+  type UiMessageKey,
+  translateUiMessage,
+} from './ui-language.js'
+
 export const ENDER_DRAGON_DEFAULT_NAME = 'Ender Dragon'
 
 const ZERO = 0
@@ -8,6 +15,13 @@ const HALF_ROTATION_DEGREES = 180
 const FULL_ROTATION_DEGREES = 360
 
 export type EnderDragonBossPhase = 'circling' | 'perching' | 'charging' | 'dead'
+
+const BOSS_PHASE_MESSAGE_KEY: Readonly<Record<EnderDragonBossPhase, UiMessageKey>> = {
+  charging: 'end-hud.boss-phase.charging',
+  circling: 'end-hud.boss-phase.circling',
+  dead: 'end-hud.boss-phase.dead',
+  perching: 'end-hud.boss-phase.perching',
+}
 
 export interface BossHealthSnapshot {
   readonly name: string
@@ -35,8 +49,11 @@ const finiteOrZero = (value: number): number => {
   return ZERO
 }
 
-export const bossHealthBarViewModel = (snapshot: BossHealthSnapshot): BossHealthBarViewModel => {
-  const name = snapshot.name.trim() || ENDER_DRAGON_DEFAULT_NAME
+export const bossHealthBarViewModel = (
+  snapshot: BossHealthSnapshot,
+  language: UiLanguage = DEFAULT_UI_LANGUAGE,
+): BossHealthBarViewModel => {
+  const name = snapshot.name.trim() || translateUiMessage(language, 'end-hud.boss-default-name')
   const max = Math.max(ZERO, finiteOrZero(snapshot.max))
   const current = clamp(finiteOrZero(snapshot.current), ZERO, max)
   const hidden = snapshot.phase === 'dead' || max === ZERO || current === ZERO
@@ -46,7 +63,12 @@ export const bossHealthBarViewModel = (snapshot: BossHealthSnapshot): BossHealth
   }
 
   return {
-    accessibleLabel: `${name}: ${current} of ${max} health, ${snapshot.phase}.`,
+    accessibleLabel: translateUiMessage(language, 'end-hud.boss-health', {
+      current,
+      max,
+      name,
+      phase: translateUiMessage(language, BOSS_PHASE_MESSAGE_KEY[snapshot.phase]),
+    }),
     current,
     hidden,
     max,
@@ -89,30 +111,32 @@ const normalizeRelativeBearing = (degrees: number): number => {
   return wrapped
 }
 
-const describeRelativeBearing = (degrees: number): string => {
+const describeRelativeBearing = (degrees: number, language: UiLanguage): string => {
   const rounded = Math.round(degrees)
   if (rounded === ZERO) {
-    return 'ahead'
+    return translateUiMessage(language, 'end-hud.stronghold-ahead')
   }
   if (Math.abs(rounded) === HALF_ROTATION_DEGREES) {
-    return 'behind'
+    return translateUiMessage(language, 'end-hud.stronghold-behind')
   }
-  let direction = 'left'
   if (rounded > ZERO) {
-    direction = 'right'
+    return translateUiMessage(language, 'end-hud.stronghold-degrees-right', { degrees: Math.abs(rounded) })
   }
-  return `${Math.abs(rounded)} degrees ${direction}`
+  return translateUiMessage(language, 'end-hud.stronghold-degrees-left', { degrees: Math.abs(rounded) })
 }
 
-export const strongholdLocatorViewModel = (snapshot: StrongholdLocatorSnapshot): StrongholdLocatorViewModel => {
+export const strongholdLocatorViewModel = (
+  snapshot: StrongholdLocatorSnapshot,
+  language: UiLanguage = DEFAULT_UI_LANGUAGE,
+): StrongholdLocatorViewModel => {
   if (snapshot.status === 'unknown') {
-    return { accessibleLabel: 'Stronghold location unknown.', status: 'unknown' }
+    return { accessibleLabel: translateUiMessage(language, 'end-hud.stronghold-unknown'), status: 'unknown' }
   }
   if (snapshot.status === 'lost') {
-    return { accessibleLabel: 'Eye of Ender signal lost.', status: 'lost' }
+    return { accessibleLabel: translateUiMessage(language, 'end-hud.stronghold-lost'), status: 'lost' }
   }
   if (!Number.isFinite(snapshot.relativeBearingDegrees) || !Number.isFinite(snapshot.distanceBlocks)) {
-    return { accessibleLabel: 'Stronghold location unknown.', status: 'unknown' }
+    return { accessibleLabel: translateUiMessage(language, 'end-hud.stronghold-unknown'), status: 'unknown' }
   }
 
   const relativeBearingDegrees = normalizeRelativeBearing(snapshot.relativeBearingDegrees)
@@ -120,7 +144,10 @@ export const strongholdLocatorViewModel = (snapshot: StrongholdLocatorSnapshot):
   const roundedDistance = Math.round(distanceBlocks)
 
   return {
-    accessibleLabel: `Stronghold: ${roundedDistance} blocks away, ${describeRelativeBearing(relativeBearingDegrees)}.`,
+    accessibleLabel: translateUiMessage(language, 'end-hud.stronghold-tracking', {
+      bearing: describeRelativeBearing(relativeBearingDegrees, language),
+      distance: roundedDistance,
+    }),
     distanceBlocks,
     relativeBearingDegrees,
     status: 'tracking',
@@ -137,7 +164,10 @@ export interface PortalEyeProgressViewModel {
   readonly accessibleLabel: string
 }
 
-export const portalEyeProgressViewModel = (inserted: number): PortalEyeProgressViewModel => {
+export const portalEyeProgressViewModel = (
+  inserted: number,
+  language: UiLanguage = DEFAULT_UI_LANGUAGE,
+): PortalEyeProgressViewModel => {
   let whole = ZERO
   if (!Number.isNaN(inserted)) {
     whole = Math.floor(inserted)
@@ -145,7 +175,10 @@ export const portalEyeProgressViewModel = (inserted: number): PortalEyeProgressV
   const clamped = clamp(whole, ZERO, PORTAL_EYE_SLOT_COUNT)
 
   return {
-    accessibleLabel: `${clamped} of ${PORTAL_EYE_SLOT_COUNT} portal eyes inserted.`,
+    accessibleLabel: translateUiMessage(language, 'end-hud.portal-eye-progress', {
+      inserted: clamped,
+      total: PORTAL_EYE_SLOT_COUNT,
+    }),
     complete: clamped === PORTAL_EYE_SLOT_COUNT,
     inserted: clamped,
     progressPercent: Math.floor((clamped / PORTAL_EYE_SLOT_COUNT) * FULL_PERCENT),
@@ -177,6 +210,7 @@ export const dragonDefeatPresentationKey = (eventId: string): string | undefined
 
 export const dragonDefeatRewardNotification = (
   snapshot: DragonDefeatRewardSnapshot,
+  language: UiLanguage = DEFAULT_UI_LANGUAGE,
 ): DragonDefeatRewardNotification | undefined => {
   const presentationKey = dragonDefeatPresentationKey(snapshot.eventId)
   if (presentationKey === undefined) {
@@ -188,13 +222,14 @@ export const dragonDefeatRewardNotification = (
     ZERO,
     Number.MAX_SAFE_INTEGER,
   )
-  const message = `${experiencePoints} XP awarded.`
+  const title = translateUiMessage(language, 'end-hud.dragon-defeated')
+  const message = translateUiMessage(language, 'end-hud.xp-awarded', { experiencePoints })
 
   return {
-    accessibleLabel: `Ender Dragon defeated. ${message}`,
+    accessibleLabel: translateUiMessage(language, 'end-hud.dragon-defeat-accessible', { message, title }),
     experiencePoints,
     message,
     presentationKey,
-    title: 'Ender Dragon defeated',
+    title,
   }
 }

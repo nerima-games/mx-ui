@@ -187,7 +187,7 @@ describe('operable pause menu', () => {
     mounted.root.find('data-pause-action', 'resume')?.dispatch('click')
     expect(mounted.stackChanges).toHaveLength(stackChangesAfterOpen)
     expect(mounted.root.find('data-mx-ui', 'pause-settings-modal')?.attributes.get('role')).toBe('dialog')
-    expect(mounted.root.find('data-mx-ui', 'pause-settings-modal')?.attributes.get('aria-label')).toBe('Options')
+    expect(mounted.root.find('data-mx-ui', 'pause-settings-modal')?.attributes.get('aria-label')).toBe('Settings')
     expect(mounted.root.find('data-mx-ui', 'pause-settings-modal')?.attributes.get('aria-modal')).toBe('true')
     expect(mounted.root.find('data-testid', 'pause-overlay')?.attributes.has('inert')).toBe(true)
     expect(focusedActions(mounted.factory, beforeOpen)).toStrictEqual(['close-settings'])

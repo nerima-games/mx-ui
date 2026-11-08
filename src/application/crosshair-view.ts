@@ -110,10 +110,12 @@ import {
   writePercent,
   writeStyle,
 } from './dom-write.js'
+import { DEFAULT_UI_LANGUAGE, translateUiMessage } from '../domain/ui-language.js'
 import type { DomElement, DomElementFactory } from './dom-surface.js'
 import { type MotionPreference, shouldAnimate } from '../domain/accessibility.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import type { CrosshairViewModel } from '../domain/crosshair.js'
+import { setLocalizedAttribute } from './ui-localization.js'
 
 /** The reticle's box, in CSS pixels. `crosshair.ts:15-16` (`width/height: 20px`). */
 export const CROSSHAIR_SIZE = '20px'
@@ -143,7 +145,7 @@ export const CROSSHAIR_HALO_WIDTH = '1px'
 export const CROSSHAIR_PULSE_SCALE = 1.45
 
 /** Accessible name for the active block-breaking progress indicator. */
-export const CROSSHAIR_BREAK_PROGRESS_LABEL = 'Block breaking progress'
+export const CROSSHAIR_BREAK_PROGRESS_LABEL: string = translateUiMessage(DEFAULT_UI_LANGUAGE, 'crosshair.break-progress')
 
 export type CrosshairView = {
   /** The element the host appended us to a parent as. Exposed for tests and previews. */
@@ -285,7 +287,7 @@ const buildReticle = (factory: DomElementFactory, root: DomElement): ReticleElem
 const applyProgressBarAttributes = (progress: DomElement): void => {
   progress.setAttribute('data-mx-ui', 'crosshair-progress')
   progress.setAttribute('role', 'progressbar')
-  progress.setAttribute('aria-label', CROSSHAIR_BREAK_PROGRESS_LABEL)
+  setLocalizedAttribute(progress, 'aria-label', 'crosshair.break-progress')
   progress.setAttribute('aria-valuemin', '0')
   progress.setAttribute('aria-valuemax', '100')
   progress.setAttribute('hidden', '')

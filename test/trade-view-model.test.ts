@@ -60,16 +60,33 @@ describe('tradeViewModel', () => {
     expect(model).toStrictEqual({
       actor: FIRST_INTENT.actor,
       villager: FIRST_INTENT.villager,
+      profession: 'farmer',
       professionLabel: 'Farmer',
       offers: [
         {
           id: FIRST_INTENT.offerId,
-          label: '4 minecraft:wheat -> 1 minecraft:emerald (2/7)',
+          label: '4 minecraft:wheat → 1 minecraft:emerald (2/7)',
+          labelMessage: {
+            input: 'minecraft:wheat',
+            inputCount: 4,
+            maxUses: 7,
+            output: 'minecraft:emerald',
+            outputCount: 1,
+            uses: 2,
+          },
           disabled: false,
         },
         {
           id: SECOND_INTENT.offerId,
-          label: '3 minecraft:potato -> 1 minecraft:emerald (6/7)',
+          label: '3 minecraft:potato → 1 minecraft:emerald (6/7)',
+          labelMessage: {
+            input: 'minecraft:potato',
+            inputCount: 3,
+            maxUses: 7,
+            output: 'minecraft:emerald',
+            outputCount: 1,
+            uses: 6,
+          },
           disabled: true,
         },
       ],

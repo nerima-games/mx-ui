@@ -15,6 +15,7 @@ import { createLoadingView } from '../../src/application/loading-view'
 import { createMainMenuView } from '../../src/application/main-menu-view'
 import { createSaveIndicator } from '../../src/application/save-indicator'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from './scenario-types'
+import { HARNESS_ITEM_DISPLAY_NAME_OPTIONS } from './scenarios/inventory'
 
 const captionTime = (seconds: number): CaptionEvent['atSecs'] => MonotonicTimeSecs(seconds)
 
@@ -67,7 +68,7 @@ const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount 
     }
     case 'inventory': {
       const inventory = createInventoryView(factory, host)
-      const model = inventoryViewModel(emptyInventorySnapshot)
+      const model = inventoryViewModel(emptyInventorySnapshot, HARNESS_ITEM_DISPLAY_NAME_OPTIONS)
       inventory.render(model)
       return { root: inventory.root, setTime: noTime, dispose: noTime, viewModel: () => model }
     }

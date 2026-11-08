@@ -58,8 +58,10 @@ import {
   writeHidden,
   writeText,
 } from './dom-write.js'
+import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
 import type { DomElement, DomElementFactory } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import { setLocalizedAttribute, setLocalizedText } from './ui-localization.js'
 import type { LoadingScreenView } from '../domain/loading-screen.js'
 
 /** Render order, and the order the tests sweep. */
@@ -73,13 +75,23 @@ export const LOADING_STATES: ReadonlyArray<LoadingScreenView['kind']> = ['prepar
  * `:97`.
  */
 export const LOADING_LABEL: Readonly<Record<LoadingScreenView['kind'], string>> = {
-  failed: 'We could not build this world',
-  preparing: 'Preparing your world',
+  failed: translateUiMessage(DEFAULT_UI_LANGUAGE, 'loading.error-title'),
+  preparing: translateUiMessage(DEFAULT_UI_LANGUAGE, 'loading.preparing-title'),
+}
+
+const LOADING_TITLE_KEY: Readonly<Record<LoadingScreenView['kind'], UiMessageKey>> = {
+  failed: 'loading.error-title',
+  preparing: 'loading.preparing-title',
 }
 
 export const LOADING_KICKER: Readonly<Record<LoadingScreenView['kind'], string>> = {
-  failed: 'WORLD INTERRUPTED',
-  preparing: 'WORLD GENERATION',
+  failed: translateUiMessage(DEFAULT_UI_LANGUAGE, 'loading.error-eyebrow'),
+  preparing: translateUiMessage(DEFAULT_UI_LANGUAGE, 'loading.preparing-eyebrow'),
+}
+
+const LOADING_KICKER_KEY: Readonly<Record<LoadingScreenView['kind'], UiMessageKey>> = {
+  failed: 'loading.error-eyebrow',
+  preparing: 'loading.preparing-eyebrow',
 }
 
 /**
@@ -89,8 +101,13 @@ export const LOADING_KICKER: Readonly<Record<LoadingScreenView['kind'], string>>
  * advice whichever repository gives it.
  */
 export const LOADING_DETAIL: Readonly<Record<LoadingScreenView['kind'], string>> = {
-  failed: 'Check your connection or refresh the page to try again.',
-  preparing: 'Shaping terrain, placing blocks, and lighting the horizon.',
+  failed: translateUiMessage(DEFAULT_UI_LANGUAGE, 'loading.error-advice'),
+  preparing: translateUiMessage(DEFAULT_UI_LANGUAGE, 'loading.preparing-description'),
+}
+
+const LOADING_DETAIL_KEY: Readonly<Record<LoadingScreenView['kind'], UiMessageKey>> = {
+  failed: 'loading.error-advice',
+  preparing: 'loading.preparing-description',
 }
 
 /**
@@ -139,7 +156,7 @@ const buildStateRoot = (
   // The failure `ICON_ROW_LABEL` records for the vitals rows, arriving as prose
   // Instead of as punctuation.
   root.setAttribute('role', 'group')
-  root.setAttribute('aria-label', LOADING_LABEL[kind])
+  setLocalizedAttribute(root, 'aria-label', LOADING_TITLE_KEY[kind])
   parent.appendChild(root)
   return root
 }
@@ -154,6 +171,7 @@ const appendStateKicker = (
   // THE colour, written once, on the element that owns this state.
   kicker.style.setProperty('color', LOADING_TOKEN[kind])
   kicker.textContent = LOADING_KICKER[kind]
+  setLocalizedText(kicker, LOADING_KICKER_KEY[kind])
   root.appendChild(kicker)
 }
 
@@ -166,6 +184,7 @@ const appendStateTitle = (
   title.setAttribute('data-mx-ui', 'loading-title')
   title.style.setProperty('color', PALETTE_VAR.ink)
   title.textContent = LOADING_LABEL[kind]
+  setLocalizedText(title, LOADING_TITLE_KEY[kind])
   root.appendChild(title)
 }
 
@@ -178,6 +197,7 @@ const appendStateDetail = (
   detail.setAttribute('data-mx-ui', 'loading-detail')
   detail.style.setProperty('color', PALETTE_VAR.inkMuted)
   detail.textContent = LOADING_DETAIL[kind]
+  setLocalizedText(detail, LOADING_DETAIL_KEY[kind])
   root.appendChild(detail)
 }
 

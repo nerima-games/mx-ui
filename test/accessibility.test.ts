@@ -3,16 +3,22 @@
  * plus the Escape-key ownership rule that pairs with mc-render's input design.
  */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect } from 'effect'
+import { Effect, Result } from 'effect'
+import * as fc from 'fast-check'
+import {
+  createMotionPreferenceController,
+  type MotionMediaQuery,
+} from '../src/application/accessibility-dom'
 import {
   animationDurationMs,
   COLOR_VISION_FILTER_TARGET,
   COLOR_VISION_MODES,
   colorVisionAttribute,
+  decodeMotionSetting,
   rebind,
-  unboundActions,
   resolveMotionPreference,
   shouldAnimate,
+  unboundActions,
   type InputAction,
 } from '../src/domain/accessibility'
 import {
@@ -24,6 +30,36 @@ import {
   pointerLockReleased,
   topOf,
 } from '../src/domain/modal-stack'
+
+class FakeMotionMediaQuery implements MotionMediaQuery {
+  readonly #listeners = new Set<() => void>()
+  matches: boolean
+  removedListenerCount = 0
+
+  constructor(matches: boolean) {
+    this.matches = matches
+  }
+
+  addEventListener(_type: 'change', listener: () => void): void {
+    this.#listeners.add(listener)
+  }
+
+  removeEventListener(_type: 'change', listener: () => void): void {
+    this.removedListenerCount += 1
+    this.#listeners.delete(listener)
+  }
+
+  change(matches: boolean): void {
+    this.matches = matches
+    for (const listener of this.#listeners) {
+      listener()
+    }
+  }
+
+  get listenerCount(): number {
+    return this.#listeners.size
+  }
+}
 
 describe('colour vision (feColorMatrix daltonisation)', () => {
   it.effect('REGRESSION: the filter targets the canvas only, never the whole document', () =>
@@ -94,6 +130,79 @@ describe('reduced motion', () => {
       expect(animationDurationMs(-10, 'full')).toBe(0)
     }),
   )
+})
+
+describe('reduced motion DOM projection', () => {
+  it('setting changes project immediately, system changes are followed, and disposal removes the listener', () => {
+    const query = new FakeMotionMediaQuery(false)
+    const observed: string[] = []
+    const created = createMotionPreferenceController(query, 'system', (preference) => observed.push(preference))
+
+    expect(Result.isSuccess(created)).toBe(true)
+    if (Result.isFailure(created)) {
+      return
+    }
+
+    expect(observed).toStrictEqual(['full'])
+    expect(query.listenerCount).toBe(1)
+
+    query.change(true)
+    expect(observed).toStrictEqual(['full', 'reduced'])
+
+    const explicitFull = created.success.update('full')
+    expect(Result.isSuccess(explicitFull)).toBe(true)
+    expect(observed).toStrictEqual(['full', 'reduced', 'full'])
+    query.change(false)
+    expect(observed).toStrictEqual(['full', 'reduced', 'full'])
+
+    const system = created.success.update('system')
+    expect(Result.isSuccess(system)).toBe(true)
+    expect(observed).toStrictEqual(['full', 'reduced', 'full', 'full'])
+    query.change(true)
+    expect(observed).toStrictEqual(['full', 'reduced', 'full', 'full', 'reduced'])
+
+    const invalid = created.success.update({ reducedMotion: 'reduced' })
+    expect(Result.isFailure(invalid)).toBe(true)
+    expect(observed).toStrictEqual(['full', 'reduced', 'full', 'full', 'reduced'])
+
+    created.success.dispose()
+    created.success.dispose()
+    expect(query.listenerCount).toBe(0)
+    expect(query.removedListenerCount).toBe(1)
+    query.change(false)
+    expect(observed).toStrictEqual(['full', 'reduced', 'full', 'full', 'reduced'])
+    expect(Result.isFailure(created.success.update('reduced'))).toBe(true)
+  })
+
+  it('unknown settings return a typed failure or a schema-accepted motion setting without throwing', () => {
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const query = new FakeMotionMediaQuery(false)
+        const observed: string[] = []
+        const created = createMotionPreferenceController(query, input, (preference) => observed.push(preference))
+
+        if (Result.isFailure(created)) {
+          expect(created.failure).toBeDefined()
+          expect(query.listenerCount).toBe(0)
+          expect(observed).toStrictEqual([])
+          return
+        }
+
+        const updated = created.success.update(input)
+        if (Result.isFailure(updated)) {
+          expect(updated.failure).toBeDefined()
+        } else {
+          expect(Result.isSuccess(decodeMotionSetting(updated.success))).toBe(true)
+        }
+        created.success.dispose()
+      }),
+    )
+
+    for (const input of [null, undefined, 'animated', { _tag: 'MotionSetting' }]) {
+      const result = decodeMotionSetting(input)
+      expect(Result.isFailure(result)).toBe(true)
+    }
+  })
 })
 
 describe('legacy key remapping API', () => {

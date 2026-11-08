@@ -85,12 +85,20 @@
  * no information and one more thing to remember to disable.
  */
 import { type AttributeCell, attributeCell, writeAttribute, writeHidden } from './dom-write.js'
+import { DEFAULT_UI_LANGUAGE, translateUiMessage } from '../domain/ui-language.js'
 import type { DomElement, DomElementFactory } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import type { SaveMessage } from '../domain/save-status.js'
+import { setLocalizedText } from './ui-localization.js'
 
 /** Render order, top to bottom. Also the order the tests sweep. */
 export const SAVE_MESSAGES: ReadonlyArray<SaveMessage> = ['saving', 'saved', 'failed']
+
+const SAVE_STATUS_MESSAGE_KEY: Readonly<Record<SaveMessage, 'save.failed' | 'save.saved' | 'save.saving'>> = {
+  failed: 'save.failed',
+  saved: 'save.saved',
+  saving: 'save.saving',
+}
 
 /**
  * The SHAPE channel `CRITICAL_PAIRS` declares for the three status pairs, as
@@ -111,9 +119,9 @@ export const SAVE_STATUS_GLYPH: Readonly<Record<SaveMessage, string>> = {
  * `domain/caption.ts`: 「already localised by whoever owns the strings」.)
  */
 export const SAVE_STATUS_LABEL: Readonly<Record<SaveMessage, string>> = {
-  failed: 'Save failed',
-  saved: 'World saved',
-  saving: 'Saving world…',
+  failed: translateUiMessage(DEFAULT_UI_LANGUAGE, 'save.failed'),
+  saved: translateUiMessage(DEFAULT_UI_LANGUAGE, 'save.saved'),
+  saving: translateUiMessage(DEFAULT_UI_LANGUAGE, 'save.saving'),
 }
 
 /**
@@ -185,7 +193,7 @@ const appendMessageLabel = (
 ): void => {
   const label = factory.createElement('span')
   label.setAttribute('data-mx-ui', 'save-label')
-  label.textContent = SAVE_STATUS_LABEL[message]
+  setLocalizedText(label, SAVE_STATUS_MESSAGE_KEY[message])
   root.appendChild(label)
 }
 

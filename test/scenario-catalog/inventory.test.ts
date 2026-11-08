@@ -80,7 +80,7 @@ describe('inventory scenario catalog', () => {
     const unknown = mountScenario('unknown-region').root
     const armour = unknown.find('data-region', 'armour')
     expect(armour?.attributes.get('data-region-state')).toBe('unknown')
-    expect(armour?.find('data-mx-ui', 'region-note')?.textContent).toContain('armour rack')
+    expect(armour?.find('data-mx-ui', 'region-note')?.textContent).toBe('Armour rack slots are unavailable')
   })
 
   it('represents the crafting tri-state and explains unknown visibly', () => {
@@ -111,7 +111,7 @@ describe('inventory scenario catalog', () => {
     )
 
     const accessible = mountScenario('accessibility-name-role-state').root
-    const hotbarSlot = accessible.find('aria-label', 'hotbar slot 1, stone, 64')
+    const hotbarSlot = accessible.find('aria-label', 'Hotbar slot 1, stone, 64')
     expect(hotbarSlot?.attributes.get('role')).toBe('button')
     expect(hotbarSlot?.attributes.get('aria-disabled')).toBe('false')
     expect(hotbarSlot?.attributes.get('tabindex')).toBe('0')

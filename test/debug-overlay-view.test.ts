@@ -68,7 +68,7 @@ describe('createDebugOverlayView', () => {
     expect(root.style.properties.get('white-space')).toBe('pre')
   })
 
-  it('renders missing values as なし and retains zero and false', () => {
+  it('renders missing values in the default language and retains zero and false', () => {
     const factory = fakeDocument()
     const parent = factory.createElement('main')
     const view = createDebugOverlayView(factory, parent)
@@ -78,17 +78,17 @@ describe('createDebugOverlayView', () => {
 
     expect(root.textContent).toBe(
       [
-        'FPS: なし',
-        'Coordinates: なし',
-        'Chunk: なし',
-        'Facing: なし',
-        'Dimension: なし',
-        'Biome: なし',
-        'World time: なし',
-        'Frame delta: なし',
-        'GPU timing supported: なし',
-        'GPU time: なし',
-        'Quality: なし',
+        'FPS: None',
+        'Coordinates: None',
+        'Chunk: None',
+        'Facing: None',
+        'Dimension: None',
+        'Biome: None',
+        'World time: None',
+        'Frame delta: None',
+        'GPU timing supported: None',
+        'GPU time: None',
+        'Quality: None',
       ].join('\n'),
     )
 
@@ -96,13 +96,13 @@ describe('createDebugOverlayView', () => {
 
     expect(root.textContent).toContain('FPS: 0')
     expect(root.textContent).toContain('Coordinates: 0, 64, -0.5')
-    expect(root.textContent).toContain('Facing: yaw=0, pitch=-0.25')
-    expect(root.textContent).toContain('Dimension: overworld')
-    expect(root.textContent).toContain('World time: ticks=0, dayLengthTicks=24000')
+    expect(root.textContent).toContain('Facing: Yaw: 0, Pitch: -0.25')
+    expect(root.textContent).toContain('Dimension: Overworld')
+    expect(root.textContent).toContain('World time: Ticks: 0, Day length: 24000')
     expect(root.textContent).toContain('Frame delta: 0')
-    expect(root.textContent).toContain('GPU timing supported: false')
+    expect(root.textContent).toContain('GPU timing supported: No')
     expect(root.textContent).toContain('GPU time: 0')
-    expect(root.textContent).toContain('Quality: low')
+    expect(root.textContent).toContain('Quality: Low')
   })
 
   it('updates with a public production frame and skips unchanged text writes', () => {
@@ -127,5 +127,37 @@ describe('createDebugOverlayView', () => {
     const before = factory.mark()
     view.update(snapshot)
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('localizes supported dimensions and quality presets while preserving host extensions', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('main')
+    const view = createDebugOverlayView(factory, parent)
+    const root = fakeElement(view.root)
+    const dimensions = [
+      ['minecraft:overworld', 'Dimension: Overworld'],
+      ['minecraft:nether', 'Dimension: Nether'],
+      ['minecraft:the_nether', 'Dimension: Nether'],
+      ['minecraft:end', 'Dimension: The End'],
+      ['minecraft:the_end', 'Dimension: The End'],
+      ['mod:skylands', 'Dimension: mod:skylands'],
+    ] as const
+
+    for (const [dimension, expected] of dimensions) {
+      view.render({ ...populatedModel, dimension: JSON.parse(JSON.stringify(dimension)), gpuTimingSupported: true })
+      expect(root.textContent).toContain(expected)
+      expect(root.textContent).toContain('GPU timing supported: Yes')
+    }
+
+    const qualities = [
+      ['medium', 'Quality: Medium'],
+      ['high', 'Quality: High'],
+      ['ultra', 'Quality: Ultra'],
+      ['cinematic', 'Quality: cinematic'],
+    ] as const
+    for (const [qualityPreset, expected] of qualities) {
+      view.render({ ...populatedModel, qualityPreset: JSON.parse(JSON.stringify(qualityPreset)) })
+      expect(root.textContent).toContain(expected)
+    }
   })
 })

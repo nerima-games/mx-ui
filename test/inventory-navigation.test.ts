@@ -3,12 +3,16 @@
 /* eslint-disable no-undefined -- SlotView uses undefined for absent item data. */
 import { describe, expect, it } from 'vitest'
 import {
+  focusTargetForElement,
   inventoryFocusTargetForElement,
   inventoryTargets,
+  moveFocusTarget,
   moveInventoryTarget,
 } from '../src/application/inventory-navigation'
 import type { InventoryViewModel } from '../src/domain/inventory-view-model'
-import type { SlotView } from '../src/domain/hud-view-model'
+import { hudViewModel, type SlotView } from '../src/domain/hud-view-model'
+import { createHudView } from '../src/application/hud-view'
+import { SPAWN_VITALS } from '@nerima-games/mc-sim'
 
 const emptySlot = (index: number): SlotView => ({
   countLabel: undefined,
@@ -88,6 +92,18 @@ describe('inventory controller navigation', () => {
       group: 'hotbar',
       index: 8,
     })
+
+    const hudParent = document.createElement('main')
+    document.body.append(hudParent)
+    const hud = createHudView(document, hudParent, 'full')
+    hud.render(hudViewModel(SPAWN_VITALS, [], 0))
+    const hudSlots = Array.from(hudParent.querySelectorAll('[data-mx-ui="slot"]'))
+    expect(hudSlots).toHaveLength(9)
+    expect(focusTargetForElement(hudSlots[0])).toStrictEqual({ group: 'hotbar', index: 0 })
+    expect(moveFocusTarget(hudParent, { group: 'hotbar', index: 0 }, 'right')).toBe(true)
+    expect(document.activeElement).toBe(hudSlots[1])
+    expect(moveFocusTarget(hudParent, { group: 'hotbar', index: 0 }, 'left')).toBe(false)
+    expect(moveFocusTarget(hudParent, { group: 'hotbar', index: 8 }, 'right')).toBe(false)
 
     const { inventory } = createInventoryRegion('main')
     const outcome = document.createElement('div')
@@ -210,6 +226,8 @@ describe('inventory controller navigation', () => {
   it('does not wrap horizontal edges and reaches the output from the final row', () => {
     const rightEdge = { index: 2, kind: 'slot', region: 'main' } as const
     expect(moveInventoryTarget(model, rightEdge, 'right')).toStrictEqual(rightEdge)
+    const incompleteRowEdge = { index: 4, kind: 'slot', region: 'main' } as const
+    expect(moveInventoryTarget(model, incompleteRowEdge, 'right')).toStrictEqual(incompleteRowEdge)
     expect(moveInventoryTarget(model, { index: 3, kind: 'slot', region: 'crafting-grid' }, 'down')).toStrictEqual({
       kind: 'crafting-output',
     })
@@ -228,6 +246,16 @@ describe('inventory controller navigation', () => {
     })
   })
 
+  it('repairs a crafting-output target when the model has no matching recipe', () => {
+    const noMatch: InventoryViewModel = { ...model, crafting: { kind: 'no-match' } }
+
+    expect(moveInventoryTarget(noMatch, { kind: 'crafting-output' }, 'up')).toStrictEqual({
+      index: FIRST_INDEX,
+      kind: 'slot',
+      region: 'main',
+    })
+  })
+
   it('returns the requested target unchanged when the model has nothing to navigate to', () => {
     const nothingToNavigate: InventoryViewModel = {
       carried: undefined,
@@ -237,6 +265,19 @@ describe('inventory controller navigation', () => {
     }
     const requested = { index: 0, kind: 'slot', region: 'main' } as const
     expect(moveInventoryTarget(nothingToNavigate, requested, 'right')).toStrictEqual(requested)
+  })
+
+  it('uses a matching crafting output as the fallback when no slot regions exist', () => {
+    const craftingOnly: InventoryViewModel = {
+      carried: undefined,
+      crafting: { kind: 'match', output: emptySlot(FIRST_INDEX) },
+      mergeTargets: { kind: 'unknown' },
+      regions: [{ id: 'armour', kind: 'unknown', why: 'not supplied' }],
+    }
+
+    expect(moveInventoryTarget(craftingOnly, { index: 0, kind: 'slot', region: 'main' }, 'right')).toStrictEqual({
+      kind: 'crafting-output',
+    })
   })
 
   it('moves up within a region without leaving it', () => {

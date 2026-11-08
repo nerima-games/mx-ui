@@ -43,6 +43,11 @@ UI 側の選択肢も同じ 4 つ: `packages/presentation/settings/settings-over
 **適用範囲を決めるのは CSS 側**である。`domain/accessibility.ts` の `COLOR_VISION_FILTER_TARGET = 'canvas'`
 と `colorVisionAttribute` はこの分担をそのまま写している。
 
+In mx-ui, `application/color-vision-filters.ts` creates mount-specific SVG filter definitions inside the root and applies an inline filter to the canvas supplied by the host.
+When enabled, it also sets `data-color-vision` on that canvas.
+The controller does not apply a CSS filter to the whole document; `off` and `dispose()` restore the canvas attribute and inline filter captured when the controller was created.
+The tests `builds namespace-correct sRGB SVG matrices and applies them only to the supplied canvas` and `allocates independent filter IDs for multiple mx-ui instances and restores target state on dispose` in `test/color-vision.test.ts` cover this behavior.
+
 **ただし行列そのものも、ここが置き場である。**
 
 スイッチだけを引き継ぐと、**後ろに何も無いフック**が残る。
@@ -59,7 +64,8 @@ UI 側の選択肢も同じ 4 つ: `packages/presentation/settings/settings-over
 2. **行列は算術なので、ここでならテストできる。** 参照実装ではマークアップだったので 1 度も検査されていない。
    `applyColorVisionMatrix` は他の導出と同じく `environment: 'node'` で走る。
 
-分担そのものは変わっていない。**このモジュールが決めるのは値、スコープを決めるのはスタイルシート**である。
+`domain/accessibility.ts` still owns the setting values and matrices.
+The reference implementation used a stylesheet to set the filter scope; mx-ui fixes the scope by receiving the canvas explicitly.
 
 carry over した内容:
 
@@ -97,8 +103,9 @@ if (mode === 'off') {
 }
 ```
 
-`"off"` を設定すると、それに対応する CSS ルールが必要になる。誰も書かない。
-`colorVisionAttribute('off')` が `undefined` を返すのはこの分岐の写しである。
+`colorVisionAttribute('off')` returns `undefined`.
+The `applyColorVision` attribute helper removes the attribute from its target when the mode is off.
+`createColorVisionFilterController` instead restores the canvas attribute and inline filter captured when the controller was created.
 
 回帰テスト（`test/accessibility.test.ts`、describe `colour vision (feColorMatrix daltonisation)`）:
 
@@ -243,18 +250,16 @@ Effect ランタイムのファイバスケジューラの**外側**で走る。
 `Effect.runPromise` なら Effect の外に出るので、テストのアサーションと DOM イベントの発火を
 同じマイクロタスクキューの上で順序づけられる。`Fiber.interrupt` で片付けもできる。
 
-### まだ存在しないテストへの制約である
+### Constraint for tests that wait on asynchronous DOM event flows
 
-**このリポジトリには DOM フローのテストが 1 本も無い。** それでもここに書いてあるのは、
-最初の 1 本を書く人が参照実装で確定済みの罠を踏み直さないためである。
-1 度踏むと `describe.skip` が 1 個増えて、その画面のイベントフローが恒久的に未検証になる
-（参照実装で実際にそうなり、Playwright の e2e に移された）。
+**This constraint applies to tests that await a `Deferred` resolved by a DOM listener inside an Effect fiber.**
+`test/ui-mount.test.ts` covers UI mount focus movement, native button activation, and focus restoration after Escape.
+Those tests dispatch events from ordinary `it` tests, so they do not use the `it.effect` and `Deferred.await` pattern described here.
 
-`vitest.config.ts` の `environment: 'node'` の注記にもこの規則が書かれており、
-DOM を持つ suite を足すときに必ず目に入るようにしてある。
+The `environment: 'node'` note in `vitest.config.ts` records this rule for tests that add asynchronous DOM event flows.
 
-回帰テスト: **まだ無い。** DOM フローの suite が出来た時点で最初の 1 本になる。
-詳細と before/after のスケッチは [testing.md](./testing.md) §3。
+There is no regression test for this waiting pattern yet.
+When a DOM listener resolves a `Deferred` outside an Effect fiber, follow the ordinary `it` and `Effect.runPromise` example in [testing.md](./testing.md) §3.
 
 ---
 
@@ -901,7 +906,7 @@ mc-render の代償は「イベントのフィールドを全部 optional にす
 
 | # | 代償 | 何が起きるか |
 | --- | --- | --- |
-| 1 | **`appendChild` はメソッド構文で書く**（`readonly appendChild: (...) => ...` ではなく） | プロパティ構文だと `strictFunctionTypes` が引数を反変に比べ、`HTMLElement` が代入不能になる（`Type 'DomNode' is missing the following properties from type 'Node': baseURI, childNodes, firstChild, isConnected, and 45 more`）。メソッド引数は**双変**なのでこれだけが抜け道である。**双変は実際に穴**であり、隠さずここに書く——偽の要素を実 `appendChild` に渡せるのはこれのおかげであり、無関係なオブジェクトを渡せるのも同じ理由である |
+| 1 | **Write `appendChild` with method syntax** (`appendChild(...)`), not property syntax (`readonly appendChild: (...) => ...`) | With property syntax, `strictFunctionTypes` compares parameters contravariantly, so the `DomNode` parameter is not assignable to the DOM `Node` parameter (`Type 'DomNode' is missing the following properties from type 'Node': baseURI, childNodes, firstChild, isConnected, and 45 more`). The assignment works because method parameters are **bivariant**. **Bivariance is a type-safety hole**: it permits fake elements and unrelated objects to be passed to a real `appendChild`, so this constraint is documented explicitly. |
 | 2 | **親子の辺のためだけに 2 つ目のほぼ空の型（`DomNode`）が要る** | `DomElement` は使えない。双変はどちらか一方向が通れば良いが、`DomElement` と `Node` は**どちらの向きにも**代入不能である（`Node` に `setAttribute` が無い）。`{}` も使えない——何でも通してしまう。`nodeType` はすべての `Node` が持ち、かつノード階層を引き込まずに名指せる唯一のメンバである。mx-ui はこれを読まない |
 | 3 | **`textContent` は `string \| null`** | null は 1 度も書かず 1 度も読まないのに union で持つ。mc-render の「イベントのフィールドを全部 optional」の直接の対応物である。lib.dom が宣言を変えている（旧: `textContent: string \| null`、TypeScript 5.9: `get(): string` / `set(value: string \| null)`）ので、両方を満たす形が union である。mc-render が `requestPointerLock` の戻りを `unknown` にしたのと同じ判断——**このファイルはブラウザの年代を選ばない** |
 
@@ -929,10 +934,10 @@ native button/input の structural type には click/input 用の listener が�
   これは「偽物に記録できなかった」ではなく「レンダラが付けなかった」の観測である。
 - `test/public-api.test.ts` の `REGRESSION: exports no way for a renderer to take a key (DN-UI-4)`。
 
-**キーリマップ UI を作らなかったのはこの帰結である。** キーリマップは `KeyboardEvent.code` を要求し、
-入力サービスは mc-render のもの（plan.md §2.3-2）である。
-ラベルの一覧だけ描いて「キーリマップ UI ができた」と言えば、**中心の挙動が到達不能で検査不能な画面**が
-このリポジトリに残る——DN-UI-1a が 1 段落かけて拒否した「後ろに何も無いフック」そのものである。
+**The key-remapping screen follows the same boundary.** The settings view displays the current binding and action name, then reports `onBindingActivate(action)` to the host.
+mc-render translates `KeyboardEvent.code` into arrow-key directions; the host captures and persists `KeyboardEvent.code` during rebinding.
+mx-ui does not register a key-capture listener for rebinding.
+The mount adapter registers session key listeners for screen changes; see [public-api.md](./public-api.md) §5-2.
 
 ### DN-UI-13d 描画は差分である — セルという単位
 
@@ -958,10 +963,11 @@ native button/input の structural type には click/input 用の listener が�
 
 **カスタムプロパティ。`:root` でも `<body>` でも生成スタイルシートでもなく、host から渡されたルートに。**
 
-- **生成スタイルシートは却下。** `document.head` が要り、`docs/public-api.md` §4-1 制約 1 が禁じている
+- **Reject runtime-generated stylesheets that affect the whole document.** They require `document.head`, which constraint 1 in `docs/public-api.md` §4-1 prohibits.
   （「`document` を自分で探しに行かない…探しに行くと、各画面プレビューが同一ページで
   複数の mx-ui を立てられなくなる」）。スタイルシートは文書大域なので、
   2 つの mx-ui が 1 組の規則を奪い合う——制約が防ごうとしていた当の結果である。
+  The static package asset `assets/game-font.css` has a separate role: it declares the font face and the `font-family` for `[data-mx-ui]` only.
 - **要素ごとのインライン色も却下。** トークンの**値**が使うたびに DOM に入るので、
   ハート 1 列で `HEART` が 10 回現れ、毎フレーム 10 回の色文字列比較が要る。
   「パレットは画面に届いたか」の答えが N 個になる。

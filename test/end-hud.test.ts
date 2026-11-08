@@ -6,6 +6,7 @@ import {
   strongholdLocatorViewModel,
 } from '../src/domain/end-hud'
 import { describe, expect, it } from 'vitest'
+import * as fc from 'fast-check'
 
 const BELOW_MIN_PORTAL_EYES = -2
 const FRACTIONAL_PORTAL_EYES = 7.9
@@ -25,6 +26,12 @@ describe('End HUD primitives', () => {
     expect(bossHealthBarViewModel({ current: 200, max: 200, name: 'Ender Dragon', phase: 'dead' }).hidden).toBe(
       true,
     )
+    expect(
+      bossHealthBarViewModel({ current: 200, max: 200, name: '', phase: 'charging' }, 'ja'),
+    ).toMatchObject({
+      accessibleLabel: 'エンダードラゴンの体力: 200/200。状態: 突進中。',
+      name: 'エンダードラゴン',
+    })
   })
 
   it('normalizes stronghold bearings and supplies accessible unknown and lost states', () => {
@@ -44,6 +51,17 @@ describe('End HUD primitives', () => {
       accessibleLabel: 'Eye of Ender signal lost.',
       status: 'lost',
     })
+    expect(strongholdLocatorViewModel({ status: 'unknown' }, 'ja')).toEqual({
+      accessibleLabel: '要塞の位置は不明です。',
+      status: 'unknown',
+    })
+    expect(strongholdLocatorViewModel({ status: 'lost' }, 'ja')).toEqual({
+      accessibleLabel: 'エンダーアイの信号を見失いました。',
+      status: 'lost',
+    })
+    expect(
+      strongholdLocatorViewModel({ distanceBlocks: 127.6, relativeBearingDegrees: 405, status: 'tracking' }, 'ja'),
+    ).toMatchObject({ accessibleLabel: '要塞まで128ブロック、方角は右に45度です。' })
     expect(
       strongholdLocatorViewModel({ distanceBlocks: 10, relativeBearingDegrees: Number.NaN, status: 'tracking' }),
     ).toEqual({ accessibleLabel: 'Stronghold location unknown.', status: 'unknown' })
@@ -86,6 +104,9 @@ describe('End HUD primitives', () => {
       inserted: 7,
       progressPercent: 58,
       total: 12,
+    })
+    expect(portalEyeProgressViewModel(FRACTIONAL_PORTAL_EYES, 'ja')).toMatchObject({
+      accessibleLabel: 'エンドポータルにエンダーアイを12個中7個設置しました。',
     })
     expect(portalEyeProgressViewModel(Number.POSITIVE_INFINITY)).toMatchObject({
       complete: true,
@@ -132,6 +153,31 @@ describe('End HUD primitives', () => {
       experiencePoints: 12_000,
       message: '12000 XP awarded.',
     })
+    expect(dragonDefeatRewardNotification(
+      { eventId: 'defeat-42', experiencePoints: 12_000 },
+      'ja',
+    )).toMatchObject({
+      accessibleLabel: 'エンダードラゴンを倒した。12000 XP を獲得しました。',
+      experiencePoints: 12_000,
+      message: '12000 XP を獲得しました。',
+      title: 'エンダードラゴンを倒した',
+    })
     expect(dragonDefeatRewardNotification({ eventId: '  ', experiencePoints: 12_000 })).toBeUndefined()
+  })
+
+  it('localizes reward announcements for property-generated point totals', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 20_000 }), (experiencePoints) => {
+        const notification = dragonDefeatRewardNotification(
+          { eventId: 'property', experiencePoints },
+          'ja',
+        )
+        if (notification === undefined) {
+          throw new Error('A non-empty event id must produce a reward notification')
+        }
+        expect(notification.message).toBe(`${experiencePoints} XP を獲得しました。`)
+        expect(notification.accessibleLabel).toContain(notification.message)
+      }),
+    )
   })
 })

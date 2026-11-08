@@ -6,7 +6,7 @@ import {
   type ChestStorageSlotView,
   type ChestStorageViewModel,
 } from '../domain/chest-storage-view-model.js'
-import type { DomElement, DomElementFactory } from './dom-surface.js'
+import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import { HOTBAR_SLOT_COUNT, type SlotView } from '../domain/hud-view-model.js'
 import {
   INVENTORY_MAIN_COLUMNS,
@@ -17,14 +17,24 @@ import {
   type SlotElement,
   createSlotElement,
   setSlotButtonView,
+  setSlotFocusTarget,
   setSlotHidden,
   updateSlotElement,
 } from './slot-element.js'
 import { type TextCell, textCell, writeText } from './dom-write.js'
+import { type UiLanguage, type UiMessageKey, type UiMessageValues } from '../domain/ui-language.js'
+import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
+import { itemDisplayNameValue } from './item-display-name.js'
 
 export type ChestStorageInteractionView = {
   readonly focusedSlot: ChestStorageSlotTarget
   readonly status: string
+}
+
+export type ChestStorageViewActions = {
+  readonly onActivate?: (target: ChestStorageSlotTarget) => void
+  readonly onClose?: () => void
+  readonly onFocusChange?: (target: ChestStorageSlotTarget) => void
 }
 
 export type ChestStorageView = {
@@ -45,27 +55,52 @@ const CURSOR_SLOT_INDEX = 0
 /** Players see slots numbered from 1, not from 0. */
 const SLOT_DISPLAY_OFFSET = 1
 const DEFAULT_FOCUSED_TARGET: ChestStorageSlotTarget = { region: 'chest', slot: 0 }
+const CHEST_STORAGE_FOCUS_GROUP = 'chest-storage-slots'
+
+const focusIndexForTarget = (target: ChestStorageSlotTarget, chestSlotCount: number): number => {
+  const playerMainOffset = Math.ceil(chestSlotCount / CHEST_STORAGE_COLUMNS) * CHEST_STORAGE_COLUMNS
+  if (target.region === 'chest') {
+    return target.slot
+  }
+  if (target.slot < HOTBAR_SLOT_COUNT) {
+    return playerMainOffset + INVENTORY_MAIN_SLOT_COUNT + target.slot
+  }
+  return playerMainOffset + target.slot - HOTBAR_SLOT_COUNT
+}
 
 const sameTarget = (left: ChestStorageSlotTarget, right: ChestStorageSlotTarget): boolean =>
   left.region === right.region && left.slot === right.slot
 
-const ownerLabel = (region: ChestStorageSlotTarget['region']): string => {
+const ownerMessageKey = (region: ChestStorageSlotTarget['region']): UiMessageKey => {
   if (region === 'chest') {
-    return 'Chest'
+    return 'container.chest'
   }
-  return 'Player inventory'
+  return 'container.player-inventory'
 }
 
-const ariaLabel = (view: ChestStorageSlotView): string => {
-  const owner = ownerLabel(view.target.region)
+const ariaLabel = (
+  view: ChestStorageSlotView,
+  language: UiLanguage,
+): Readonly<{ key: UiMessageKey; values: UiMessageValues }> => {
   const displaySlot = String(view.target.slot + SLOT_DISPLAY_OFFSET)
   // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts) guarantees the two always agree.
   // Checking the field this function actually reads lets TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a check on `empty` alone could never let the type system prove impossible.
   // `countLabel` stays `??`-guarded: unlike `itemId`, it is genuinely absent for a real, in-repo stack of exactly one (`slotCountLabel`, hud-view-model.ts).
   if (typeof view.itemId === 'undefined') {
-    return `${owner} slot ${displaySlot}, empty`
+    return {
+      key: 'container.slot-empty',
+      values: { owner: { key: ownerMessageKey(view.target.region) }, slot: displaySlot },
+    }
   }
-  return `${owner} slot ${displaySlot}, ${view.itemId}, ${view.countLabel ?? '1'}`
+  return {
+    key: 'container.slot-item',
+    values: {
+      count: view.countLabel ?? '1',
+      item: itemDisplayNameValue(view, language),
+      owner: { key: ownerMessageKey(view.target.region) },
+      slot: displaySlot,
+    },
+  }
 }
 
 type GridSpec = {
@@ -74,11 +109,54 @@ type GridSpec = {
   readonly targets: ReadonlyArray<ChestStorageSlotTarget>
 }
 
-const createGrid = (
-  factory: DomElementFactory,
-  parent: DomElement,
-  spec: GridSpec,
-): ReadonlyArray<InteractiveSlotElement> => {
+type GridContext = Readonly<{
+  factory: DomElementFactory
+  parent: DomElement
+  spec: GridSpec
+  actions: ChestStorageViewActions | undefined
+}>
+
+const setInteractiveSlotAttributes = (
+  slot: SlotElement,
+  target: ChestStorageSlotTarget,
+): void => {
+  slot.root.setAttribute('data-interaction-target', 'chest-storage-slot')
+  slot.root.setAttribute('data-interaction-region', target.region)
+  slot.root.setAttribute('data-interaction-slot', String(target.slot))
+}
+
+const wireInteractiveSlot = (
+  slot: SlotElement,
+  target: ChestStorageSlotTarget,
+  actions: ChestStorageViewActions | undefined,
+): void => {
+  if (typeof actions?.onActivate === 'function') {
+    slot.root.addEventListener('click', () => actions.onActivate?.(target))
+  }
+  if (typeof actions?.onFocusChange === 'function') {
+    slot.root.addEventListener('focus', () => actions.onFocusChange?.(target))
+  }
+}
+
+const createInteractiveSlot = (context: Readonly<{
+  factory: DomElementFactory
+  grid: DomElement
+  spec: GridSpec
+  actions: ChestStorageViewActions | undefined
+  target: ChestStorageSlotTarget
+  index: number
+}>): InteractiveSlotElement => {
+  const { actions, factory, grid, index, spec, target } = context
+  const slot = createSlotElement(factory, target.slot)
+  setInteractiveSlotAttributes(slot, target)
+  setSlotFocusTarget(slot, { columns: spec.columns, group: CHEST_STORAGE_FOCUS_GROUP, index })
+  wireInteractiveSlot(slot, target, actions)
+  grid.appendChild(slot.root)
+  return { slot, target }
+}
+
+const createGrid = (context: GridContext): ReadonlyArray<InteractiveSlotElement> => {
+  const { actions, factory, parent, spec } = context
   const grid = factory.createElement('div')
   grid.setAttribute('data-mx-ui', spec.id)
   grid.setAttribute('data-region', spec.id)
@@ -86,19 +164,15 @@ const createGrid = (
   grid.style.setProperty('grid-template-columns', `repeat(${String(spec.columns)}, minmax(0, 1fr))`)
   parent.appendChild(grid)
 
-  return spec.targets.map((target) => {
-    const slot = createSlotElement(factory, target.slot)
-    slot.root.setAttribute('data-interaction-target', 'chest-storage-slot')
-    slot.root.setAttribute('data-interaction-region', target.region)
-    slot.root.setAttribute('data-interaction-slot', String(target.slot))
-    grid.appendChild(slot.root)
-    return { slot, target }
-  })
+  return spec.targets.map((target, index) =>
+    createInteractiveSlot({ actions, factory, grid, index, spec, target }),
+  )
 }
 
 type GridFocus = {
   readonly target: ChestStorageSlotTarget
   readonly active: boolean
+  readonly chestSlotCount: number
 }
 
 const updateGrid = (
@@ -107,6 +181,11 @@ const updateGrid = (
   focus: GridFocus,
 ): void => {
   for (const [index, element] of elements.entries()) {
+    setSlotFocusTarget(element.slot, {
+      columns: CHEST_STORAGE_COLUMNS,
+      group: CHEST_STORAGE_FOCUS_GROUP,
+      index: focusIndexForTarget(element.target, focus.chestSlotCount),
+    })
     const view = views[index]
     if (typeof view === 'undefined') {
       setSlotHidden(element.slot, true)
@@ -118,7 +197,8 @@ const updateGrid = (
       setSlotButtonView(element.slot, {
         disabled: false,
         focused: focus.active && hasFocus,
-        label: ariaLabel(view),
+        label: '',
+        localizedLabel: ariaLabel(view, uiLanguageForElement(element.slot.root)),
         tabStop: hasFocus,
       })
     }
@@ -153,6 +233,14 @@ const cursorStateValue = (cursor: ChestStorageCursorView | undefined): string =>
 const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | undefined): void => {
   element.root.setAttribute('data-cursor-state', cursorStateValue(cursor))
   updateSlotElement(element, cursor ?? EMPTY_CURSOR_VIEW)
+  if (typeof cursor === 'undefined' || typeof cursor.itemId === 'undefined') {
+    writeLocalizedAttribute(element.ariaLabel, 'inventory.carried-empty')
+    return
+  }
+  writeLocalizedAttribute(element.ariaLabel, 'inventory.carried-item', {
+    count: cursor.countLabel ?? '1',
+    item: itemDisplayNameValue(cursor, uiLanguageForElement(element.root)),
+  })
 }
 
 const createChestStorageRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
@@ -165,14 +253,42 @@ const createChestStorageRoot = (factory: DomElementFactory, parent: DomElement):
   return root
 }
 
-const createChestStorageCloseButton = (factory: DomElementFactory, root: DomElement): void => {
-  const close = factory.createElement('button')
+const configureChestStorageCloseButton = (close: DomElement): void => {
   close.setAttribute('type', 'button')
   close.setAttribute('data-mx-ui', 'chest-storage-close')
   close.setAttribute('data-interaction-target', 'chest-storage-close')
-  close.setAttribute('aria-label', 'Close chest')
-  close.textContent = 'Close'
-  root.appendChild(close)
+  close.setAttribute('data-focus-group', 'chest-storage-actions')
+  close.setAttribute('data-focus-index', '0')
+  close.setAttribute('data-focus-columns', '1')
+  setLocalizedAttribute(close, 'aria-label', 'container.close-chest')
+  setLocalizedText(close, 'brewing.close')
+}
+
+const wireChestStorageCloseButton = (
+  close: DomInteractiveElement,
+  actions: ChestStorageViewActions | undefined,
+): void => {
+  if (typeof actions?.onClose === 'function') {
+    close.addEventListener('click', () => actions.onClose?.())
+  }
+}
+
+const createChestStorageCloseButtonElement = (
+  factory: DomElementFactory,
+  actions: ChestStorageViewActions | undefined,
+): DomElement => {
+  const close: DomInteractiveElement = factory.createElement('button')
+  configureChestStorageCloseButton(close)
+  wireChestStorageCloseButton(close, actions)
+  return close
+}
+
+const createChestStorageCloseButton = (
+  factory: DomElementFactory,
+  root: DomElement,
+  actions: ChestStorageViewActions | undefined,
+): void => {
+  root.appendChild(createChestStorageCloseButtonElement(factory, actions))
 }
 
 const chestTargets = (): ReadonlyArray<ChestStorageSlotTarget> =>
@@ -202,21 +318,25 @@ type ChestStorageGrids = {
 const createChestStorageGrids = (
   factory: DomElementFactory,
   root: DomElement,
+  actions: ChestStorageViewActions | undefined,
 ): ChestStorageGrids => {
-  const chest = createGrid(factory, root, {
-    columns: CHEST_STORAGE_COLUMNS,
-    id: 'chest',
-    targets: chestTargets(),
+  const chest = createGrid({
+    actions,
+    factory,
+    parent: root,
+    spec: { columns: CHEST_STORAGE_COLUMNS, id: 'chest', targets: chestTargets() },
   })
-  const playerMain = createGrid(factory, root, {
-    columns: INVENTORY_MAIN_COLUMNS,
-    id: 'player-main',
-    targets: playerMainTargets(),
+  const playerMain = createGrid({
+    actions,
+    factory,
+    parent: root,
+    spec: { columns: INVENTORY_MAIN_COLUMNS, id: 'player-main', targets: playerMainTargets() },
   })
-  const playerHotbar = createGrid(factory, root, {
-    columns: INVENTORY_MAIN_COLUMNS,
-    id: 'player-hotbar',
-    targets: playerHotbarTargets(),
+  const playerHotbar = createGrid({
+    actions,
+    factory,
+    parent: root,
+    spec: { columns: INVENTORY_MAIN_COLUMNS, id: 'player-hotbar', targets: playerHotbarTargets() },
   })
   return { chest, playerHotbar, playerMain }
 }
@@ -225,7 +345,7 @@ const createChestStorageCursor = (factory: DomElementFactory, root: DomElement):
   const cursorRoot = factory.createElement('div')
   cursorRoot.setAttribute('data-mx-ui', 'chest-storage-cursor')
   cursorRoot.setAttribute('role', 'status')
-  cursorRoot.setAttribute('aria-label', 'Carried item')
+  setLocalizedAttribute(cursorRoot, 'aria-label', 'container.carried-item')
   root.appendChild(cursorRoot)
   const cursor = createSlotElement(factory, CURSOR_SLOT_INDEX)
   cursorRoot.appendChild(cursor.root)
@@ -245,11 +365,12 @@ const createChestStorageStatus = (factory: DomElementFactory, root: DomElement):
 export const createChestStorageView = (
   factory: DomElementFactory,
   parent: DomElement,
+  actions?: ChestStorageViewActions,
 ): ChestStorageView => {
   const root = createChestStorageRoot(factory, parent)
-  createChestStorageCloseButton(factory, root)
+  createChestStorageCloseButton(factory, root, actions)
 
-  const grids = createChestStorageGrids(factory, root)
+  const grids = createChestStorageGrids(factory, root, actions)
   const cursor = createChestStorageCursor(factory, root)
   const statusText = createChestStorageStatus(factory, root)
 
@@ -257,9 +378,10 @@ export const createChestStorageView = (
     render: (model, interaction): void => {
       const focused = interaction?.focusedSlot ?? DEFAULT_FOCUSED_TARGET
       const active = typeof interaction !== 'undefined'
-      updateGrid(grids.chest, model.chest, { active, target: focused })
-      updateGrid(grids.playerMain, model.playerMain, { active, target: focused })
-      updateGrid(grids.playerHotbar, model.playerHotbar, { active, target: focused })
+      const chestSlotCount = model.chest.length
+      updateGrid(grids.chest, model.chest, { active, chestSlotCount, target: focused })
+      updateGrid(grids.playerMain, model.playerMain, { active, chestSlotCount, target: focused })
+      updateGrid(grids.playerHotbar, model.playerHotbar, { active, chestSlotCount, target: focused })
       updateCursor(cursor, model.cursor)
       writeText(statusText, interaction?.status ?? '')
     },

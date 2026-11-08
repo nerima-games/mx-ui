@@ -50,7 +50,7 @@ test.describe('inventory scenarios', () => {
       } else if (scenario.id === 'unknown-region') {
         const armour = inventory.locator('[data-region="armour"]')
         await expect(armour).toHaveAttribute('data-region-state', 'unknown')
-        await expect(armour.locator('[data-mx-ui="region-note"]')).toContainText('armour rack')
+        await expect(armour.locator('[data-mx-ui="region-note"]')).toContainText(/armour rack/i)
       } else if (scenario.id === 'cursor-stack') {
         await expect(inventory.getByRole('status', { name: 'Carried item, stone, 64' })).toBeVisible()
       } else if (scenario.id === 'stack-zero-empty') {
@@ -71,7 +71,7 @@ test.describe('inventory scenarios', () => {
       } else if (scenario.id === 'stack-100-rejected') {
         await expect(inventory.getByRole('note')).toContainText('Count 100 is rejected')
       } else if (scenario.id === 'accessibility-name-role-state') {
-        const slot = inventory.getByRole('button', { name: 'hotbar slot 1, stone, 64' })
+        const slot = inventory.getByRole('button', { name: 'Hotbar slot 1, stone, 64' })
         await expect(slot).toHaveAttribute('aria-disabled', 'false')
         await expect(slot).toHaveAttribute('tabindex', '0')
         const output = inventory.getByRole('button', { name: 'Crafting output, no matching recipe' })

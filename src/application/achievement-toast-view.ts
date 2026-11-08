@@ -4,10 +4,10 @@ import {
   textCell,
   writeAttribute,
   writeHidden,
-  writeText,
 } from './dom-write.js'
 import type { AchievementToast } from '../domain/achievement-toast.js'
 import { declarePalette } from './palette-css.js'
+import { writeLocalizedAchievementTitle } from './ui-localization.js'
 
 export type AchievementToastView = Readonly<{
   render: (toast?: AchievementToast) => void
@@ -54,7 +54,7 @@ const createToastRenderer = (
     writeHidden(hidden, typeof toast === 'undefined')
     if (typeof toast !== 'undefined') {
       writeAttribute(iconName, toast.icon)
-      writeText(titleText, toast.title)
+      writeLocalizedAchievementTitle(titleText, toast.achievement)
     }
   }
 }

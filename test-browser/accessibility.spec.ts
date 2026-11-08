@@ -105,7 +105,7 @@ test.describe('W4-C pause menu accessibility', () => {
     await expect(optionsButton).toBeFocused()
     await page.keyboard.press('Enter')
 
-    const optionsDialog = host.getByRole('dialog', { name: 'Options' })
+    const optionsDialog = host.getByRole('dialog', { name: 'Settings' })
     const closeButton = optionsDialog.getByRole('button', { name: 'Close' })
     await expect(host).toHaveAttribute('data-host-modal-stack', 'pause/settings')
     await expect(optionsDialog).toBeVisible()
@@ -317,9 +317,9 @@ test.describe('D: debug overlay and achievement toast', () => {
 
     const region = page.getByRole('region', { name: 'Debug overlay' })
     await expect(region).toBeVisible()
-    await expect(region).toContainText('FPS: なし')
-    await expect(region).toContainText('Coordinates: なし')
-    await expect(region).toContainText('Frame delta: なし')
+    await expect(region).toContainText('FPS: None')
+    await expect(region).toContainText('Coordinates: None')
+    await expect(region).toContainText('Frame delta: None')
     await expect(region).not.toContainText('FPS: 0')
   })
 
@@ -699,23 +699,23 @@ const TRADE_ACCESSIBILITY_EXPECTATIONS: Readonly<Record<
   ReadonlyArray<{ readonly label: string; readonly disabled: boolean }>
 >> = {
   'no-offers': [],
-  available: [{ label: '20 minecraft:wheat -> 1 minecraft:emerald (2/16)', disabled: false }],
-  unavailable: [{ label: '26 minecraft:potato -> 1 minecraft:emerald (3/16)', disabled: true }],
-  'different-profession': [{ label: '4 minecraft:iron_ingot -> 1 minecraft:emerald (0/12)', disabled: false }],
-  'out-of-stock': [{ label: '22 minecraft:carrot -> 1 minecraft:emerald (12/12)', disabled: true }],
+  available: [{ label: '20 minecraft:wheat → 1 minecraft:emerald (2/16)', disabled: false }],
+  unavailable: [{ label: '26 minecraft:potato → 1 minecraft:emerald (3/16)', disabled: true }],
+  'different-profession': [{ label: '4 minecraft:iron_ingot → 1 minecraft:emerald (0/12)', disabled: false }],
+  'out-of-stock': [{ label: '22 minecraft:carrot → 1 minecraft:emerald (12/12)', disabled: true }],
   'multiple-offers': [
-    { label: '4 minecraft:iron_ingot -> 1 minecraft:emerald (0/12)', disabled: false },
-    { label: '36 minecraft:emerald -> 1 minecraft:bell (1/12)', disabled: false },
-    { label: '20 minecraft:emerald -> 1 minecraft:iron_pickaxe (12/12)', disabled: true },
+    { label: '4 minecraft:iron_ingot → 1 minecraft:emerald (0/12)', disabled: false },
+    { label: '36 minecraft:emerald → 1 minecraft:bell (1/12)', disabled: false },
+    { label: '20 minecraft:emerald → 1 minecraft:iron_pickaxe (12/12)', disabled: true },
   ],
   'quantity-boundaries': [
-    { label: '0 minecraft:wheat -> 1 minecraft:emerald (0/1)', disabled: false },
-    { label: '1 minecraft:wheat -> 1 minecraft:emerald (1/1)', disabled: false },
-    { label: '64 minecraft:wheat -> 64 minecraft:emerald (64/64)', disabled: false },
-    { label: '99 minecraft:wheat -> 1 minecraft:emerald (99/99)', disabled: false },
-    { label: '100 minecraft:wheat -> 1 minecraft:emerald (100/100)', disabled: false },
+    { label: '0 minecraft:wheat → 1 minecraft:emerald (0/1)', disabled: false },
+    { label: '1 minecraft:wheat → 1 minecraft:emerald (1/1)', disabled: false },
+    { label: '64 minecraft:wheat → 64 minecraft:emerald (64/64)', disabled: false },
+    { label: '99 minecraft:wheat → 1 minecraft:emerald (99/99)', disabled: false },
+    { label: '100 minecraft:wheat → 1 minecraft:emerald (100/100)', disabled: false },
   ],
-  'status-text-boundaries': [{ label: '1 minecraft:wheat -> 1 minecraft:emerald (0/1)', disabled: false }],
+  'status-text-boundaries': [{ label: '1 minecraft:wheat → 1 minecraft:emerald (0/1)', disabled: false }],
 }
 
 const assertTradeState = async (scenarioId: string, surface: Locator): Promise<void> => {
@@ -802,7 +802,7 @@ const assertPauseState = async (scenarioId: string, surface: Locator): Promise<v
     expect(dialog).toHaveAttribute('aria-label', 'Game menu'),
   ])
   if (settingsAreOnTop) {
-    const settingsDialog = surface.getByRole('dialog', { name: 'Options' })
+    const settingsDialog = surface.getByRole('dialog', { name: 'Settings' })
     await Promise.all([
       expect(settingsDialog).toHaveAttribute('aria-modal', 'true'),
       expect(settingsDialog.getByRole('button', { name: 'Close' })).toHaveAttribute('type', 'button'),
@@ -843,7 +843,7 @@ const assertInventoryState = async (scenarioId: string, surface: Locator): Promi
       expect(carried).toHaveAttribute('aria-label', 'Carried item, stone, 64'),
     ])
   } else if (scenarioId === 'accessibility-name-role-state') {
-    const hotbarSlot = surface.getByRole('button', { name: 'hotbar slot 1, stone, 64', exact: true })
+    const hotbarSlot = surface.getByRole('button', { name: 'Hotbar slot 1, stone, 64', exact: true })
     const craftingOutput = surface.getByRole('button', {
       name: 'Crafting output, no matching recipe',
       exact: true,
