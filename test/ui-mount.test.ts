@@ -27,6 +27,7 @@ import {
 } from '../src/domain/inventory-view-model'
 import { DomainEventBus, itemStack as makeItemStack } from '@nerima-games/mc-sim'
 import { achievementEvent, untrustedAchievementEvent } from './helpers/achievement-event'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 const testScopes: Array<Scope.Closeable> = []
 
@@ -904,24 +905,24 @@ describe('UiMount', () => {
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
       inventory: { slots: [testItemStack('torch', 3)] },
-    })
+    }, fakeItemDisplayNameOptions())
 
     runtime.updateInventory(model)
     const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
     const hotbarFirstSlot = () =>
       inventory?.querySelector('[data-region="hotbar"] [data-mx-ui="slot"]')
     expect(hotbarFirstSlot()?.querySelector('[data-mx-ui="slot-item"]')?.textContent).toBe(
-      'torch',
+      'en:torch',
     )
 
     runtime.openInventory()
     const other = inventoryViewModel({
       ...emptyInventorySnapshot,
       inventory: { slots: [testItemStack('coal', 5)] },
-    })
+    }, fakeItemDisplayNameOptions())
     runtime.updateInventory(other)
     expect(hotbarFirstSlot()?.querySelector('[data-mx-ui="slot-item"]')?.textContent).toBe(
-      'coal',
+      'en:coal',
     )
   })
 
@@ -1176,14 +1177,14 @@ describe('UiMount', () => {
     const model = inventoryViewModel({
       ...emptyInventorySnapshot,
       inventory: { slots: [testItemStack('diamond', 1)] },
-    })
+    }, fakeItemDisplayNameOptions())
     runtime.openInventory(model)
     const inventory = host.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
     expect(
       inventory
         ?.querySelector('[data-region="hotbar"] [data-mx-ui="slot"]')
         ?.querySelector('[data-mx-ui="slot-item"]')?.textContent,
-    ).toBe('diamond')
+    ).toBe('en:diamond')
 
     const focusedBefore = document.activeElement
     runtime.openInventory()

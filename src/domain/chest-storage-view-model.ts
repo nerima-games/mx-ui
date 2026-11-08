@@ -1,5 +1,6 @@
 import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
 import { INVENTORY_MAIN_SLOT_COUNT, INVENTORY_SLOT_COUNT } from './inventory-view-model.js'
+import type { ItemDisplayNameOptions } from './item-display-name.js'
 
 /**
  * A storage screen's item identifier.
@@ -112,12 +113,22 @@ const targetSlotIndex = (target: ChestStorageSlotTarget, selected: ChestStorageS
   return NO_SELECTION_INDEX
 }
 
-const projectSlot = (
-  target: ChestStorageSlotTarget,
-  snapshot: ChestStorageSlotSnapshot,
-  selected: ChestStorageSlotTarget | undefined,
-): ChestStorageSlotView => {
-  const visual = slotView(toHotbarSlotSnapshot(snapshot), target.slot, targetSlotIndex(target, selected))
+const projectSlot = ({
+  target,
+  snapshot,
+  selected,
+  itemDisplayNameOptions,
+}: Readonly<{
+  target: ChestStorageSlotTarget
+  snapshot: ChestStorageSlotSnapshot
+  selected: ChestStorageSlotTarget | undefined
+  itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
+}>): ChestStorageSlotView => {
+  const visual = slotView(
+    toHotbarSlotSnapshot(snapshot),
+    target.slot,
+    { itemDisplayNameOptions, selectedIndex: targetSlotIndex(target, selected) },
+  )
   return Object.freeze({ ...visual, target: Object.freeze({ ...target }) })
 }
 
@@ -126,7 +137,10 @@ const slotAt = (
   index: number,
 ): ChestStorageSlotSnapshot => slots[index]
 
-const projectCursor = (cursor: ChestStorageStackSnapshot | undefined): ChestStorageCursorView | undefined => {
+const projectCursor = (
+  cursor: ChestStorageStackSnapshot | undefined,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): ChestStorageCursorView | undefined => {
   if (typeof cursor === 'undefined') {
     return
   }
@@ -134,31 +148,49 @@ const projectCursor = (cursor: ChestStorageStackSnapshot | undefined): ChestStor
     ...slotView(
       { count: cursor.count, durability: cursor.durability, itemId: cursor.item },
       CURSOR_SLOT_INDEX,
-      NO_SELECTION_INDEX,
+      { itemDisplayNameOptions, selectedIndex: NO_SELECTION_INDEX },
     ),
     stack: Object.freeze({ ...cursor }),
   })
 }
 
 /** Purely derives the immutable active container and 36-slot player presentation. */
-export const chestStorageViewModel = (snapshot: ChestStorageSnapshot): ChestStorageViewModel => {
+export const chestStorageViewModel = (
+  snapshot: ChestStorageSnapshot,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): ChestStorageViewModel => {
   const chest = Object.freeze(
     Array.from({ length: snapshot.chestSlotCount }, (_element, slot) =>
-      projectSlot({ region: 'chest', slot }, slotAt(snapshot.chest, slot), snapshot.selectedSlot),
+      projectSlot({
+        itemDisplayNameOptions,
+        selected: snapshot.selectedSlot,
+        snapshot: slotAt(snapshot.chest, slot),
+        target: { region: 'chest', slot },
+      }),
     ),
   )
   const playerHotbar = Object.freeze(
     Array.from({ length: INVENTORY_SLOT_COUNT - INVENTORY_MAIN_SLOT_COUNT }, (_element, slot) =>
-      projectSlot({ region: 'player', slot }, slotAt(snapshot.playerInventory, slot), snapshot.selectedSlot),
+      projectSlot({
+        itemDisplayNameOptions,
+        selected: snapshot.selectedSlot,
+        snapshot: slotAt(snapshot.playerInventory, slot),
+        target: { region: 'player', slot },
+      }),
     ),
   )
   const playerMain = Object.freeze(
     Array.from({ length: INVENTORY_MAIN_SLOT_COUNT }, (_element, offset) => {
       const slot = offset + (INVENTORY_SLOT_COUNT - INVENTORY_MAIN_SLOT_COUNT)
-      return projectSlot({ region: 'player', slot }, slotAt(snapshot.playerInventory, slot), snapshot.selectedSlot)
+      return projectSlot({
+        itemDisplayNameOptions,
+        selected: snapshot.selectedSlot,
+        snapshot: slotAt(snapshot.playerInventory, slot),
+        target: { region: 'player', slot },
+      })
     }),
   )
-  const cursor = projectCursor(snapshot.cursor)
+  const cursor = projectCursor(snapshot.cursor, itemDisplayNameOptions)
 
   return Object.freeze({ chest, cursor, playerHotbar, playerMain })
 }

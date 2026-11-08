@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createEnchantingTableView, type EnchantingInteractionView } from '../src/application/enchanting-table-view'
 import { enchantingTableViewModel } from '../src/domain/enchanting-table-view-model'
 import { fakeDocument, fakeElement } from './fake-dom'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createEnchantingTableView', () => {
   it('projects five operation targets, costs, rejection, and accessibility without listeners', () => {
@@ -30,12 +31,15 @@ describe('createEnchantingTableView', () => {
           },
           undefined,
         ],
-      }),
+      }, fakeItemDisplayNameOptions()),
       { focusedTarget: 'offer-2', status: 'Second enchantment selected' },
     )
 
     const targets = root.findAll('data-interaction-target', 'enchanting-operation')
     expect(targets).toHaveLength(5)
+    expect(targets[0]?.attributes.get('aria-label')).toBe('Enchanting item, en:diamond_sword, 1')
+    expect(targets[1]?.attributes.get('aria-label')).toBe('Lapis lazuli, en:lapis_lazuli, 3')
+    expect(targets[0]?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:diamond_sword')
     expect(targets.map((target) => target.attributes.get('data-operation-target'))).toStrictEqual([
       'item',
       'lapis',

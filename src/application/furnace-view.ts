@@ -24,8 +24,9 @@ import {
   setSlotFocusTarget,
   updateSlotElement,
 } from './slot-element.js'
-import { setLocalizedAttribute, setLocalizedText } from './ui-localization.js'
-import type { UiMessageKey } from '../domain/ui-language.js'
+import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement } from './ui-localization.js'
+import { itemDisplayNameValue } from './item-display-name.js'
 
 export type FurnaceInteractionView = {
   readonly focusedSlot: FurnaceSlotId
@@ -59,7 +60,8 @@ const FURNACE_COLUMNS = 3
 
 const slotAriaLabel = (
   slot: FurnaceSlotView,
-): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
+  language: UiLanguage,
+): Readonly<{ key: UiMessageKey; values: UiMessageValues }> => {
   // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts)
   // Guarantees the two always agree. Checking the field this function actually reads lets
   // TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a
@@ -77,7 +79,7 @@ const slotAriaLabel = (
     key: 'furnace.slot-item',
     values: {
       count: slot.countLabel ?? '1',
-      item: slot.itemId,
+      item: itemDisplayNameValue(slot, language),
       slot: { key: SLOT_MESSAGE_KEY[slot.id] },
     },
   }
@@ -254,7 +256,7 @@ export const createFurnaceView = (
           disabled: false,
           focused: typeof interaction !== 'undefined' && focused,
           label: '',
-          localizedLabel: slotAriaLabel(slot),
+          localizedLabel: slotAriaLabel(slot, uiLanguageForElement(slotElement.root)),
           tabStop: focused,
         })
       }

@@ -32,27 +32,62 @@ const makeTarget = () => {
   }
 }
 
+const EXPECTED_CORRECTION_MODES = ['protanopia', 'deuteranopia', 'tritanopia'] as const
+const EXPECTED_COLOR_VISION_MODES = ['off', ...EXPECTED_CORRECTION_MODES] as const
+type ExpectedCorrectionMode = (typeof EXPECTED_CORRECTION_MODES)[number]
+const EXPECTED_COLOR_VISION_MATRICES: Readonly<Record<ExpectedCorrectionMode, readonly number[]>> = {
+  protanopia: [
+    1, 0, 0, 0, 0,
+    -0.2549, 1.2549, 0, 0, 0,
+    0.3031, -0.5451, 1.242, 0, 0,
+    0, 0, 0, 1, 0,
+  ],
+  deuteranopia: [
+    1, 0, 0, 0, 0,
+    -0.4375, 1.4375, 0, 0, 0,
+    0.2625, -0.5625, 1.3, 0, 0,
+    0, 0, 0, 1, 0,
+  ],
+  tritanopia: [
+    1, 0, 0, 0, 0,
+    0.035, 1.532, -0.567, 0, 0,
+    0.035, -0.51, 1.475, 0, 0,
+    0, 0, 0, 1, 0,
+  ],
+}
+
+const expectedMatrixValues = (mode: ExpectedCorrectionMode): string =>
+  EXPECTED_COLOR_VISION_MATRICES[mode].join(' ')
+
 describe('color vision settings projection', () => {
   it('returns matrix values accepted by the public output schema', () => {
+    let generatedModes = 0
     fc.assert(
       fc.property(
-        fc.constantFrom(...COLOR_VISION_MODES.filter((mode) => mode !== 'off')),
+        fc.constantFrom(...EXPECTED_CORRECTION_MODES),
         (mode) => {
+          generatedModes += 1
           const values = colorVisionCorrectionMatrixValues(mode)
-          expect(Schema.decodeUnknownSync(ColorVisionMatrixValuesSchema)(values)).toBe(values)
+          const expectedValues = expectedMatrixValues(mode)
+
+          expect(colorVisionMatrix(mode)).toStrictEqual(EXPECTED_COLOR_VISION_MATRICES[mode])
+          expect(values).toBe(expectedValues)
+          expect(Schema.decodeUnknownSync(ColorVisionMatrixValuesSchema)(values)).toBe(expectedValues)
+          expect(values.split(' ')).toHaveLength(20)
         },
       ),
+      { numRuns: 100 },
     )
+    expect(generatedModes).toBe(100)
   })
 
   it('uses the settings correction values and keeps off without a filter', () => {
-    expect(COLOR_VISION_MODES).toStrictEqual(['off', 'protanopia', 'deuteranopia', 'tritanopia'])
+    expect(COLOR_VISION_MODES).toStrictEqual(EXPECTED_COLOR_VISION_MODES)
     expect(colorVisionAttribute('off')).toBeUndefined()
     expect(colorVisionMatrix('off')).toBeUndefined()
     expect(colorVisionAttribute('protanopia')).toBe('protanopia')
 
-    for (const mode of COLOR_VISION_MODES) {
-      expect(COLOR_VISION_MODES).toContain(mode)
+    for (const mode of EXPECTED_COLOR_VISION_MODES) {
       const projected = settingsViewModel(
         { ...DEFAULT_SETTINGS, colorVisionCorrection: mode },
         TEST_DEFAULT_BINDINGS,
@@ -99,16 +134,28 @@ describe('color vision settings projection', () => {
     root.appendChild(canvas)
     const controller = createColorVisionFilterController(root, canvas)
 
+    let generatedInputs = 0
     fc.assert(
-      fc.property(fc.anything(), (input) => {
+      fc.property(fc.oneof(fc.anything(), fc.constantFrom(...EXPECTED_COLOR_VISION_MODES)), (input) => {
+        generatedInputs += 1
         const result = controller.apply(input)
+        const expectedMode = EXPECTED_COLOR_VISION_MODES.find((mode) => mode === input)
+
+        expect(Result.isSuccess(result)).toBe(typeof expectedMode !== 'undefined')
         if (Result.isFailure(result)) {
+          expect(expectedMode).toBeUndefined()
           expect(result.failure).toBeDefined()
-        } else {
+          return
+        }
+
+        expect(result.success).toBe(expectedMode)
+        if (typeof expectedMode !== 'undefined') {
           expect(Result.isSuccess(decodeColorVisionMode(result.success))).toBe(true)
         }
       }),
+      { numRuns: 100 },
     )
+    expect(generatedInputs).toBe(100)
 
     for (const input of [null, undefined, 'achromatopsia', { _tag: 'ColorVisionMode' }]) {
       expect(Result.isFailure(controller.apply(input))).toBe(true)
@@ -130,9 +177,11 @@ describe('color vision settings projection', () => {
     expect(filters).toHaveLength(3)
     expect(filters.every((filter) => filter.namespaceURI === 'http://www.w3.org/2000/svg')).toBe(true)
 
-    for (const mode of COLOR_VISION_MODES) {
+    for (const mode of EXPECTED_COLOR_VISION_MODES) {
+      const expectedValues = mode === 'off' ? undefined : expectedMatrixValues(mode)
+      expect(colorVisionMatrixValues(mode)).toBe(expectedValues)
+
       if (mode !== 'off') {
-        const expectedValues = colorVisionMatrixValues(mode)
         const filter = filters.find((candidate) =>
           candidate.querySelector('feColorMatrix')?.getAttribute('values') === expectedValues,
         )

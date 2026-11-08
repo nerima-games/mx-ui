@@ -1,4 +1,5 @@
 import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
+import type { ItemDisplayNameOptions } from './item-display-name.js'
 
 export const FURNACE_SLOT_IDS = ['input', 'fuel', 'output'] as const
 
@@ -66,19 +67,25 @@ const toHotbarSlot = (
 const projectSlot = (
   id: FurnaceSlotId,
   index: number,
-  snapshot: FurnaceSlotSnapshot | undefined,
+  { snapshot, itemDisplayNameOptions }: Readonly<{
+    snapshot: FurnaceSlotSnapshot | undefined
+    itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
+  }>,
 ): FurnaceSlotView =>
   Object.freeze({
     id,
-    ...slotView(toHotbarSlot(snapshot), index, NO_SELECTION),
+    ...slotView(toHotbarSlot(snapshot), index, { itemDisplayNameOptions, selectedIndex: NO_SELECTION }),
   })
 
 /** Purely derives the immutable presentation state for a furnace screen. */
-export const furnaceViewModel = (snapshot: FurnaceSnapshot): FurnaceViewModel => {
+export const furnaceViewModel = (
+  snapshot: FurnaceSnapshot,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): FurnaceViewModel => {
   const slots = Object.freeze([
-    projectSlot('input', INPUT_INDEX, snapshot.input),
-    projectSlot('fuel', FUEL_INDEX, snapshot.fuel),
-    projectSlot('output', OUTPUT_INDEX, snapshot.output),
+    projectSlot('input', INPUT_INDEX, { itemDisplayNameOptions, snapshot: snapshot.input }),
+    projectSlot('fuel', FUEL_INDEX, { itemDisplayNameOptions, snapshot: snapshot.fuel }),
+    projectSlot('output', OUTPUT_INDEX, { itemDisplayNameOptions, snapshot: snapshot.output }),
   ])
 
   return Object.freeze({

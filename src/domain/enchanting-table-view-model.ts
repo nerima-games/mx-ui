@@ -1,4 +1,5 @@
 import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
+import type { ItemDisplayNameOptions } from './item-display-name.js'
 
 export const ENCHANTING_SLOT_IDS = ['item', 'lapis'] as const
 export const ENCHANTING_OFFER_IDS = ['offer-1', 'offer-2', 'offer-3'] as const
@@ -78,11 +79,14 @@ const toHotbarSlot = (
 const projectSlot = (
   id: EnchantingSlotId,
   index: number,
-  snapshot: EnchantingSlotSnapshot | undefined,
+  { snapshot, itemDisplayNameOptions }: Readonly<{
+    snapshot: EnchantingSlotSnapshot | undefined
+    itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
+  }>,
 ): EnchantingSlotView =>
   Object.freeze({
     id,
-    ...slotView(toHotbarSlot(snapshot), index, NO_SELECTION),
+    ...slotView(toHotbarSlot(snapshot), index, { itemDisplayNameOptions, selectedIndex: NO_SELECTION }),
   })
 
 const projectOffer = (
@@ -101,13 +105,14 @@ const projectOffer = (
 /** Purely derives the immutable presentation state for an enchanting table. */
 export const enchantingTableViewModel = (
   snapshot: EnchantingTableSnapshot,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
 ): EnchantingTableViewModel =>
   Object.freeze({
     offers: Object.freeze(
       ENCHANTING_OFFER_IDS.map((id, index) => projectOffer(id, snapshot.offers[index])),
     ),
     slots: Object.freeze([
-      projectSlot('item', ITEM_INDEX, snapshot.item),
-      projectSlot('lapis', LAPIS_INDEX, snapshot.lapis),
+      projectSlot('item', ITEM_INDEX, { itemDisplayNameOptions, snapshot: snapshot.item }),
+      projectSlot('lapis', LAPIS_INDEX, { itemDisplayNameOptions, snapshot: snapshot.lapis }),
     ]),
   })

@@ -1,20 +1,27 @@
 // @vitest-environment jsdom
 
-import { Result } from 'effect'
+import { Result, Schema } from 'effect'
 import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS } from '@nerima-games/mc-sim'
+import { DEFAULT_SETTINGS, itemStack } from '@nerima-games/mc-sim'
 import {
   ACHIEVEMENT_TITLES,
+  emptyInventorySnapshot,
   UI_LANGUAGES,
   UI_MESSAGES,
   UI_TRANSLATION_KEY_COUNT,
+  ItemDisplayNameSchema,
+  type ItemDisplayNameResolver,
+  type UiLanguage,
   applyUiLanguage,
   createEnchantingTableView,
+  createInventoryView,
   createMainMenuView,
   createSettingsView,
   decodeUiLanguage,
+  inventoryViewModel,
   inputActionMessageKey,
+  resolveItemDisplayName,
   enchantingTableViewModel,
   makeUiMount,
   settingsViewModel,
@@ -29,6 +36,8 @@ import {
 } from '../src/application/ui-localization.js'
 import { textCell } from '../src/application/dom-write.js'
 import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from './fixtures/settings-input'
+import type { ItemType } from '@nerima-games/mc-kernel'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('UI language', () => {
   it('returns typed failures for unsupported inputs through the decoder and mount controller', () => {
@@ -86,13 +95,30 @@ describe('UI language', () => {
       onOpenSettings: () => undefined,
       onStateChange: () => undefined,
     })
+    const inventory = createInventoryView(document, host)
+    const carriedStack = itemStack('stone', 1)
+    if (Result.isFailure(carriedStack)) {
+      expect.fail('Expected a valid test item stack')
+    }
+    const inventorySnapshot = { ...emptyInventorySnapshot, carried: carriedStack.success }
+    const renderInventory = (language: UiLanguage): void => {
+      inventory.render(
+        inventoryViewModel(inventorySnapshot, fakeItemDisplayNameOptions(language)),
+        { focused: { kind: 'crafting-output' }, status: 'Carrying item' },
+      )
+    }
+    renderInventory('en')
     const newWorldButton = host.querySelector('[data-menu-entry="new-world"]')
     const worldNameInput = host.querySelector<HTMLInputElement>('[data-mx-ui="menu-world-name"]')
+    const carriedItem = host.querySelector('[data-mx-ui="carried"] [data-mx-ui="slot-item"]')
 
     expect(newWorldButton?.textContent).toBe('Create New World')
     expect(worldNameInput?.getAttribute('placeholder')).toBe('New World')
+    expect(carriedItem?.textContent).toBe('en:stone')
 
     expect(Result.isSuccess(applyUiLanguage(host, 'ja'))).toBe(true)
+    renderInventory('ja')
+    expect(carriedItem?.textContent).toBe('ja:stone')
     expect(newWorldButton?.textContent).toBe('新しいワールドを作成')
     expect(newWorldButton?.getAttribute('aria-label')).toBe('新しいワールドを作成')
     expect(worldNameInput?.getAttribute('placeholder')).toBe('新しいワールド')
@@ -167,6 +193,58 @@ describe('UI language', () => {
       expect(titles.en.length, `${achievement} English`).toBeGreaterThan(0)
       expect(titles.ja, `${achievement} Japanese`).toBeTypeOf('string')
       expect(titles.ja.length, `${achievement} Japanese`).toBeGreaterThan(0)
+    }
+
+    const resolverCalls: Array<Readonly<{ itemType: ItemType; language: UiLanguage }>> = []
+    const resolver: ItemDisplayNameResolver = (itemType, language) => {
+      resolverCalls.push({ itemType, language })
+      return Result.succeed(`${language}:${itemType}`)
+    }
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const callsBefore = resolverCalls.length
+        const resolved = resolveItemDisplayName(input, 'en', resolver)
+        if (Result.isFailure(resolved)) {
+          const failureTag = Reflect.get(resolved.failure, '_tag')
+          expect(failureTag).toBeTypeOf('string')
+          expect(failureTag.length).toBeGreaterThan(0)
+          if (failureTag === 'InvalidItemId') {
+            expect(resolverCalls).toHaveLength(callsBefore)
+          }
+          return
+        }
+        expect(Result.isSuccess(Schema.decodeUnknownResult(ItemDisplayNameSchema)(resolved.success))).toBe(true)
+        expect(resolved.success).not.toContain('minecraft:')
+      }),
+    )
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const decoded = Schema.decodeUnknownResult(ItemDisplayNameSchema)(input)
+        if (Result.isFailure(decoded)) {
+          expect(decoded.failure).toBeDefined()
+          return
+        }
+        expect(Result.isSuccess(Schema.decodeUnknownResult(ItemDisplayNameSchema)(decoded.success))).toBe(true)
+      }),
+    )
+
+    const namespacedId = resolveItemDisplayName('minecraft:iron_ingot', 'ja', resolver)
+    expect(Result.isSuccess(namespacedId)).toBe(true)
+    expect(resolverCalls.at(-1)).toStrictEqual({ itemType: 'iron_ingot', language: 'ja' })
+    const callsBeforeUnknown = resolverCalls.length
+    const unknownId = resolveItemDisplayName('minecraft:no_such_item', 'en', resolver)
+    expect(Result.isFailure(unknownId)).toBe(true)
+    expect(resolverCalls).toHaveLength(callsBeforeUnknown)
+    expect(Result.isFailure(resolveItemDisplayName('stone', 'en'))).toBe(true)
+    expect(
+      Result.isFailure(resolveItemDisplayName('stone', 'en', () => Result.succeed(''))),
+    ).toBe(true)
+    const namespacedDisplayName = resolveItemDisplayName('stone', 'en', () =>
+      Result.succeed('minecraft:stone'),
+    )
+    expect(Result.isFailure(namespacedDisplayName)).toBe(true)
+    if (Result.isFailure(namespacedDisplayName)) {
+      expect(Reflect.get(namespacedDisplayName.failure, '_tag')).toBe('InvalidItemDisplayName')
     }
 
     expect(Object.keys(ACHIEVEMENT_TITLES)).toHaveLength(126)

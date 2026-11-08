@@ -22,8 +22,9 @@ import {
   updateSlotElement,
 } from './slot-element.js'
 import { type TextCell, textCell, writeText } from './dom-write.js'
-import { setLocalizedAttribute, setLocalizedText, writeLocalizedAttribute } from './ui-localization.js'
-import { type UiMessageKey } from '../domain/ui-language.js'
+import { type UiLanguage, type UiMessageKey, type UiMessageValues } from '../domain/ui-language.js'
+import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
+import { itemDisplayNameValue } from './item-display-name.js'
 
 export type ChestStorageInteractionView = {
   readonly focusedSlot: ChestStorageSlotTarget
@@ -79,7 +80,8 @@ const ownerMessageKey = (region: ChestStorageSlotTarget['region']): UiMessageKey
 
 const ariaLabel = (
   view: ChestStorageSlotView,
-): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
+  language: UiLanguage,
+): Readonly<{ key: UiMessageKey; values: UiMessageValues }> => {
   const displaySlot = String(view.target.slot + SLOT_DISPLAY_OFFSET)
   // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts) guarantees the two always agree.
   // Checking the field this function actually reads lets TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a check on `empty` alone could never let the type system prove impossible.
@@ -94,7 +96,7 @@ const ariaLabel = (
     key: 'container.slot-item',
     values: {
       count: view.countLabel ?? '1',
-      item: view.itemId,
+      item: itemDisplayNameValue(view, language),
       owner: { key: ownerMessageKey(view.target.region) },
       slot: displaySlot,
     },
@@ -196,7 +198,7 @@ const updateGrid = (
         disabled: false,
         focused: focus.active && hasFocus,
         label: '',
-        localizedLabel: ariaLabel(view),
+        localizedLabel: ariaLabel(view, uiLanguageForElement(element.slot.root)),
         tabStop: hasFocus,
       })
     }
@@ -237,7 +239,7 @@ const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | und
   }
   writeLocalizedAttribute(element.ariaLabel, 'inventory.carried-item', {
     count: cursor.countLabel ?? '1',
-    item: cursor.itemId,
+    item: itemDisplayNameValue(cursor, uiLanguageForElement(element.root)),
   })
 }
 

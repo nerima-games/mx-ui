@@ -45,7 +45,9 @@ import {
   updateSlotElement,
 } from '../src/application/slot-element'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
+import { ItemDisplayNameSchema, type ItemDisplayNameOptions } from '../src/domain/item-display-name'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 const mount = (motion: 'full' | 'reduced' = 'full') => {
   const factory = fakeDocument()
@@ -63,7 +65,8 @@ const hudViewModel = (
   vitals: Vitals = SPAWN_VITALS,
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot> = emptyHotbar,
   selectedHotbarSlot = 0,
-) => projectHudViewModel(vitals, hotbarSlots, selectedHotbarSlot)
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+) => projectHudViewModel(vitals, hotbarSlots, { itemDisplayNameOptions, selectedHotbarSlot })
 
 const damaged = (healthPoints: number): Vitals => ({
   ...SPAWN_VITALS,
@@ -402,6 +405,12 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     expect(root.find('data-mx-ui', 'hotbar-radio-group')?.attributes.get('role')).toBe('radiogroup')
     expect(root.find('data-mx-ui', 'hotbar-radio-group')?.attributes.get('aria-label')).toBe('Hotbar slots')
     expect(slots.every((slot) => slot.attributes.get('role') === 'radio')).toBe(true)
+    expect(slots.map((slot) => slot.attributes.get('data-focus-group'))).toStrictEqual(
+      Array<string>(HOTBAR_SIZE).fill('hotbar'),
+    )
+    expect(slots.map((slot) => slot.attributes.get('data-focus-index'))).toStrictEqual(
+      Array.from({ length: HOTBAR_SIZE }, (_value, index) => String(index)),
+    )
     // And the group has a name. DN-UI-1c: 「the visible label is a sibling
     // `<span>`, so a screen reader would otherwise announce this only as "edit
     // text"」 — a focus stop with no accessible name announces nothing.
@@ -420,11 +429,48 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
   it('REGRESSION: a filled slot names its item and count', () => {
     // Catches filled hotbar slots whose accessible names omit their stack contents.
     const { root, view } = mount()
-    view.render(hudViewModel(SPAWN_VITALS, [undefined, ownerCarriedSlotForCount(64)]))
+    view.render(
+      hudViewModel(SPAWN_VITALS, [undefined, ownerCarriedSlotForCount(64)], 0, fakeItemDisplayNameOptions()),
+    )
 
     expect(root.findAll('data-mx-ui', 'slot')[1]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 2, stone, 64',
+      'Hotbar slot 2, en:stone, 64',
     )
+    expect(root.findAll('data-mx-ui', 'slot-item')[1]?.textContent).toBe('en:stone')
+
+    const unresolved = mount()
+    unresolved.view.render(hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)]))
+    expect(unresolved.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
+      'Hotbar slot 1, Unknown item, 64',
+    )
+    expect(unresolved.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
+
+    const namespaced = mount()
+    namespaced.view.render(
+      hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)], 0, {
+        language: 'en',
+        resolver: () => Result.succeed('minecraft:stone'),
+      }),
+    )
+    expect(namespaced.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
+      'Hotbar slot 1, Unknown item, 64',
+    )
+    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
+
+    const model = hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)], 0, fakeItemDisplayNameOptions())
+    const unsafeDisplayName = Schema.decodeUnknownSync(ItemDisplayNameSchema)('minecraft:stone')
+    namespaced.view.render({
+      ...model,
+      hotbar: model.hotbar.map((slot, index) =>
+        index === 0
+          ? { ...slot, itemDisplayName: { language: 'en', result: Result.succeed(unsafeDisplayName) } }
+          : slot,
+      ),
+    })
+    expect(namespaced.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
+      'Hotbar slot 1, Unknown item, 64',
+    )
+    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
   })
 
   it('REGRESSION: selected radio state follows a moving hotbar selection', () => {

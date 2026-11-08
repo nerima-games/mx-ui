@@ -51,9 +51,10 @@ import {
 } from './dom-write.js'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
-import { clearLocalizedAttribute, writeLocalizedAttribute } from './ui-localization.js'
+import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
 import { PALETTE_VAR } from './palette-css.js'
 import type { SlotView } from '../domain/hud-view-model.js'
+import { itemDisplayNameText } from './item-display-name.js'
 
 /**
  * Below this, a durability bar turns from `DURABILITY_HIGH` to `DURABILITY_LOW`.
@@ -565,10 +566,19 @@ const updateSlotDurability = (slot: SlotElement, durability: number | undefined)
 const updateSlotText = (
   text: TextCell,
   title: AttributeCell,
-  value: string | undefined,
+  value?: string,
 ): void => {
   writeText(text, value ?? '')
   writeAttribute(title, value)
+}
+
+const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
+  if (typeof view.itemId === 'undefined') {
+    updateSlotText(slot.itemText, slot.itemTitle)
+    return
+  }
+  const language = uiLanguageForElement(slot.root)
+  updateSlotText(slot.itemText, slot.itemTitle, itemDisplayNameText(view, language))
 }
 
 /**
@@ -585,7 +595,7 @@ export const updateSlotElement = (
   view: SlotView,
   mergeable?: boolean,
 ): void => {
-  updateSlotText(slot.itemText, slot.itemTitle, view.itemId)
+  updateSlotItemText(slot, view)
   updateSlotText(slot.countText, slot.countTitle, view.countLabel)
   writeAttribute(slot.emptyFlag, presenceValue(view.empty))
   writeAttribute(slot.selectedFlag, presenceValue(view.selected))

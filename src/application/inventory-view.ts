@@ -68,9 +68,10 @@ import {
   setSlotHidden,
   updateSlotElement,
 } from './slot-element.js'
-import { inheritUiLanguage, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
+import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { inheritUiLanguage, uiLanguageForElement, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
 import type { SlotView } from '../domain/hud-view-model.js'
-import type { UiMessageKey } from '../domain/ui-language.js'
+import { itemDisplayNameValue } from './item-display-name.js'
 
 type RegionElement = {
   readonly id: RegionId
@@ -271,11 +272,17 @@ const ensureRegionSlotCount = (
   }
 }
 
-const slotLabel = (
-  region: RegionId,
-  index: number,
-  item: Pick<SlotView, 'itemId' | 'countLabel'>,
-): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
+const slotLabel = ({
+  region,
+  index,
+  item,
+  language,
+}: Readonly<{
+  region: RegionId
+  index: number
+  item: Pick<SlotView, 'itemId' | 'countLabel' | 'itemDisplayName'>
+  language: UiLanguage
+}>): Readonly<{ key: UiMessageKey; values: UiMessageValues }> => {
   const displayIndex = String(index + ONE)
   if (typeof item.itemId === 'undefined') {
     return {
@@ -287,7 +294,7 @@ const slotLabel = (
     key: 'inventory.slot-item',
     values: {
       count: item.countLabel ?? '1',
-      item: item.itemId,
+      item: itemDisplayNameValue(item, language),
       region: { key: REGION_MESSAGE_KEY[region] },
       slot: displayIndex,
     },
@@ -303,6 +310,7 @@ type SlotIdentity = {
 const buildFocusedSlotButtonView = (
   identity: SlotIdentity,
   focused: InventoryInteractionTarget,
+  language: UiLanguage,
 ): SlotButtonView => {
   const { regionId, index, view } = identity
   const isFocused = focused?.kind === 'slot' && focused.region === regionId && focused.index === index
@@ -310,7 +318,7 @@ const buildFocusedSlotButtonView = (
     disabled: false,
     focused: isFocused,
     label: '',
-    localizedLabel: slotLabel(regionId, index, view),
+    localizedLabel: slotLabel({ index, item: view, language, region: regionId }),
     tabStop: isFocused,
   }
 }
@@ -337,7 +345,8 @@ const renderRegionSlotFocus = (
     if (slot.role.previous === 'button') {
       applyButtonView(slot)
     }
-    const label = slotLabel(context.regionId, context.index, context.view)
+    const language = uiLanguageForElement(slot.root)
+    const label = slotLabel({ index: context.index, item: context.view, language, region: context.regionId })
     writeLocalizedAttribute(slot.ariaLabel, label.key, label.values)
     return
   }
@@ -346,6 +355,7 @@ const renderRegionSlotFocus = (
     buildFocusedSlotButtonView(
       { index: context.index, regionId: context.regionId, view: context.view },
       context.focused,
+      uiLanguageForElement(slot.root),
     ),
   )
   setSlotFocusTarget(slot, {
@@ -412,18 +422,19 @@ const renderRegion = ({ elements, focused, model, actions }: RegionRenderContext
   renderKnownRegion({ actions, elements, focused, model })
 }
 
-const inventoryItemName = (itemId: string | undefined): string | Readonly<{ key: UiMessageKey }> => {
-  if (typeof itemId === 'undefined') {
+const inventoryItemName = (item: SlotView | undefined, language: UiLanguage): UiMessageValues[string] => {
+  if (typeof item === 'undefined' || typeof item.itemId === 'undefined') {
     return { key: 'inventory.empty' }
   }
-  return itemId
+  return itemDisplayNameValue(item, language)
 }
 
 type InteractiveCraftingOutcome = Extract<CraftingOutcomeView, { readonly kind: 'match' | 'no-match' }>
 
 const outputLabel = (
   crafting: InteractiveCraftingOutcome,
-): Readonly<{ key: UiMessageKey; values?: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
+  language: UiLanguage,
+): Readonly<{ key: UiMessageKey; values?: UiMessageValues }> => {
   if (crafting.kind === 'match') {
     // `InventoryViewModel` is a published type with no canonical constructor.
     // `inventoryViewModel` always upholds this invariant: `empty` false implies `itemId` defined.
@@ -433,7 +444,7 @@ const outputLabel = (
       key: 'inventory.crafting-output-item',
       values: {
         count: crafting.output.countLabel ?? '1',
-        item: inventoryItemName(crafting.output.itemId),
+        item: inventoryItemName(crafting.output, language),
       },
     }
   }
@@ -442,7 +453,8 @@ const outputLabel = (
 
 const carriedItemLabel = (
   carriedView: SlotView | undefined,
-): Readonly<{ key: UiMessageKey; values?: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
+  language: UiLanguage,
+): Readonly<{ key: UiMessageKey; values?: UiMessageValues }> => {
   if (typeof carriedView === 'undefined') {
     return { key: 'inventory.carried-empty' }
   }
@@ -453,7 +465,7 @@ const carriedItemLabel = (
     key: 'inventory.carried-item',
     values: {
       count: carriedView.countLabel ?? '1',
-      item: inventoryItemName(carriedView.itemId),
+      item: inventoryItemName(carriedView, language),
     },
   }
 }
@@ -615,7 +627,7 @@ const updateCarriedSlot = (carried: SlotElement, carriedView: SlotView | undefin
 }
 
 const writeCarriedLabel = (carried: SlotElement, carriedView: SlotView | undefined): void => {
-  const label = carriedItemLabel(carriedView)
+  const label = carriedItemLabel(carriedView, uiLanguageForElement(carried.root))
   writeLocalizedAttribute(carried.ariaLabel, label.key, label.values)
 }
 
@@ -667,7 +679,7 @@ const updateCraftingOutputSlot = (
 }
 
 const applyReadOnlyCraftingOutputLabel = (output: SlotElement, crafting: InteractiveCraftingOutcome): void => {
-  const label = outputLabel(crafting)
+  const label = outputLabel(crafting, uiLanguageForElement(output.root))
   if (output.role.previous === 'button') {
     applyButtonView(output)
   }
@@ -685,7 +697,7 @@ const applyInteractiveCraftingOutputButtonView = (
     disabled: crafting.kind === 'no-match',
     focused: outputFocused,
     label: '',
-    localizedLabel: outputLabel(crafting),
+    localizedLabel: outputLabel(crafting, uiLanguageForElement(output.root)),
     tabStop: outputFocused,
   })
 }

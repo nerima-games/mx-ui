@@ -227,7 +227,7 @@ mc-kernel から import する。mx-ui の root barrel はこれらを再 export
 | export | 種別 |
 | --- | --- |
 | `HEALTH_POINTS_PER_HEART` / `DEFAULT_MAX_HEALTH_POINTS` / `DEFAULT_MAX_HUNGER_POINTS` / `HOTBAR_SLOT_COUNT` | 定数 |
-| `IconState` / `HotbarSlotSnapshot` / `VitalsSnapshot` / `SlotView` / `HudViewModel` | type |
+| `IconState` / `HotbarSlotSnapshot` / `VitalsSnapshot` / `SlotView` / `SlotViewOptions` / `HudViewModel` / `HudViewModelOptions` | type |
 | `iconRow` / `hudViewModel` / `slotView` / `hotbarSlotIndex` | 純粋関数 |
 | `spawnSnapshot` | プレビュー・テスト用のリテラル |
 
@@ -269,14 +269,19 @@ mc-sim continues to own persisted settings and game state.
 
 | API | Input and result | Host responsibility |
 | --- | --- | --- |
-| `UiLanguage` / `UI_LANGUAGES` / `UiLanguageSchema` | `'en' \| 'ja'` | Store the selected language. Kernel owns item and block names; this UI dictionary does not contain them. |
+| `UiLanguage` / `UI_LANGUAGES` / `UiLanguageSchema` | `'en' \| 'ja'` | Store the selected language. Item names come from the host's resolver; the UI dictionary does not contain them. |
 | `decodeUiLanguage(input)` | `unknown` → `Result<UiLanguage, UiLanguageFailure>` | Decode persisted input and return an unsupported-language failure instead of silently choosing the default. |
 | `UiMountOptions.initialLanguage` / `UiMount.updateLanguage(input)` | Initial value and runtime update; updates validate `unknown` and return `Result` | Pass locale changes while the mount is active. |
+| `ItemDisplayNameResolver` / `ItemDisplayNameOptions` | `(ItemType, UiLanguage) => Result<string, ItemDisplayNameResolverFailure>`; options carry the active language and resolver | Pass the callback to item-bearing view-model factories. `ItemType` is imported from `@nerima-games/mc-kernel`. |
+| `resolveItemDisplayName(itemId, language, resolver?)` | `unknown` snapshot value → `Result<ItemDisplayName, ItemDisplayNameFailure>` | Validate the item type before calling the resolver. A leading `minecraft:` namespace is removed. Invalid IDs, missing resolvers, resolver failures, empty names, and names containing `minecraft:` return typed failures. |
+| `hudViewModel(vitals, hotbarSlots, selection)` | `selection` is a number or `HudViewModelOptions` with `selectedHotbarSlot` and optional `itemDisplayNameOptions` | Pass the active selection and host resolver in the options object to localize hotbar item text and labels. |
+| `inventoryViewModel` / `chestStorageViewModel` / `furnaceViewModel` / `anvilViewModel` / `enchantingTableViewModel` | Optional `ItemDisplayNameOptions` | Pass the same resolver and language used for the screen. Views show the resolved name in slot text, hover titles, and accessible labels; a failed lookup displays localized “Unknown item” / “不明なアイテム”. |
+| `slotView(slot, index, selection)` | `selection` is a number or `SlotViewOptions` with `selectedIndex` and optional `itemDisplayNameOptions` | Project one slot using the selected index and host resolver. |
 | `applyUiLanguage(root, input)` | Localized DOM subtree and `unknown` | Update text and aria attributes within a subtree when using an independent view. |
 | `GAME_FONT_FAMILY` / `GAME_FONT_STACK` / `GAME_FONT_STYLESHEET_EXPORT` | Bundled font name and package export path | Load `@nerima-games/mx-ui/assets/game-font.css` on screens that need it. |
-| `UI_SCALE_MIN` / `UI_SCALE_MAX` / `applyUiScale(style, input)` | `0.75` to `1.5`; out-of-range and non-numeric values return a typed failure | Apply mc-sim's `uiScale` setting to the mx-ui root style. |
-| `ColorVisionMode` / `createColorVisionFilterController(root, target)` | `off` / `protanopia` / `deuteranopia` / `tritanopia`; controller provides `apply(mode: unknown)` / `dispose()` | Pass the UI root and render canvas. The controller creates instance-specific SVG definitions inside the root and applies the filter only to the canvas. `off` and `dispose()` restore the original attribute and inline filter. |
-| `MotionSetting` / `MotionPreference` / `createMotionPreferenceController(query, initialSetting, onChange)` | Settings `system` / `full` / `reduced` → effective preference `full` / `reduced` | Pass `matchMedia('(prefers-reduced-motion: reduce)')` and update HUD or view motion in the callback. Call `dispose()` when the screen closes. |
+| `UI_SCALE_MIN` / `UI_SCALE_MAX` / `applyUiScale(style, input)` | `0.75` to `1.5`; out-of-range and non-numeric values return a typed failure | Apply mc-sim's `uiScale` setting to the mx-ui root style and handle the returned `Result`; invalid values leave the existing style unchanged. |
+| `ColorVisionMode` / `createColorVisionFilterController(root, target)` | `off` / `protanopia` / `deuteranopia` / `tritanopia`; controller provides `apply(mode: unknown)` / `dispose()` | Pass the UI root and render canvas. Check the `Result` from `apply`. The controller creates instance-specific SVG definitions inside the root and applies the filter only to the canvas. `off` and `dispose()` restore the original attribute and inline filter. |
+| `MotionSetting` / `MotionPreference` / `createMotionPreferenceController(query, initialSetting, onChange)` | Settings `system` / `full` / `reduced` → effective preference `full` / `reduced` | Pass `matchMedia('(prefers-reduced-motion: reduce)')`. The callback runs immediately and on OS changes while `system` is selected; apply its value with each active view's `setMotion`. Check the returned `Result` and call the controller's `dispose()` when the screen closes. |
 | `focusTargetForElement(target)` / `UiMount.moveFocus(direction)` | mx-ui resolves a DOM target to mc-render's `FocusTarget`; the direction uses the `InventoryNavigationDirection` alias of `FocusNavigationDirection` | Pass the resolver to mc-render and route its arrow-key intent back to the mount. |
 | `bossHealthBarViewModel(snapshot, language?)` / `strongholdLocatorViewModel(snapshot, language?)` / `portalEyeProgressViewModel(inserted, language?)` | End HUD view models in the selected language; defaults to `'en'` | Pass the `UiLanguage` used for display. An empty boss name returns a localized default. |
 | `dragonDefeatRewardNotification(snapshot, language?)` | `UiLanguage`, defaulting to `'en'` | Returns the Ender Dragon reward title, XP text, and aria label in the selected language. |
@@ -284,7 +289,21 @@ mc-sim continues to own persisted settings and game state.
 
 `UI_MESSAGES` and `ACHIEVEMENT_TITLES` store English and Japanese text for each entry.
 `UI_TRANSLATION_KEY_COUNT` reports the combined key count, and tests check that both languages cover every entry.
-`UiMountOptions` accepts `initialLanguage`; after mount, `updateLanguage` switches all localized text and aria attributes.
+`UiMountOptions` accepts `initialLanguage`; decode persisted values with `decodeUiLanguage` before passing them. After mount, `updateLanguage` switches localized dictionary text and aria attributes. After a successful language update, rebuild every language-dependent view model and render or update those views. Pass the new language in `ItemDisplayNameOptions` when rebuilding item-bearing models. `applyUiLanguage` does not rerun the host's item-name resolver.
+
+The item-name resolver receives a validated kernel `ItemType` without a `minecraft:` prefix and the requested `UiLanguage`. The view model retains the resolver's typed result. If the snapshot ID is invalid, the resolver is absent, or name resolution fails, the visible slot uses the localized unknown-item label and never prints the ID. Hosts provide this callback because the name catalog belongs to the host's kernel data.
+
+```typescript
+const itemNames: ItemDisplayNameOptions = { language, resolver: resolveHostItemName }
+const model = inventoryViewModel(snapshot, itemNames)
+view.render(model)
+
+const languageChange = mount.updateLanguage(nextLanguage)
+if (Result.isSuccess(languageChange)) {
+  const nextNames: ItemDisplayNameOptions = { language: languageChange.success, resolver: resolveHostItemName }
+  mount.updateInventory(inventoryViewModel(snapshot, nextNames))
+}
+```
 
 `GAME_FONT_STYLESHEET_EXPORT` is the CSS package export path; importing the root API does not load the CSS or font file.
 The stylesheet uses `PixelMplus12-Regular.ttf`, distributed with its license in `assets/MPLUS-FONT-LICENSE.txt`.

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createAnvilView, type AnvilInteractionView } from '../src/application/anvil-view'
 import { anvilViewModel } from '../src/domain/anvil-view-model'
 import { fakeDocument, fakeElement } from './fake-dom'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createAnvilView', () => {
   it('projects every operation target, cost, rejection, and accessibility without listeners', () => {
@@ -17,12 +18,14 @@ describe('createAnvilView', () => {
         primaryInput: { count: 1, itemId: 'minecraft:iron_sword' },
         rejectionReason: 'Too expensive',
         secondaryInput: { count: 2, itemId: 'minecraft:iron_ingot' },
-      }),
+      }, fakeItemDisplayNameOptions()),
       { focusedTarget: 'name', status: 'Anvil name selected' },
     )
 
     const targets = root.findAll('data-interaction-target', 'anvil-operation')
     expect(targets).toHaveLength(4)
+    expect(targets[0]?.attributes.get('aria-label')).toBe('Anvil primary input, en:iron_sword, 1')
+    expect(targets[0]?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:iron_sword')
     expect(targets.map((target) => target.attributes.get('data-operation-target'))).toStrictEqual([
       'primary-input',
       'secondary-input',

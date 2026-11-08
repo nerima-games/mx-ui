@@ -102,12 +102,14 @@ import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotElement,
   createSlotElement,
+  setSlotFocusTarget,
   setSlotKeyboardFocus,
   setSlotTabStop,
   updateSlotElement,
 } from './slot-element.js'
-import { setLocalizedAttribute, setLocalizedText, writeLocalizedAttribute } from './ui-localization.js'
-import type { UiMessageKey } from '../domain/ui-language.js'
+import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { itemDisplayNameText, itemDisplayNameValue } from './item-display-name.js'
+import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
 
 /**
  * How long the XP bar takes to slide, at full motion.
@@ -264,26 +266,28 @@ const renderIconRow = (
 const hotbarSlotName = (
   index: number,
   view: SlotView,
-): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number>> }> => {
+  language: UiLanguage,
+): Readonly<{ key: UiMessageKey; values: UiMessageValues }> => {
   const displayIndex = String(index + INDEX_INCREMENT)
   if (typeof view.itemId === 'undefined') {
     return { key: 'hud.hotbar-slot-empty', values: { slot: displayIndex } }
   }
   return {
     key: 'hud.hotbar-slot-item',
-    values: { count: view.countLabel ?? '1', item: view.itemId, slot: displayIndex },
+    values: { count: view.countLabel ?? '1', item: itemDisplayNameValue(view, language), slot: displayIndex },
   }
 }
 
 const updateHotbarSlotName = (slot: SlotElement, index: number, view: SlotView): void => {
-  const itemText = view.itemId ?? ''
+  const language = uiLanguageForElement(slot.root)
+  const itemText = itemDisplayNameText(view, language)
   const countText = view.countLabel ?? ''
   if (
     typeof slot.ariaLabel.previous === 'undefined' ||
     slot.itemText.previous !== itemText ||
     slot.countText.previous !== countText
   ) {
-    const label = hotbarSlotName(index, view)
+    const label = hotbarSlotName(index, view, language)
     writeLocalizedAttribute(slot.ariaLabel, label.key, label.values)
   }
 }
@@ -460,6 +464,7 @@ const createHotbarSlots = (
   for (let index = 0; index < HOTBAR_SLOT_COUNT; index += INDEX_INCREMENT) {
     const slot = createSlotElement(factory, index)
     writeAttribute(slot.role, 'radio')
+    setSlotFocusTarget(slot, { columns: HOTBAR_SLOT_COUNT, group: 'hotbar', index })
     hotbarRow.appendChild(slot.root)
     hotbar.push(slot)
   }

@@ -7,6 +7,7 @@ import {
   isDead,
   vitalsView,
 } from '@nerima-games/mc-sim'
+import { type ItemDisplayNameOptions, type ItemDisplayNameView, itemDisplayNameView } from './item-display-name.js'
 
 export {
   DEFAULT_MAX_HEALTH_POINTS,
@@ -35,11 +36,22 @@ export type VitalsSnapshot = Vitals
 export type SlotView = {
   readonly index: number
   readonly itemId: string | undefined
+  readonly itemDisplayName?: ItemDisplayNameView
   readonly countLabel: string | undefined
   readonly durabilityPercent: number | undefined
   readonly selected: boolean
   readonly empty: boolean
 }
+
+export type SlotViewOptions = Readonly<{
+  readonly selectedIndex: number
+  readonly itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
+}>
+
+export type HudViewModelOptions = Readonly<{
+  readonly selectedHotbarSlot: number
+  readonly itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
+}>
 
 export type HudViewModel = {
   readonly hearts: ReadonlyArray<IconState>
@@ -117,11 +129,27 @@ const itemIdOf = (slot: InventoryCarriedSlot | HotbarSlotSnapshot): string | und
 }
 
 /** Project an owner supplied carried slot into the shared slot view. */
+const slotOptionsOf = (selection: number | SlotViewOptions): SlotViewOptions => {
+  if (typeof selection === 'number') {
+    return { selectedIndex: selection }
+  }
+  return selection
+}
+
+const hudOptionsOf = (selection: number | HudViewModelOptions): HudViewModelOptions => {
+  if (typeof selection === 'number') {
+    return { selectedHotbarSlot: selection }
+  }
+  return selection
+}
+
 export const slotView = (
   slot: InventoryCarriedSlot | HotbarSlotSnapshot,
   index: number,
-  selectedIndex: number,
+  selection: number | SlotViewOptions,
 ): SlotView => {
+  const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
+
   const count = slot?.count ?? ZERO
   const candidateItemId = itemIdOf(slot)
   const empty =
@@ -130,31 +158,38 @@ export const slotView = (
     !Number.isSafeInteger(count) ||
     count <= ZERO
 
-  return {
+  const itemId = visibleSlotValue(candidateItemId, empty)
+  const view: SlotView = {
     countLabel: slotCountLabel(count, empty),
     durabilityPercent: visibleSlotValue(slotDurabilityPercent(slot), empty),
     empty,
     index,
-    itemId: visibleSlotValue(candidateItemId, empty),
+    itemId,
     selected: index === selectedIndex,
   }
+  if (typeof itemId === 'undefined' || typeof itemDisplayNameOptions === 'undefined') {
+    return view
+  }
+  return { ...view, itemDisplayName: itemDisplayNameView(itemId, itemDisplayNameOptions) }
 }
 
 /** Derive the HUD from authoritative simulation state and inventory input. */
 export const hudViewModel = (
   vitals: Vitals,
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot>,
-  selectedHotbarSlot: number,
+  selection: number | HudViewModelOptions,
 ): HudViewModel => {
+  const { itemDisplayNameOptions, selectedHotbarSlot } = hudOptionsOf(selection)
   const view = vitalsView(vitals)
   const selectedIndex = clampHotbarIndex(selectedHotbarSlot)
+  const slotOptions: SlotViewOptions = { itemDisplayNameOptions, selectedIndex }
 
   return {
     dead: isDead(vitals),
     experienceLevelLabel: String(view.experienceLevel),
     experiencePercent: Math.floor(view.experienceProgress * FULL_PERCENT),
     hearts: iconRow(view.healthPoints, view.maxHealthPoints),
-    hotbar: hotbarSlots.map((slot, index) => slotView(slot, index, selectedIndex)),
+    hotbar: hotbarSlots.map((slot, index) => slotView(slot, index, slotOptions)),
     shanks: iconRow(view.hungerPoints, view.maxHungerPoints),
   }
 }

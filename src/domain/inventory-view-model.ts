@@ -41,6 +41,7 @@ import {
   slotView,
 } from './hud-view-model.js'
 import { INVENTORY_SLOT_COUNT, type Inventory, type ItemStack, type Slot } from '@nerima-games/mc-sim'
+import type { ItemDisplayNameOptions } from './item-display-name.js'
 
 export { INVENTORY_SLOT_COUNT }
 
@@ -231,6 +232,7 @@ type ProjectRegionOptions = {
   readonly firstIndex: number
   readonly durabilityBySlot: ReadonlyMap<number, number> | undefined
   readonly selectedIndex: number
+  readonly itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
 }
 
 const projectRegion = ({
@@ -240,6 +242,7 @@ const projectRegion = ({
   firstIndex,
   durabilityBySlot,
   selectedIndex,
+  itemDisplayNameOptions,
 }: ProjectRegionOptions): SlotRegion => ({
   columns,
   id,
@@ -248,7 +251,7 @@ const projectRegion = ({
     slotView(
       slotSnapshotOf(slot, durabilityBySlot?.get(firstIndex + offset)),
       offset,
-      selectedIndex,
+      { itemDisplayNameOptions, selectedIndex },
     ),
   ),
 })
@@ -275,7 +278,10 @@ const clampIndex = (value: number, high: number): number => {
   return Math.min(Math.max(Math.floor(value), ZERO_INDEX), high)
 }
 
-const craftingOutcome = (crafting: CraftingSnapshot | undefined): CraftingOutcomeView => {
+const craftingOutcome = (
+  crafting: CraftingSnapshot | undefined,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): CraftingOutcomeView => {
   if (typeof crafting?.result === 'undefined') {
     return { kind: 'unknown' }
   }
@@ -284,14 +290,17 @@ const craftingOutcome = (crafting: CraftingSnapshot | undefined): CraftingOutcom
   }
   return {
     kind: 'match',
-    output: slotView(slotSnapshotOf(crafting.result.output), ZERO_INDEX, NO_SELECTION),
+    output: slotView(slotSnapshotOf(crafting.result.output), ZERO_INDEX, { itemDisplayNameOptions, selectedIndex: NO_SELECTION }),
   }
 }
 
 /** How many columns a region of one bare slot (armour, offhand) draws as. */
 const SINGLE_COLUMN = 1
 
-const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
+const craftingRegion = (
+  crafting: CraftingSnapshot | undefined,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): SlotRegion => {
   if (typeof crafting === 'undefined') {
     return {
       id: 'crafting-grid',
@@ -318,6 +327,7 @@ const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
     durabilityBySlot: unknownValue(),
     firstIndex: ZERO_INDEX,
     id: 'crafting-grid',
+    itemDisplayNameOptions,
     selectedIndex: NO_SELECTION,
     slots: crafting.grid,
   })
@@ -326,7 +336,10 @@ const craftingRegion = (crafting: CraftingSnapshot | undefined): SlotRegion => {
 /** How much less than the slot count the last valid index is. */
 const LAST_INDEX_OFFSET = 1
 
-const armourRegion = (armour: ReadonlyArray<Slot> | undefined): SlotRegion => {
+const armourRegion = (
+  armour: ReadonlyArray<Slot> | undefined,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): SlotRegion => {
   if (typeof armour === 'undefined') {
     return {
       id: 'armour',
@@ -340,12 +353,13 @@ const armourRegion = (armour: ReadonlyArray<Slot> | undefined): SlotRegion => {
     durabilityBySlot: unknownValue(),
     firstIndex: INVENTORY_SLOT_COUNT,
     id: 'armour',
+    itemDisplayNameOptions,
     selectedIndex: NO_SELECTION,
     slots: armour,
   })
 }
 
-const offhandRegion = (offhand: Slot | null): SlotRegion => {
+const offhandRegion = (offhand: Slot | null, itemDisplayNameOptions?: ItemDisplayNameOptions): SlotRegion => {
   if (typeof offhand === 'undefined') {
     return {
       id: 'offhand',
@@ -359,16 +373,17 @@ const offhandRegion = (offhand: Slot | null): SlotRegion => {
     durabilityBySlot: unknownValue(),
     firstIndex: INVENTORY_SLOT_COUNT,
     id: 'offhand',
+    itemDisplayNameOptions,
     selectedIndex: NO_SELECTION,
     slots: [dropNull(offhand)],
   })
 }
 
-const carriedView = (carried: Slot): SlotView | undefined => {
+const carriedView = (carried: Slot, itemDisplayNameOptions?: ItemDisplayNameOptions): SlotView | undefined => {
   if (typeof carried === 'undefined') {
     return
   }
-  return slotView(slotSnapshotOf(carried), ZERO_INDEX, NO_SELECTION)
+  return slotView(slotSnapshotOf(carried), ZERO_INDEX, { itemDisplayNameOptions, selectedIndex: NO_SELECTION })
 }
 
 const mergeTargetsOf = (indices: ReadonlySet<number> | undefined): MergeTargets => {
@@ -389,7 +404,10 @@ const mergeTargetsOf = (indices: ReadonlySet<number> | undefined): MergeTargets 
  * because on this screen the plausible answer and the true one differ in
  * exactly the cases a player would notice.
  */
-export const inventoryViewModel = (snapshot: InventorySnapshot): InventoryViewModel => {
+export const inventoryViewModel = (
+  snapshot: InventorySnapshot,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): InventoryViewModel => {
   const { slots } = snapshot.inventory
   const selectedHotbarIndex = clampIndex(
     snapshot.selectedHotbarIndex,
@@ -403,6 +421,7 @@ export const inventoryViewModel = (snapshot: InventorySnapshot): InventoryViewMo
       durabilityBySlot: durability,
       firstIndex: ZERO_INDEX,
       id: 'hotbar',
+      itemDisplayNameOptions,
       selectedIndex: selectedHotbarIndex,
       slots: fixedSlots(slots, ZERO_INDEX, HOTBAR_SLOT_COUNT),
     }),
@@ -411,17 +430,18 @@ export const inventoryViewModel = (snapshot: InventorySnapshot): InventoryViewMo
       durabilityBySlot: durability,
       firstIndex: HOTBAR_SLOT_COUNT,
       id: 'main',
+      itemDisplayNameOptions,
       selectedIndex: NO_SELECTION,
       slots: fixedSlots(slots, HOTBAR_SLOT_COUNT, INVENTORY_MAIN_SLOT_COUNT),
     }),
-    armourRegion(snapshot.armour),
-    offhandRegion(snapshot.offhand),
-    craftingRegion(snapshot.crafting),
+    armourRegion(snapshot.armour, itemDisplayNameOptions),
+    offhandRegion(snapshot.offhand, itemDisplayNameOptions),
+    craftingRegion(snapshot.crafting, itemDisplayNameOptions),
   ]
 
   return {
-    carried: carriedView(snapshot.carried),
-    crafting: craftingOutcome(snapshot.crafting),
+    carried: carriedView(snapshot.carried, itemDisplayNameOptions),
+    crafting: craftingOutcome(snapshot.crafting, itemDisplayNameOptions),
     mergeTargets: mergeTargetsOf(snapshot.mergeableSlotIndices),
     regions,
   }

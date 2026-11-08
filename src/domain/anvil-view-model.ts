@@ -1,4 +1,5 @@
 import { type SlotView, slotView } from './hud-view-model.js'
+import type { ItemDisplayNameOptions } from './item-display-name.js'
 
 export const ANVIL_SLOT_IDS = ['primary-input', 'secondary-input', 'output'] as const
 
@@ -68,19 +69,25 @@ const cloneSlotSnapshot = (snapshot: AnvilSlotSnapshot | undefined) => {
 const projectSlot = (
   id: AnvilSlotId,
   index: number,
-  snapshot: AnvilSlotSnapshot | undefined,
+  { snapshot, itemDisplayNameOptions }: Readonly<{
+    snapshot: AnvilSlotSnapshot | undefined
+    itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
+  }>,
 ): AnvilSlotView =>
   Object.freeze({
     id,
-    ...slotView(cloneSlotSnapshot(snapshot), index, NO_SELECTION_INDEX),
+    ...slotView(cloneSlotSnapshot(snapshot), index, { itemDisplayNameOptions, selectedIndex: NO_SELECTION_INDEX }),
   })
 
 /** Purely derives the immutable presentation state for an anvil screen. */
-export const anvilViewModel = (snapshot: AnvilSnapshot): AnvilViewModel => {
+export const anvilViewModel = (
+  snapshot: AnvilSnapshot,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): AnvilViewModel => {
   const slots = Object.freeze([
-    projectSlot('primary-input', PRIMARY_INPUT_SLOT_INDEX, snapshot.primaryInput),
-    projectSlot('secondary-input', SECONDARY_INPUT_SLOT_INDEX, snapshot.secondaryInput),
-    projectSlot('output', OUTPUT_SLOT_INDEX, snapshot.output),
+    projectSlot('primary-input', PRIMARY_INPUT_SLOT_INDEX, { itemDisplayNameOptions, snapshot: snapshot.primaryInput }),
+    projectSlot('secondary-input', SECONDARY_INPUT_SLOT_INDEX, { itemDisplayNameOptions, snapshot: snapshot.secondaryInput }),
+    projectSlot('output', OUTPUT_SLOT_INDEX, { itemDisplayNameOptions, snapshot: snapshot.output }),
   ])
 
   return Object.freeze({

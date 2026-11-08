@@ -369,6 +369,7 @@ const nonSurfaceExportNames: ReadonlyArray<string> = [
   'GAME_FONT_STACK',
   'GAME_FONT_STYLESHEET_EXPORT',
   'ICON_ROW_MESSAGE_KEY',
+  'ItemDisplayNameSchema',
   'MotionSettingSchema',
   'REDUCED_MOTION_MEDIA_QUERY',
   'UI_LANGUAGES',
@@ -392,7 +393,9 @@ const nonSurfaceExportNames: ReadonlyArray<string> = [
   'decodeUiScale',
   'focusTargetForElement',
   'inputActionMessageKey',
+  'itemDisplayNameView',
   'moveFocusTarget',
+  'resolveItemDisplayName',
   'translateAchievementTitle',
   'translateUiMessage',
 ]

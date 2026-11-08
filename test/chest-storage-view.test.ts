@@ -6,6 +6,7 @@ import {
   type ChestStorageSlotSnapshot,
 } from '../src/domain/chest-storage-view-model'
 import { fakeDocument, fakeElement, type FakeElement } from './fake-dom'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 /**
  * The three region slot counts, split out of the big mount assertion below so
@@ -21,7 +22,8 @@ const expectRegionSlotCounts = (root: FakeElement): void => {
 const expectSlotStacksAndDurability = (root: FakeElement): void => {
   const slots = root.findAll('data-interaction-target', 'chest-storage-slot')
   expect(slots).toHaveLength(63)
-  expect(slots[0]?.find('data-mx-ui', 'slot-item')?.textContent).toBe('minecraft:arrow')
+  expect(slots[0]?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:arrow')
+  expect(slots[0]?.attributes.get('aria-label')).toBe('Chest slot 1, en:arrow, 32')
   expect(slots[0]?.find('data-mx-ui', 'slot-count')?.textContent).toBe('32')
   expect(slots[4]?.attributes.has('data-selected')).toBe(true)
   expect(slots[4]?.find('data-mx-ui', 'slot-durability')?.attributes.has('hidden')).toBe(false)
@@ -35,7 +37,7 @@ const expectSlotStacksAndDurability = (root: FakeElement): void => {
 const expectCursorStack = (root: FakeElement): void => {
   const cursor = root.find('data-mx-ui', 'chest-storage-cursor')
   expect(cursor?.find('data-mx-ui', 'slot')?.attributes.get('data-cursor-state')).toBe('stack')
-  expect(cursor?.find('data-mx-ui', 'slot-item')?.textContent).toBe('minecraft:iron_pickaxe')
+  expect(cursor?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:iron_pickaxe')
   expect(cursor?.find('data-mx-ui', 'slot-durability-fill')?.style.properties.get('width')).toBe('38%')
 }
 
@@ -68,7 +70,7 @@ describe('createChestStorageView', () => {
         playerInventory: [{ item: 'minecraft:bow', count: 1, durability: 0.75 }],
         cursor: { item: 'minecraft:iron_pickaxe', count: 1, durability: 0.375 },
         selectedSlot: { region: 'chest', slot: 4 },
-      }),
+      }, fakeItemDisplayNameOptions()),
       { focusedSlot: { region: 'player', slot: 0 }, status: 'Choose a destination slot' },
     )
 
@@ -128,18 +130,18 @@ describe('createChestStorageView', () => {
 
     view.render(
       chestStorageViewModel({
-        chest: [{ item: 'minecraft:redstone', count: 3, durability: undefined }],
+        chest: [{ item: 'minecraft:arrow', count: 3, durability: undefined }],
         chestSlotCount: 5,
         playerInventory: [],
         cursor: undefined,
         selectedSlot: undefined,
-      }),
+      }, fakeItemDisplayNameOptions()),
     )
 
     const chestSlots = root.find('data-region', 'chest')?.findAll('data-mx-ui', 'slot')
     expect(chestSlots).toHaveLength(27)
     expect(chestSlots?.[0]?.attributes.has('data-empty')).toBe(false)
-    expect(chestSlots?.[0]?.find('data-mx-ui', 'slot-item')?.textContent).toBe('minecraft:redstone')
+    expect(chestSlots?.[0]?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:arrow')
     for (const slot of chestSlots?.slice(5) ?? []) {
       expect(slot.attributes.get('hidden')).toBe('')
       expect(slot.attributes.has('role')).toBe(false)

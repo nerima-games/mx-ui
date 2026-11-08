@@ -46,6 +46,7 @@ import type { SlotView } from '../src/domain/hud-view-model'
 import { PALETTE_PROPERTY } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames } from './fake-dom'
 import { captionEvent, captionTime } from './helpers/caption-event'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 const queueOf = (...texts: ReadonlyArray<string>): ReadonlyArray<CaptionEvent> =>
   texts.map((text, index) => captionEvent(text, index, -1, 'audible'))
@@ -292,12 +293,12 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       inventoryViewModel({
         ...emptyInventorySnapshot,
         carried: testItemStack('stone', 12),
-      }),
+      }, fakeItemDisplayNameOptions()),
     )
 
     const carried = fakeElement(view.root).find('data-mx-ui', 'carried')
     expect(carried?.attributes.has('hidden')).toBe(false)
-    expect(carried?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stone')
+    expect(carried?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:stone')
 
     view.render(inventoryViewModel(emptyInventorySnapshot))
     expect(carried?.attributes.get('hidden')).toBe('')
@@ -313,12 +314,15 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const view = createInventoryView(factory, parent)
 
     view.render(
-      inventoryViewModel({ ...emptyInventorySnapshot, carried: testItemStack('stone', 1) }),
+      inventoryViewModel(
+        { ...emptyInventorySnapshot, carried: testItemStack('stone', 1) },
+        fakeItemDisplayNameOptions(),
+      ),
       { focused: { kind: 'crafting-output' }, status: 'Carrying stone' },
     )
 
     const carried = fakeElement(view.root).find('data-mx-ui', 'carried')
-    expect(carried?.attributes.get('aria-label')).toBe('Carried item, stone, 1')
+    expect(carried?.attributes.get('aria-label')).toBe('Carried item, en:stone, 1')
   })
 
   it('a crafting MATCH is the one state that draws an output square', () => {
@@ -336,7 +340,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         grid: [undefined, undefined, undefined, undefined],
         result: { _tag: 'Match', output: testItemStack('stick', 4) },
       },
-    })
+    }, fakeItemDisplayNameOptions())
 
     view.render(match)
 
@@ -346,20 +350,20 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     )
     const output = root.find('data-mx-ui', 'crafting-output')
     expect(output?.attributes.has('hidden')).toBe(false)
-    expect(output?.find('data-mx-ui', 'slot-item')?.textContent).toBe('stick')
+    expect(output?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:stick')
 
     // Read-only output keeps its accessible name without claiming button semantics.
     expect(output?.attributes.get('role')).toBeUndefined()
-    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 4')
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, en:stick, 4')
 
     // Interactive output has the same name and gains button semantics.
     view.render(match, { focused: { kind: 'crafting-output' }, status: 'Recipe ready' })
-    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 4')
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, en:stick, 4')
     expect(output?.attributes.get('role')).toBe('button')
 
     view.render(match)
     expect(output?.attributes.get('role')).toBeUndefined()
-    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 4')
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, en:stick, 4')
 
     // A single output item carries no count label (`slotView`'s "a stack of one shows no count
     // label" convention), which is the only way `outputLabel`'s own `countLabel ?? '1'` fallback
@@ -372,10 +376,10 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
           grid: [undefined, undefined, undefined, undefined],
           result: { _tag: 'Match', output: testItemStack('stick', 1) },
         },
-      }),
+      }, fakeItemDisplayNameOptions()),
       { focused: { kind: 'crafting-output' }, status: 'Recipe ready' },
     )
-    expect(output?.attributes.get('aria-label')).toBe('Crafting output, stick, 1')
+    expect(output?.attributes.get('aria-label')).toBe('Crafting output, en:stick, 1')
   })
 
   it('projects host-owned inventory interaction as buttons with one roving tab stop', () => {
@@ -400,7 +404,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         grid: [undefined, undefined, undefined, undefined],
         result: { _tag: 'NoMatch' },
       },
-    })
+    }, fakeItemDisplayNameOptions())
 
     view.render(model, {
       focused: { kind: 'crafting-output' },
@@ -423,7 +427,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     const carried = root.find('data-mx-ui', 'carried')
     expect(carried?.attributes.get('role')).toBe('status')
     expect(carried?.attributes.get('aria-live')).toBe('polite')
-    expect(carried?.attributes.get('aria-label')).toContain('stone')
+    expect(carried?.attributes.get('aria-label')).toContain('en:stone')
 
     const status = root.find('data-mx-ui', 'inventory-status')
     expect(status?.attributes.get('role')).toBe('status')

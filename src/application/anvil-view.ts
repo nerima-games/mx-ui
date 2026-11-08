@@ -24,8 +24,9 @@ import {
   setSlotFocusTarget,
   updateSlotElement,
 } from './slot-element.js'
-import { setLocalizedAttribute, setLocalizedText, writeLocalizedText } from './ui-localization.js'
-import type { UiMessageKey } from '../domain/ui-language.js'
+import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedText } from './ui-localization.js'
+import { itemDisplayNameValue } from './item-display-name.js'
 
 export type AnvilInteractionView = {
   readonly focusedTarget: AnvilOperationTarget
@@ -54,7 +55,8 @@ const ANVIL_OPERATION_COLUMNS = 4
 
 const slotAriaLabel = (
   slot: AnvilSlotView,
-): Readonly<{ key: UiMessageKey; values: Readonly<Record<string, string | number | { readonly key: UiMessageKey }>> }> => {
+  language: UiLanguage,
+): Readonly<{ key: UiMessageKey; values: UiMessageValues }> => {
   // Branch on `itemId` itself, not the separate `empty` flag: `slotView` (domain/hud-view-model.ts) guarantees the two always agree.
   // Checking the field this function actually reads lets TypeScript narrow `itemId` to `string` below — which removes the `?? 'empty'` fallback that a check on `empty` alone could never let the type system prove impossible.
   // `countLabel` stays `??`-guarded: unlike `itemId`, it is genuinely absent for a real, in-repo stack of exactly one (`slotCountLabel`, same file).
@@ -63,7 +65,7 @@ const slotAriaLabel = (
   }
   return {
     key: 'anvil.slot-item',
-    values: { count: slot.countLabel ?? '1', item: slot.itemId, slot: { key: SLOT_MESSAGE_KEY[slot.id] } },
+    values: { count: slot.countLabel ?? '1', item: itemDisplayNameValue(slot, language), slot: { key: SLOT_MESSAGE_KEY[slot.id] } },
   }
 }
 
@@ -297,7 +299,7 @@ export const createAnvilView = (
         disabled: false,
         focused: typeof interaction !== 'undefined' && focused,
         label: '',
-        localizedLabel: slotAriaLabel(slot),
+        localizedLabel: slotAriaLabel(slot, uiLanguageForElement(slotElement.root)),
         tabStop: focused,
       })
     }

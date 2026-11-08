@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createFurnaceView, type FurnaceInteractionView } from '../src/application/furnace-view'
 import { furnaceViewModel } from '../src/domain/furnace-view-model'
 import { fakeDocument, fakeElement } from './fake-dom'
+import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createFurnaceView', () => {
   it('projects host interaction attributes, accessibility, and progress without listeners', () => {
@@ -16,7 +17,7 @@ describe('createFurnaceView', () => {
         output: { itemId: 'minecraft:glass', count: 1 },
         cookProgress: 0.5,
         burnProgress: 0.25,
-      }),
+      }, fakeItemDisplayNameOptions()),
       { focusedSlot: 'fuel', status: 'Furnace fuel selected' },
     )
 
@@ -33,7 +34,8 @@ describe('createFurnaceView', () => {
       'button',
       'button',
     ])
-    expect(slots[0]?.attributes.get('aria-label')).toBe('Furnace input, minecraft:sand, 3')
+    expect(slots[0]?.attributes.get('aria-label')).toBe('Furnace input, en:sand, 3')
+    expect(slots[0]?.find('data-mx-ui', 'slot-item')?.textContent).toBe('en:sand')
     expect(root.find('data-mx-ui', 'furnace-cook-progress')?.attributes.get('aria-valuenow')).toBe('50')
     expect(root.find('data-mx-ui', 'furnace-burn-progress')?.attributes.get('aria-valuenow')).toBe('25')
     expect(root.find('data-mx-ui', 'furnace-status')?.textContent).toBe('Furnace fuel selected')
