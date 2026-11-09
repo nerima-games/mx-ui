@@ -2,12 +2,16 @@ import { createCreativeInventoryView } from '../../../src/application/creative-i
 import { createRecipeBookView } from '../../../src/application/recipe-book-view'
 import { creativeInventoryViewModel } from '../../../src/domain/creative-inventory-view-model'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from '../scenario-types'
-import { createUi1RecipeBookModel, UI1_ITEM_SURFACE_SCENARIO_ID } from '../ui1-item-surface-fixture'
+import {
+  createUi1CraftableInventory,
+  createUi1RecipeBookModel,
+  UI1_ITEM_SURFACE_SCENARIO_ID,
+} from '../ui1-item-surface-fixture'
 
 const noTime = (): void => undefined
 
 const mountItemSurfaces = (context: ScenarioContext): ScenarioMount => {
-  const recipeModel = createUi1RecipeBookModel()
+  const recipeModel = createUi1RecipeBookModel(undefined, createUi1CraftableInventory())
   const creativeModel = creativeInventoryViewModel('', 'all')
   context.host.style.setProperty('display', 'grid')
   context.host.style.setProperty('gap', '16px')
