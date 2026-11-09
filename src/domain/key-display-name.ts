@@ -3,6 +3,7 @@ import {
   type UiMessageText,
   UiMessageTextSchema,
 } from './ui-language.js'
+import type { KeyCode } from '@nerima-games/mc-kernel/domain/settings'
 import { Schema } from 'effect'
 
 const KEY_NAMES: Readonly<Record<string, Readonly<Record<UiLanguage, string>>>> = {
@@ -71,7 +72,7 @@ const prefixedKeyName = (code: string, language: UiLanguage): string | null => {
 }
 
 /** Converts standard KeyboardEvent.code values to readable names, preserving unknown codes verbatim. */
-export const keyDisplayName = (code: string, language: UiLanguage): UiMessageText => {
+export const keyDisplayName = (code: KeyCode, language: UiLanguage): UiMessageText => {
   const displayName = namedKey(code, language) ?? prefixedKeyName(code, language) ?? code
   return uiMessageText(displayName)
 }

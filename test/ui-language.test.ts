@@ -33,6 +33,7 @@ import {
 import {
   applyUiLanguage as applyLanguageToRoot,
   setLocalizedAchievementTitle,
+  setLocalizedAttribute,
   setLocalizedText,
   writeLocalizedTextUsing,
   type UiLocalizationRoot,
@@ -42,6 +43,7 @@ import { itemDisplayNameView } from '../src/domain/item-display-name.js'
 import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from './fixtures/settings-input'
 import type { ItemType } from '@nerima-games/mc-kernel'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
+import { asUiMessageText, asWorldTypeId } from './helpers/ui3-brand-values'
 
 describe('UI language', () => {
   it('returns typed failures for unsupported inputs through the decoder and mount controller', () => {
@@ -88,10 +90,22 @@ describe('UI language', () => {
     }
   })
 
+  it('updates localized attributes on the language root itself', () => {
+    const dialog = document.createElement('section')
+    setLocalizedAttribute(dialog, 'aria-label', 'pause.dialog.options')
+
+    expect(dialog.getAttribute('aria-label')).toBe('Settings')
+    expect(Result.isSuccess(applyLanguageToRoot(dialog, 'ja'))).toBe(true)
+    expect(dialog.getAttribute('aria-label')).toBe('設定')
+  })
+
   it('updates mounted English and Japanese menu text, aria labels, and placeholders', () => {
     const host = document.createElement('main')
     const worldTypes: ReadonlyArray<WorldTypeOption> = [
-      { label: { en: 'Standard', ja: '標準' }, value: 'standard' },
+      {
+        label: { en: asUiMessageText('Standard'), ja: asUiMessageText('標準') },
+        value: asWorldTypeId('standard'),
+      },
     ]
     let createdWorldName = ''
     const menu = createMainMenuView(document, host, {

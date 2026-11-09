@@ -165,12 +165,8 @@ const setMessageRows = ({ factory, historyElement, messages, rows }: SetMessageR
   }
 }
 
-const isEnterKey = (event: Event): boolean => {
-  if (event.type !== 'keydown') {
-    return false
-  }
-  return ('code' in event && event.code === 'Enter') || ('key' in event && event.key === 'Enter')
-}
+const isEnterKey = (event: Event): boolean =>
+  Reflect.get(event, 'code') === 'Enter' || Reflect.get(event, 'key') === 'Enter'
 
 type RenderChatOptions = {
   readonly currentTick: unknown

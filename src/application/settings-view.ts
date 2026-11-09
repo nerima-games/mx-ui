@@ -19,7 +19,7 @@ import {
   type SettingsViewModel,
 } from '../domain/settings-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
-import { KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
+import { KeyCode, type KeyCode as KeyCodeType, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import { type SettingsServiceApi, isValidSettings } from '@nerima-games/mc-sim'
 import { type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
@@ -34,9 +34,9 @@ import {
 import { Effect } from 'effect'
 import { keyDisplayName } from '../domain/key-display-name.js'
 
-export type SettingsView = {
+export type SettingsView<Action extends string = string> = {
   readonly root: DomElement
-  readonly render: (model: SettingsViewModel) => void
+  readonly render: (model: SettingsViewModel<Action>) => void
 }
 
 export type SettingsSliderField =
@@ -230,13 +230,23 @@ type SettingsElements = {
   readonly bindingRows: Map<string, BindingRowElements>
 }
 
+const styleSettingsRoot = (root: DomElement): void => {
+  root.style.setProperty('background-color', PALETTE_VAR.surface)
+  root.style.setProperty('color', PALETTE_VAR.ink)
+  root.style.setProperty('box-sizing', 'border-box')
+  root.style.setProperty(
+    'max-height',
+    'calc(100vh - 2rem - var(--mx-ui-safe-area-top, env(safe-area-inset-top, 0px)) - var(--mx-ui-safe-area-bottom, env(safe-area-inset-bottom, 0px)))',
+  )
+  root.style.setProperty('overflow-y', 'auto')
+}
+
 const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('section')
   inheritUiLanguage(parent, root)
   root.setAttribute('data-mx-ui', 'settings')
   declarePalette(root)
-  root.style.setProperty('background-color', PALETTE_VAR.surface)
-  root.style.setProperty('color', PALETTE_VAR.ink)
+  styleSettingsRoot(root)
   parent.appendChild(root)
   return root
 }
@@ -244,7 +254,7 @@ const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement 
 const createCloseButton = (
   factory: DomElementFactory,
   root: DomElement,
-  actions: SettingsViewActions | undefined,
+  actions: Pick<SettingsViewActions, 'onClose'> | undefined,
 ): void => {
   if (typeof actions?.onClose !== 'function') {
     return
@@ -270,16 +280,18 @@ const choiceMessageKey = <Field extends ChoiceField>(
   value: SettingsViewModel[Field],
 ): UiMessageKey => CHOICE_VALUE_MESSAGE_KEY[field][value]
 
+type SettingsControlActions = Pick<SettingsViewActions, 'onChoiceChange' | 'onSliderChange' | 'onToggleChange'>
+
 type SettingsControlContext = Readonly<{
   factory: DomElementFactory
   root: DomElement
-  actions: SettingsViewActions | undefined
+  actions: SettingsControlActions | undefined
 }>
 
 const wireSliderInput = (
   input: DomInputElement,
   field: SliderField,
-  actions: SettingsViewActions | undefined,
+  actions: SettingsControlActions | undefined,
 ): void => {
   if (typeof actions?.onSliderChange === 'function') {
     input.addEventListener('input', () => actions.onSliderChange?.(field, Number(input.value)))
@@ -379,7 +391,7 @@ type ChoiceOptionContext<Field extends ChoiceField> = Readonly<{
   value: SettingsViewModel[Field]
   index: number
   choiceCount: number
-  actions: SettingsViewActions | undefined
+  actions: SettingsControlActions | undefined
 }>
 
 const createChoiceButton = <Field extends ChoiceField>(context: ChoiceOptionContext<Field>): DomInteractiveElement => {
@@ -518,19 +530,25 @@ const configureBindingButton = (button: DomInteractiveElement, action: string): 
   button.setAttribute('tabindex', '0')
 }
 
-const wireBindingButton = (
+const wireBindingButton = <Action extends string>(
   button: DomInteractiveElement,
-  action: string,
-  actions: SettingsViewActions | undefined,
+  action: Action,
+  actions: SettingsViewActions<Action> | undefined,
 ): void => {
   if (typeof actions?.onBindingActivate === 'function') {
     button.addEventListener('click', () => actions.onBindingActivate?.(action))
   }
 }
 
-const createBindingControl = (
-  context: SettingsControlContext,
-  action: string,
+type BindingActionsContext<Action extends string> = {
+  readonly actions: SettingsViewActions<Action> | undefined
+  readonly factory: DomElementFactory
+  readonly root: DomElement
+}
+
+const createBindingControl = <Action extends string>(
+  context: BindingActionsContext<Action>,
+  action: Action,
   labelKey: UiMessageKey,
 ) => {
   const button: DomInteractiveElement = context.factory.createElement('button')
@@ -547,9 +565,9 @@ const createBindingControl = (
   }
 }
 
-const createBindingRow = (
-  context: SettingsControlContext,
-  action: string,
+const createBindingRow = <Action extends string>(
+  context: BindingActionsContext<Action>,
+  action: Action,
 ): BindingRowElements => {
   const labelKey = actionMessageKey(action)
   const row = context.factory.createElement('div')
@@ -615,17 +633,17 @@ const writeToggles = (elements: ToggleControls, model: SettingsViewModel): void 
   writeAttribute(elements.captionsEnabled.checked, ariaChecked(model.captionsEnabled))
 }
 
-type BindingRenderContext = {
+type BindingRenderContext<Action extends string> = {
   readonly factory: DomElementFactory
   readonly root: DomElement
-  readonly actions: SettingsViewActions | undefined
+  readonly actions: SettingsViewActions<Action> | undefined
   readonly elements: Map<string, BindingRowElements>
-  readonly rows: SettingsViewModel['bindingRows']
+  readonly rows: SettingsViewModel<Action>['bindingRows']
   readonly language: SettingsViewModel['language']
 }
 
 const bindingNameValue = (
-  code: string | undefined,
+  code: KeyCodeType | undefined,
   language: SettingsViewModel['language'],
 ): string | Readonly<{ key: UiMessageKey }> => {
   if (typeof code === 'undefined') {
@@ -634,7 +652,7 @@ const bindingNameValue = (
   return keyDisplayName(code, language)
 }
 
-const writeBindingRows = ({ actions, factory, root, elements, rows, language }: BindingRenderContext): void => {
+const writeBindingRows = <Action extends string>({ actions, factory, root, elements, rows, language }: BindingRenderContext<Action>): void => {
   for (const row of rows) {
     const { action, code } = row
     const binding = elements.get(action) ?? createBindingRow({ actions, factory, root }, action)
@@ -660,15 +678,15 @@ const writeBindingRows = ({ actions, factory, root, elements, rows, language }: 
   }
 }
 
-type SettingsRenderContext = {
+type SettingsRenderContext<Action extends string> = {
   readonly factory: DomElementFactory
   readonly root: DomElement
   readonly elements: SettingsElements
-  readonly model: SettingsViewModel
-  readonly actions: SettingsViewActions | undefined
+  readonly model: SettingsViewModel<Action>
+  readonly actions: SettingsViewActions<Action> | undefined
 }
 
-const renderSettingsModel = ({ actions, factory, root, elements, model }: SettingsRenderContext): void => {
+const renderSettingsModel = <Action extends string>({ actions, factory, root, elements, model }: SettingsRenderContext<Action>): void => {
   writeSliders(elements.sliders, model)
   writeChoices(elements.choices, model)
   writeToggles(elements.toggles, model)
@@ -798,14 +816,15 @@ export const unbindSettingsKey = <Action extends string>(
 }
 
 /** Projects settings and wires optional native action callbacks. */
-export const createSettingsView = (
+export const createSettingsView = <Action extends string = string>(
   factory: DomElementFactory,
   parent: DomElement,
-  actions?: SettingsViewActions,
-): SettingsView => {
+  actions?: SettingsViewActions<Action>,
+): SettingsView<Action> => {
   const root = createRoot(factory, parent)
   createCloseButton(factory, root, actions)
-  const context: SettingsControlContext = { actions, factory, root }
+  const controlActions: SettingsControlActions | undefined = actions
+  const context: SettingsControlContext = { actions: controlActions, factory, root }
   const elements: SettingsElements = {
     bindingRows: new Map(),
     choices: createChoiceControls(context),
@@ -814,7 +833,7 @@ export const createSettingsView = (
   }
 
   return {
-    render: (model: SettingsViewModel): void => renderSettingsModel({ actions, elements, factory, model, root }),
+    render: (model: SettingsViewModel<Action>): void => renderSettingsModel({ actions, elements, factory, model, root }),
     root,
   }
 }

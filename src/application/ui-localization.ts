@@ -213,10 +213,16 @@ const updateLocalizedCandidate = (candidate: unknown, language: UiLanguage): voi
 }
 
 const updateLocalizedElements = (root: UiLocalizationRoot, language: UiLanguage): void => {
+  updateLocalizedCandidate(root, language)
   const elements = root.querySelectorAll(LOCALIZED_ELEMENT_SELECTOR)
   for (let index = 0; index < elements.length; index += INDEX_INCREMENT) {
     updateLocalizedCandidate(elements[index], language)
   }
+}
+
+export const applyValidatedUiLanguage = (root: UiLocalizationRoot, language: UiLanguage): void => {
+  setLanguageForTree(root, language)
+  updateLocalizedElements(root, language)
 }
 
 /** Apply a validated language to every localized text and attribute below a mounted root. */
@@ -230,7 +236,6 @@ export const applyUiLanguage = (
   }
 
   const language = decoded.success
-  setLanguageForTree(root, language)
-  updateLocalizedElements(root, language)
+  applyValidatedUiLanguage(root, language)
   return Result.succeed(language)
 }

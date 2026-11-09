@@ -1,5 +1,27 @@
 import { DEFAULT_UI_LANGUAGE, type UiLanguage, type UiMessageText, translateUiMessage } from './ui-language.js'
-import { Result } from 'effect'
+import { Result, Schema } from 'effect'
+import { SaveSliceIdSchema, SaveVersionSchema, WorldIdSchema } from '@nerima-games/mc-kernel'
+import {
+  type WorldNameText,
+  WorldNameTextSchema,
+  type WorldSeedText,
+  WorldSeedTextSchema,
+  type WorldSeedValue,
+  WorldSeedValueSchema,
+  type WorldTypeId,
+  WorldTypeIdSchema,
+} from './ui3-brand-schemas.js'
+
+export type { WorldNameText, WorldSeedText, WorldSeedValue, WorldTypeId } from './ui3-brand-schemas.js'
+const worldTypeId = Schema.decodeUnknownSync(WorldTypeIdSchema)
+
+const worldSeedText = Schema.decodeUnknownSync(WorldSeedTextSchema)
+const worldSeedValue = Schema.decodeUnknownSync(WorldSeedValueSchema)
+const worldNameText = Schema.decodeUnknownSync(WorldNameTextSchema)
+
+export type WorldId = Schema.Schema.Type<typeof WorldIdSchema>
+export type SaveSliceId = Schema.Schema.Type<typeof SaveSliceIdSchema>
+export type SaveVersion = Schema.Schema.Type<typeof SaveVersionSchema>
 
 export type MenuPanel = 'root' | 'new-world' | 'load-world'
 export const MENU_PANELS: ReadonlyArray<MenuPanel> = ['root', 'new-world', 'load-world']
@@ -15,14 +37,14 @@ export const GAME_DIFFICULTIES: ReadonlyArray<GameDifficulty> = ['peaceful', 'ea
 
 export type WorldTypeOption = {
   readonly value: string
-  readonly label: Readonly<Record<UiLanguage, string>>
+  readonly label: Readonly<Record<UiLanguage, UiMessageText>>
 }
 
-export type WorldSeed = { readonly kind: 'random' } | { readonly kind: 'fixed'; readonly value: number }
+export type WorldSeed = { readonly kind: 'random' } | { readonly kind: 'fixed'; readonly value: WorldSeedValue }
 
 export type WorldSeedFailure = {
   readonly _tag: 'InvalidWorldSeed'
-  readonly input: string
+  readonly input: WorldSeedText
   readonly reason: 'unsafe-integer'
 }
 
@@ -66,34 +88,35 @@ const xorByte = (word: number, byte: number): number => {
 
 type IntegerSeedAttempt = WorldSeed | { readonly failure: WorldSeedFailure } | null
 
-const parseIntegerSeed = (input: string, trimmed: string): IntegerSeedAttempt => {
+const parseIntegerSeed = (input: WorldSeedText, trimmed: string): IntegerSeedAttempt => {
   if (!DECIMAL_INTEGER_PATTERN.test(trimmed)) {
     return null
   }
   const integer = Number(trimmed)
   if (Number.isSafeInteger(integer)) {
-    return { kind: 'fixed', value: integer }
+    return { kind: 'fixed', value: worldSeedValue(integer) }
   }
   return { failure: { _tag: 'InvalidWorldSeed', input, reason: 'unsafe-integer' } }
 }
 
-const hashTextSeed = (input: string): WorldSeed => {
+const hashTextSeed = (input: WorldSeedText): WorldSeed => {
   let hash = FNV1A_OFFSET_BASIS
   for (const byte of new TextEncoder().encode(input)) {
     hash = Math.imul(xorByte(hash, byte), FNV1A_PRIME)
   }
-  return { kind: 'fixed', value: unsignedWord(hash) }
+  return { kind: 'fixed', value: worldSeedValue(unsignedWord(hash)) }
 }
 
 /** Blank input requests a random seed; text seeds hash their original UTF-8 bytes. */
 export const parseWorldSeed = (input: string): Result.Result<WorldSeed, WorldSeedFailure> => {
-  const trimmed = input.trim()
+  const seed = worldSeedText(input)
+  const trimmed = seed.trim()
   if (trimmed.length === EMPTY_SEED_LENGTH) {
     return Result.succeed({ kind: 'random' })
   }
-  const integerSeed = parseIntegerSeed(input, trimmed)
+  const integerSeed = parseIntegerSeed(seed, trimmed)
   if (integerSeed === null) {
-    return Result.succeed(hashTextSeed(input))
+    return Result.succeed(hashTextSeed(seed))
   }
   if ('failure' in integerSeed) {
     return Result.fail(integerSeed.failure)
@@ -111,19 +134,19 @@ export const cycleGameMode = (mode: GameMode): GameMode => {
 export const DEFAULT_WORLD_NAME: UiMessageText = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.world-name.default')
 
 export type NewWorldDraft = {
-  readonly name: string
-  readonly seed: string
+  readonly name: WorldNameText
+  readonly seed: WorldSeedText
   readonly mode: GameMode
   readonly difficulty: GameDifficulty
-  readonly worldType: string
+  readonly worldType: WorldTypeId
 }
 
 export const emptyNewWorldDraft: NewWorldDraft = {
   difficulty: 'normal',
   mode: 'survival',
-  name: '',
-  seed: '',
-  worldType: '',
+  name: worldNameText(''),
+  seed: worldSeedText(''),
+  worldType: worldTypeId(''),
 }
 
 const EMPTY_NAME_LENGTH = 0
@@ -131,10 +154,10 @@ const EMPTY_NAME_LENGTH = 0
 export const worldNameLabel = (
   draft: Pick<NewWorldDraft, 'name'>,
   defaultName: UiMessageText = DEFAULT_WORLD_NAME,
-): string => {
+): WorldNameText | UiMessageText => {
   const trimmed = draft.name.trim()
   if (trimmed.length > EMPTY_NAME_LENGTH) {
-    return trimmed
+    return worldNameText(trimmed)
   }
   return defaultName
 }
@@ -145,25 +168,25 @@ export type MainMenuState = {
 }
 
 export type SavedWorld = {
-  readonly sessionId: string
+  readonly sessionId: WorldId
   readonly name: string
 }
 
 /** Structurally compatible with mc-save's `ListedSaveFailure` on main. */
 export type UnreadableSave = {
   readonly _tag: 'SaveDecodeError'
-  readonly key: string
-  readonly format: string
-  readonly version: number
-  readonly reason: string
+  readonly key: WorldId
+  readonly format: SaveSliceId
+  readonly version: SaveVersion
+  readonly reason: UiMessageText
 }
 
 export type CreateWorldRequest = {
-  readonly name: string
+  readonly name: WorldNameText | UiMessageText
   readonly seed: WorldSeed
   readonly mode: GameMode
   readonly difficulty: GameDifficulty
-  readonly worldType?: string
+  readonly worldType?: WorldTypeId
 }
 
 export const initialMainMenuState: MainMenuState = {
@@ -182,17 +205,17 @@ export const backToRoot = (state: MainMenuState): MainMenuState => openPanel(sta
 
 export const nameWorld = (state: MainMenuState, name: string): MainMenuState => ({
   ...state,
-  draft: { ...state.draft, name },
+  draft: { ...state.draft, name: worldNameText(name) },
 })
 
 export const seedWorld = (state: MainMenuState, seed: string): MainMenuState => ({
   ...state,
-  draft: { ...state.draft, seed },
+  draft: { ...state.draft, seed: worldSeedText(seed) },
 })
 
 export const setWorldType = (state: MainMenuState, worldType: string): MainMenuState => ({
   ...state,
-  draft: { ...state.draft, worldType },
+  draft: { ...state.draft, worldType: worldTypeId(worldType) },
 })
 
 export const setWorldDifficulty = (state: MainMenuState, difficulty: GameDifficulty): MainMenuState => ({
@@ -207,12 +230,12 @@ export const cycleWorldMode = (state: MainMenuState): MainMenuState => ({
 
 export type MainMenuViewModel = {
   readonly panel: MenuPanel
-  readonly worldNameInput: string
-  readonly worldName: string
-  readonly seedInput: string
+  readonly worldNameInput: WorldNameText
+  readonly worldName: WorldNameText | UiMessageText
+  readonly seedInput: WorldSeedText
   readonly mode: GameMode
   readonly difficulty: GameDifficulty
-  readonly worldType: string
+  readonly worldType: WorldTypeId
   readonly worldTypes: ReadonlyArray<WorldTypeOption>
   readonly savedWorlds: ReadonlyArray<SavedWorld>
   readonly unreadableSaves: ReadonlyArray<UnreadableSave>
@@ -239,9 +262,10 @@ export const mainMenuViewModel = (
   unreadableSaves,
   worldName: worldNameLabel(state.draft),
   worldNameInput: state.draft.name,
-  worldType:
+  worldType: worldTypeId(
     worldTypes.find((option) => option.value === state.draft.worldType)?.value ??
-    worldTypes.at(FIRST_WORLD_TYPE_INDEX)?.value ??
-    '',
+      worldTypes.at(FIRST_WORLD_TYPE_INDEX)?.value ??
+      '',
+  ),
   worldTypes,
 })

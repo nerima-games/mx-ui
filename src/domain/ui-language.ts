@@ -568,7 +568,7 @@ export const UI_MESSAGES: Readonly<Record<UiMessageKey, Readonly<Record<UiLangua
   'menu.root.load-world': { en: 'Select World', ja: 'ワールド選択' },
   'menu.root.multiplayer': { en: 'Multiplayer', ja: 'マルチプレイ' },
   'menu.root.new-world': { en: 'Create New World', ja: '新しいワールドを作成' },
-  'menu.root.settings': { en: 'Settings', ja: '設定' },
+  'menu.root.settings': { en: 'Settings', ja: '設定...' },
   'menu.root.single-player': { en: 'Single Player', ja: 'シングルプレイ' },
   'menu.seed.invalid': { en: 'That integer is outside the safe range.', ja: 'その整数は安全に扱える範囲を超えています。' },
   'menu.world-name.default': { en: 'New World', ja: '新しいワールド' },
@@ -665,7 +665,7 @@ export type UiMessageValue = string | number | boolean | UiMessageKeyReference
 export type UiMessageValues = Readonly<Record<string, UiMessageValue>>
 export type AchievementId = Schema.Codec.Encoded<typeof AchievementIdSchema>
 
-const INPUT_ACTION_MESSAGE_KEYS: Readonly<Record<string, UiMessageKey>> = {
+const INPUT_ACTION_MESSAGE_KEYS = {
   Jump: 'settings.action.jump',
   Move: 'settings.action.move',
   'Open inventory': 'settings.action.open-inventory',
@@ -691,7 +691,7 @@ const INPUT_ACTION_MESSAGE_KEYS: Readonly<Record<string, UiMessageKey>> = {
   sneak: 'settings.action.sneak',
   sprint: 'settings.action.sprint',
   use: 'settings.action.use',
-}
+} satisfies Readonly<Record<string, UiMessageKey>>
 
 export const inputActionMessageKey = (action: unknown): UiMessageKey => {
   if (typeof action !== 'string' || !Object.hasOwn(INPUT_ACTION_MESSAGE_KEYS, action)) {

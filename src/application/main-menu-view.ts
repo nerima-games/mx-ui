@@ -1,10 +1,13 @@
 import {
   type AttributeCell,
+  type StyleCell,
   type TextCell,
   attributeCell,
+  styleCell,
   textCell,
   writeAttribute,
   writeHidden,
+  writeStyle,
   writeText,
 } from './dom-write.js'
 import {
@@ -17,6 +20,7 @@ import {
   type RootEntry,
   type SavedWorld,
   type UnreadableSave,
+  type WorldTypeId,
   cycleWorldMode,
   initialMainMenuState,
   mainMenuViewModel,
@@ -31,6 +35,8 @@ import {
 import { DEFAULT_UI_LANGUAGE, type UiLanguage, type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
 import { type DomElement, type DomElementFactory, type DomInputElement, type DomInteractiveElement } from './dom-surface.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import { Result, Schema } from 'effect'
+import { WorldNameTextSchema, WorldSeedTextSchema, WorldTypeIdSchema } from '../domain/ui3-brand-schemas.js'
 import {
   inheritUiLanguage,
   setLocalizedAttribute,
@@ -40,7 +46,6 @@ import {
   writeLocalizedText,
   writeLocalizedTextUsing,
 } from './ui-localization.js'
-import { Result } from 'effect'
 
 export const MAIN_MENU_TITLE: string = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.brand')
 
@@ -64,7 +69,7 @@ export const GAME_DIFFICULTY_LABEL: Readonly<Record<GameDifficulty, string>> = {
 }
 
 export const MENU_PANEL_LABEL: Readonly<Record<MenuPanel, string>> = {
-  'load-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.single-player'),
+  'load-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.load-world'),
   'new-world': translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.new-world'),
   root: translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.panel.root'),
 }
@@ -147,7 +152,7 @@ type UnreadableSaveRow = {
   readonly cancel: Button
 }
 
-type MenuPanelElement = { readonly element: DomElement; readonly hidden: AttributeCell }
+type MenuPanelElement = { readonly display: StyleCell; readonly element: DomElement; readonly hidden: AttributeCell }
 type MenuPanels = Record<MenuPanel, MenuPanelElement>
 type StyleEntry = readonly [property: string, value: string]
 
@@ -173,10 +178,12 @@ type CreateMenuPanelOptions = {
   readonly headingKey: UiMessageKey
 }
 
+type WorldInputField = 'world-name' | 'seed'
+
 type CreateFieldLabelOptions = {
   readonly factory: DomElementFactory
   readonly parent: DomElement
-  readonly field: MenuField
+  readonly field: WorldInputField
   readonly input: DomInputElement
 }
 
@@ -184,7 +191,7 @@ type CreateWorldInputOptions = {
   readonly factory: DomElementFactory
   readonly parent: DomElement
   readonly marker: string
-  readonly field: 'world-name' | 'seed'
+  readonly field: WorldInputField
   readonly key: UiMessageKey
 }
 
@@ -251,8 +258,16 @@ type BindListenerOptions = {
 }
 
 const IMAGE_SOURCE = new URL('../../assets/title-panorama.svg', import.meta.url).href
-const DIFFICULTIES: ReadonlyArray<GameDifficulty> = ['peaceful', 'easy', 'normal', 'hard']
+const NEXT_DIFFICULTY: Readonly<Record<GameDifficulty, GameDifficulty>> = {
+  easy: 'normal',
+  hard: 'peaceful',
+  normal: 'hard',
+  peaceful: 'easy',
+}
 const EMPTY_COUNT = 0
+const decodeWorldSeedText = Schema.decodeUnknownSync(WorldSeedTextSchema)
+const decodeWorldNameText = Schema.decodeUnknownSync(WorldNameTextSchema)
+const decodeWorldTypeId = Schema.decodeUnknownSync(WorldTypeIdSchema)
 const NEXT_INDEX = 1
 
 const FIELD_MESSAGE_KEY: Readonly<Record<MenuField, UiMessageKey>> = {
@@ -286,6 +301,18 @@ const initializeButtonElement = (element: DomInteractiveElement, options: MakeBu
 const makeButton = ({ factory, parent, marker, action, key }: MakeButtonOptions): Button => {
   const element = factory.createElement('button')
   initializeButtonElement(element, { action, factory, key, marker, parent })
+  setStyleProperties(element, [
+    ['appearance', 'none'],
+    ['background-color', PALETTE_VAR.surfaceRaised],
+    ['border', `1px solid ${PALETTE_VAR.slotBorder}`],
+    ['border-radius', '0.25rem'],
+    ['color', PALETTE_VAR.ink],
+    ['font-family', 'inherit'],
+    ['font-size', '1rem'],
+    ['min-height', '2.75rem'],
+    ['opacity', '1'],
+    ['padding', '0.55rem 0.85rem'],
+  ])
   const label = textCell(element)
   writeLocalizedText(label, key)
   const hidden = attributeCell(element, 'hidden')
@@ -340,12 +367,13 @@ const appendPanelHeading = ({ factory, panel, root, headingKey }: AppendPanelHea
   panel.appendChild(heading)
 }
 
-const initializeMenuPanel = ({ element, root, panel, headingKey, factory }: InitializeMenuPanelOptions): void => {
+const initializeMenuPanel = ({ element, root, panel, headingKey, factory }: InitializeMenuPanelOptions): StyleCell => {
   element.setAttribute('data-menu-panel', panel)
   element.setAttribute('hidden', '')
-  element.setAttribute('role', 'region')
+  element.setAttribute('role', 'group')
+  const display = styleCell(element, 'display')
+  writeStyle(display, 'none')
   setStyleProperties(element, [
-    ['display', 'grid'],
     ['justify-items', 'center'],
     ['gap', '0.75rem'],
     ['width', '100%'],
@@ -353,46 +381,50 @@ const initializeMenuPanel = ({ element, root, panel, headingKey, factory }: Init
   setLocalizedAttribute(element, 'aria-label', headingKey)
   appendPanelHeading({ factory, headingKey, panel: element, root })
   root.appendChild(element)
+  return display
 }
 
 const createMenuPanel = ({ factory, root, panel, headingKey }: CreateMenuPanelOptions): MenuPanelElement => {
   const element = makeElement({ factory, marker: 'menu-panel', parent: root, tag: 'section' })
-  initializeMenuPanel({ element, factory, headingKey, panel, root })
+  const display = initializeMenuPanel({ element, factory, headingKey, panel, root })
   const hidden = attributeCell(element, 'hidden')
   hidden.previous = ''
-  return { element, hidden }
+  return { display, element, hidden }
 }
 
-const renderFieldLabelText = (label: DomElement, field: MenuField, key: UiMessageKey): void => {
-  if (field === 'world-type') {
-    setLocalizedText(label, key, { type: '' })
-    return
-  }
-  setLocalizedText(label, key)
-}
+const renderFieldLabelText = (label: DomElement, key: UiMessageKey): void => setLocalizedText(label, key)
 
 type CreateFieldLabelTextOptions = {
   readonly factory: DomElementFactory
-  readonly field: MenuField
   readonly key: UiMessageKey
   readonly parent: DomElement
 }
 
-const createFieldLabelText = ({ factory, field, key, parent }: CreateFieldLabelTextOptions): DomElement => {
+const createFieldLabelText = ({ factory, key, parent }: CreateFieldLabelTextOptions): DomElement => {
   const text = makeElement({ factory, marker: 'menu-field-label-text', parent, tag: 'span' })
-  renderFieldLabelText(text, field, key)
+  renderFieldLabelText(text, key)
   return text
+}
+
+const appendFieldLabelText = (factory: DomElementFactory, field: WorldInputField, parent: DomElement): UiMessageKey => {
+  const key = FIELD_MESSAGE_KEY[field]
+  parent.appendChild(createFieldLabelText({ factory, key, parent }))
+  return key
 }
 
 const createFieldLabel = ({ factory, parent, field, input }: CreateFieldLabelOptions): DomElement => {
   const label = makeElement({ factory, marker: 'menu-field-label', parent, tag: 'label' })
   label.setAttribute('data-menu-field', field)
-  const key = FIELD_MESSAGE_KEY[field]
-  const text = createFieldLabelText({ factory, field, key, parent: label })
-  label.appendChild(text)
-  if (field === 'world-name' || field === 'seed') {
-    setLocalizedAttribute(input, 'aria-label', key)
-  }
+  setStyleProperties(label, [
+    ['align-items', 'center'],
+    ['display', 'grid'],
+    ['gap', '0.75rem'],
+    ['grid-template-columns', 'minmax(7rem, 1fr) minmax(0, 1.5fr)'],
+    ['text-align', 'left'],
+    ['width', 'min(100%, 28rem)'],
+  ])
+  const key = appendFieldLabelText(factory, field, label)
+  setLocalizedAttribute(input, 'aria-label', key)
   label.appendChild(input)
   parent.appendChild(label)
   return label
@@ -405,6 +437,17 @@ const createWorldInput = ({ factory, parent, marker, field, key }: CreateWorldIn
   inheritUiLanguage(parent, input)
   setLocalizedAttribute(input, 'aria-label', key)
   setLocalizedAttribute(input, 'placeholder', key)
+  setStyleProperties(input, [
+    ['background-color', PALETTE_VAR.surfaceRaised],
+    ['border', `1px solid ${PALETTE_VAR.slotBorder}`],
+    ['border-radius', '0.25rem'],
+    ['box-sizing', 'border-box'],
+    ['color', PALETTE_VAR.ink],
+    ['min-height', '2.75rem'],
+    ['min-width', '0'],
+    ['padding', '0.5rem 0.65rem'],
+    ['width', '100%'],
+  ])
   createFieldLabel({ factory, field, input, parent })
   return input
 }
@@ -418,9 +461,9 @@ const createMenuRoot = (factory: DomElementFactory, parent: DomElement): { reado
     ['position', 'relative'],
     ['display', 'grid'],
     ['place-items', 'center'],
-    ['min-height', '100vh'],
+    ['min-height', 'calc(100vh - var(--mx-ui-safe-area-top, env(safe-area-inset-top, 0px)) - var(--mx-ui-safe-area-bottom, env(safe-area-inset-bottom, 0px)))'],
     ['overflow', 'hidden'],
-    ['background-color', 'var(--mx-ui-ink)'],
+    ['background-color', PALETTE_VAR.scrim],
   ])
   declarePalette(root)
   parent.appendChild(root)
@@ -453,8 +496,14 @@ const createMenuContent = (factory: DomElementFactory, root: DomElement): DomEle
     ['justify-items', 'center'],
     ['gap', '1.5rem'],
     ['width', 'min(92vw, 38rem)'],
+    ['max-height', 'calc(100vh - 2rem - var(--mx-ui-safe-area-top, env(safe-area-inset-top, 0px)) - var(--mx-ui-safe-area-bottom, env(safe-area-inset-bottom, 0px)))'],
+    ['box-sizing', 'border-box'],
+    ['overflow-y', 'auto'],
     ['padding', '2rem'],
     ['background-color', PALETTE_VAR.scrim],
+    ['border', `1px solid ${PALETTE_VAR.slotBorder}`],
+    ['border-radius', '0.5rem'],
+    ['color', PALETTE_VAR.ink],
   ])
   root.appendChild(content)
   return content
@@ -462,8 +511,13 @@ const createMenuContent = (factory: DomElementFactory, root: DomElement): DomEle
 
 const appendMenuTitle = (factory: DomElementFactory, content: DomElement): void => {
   const title = makeElement({ factory, marker: 'menu-title', parent: content, tag: 'h1' })
-  title.style.setProperty('color', PALETTE_VAR.ink)
-  title.style.setProperty('text-align', 'center')
+  setStyleProperties(title, [
+    ['color', PALETTE_VAR.ink],
+    ['font-size', 'clamp(2.25rem, 7vw, 3.5rem)'],
+    ['letter-spacing', '0.04em'],
+    ['margin', '0'],
+    ['text-align', 'center'],
+  ])
   writeLocalizedText(textCell(title), 'menu.brand')
   content.appendChild(title)
 }
@@ -480,7 +534,7 @@ const createMenuScaffold = (
 }
 
 const createMenuPanels = (factory: DomElementFactory, content: DomElement): MenuPanels => ({
-  'load-world': createMenuPanel({ factory, headingKey: 'menu.panel.single-player', panel: 'load-world', root: content }),
+  'load-world': createMenuPanel({ factory, headingKey: 'menu.panel.load-world', panel: 'load-world', root: content }),
   'new-world': createMenuPanel({ factory, headingKey: 'menu.panel.new-world', panel: 'new-world', root: content }),
   root: createMenuPanel({ factory, headingKey: 'menu.panel.root', panel: 'root', root: content }),
 })
@@ -491,17 +545,17 @@ type BuildRootButtonsOptions = {
   readonly callbacks: MainMenuCallbacks
 }
 
-const externalRootCallback = (callbacks: MainMenuCallbacks, entry: RootEntry): (() => void) | null => {
+const externalRootCallback = (
+  callbacks: MainMenuCallbacks,
+  entry: Exclude<RootEntry, 'single-player'>,
+): (() => void) | null => {
   if (entry === 'multiplayer') {
     return callbacks.onOpenMultiplayer ?? null
   }
   if (entry === 'settings') {
     return callbacks.onOpenSettings ?? null
   }
-  if (entry === 'exit') {
-    return callbacks.onExit ?? null
-  }
-  return null
+  return callbacks.onExit ?? null
 }
 
 type CreateRootEntryButtonOptions = BuildRootButtonsOptions & {
@@ -604,9 +658,7 @@ const createWorldTypeControl = (factory: DomElementFactory, panel: DomElement): 
   const button = makeButton({ action: 'world-type', factory, key: 'menu.field.world-type', marker: 'menu-world-type', parent: panel })
   writeLocalizedText(button.label, 'menu.field.world-type', { type: '' })
   const labelHidden = attributeCell(label, 'hidden')
-  labelHidden.previous = ''
   writeHidden(labelHidden, true)
-  button.hidden.previous = ''
   writeHidden(button.hidden, true)
   return {
     worldTypeButton: button,
@@ -728,14 +780,14 @@ export const requireRootButton = <Entry extends string, ButtonElement>(
 const focusForPanel = (
   dom: MainMenuElements,
   panel: MenuPanel,
-): Result.Result<DomInteractiveElement, MainMenuButtonFailure> => {
+): DomInteractiveElement => {
   if (panel === 'root') {
-    return Result.map(requireRootButton(dom.rootButtons, 'single-player'), (button) => button.element)
+    return dom.rootButtons['single-player'].element
   }
   if (panel === 'new-world') {
-    return Result.succeed(dom.form.worldNameInput)
+    return dom.form.worldNameInput
   }
-  return Result.succeed(dom.worldList.createWorldButton.element)
+  return dom.worldList.createWorldButton.element
 }
 
 const stateFromModel = (model: MainMenuViewModel): MainMenuState => ({
@@ -1102,7 +1154,14 @@ const renderUnreadableSaves = (context: MainMenuRenderContext, saves: ReadonlyAr
 
 const renderPanelVisibility = (dom: MainMenuElements, panel: MenuPanel): void => {
   for (const key of ['root', 'load-world', 'new-world'] as const) {
-    writeHidden(dom.panelRoots[key].hidden, panel !== key)
+    const visible = panel === key
+    const panelRoot = dom.panelRoots[key]
+    writeHidden(panelRoot.hidden, !visible)
+    if (visible) {
+      writeStyle(panelRoot.display, 'grid')
+    } else {
+      writeStyle(panelRoot.display, 'none')
+    }
   }
 }
 
@@ -1130,22 +1189,13 @@ const updateMainMenuState = (context: MainMenuRenderContext, nextState: MainMenu
 const transitionMainMenuPanel = (
   context: MainMenuRenderContext,
   panel: MenuPanel,
-  focusTarget?: DomInteractiveElement,
 ): void => {
   updateMainMenuState(context, openPanel(context.runtime.state, panel))
-  let target = focusTarget
-  if (typeof target === 'undefined') {
-    const focusResult = focusForPanel(context.dom, panel)
-    if (Result.isFailure(focusResult)) {
-      return
-    }
-    target = focusResult.success
-  }
-  target.focus()
+  focusForPanel(context.dom, panel).focus()
 }
 
 const readWorldSeed = (context: MainMenuRenderContext): CreateWorldRequest['seed'] | null => {
-  const seed = parseWorldSeed(context.dom.form.seedInput.value)
+  const seed = parseWorldSeed(decodeWorldSeedText(context.dom.form.seedInput.value))
   if (Result.isFailure(seed)) {
     writeAttribute(context.dom.form.seedInvalid, 'true')
     writeHidden(context.dom.form.seedErrorHidden, false)
@@ -1158,13 +1208,13 @@ const readWorldSeed = (context: MainMenuRenderContext): CreateWorldRequest['seed
 
 type WorldTypeSelection =
   | { readonly kind: 'none' }
-  | { readonly kind: 'selected'; readonly value: string }
+  | { readonly kind: 'selected'; readonly value: WorldTypeId }
   | { readonly kind: 'unavailable' }
 
 const selectedWorldTypeForRequest = (model: MainMenuViewModel): WorldTypeSelection => {
   const selected = model.worldTypes.find((option) => option.value === model.worldType)
   if (typeof selected !== 'undefined') {
-    return { kind: 'selected', value: selected.value }
+    return { kind: 'selected', value: decodeWorldTypeId(selected.value) }
   }
   if (model.worldTypes.length === EMPTY_COUNT) {
     return { kind: 'none' }
@@ -1175,7 +1225,7 @@ const selectedWorldTypeForRequest = (model: MainMenuViewModel): WorldTypeSelecti
 const buildCreateWorldRequest = (
   context: MainMenuRenderContext,
   seed: CreateWorldRequest['seed'],
-  worldType: string | null,
+  worldType: WorldTypeId | null,
 ): CreateWorldRequest => {
   const request: CreateWorldRequest = {
     difficulty: context.runtime.state.draft.difficulty,
@@ -1201,7 +1251,7 @@ const dispatchWorldCreation = (
   if (selectedWorldType.kind === 'unavailable') {
     return
   }
-  let worldType: string | null = null
+  let worldType: WorldTypeId | null = null
   if (selectedWorldType.kind === 'selected') {
     worldType = selectedWorldType.value
   }
@@ -1237,11 +1287,8 @@ const bindRootActions = (context: MainMenuRenderContext): void => {
 }
 
 const cycleDifficulty = (context: MainMenuRenderContext): void => {
-  const index = DIFFICULTIES.indexOf(context.runtime.state.draft.difficulty)
-  const next = DIFFICULTIES[(index + NEXT_INDEX) % DIFFICULTIES.length]
-  if (typeof next !== 'undefined') {
-    updateMainMenuState(context, setWorldDifficulty(context.runtime.state, next))
-  }
+  const next = NEXT_DIFFICULTY[context.runtime.state.draft.difficulty]
+  updateMainMenuState(context, setWorldDifficulty(context.runtime.state, next))
 }
 
 const cycleWorldType = (context: MainMenuRenderContext): void => {
@@ -1266,7 +1313,7 @@ const bindWorldFormActions = (context: MainMenuRenderContext): void => {
   bindListener({
     context,
     element: form.worldNameInput,
-    listener: () => updateMainMenuState(context, nameWorld(context.runtime.state, form.worldNameInput.value)),
+    listener: () => updateMainMenuState(context, nameWorld(context.runtime.state, decodeWorldNameText(form.worldNameInput.value))),
     type: 'input',
   })
   bindListener({
@@ -1275,14 +1322,14 @@ const bindWorldFormActions = (context: MainMenuRenderContext): void => {
     listener: () => {
     writeAttribute(form.seedInvalid)
     writeHidden(form.seedErrorHidden, true)
-    updateMainMenuState(context, seedWorld(context.runtime.state, form.seedInput.value))
+    updateMainMenuState(context, seedWorld(context.runtime.state, decodeWorldSeedText(form.seedInput.value)))
     },
     type: 'input',
   })
 }
 
 const bindWorldListActions = (context: MainMenuRenderContext): void => {
-  bindButton(context, context.dom.worldList.createWorldButton, () => transitionMainMenuPanel(context, 'new-world', context.dom.form.worldNameInput))
+  bindButton(context, context.dom.worldList.createWorldButton, () => transitionMainMenuPanel(context, 'new-world'))
   bindButton(context, context.dom.worldList.backButton, () => transitionMainMenuPanel(context, 'root'))
 }
 
@@ -1308,6 +1355,7 @@ export const createMainMenuView = (
         context.listeners.pop()?.()
       }
       writeHidden(dom.rootHidden, true)
+      dom.root.style.setProperty('display', 'none')
     },
     render,
     root: dom.root,

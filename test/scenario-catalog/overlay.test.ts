@@ -34,6 +34,7 @@ import {
 } from '../../src/domain/save-status'
 import { AchievementToastSchema } from '../../src/domain/achievement-toast'
 import { fakeDocument, fakeElement } from '../fake-dom'
+import { asMonotonicTimeSecs, asUiMessageText } from '../helpers/ui3-brand-values'
 
 const environment: HarnessEnvironment = {
   motion: 'full',
@@ -184,19 +185,23 @@ describe('overlay scenario catalog', () => {
   })
 
   it('keeps loading and save timing on the injected virtual clock', () => {
-    const ready = loadingStatus({ kind: 'ready' }, 0)
-    expect(loadingScreenView(ready, LOADING_MINIMUM_VISIBLE_SECS - 0.01)).toStrictEqual({
+    const ready = loadingStatus({ kind: 'ready' }, asMonotonicTimeSecs(0))
+    expect(loadingScreenView(ready, asMonotonicTimeSecs(LOADING_MINIMUM_VISIBLE_SECS - 0.01))).toStrictEqual({
       held: true,
       kind: 'preparing',
       progress: 1,
       stage: 'render-preparation',
     })
-    expect(loadingScreenView(ready, LOADING_MINIMUM_VISIBLE_SECS)).toBeUndefined()
-    expect(loadingScreenView(loadingStatus({ kind: 'failed', reason: '' }, 0), 200)).toStrictEqual({
+    expect(loadingScreenView(ready, asMonotonicTimeSecs(LOADING_MINIMUM_VISIBLE_SECS))).toBeUndefined()
+    expect(loadingScreenView(
+      loadingStatus({ kind: 'failed', reason: asUiMessageText('') }, asMonotonicTimeSecs(0)),
+      asMonotonicTimeSecs(200),
+    )).toStrictEqual({
       kind: 'failed',
       reason: '',
     })
-    expect(loadingStatus({ kind: 'ready' }, Number.NaN).startedAtSecs).toBe(0)
+    const invalidStart = loadingStatus({ kind: 'ready' }, asMonotonicTimeSecs(0))
+    expect(invalidStart.startedAtSecs).toBe(0)
 
     const saved = saveStatus('saved', 0)
     expect(saveStatusMessage(saved, SAVED_VISIBLE_SECS - 0.01)).toBe('saved')

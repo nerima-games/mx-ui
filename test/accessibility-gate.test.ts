@@ -75,6 +75,7 @@ import {
 } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 import { captionEvent, captionTime } from './helpers/caption-event'
+import { asUiMessageText } from './helpers/ui3-brand-values'
 
 const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
@@ -161,7 +162,7 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   // Rendered as FAILED and then back, for the reason the HUD is rendered dead
   // and then alive: a state whose elements are only built when it occurs is a
   // state the sweep sees only if the sweep happened to trigger it.
-  loading.render({ kind: 'failed', reason: 'chunk stream ended' })
+  loading.render({ kind: 'failed', reason: asUiMessageText('chunk stream ended') })
   loading.render({ kind: 'preparing', held: true })
 
   const crosshair = createCrosshairView(factory, parent, 'full')

@@ -105,6 +105,12 @@ describe('visibleChatMessages', () => {
     )
   })
 
+  it('rejects a non-boolean editable-target flag before deciding whether T opens chat', () => {
+    expect(chatKeyboardAction({ code: 'KeyT', isOpen: false, isEditableTarget: 'false' })).toStrictEqual(
+      Result.fail({ _tag: 'InvalidChatKeyboardInput', field: 'isEditableTarget' }),
+    )
+  })
+
   it('property: visibility follows an independent 20 ticks per second × five second boundary', () => {
     fc.assert(
       fc.property(

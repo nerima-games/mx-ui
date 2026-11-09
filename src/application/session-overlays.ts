@@ -6,6 +6,8 @@ import {
   type SettingsSliderField,
   type SettingsSliderValue,
   type SettingsToggleField,
+  type SettingsView,
+  type SettingsViewActions,
   createSettingsView,
 } from './settings-view.js'
 import {
@@ -14,9 +16,15 @@ import {
   settingsViewModel,
 } from '../domain/settings-view-model.js'
 import { type TextCell, textCell } from './dom-write.js'
-import { type UiLanguage, type UiLanguageFailure, type UiMessageKey } from '../domain/ui-language.js'
-import { setLocalizedAttribute, setLocalizedText, writeLocalizedText } from './ui-localization.js'
 import type { UiScale } from '../domain/accessibility.js'
+import { type UiLanguage, type UiLanguageFailure, type UiMessageKey, type UiMessageText } from '../domain/ui-language.js'
+import {
+  applyValidatedUiLanguage,
+  setLocalizedAttribute,
+  setLocalizedText,
+  writeLocalizedText,
+} from './ui-localization.js'
+import type { DomElement } from './dom-surface.js'
 import type { InputAction as RenderInputAction } from '@nerima-games/mc-render'
 import { Result } from 'effect'
 import { KeyCode as kernelKeyCode } from '@nerima-games/mc-kernel/domain/settings'
@@ -25,7 +33,7 @@ export type DebugHudSnapshot = {
   readonly fps: number
   readonly coordinates: Readonly<{ worldX: number; worldY: number; worldZ: number }>
   readonly chunk: Readonly<{ chunkX: number; chunkZ: number }>
-  readonly facing?: string
+  readonly facing?: UiMessageText
 }
 
 /** Compatibility shape for hosts that still push the original four settings. */
@@ -44,7 +52,7 @@ export type UiSettingsCallbacks = {
   readonly onMasterVolumeChange?: (value: number) => void
   readonly onLanguageChange?: (language: UiLanguage) => void
   readonly onSettingsChange?: (settings: SettingsSnapshot) => void
-  readonly onBindingActivate?: (action: string) => void
+  readonly onBindingActivate?: (action: BindableAction) => void
 }
 
 export type SessionKeyDelegate = (event: KeyboardEvent) => boolean
@@ -142,7 +150,10 @@ const finite = (value: number, fallback: number): number => {
 }
 
 const focusable = (element: Element | null): element is HTMLElement =>
-  element !== null && 'focus' in element && typeof element.focus === 'function'
+  element !== null &&
+  'focus' in element &&
+  typeof element.focus === 'function' &&
+  (element !== element.ownerDocument.body || element.hasAttribute('tabindex'))
 
 const debugHudMessageKey = (facing: string | undefined): UiMessageKey => {
   if (typeof facing === 'undefined') {
@@ -185,14 +196,18 @@ const patchGraphicsPreset = (
   value: SettingsSliderValue | SettingsChoiceValue | boolean,
 ): Readonly<Record<string, unknown>> => ({ ...current, graphicsPreset: value, graphicsQuality: value })
 
+type SettingsPatchField =
+  | SettingsSliderField
+  | Exclude<SettingsChoiceField, 'language'>
+  | SettingsToggleField
+
 const patchSettings = (
   current: SettingsSnapshot,
-  field: SettingsSliderField | SettingsChoiceField | SettingsToggleField,
+  field: SettingsPatchField,
   value: SettingsSliderValue | SettingsChoiceValue | boolean,
 ): unknown => {
   switch (field) {
     case 'graphicsPreset': return patchGraphicsPreset(current, value)
-    case 'language': return current
     default: return { ...current, [field]: value }
   }
 }
@@ -203,13 +218,31 @@ const settingsTitle = (document: Document, dialog: HTMLElement): void => {
   dialog.appendChild(title)
 }
 
-const settingsDialog = (document: Document, parent: HTMLElement): HTMLElement => {
-  const dialog = document.createElement('section')
+const configureSettingsDialog = (dialog: HTMLElement): void => {
   dialog.setAttribute('data-mx-ui', 'settings')
   dialog.setAttribute('role', 'dialog')
   dialog.setAttribute('aria-modal', 'true')
   setLocalizedAttribute(dialog, 'aria-label', 'pause.dialog.options')
+  dialog.style.setProperty('box-sizing', 'border-box')
+  dialog.style.setProperty(
+    'max-height',
+    'calc(100vh - 2rem - var(--mx-ui-safe-area-top, env(safe-area-inset-top, 0px)) - var(--mx-ui-safe-area-bottom, env(safe-area-inset-bottom, 0px)))',
+  )
+  dialog.style.setProperty('flex-direction', 'column')
+  dialog.style.setProperty('overflow-y', 'hidden')
   dialog.hidden = true
+}
+
+const configurePauseSettingsScroller = (root: DomElement): void => {
+  root.removeAttribute('data-mx-ui')
+  root.style.setProperty('flex', '1 1 auto')
+  root.style.setProperty('min-height', '0')
+  root.style.setProperty('max-height', 'none')
+}
+
+const settingsDialog = (document: Document, parent: HTMLElement): HTMLElement => {
+  const dialog = document.createElement('section')
+  configureSettingsDialog(dialog)
   parent.appendChild(dialog)
   settingsTitle(document, dialog)
   return dialog
@@ -275,7 +308,7 @@ const createOverlayElements = (document: Document, parent: HTMLElement): Overlay
 type SettingsControllerState = {
   activeSettings: SettingsSnapshot
   activeLanguage: UiLanguage
-  view: ReturnType<typeof createSettingsView> | null
+  view: SettingsView<BindableAction> | null
 }
 
 type SettingsSnapshotUpdater = (
@@ -284,6 +317,7 @@ type SettingsSnapshotUpdater = (
 ) => Result.Result<SettingsSnapshot, SettingsViewModelFailure>
 
 type SettingsActionsContext = {
+  readonly dialog: HTMLElement
   readonly options: CreateSessionOverlaysOptions
   readonly state: SettingsControllerState
   readonly updateSettingsSnapshot: SettingsSnapshotUpdater
@@ -291,22 +325,22 @@ type SettingsActionsContext = {
   readonly closeSettings: () => void
 }
 
-const handleLanguageChoice = (
-  field: SettingsChoiceField,
-  value: SettingsChoiceValue,
-  context: SettingsActionsContext,
-): boolean => {
-  if (field !== 'language' || (value !== 'en' && value !== 'ja')) {
-    return false
-  }
-  const languageResult = context.options.onLanguageChange?.(value) ?? Result.succeed(value)
-  if (Result.isFailure(languageResult)) {
-    return true
-  }
-  context.state.activeLanguage = languageResult.success
+const applySettingsLanguage = (context: SettingsActionsContext, language: UiLanguage): void => {
+  applyValidatedUiLanguage(context.dialog, language)
+  context.state.activeLanguage = language
   context.options.callbacks?.onLanguageChange?.(context.state.activeLanguage)
   context.renderCurrentSettings()
-  return true
+}
+
+const handleLanguageChoice = (
+  value: UiLanguage,
+  context: SettingsActionsContext,
+): void => {
+  const languageResult = context.options.onLanguageChange?.(value) ?? Result.succeed(value)
+  if (Result.isFailure(languageResult)) {
+    return
+  }
+  applySettingsLanguage(context, languageResult.success)
 }
 
 const handleChoiceChange = (
@@ -314,7 +348,10 @@ const handleChoiceChange = (
   value: SettingsChoiceValue,
   context: SettingsActionsContext,
 ): void => {
-  if (handleLanguageChoice(field, value, context)) {
+  if (field === 'language') {
+    if (value === 'en' || value === 'ja') {
+      handleLanguageChoice(value, context)
+    }
     return
   }
   const updated = context.updateSettingsSnapshot(
@@ -370,8 +407,8 @@ const handleToggleChange = (
   }
 }
 
-const createSettingsActions = (context: SettingsActionsContext) => ({
-  onBindingActivate: (action: string) => context.options.callbacks?.onBindingActivate?.(action),
+const createSettingsActions = (context: SettingsActionsContext): SettingsViewActions<BindableAction> => ({
+  onBindingActivate: (action) => context.options.callbacks?.onBindingActivate?.(action),
   onChoiceChange: (field: SettingsChoiceField, value: SettingsChoiceValue) =>
     handleChoiceChange(field, value, context),
   onClose: context.closeSettings,
@@ -395,6 +432,7 @@ const createSettingsFocusActions = (
     } else {
       restoreFocus = null
     }
+    dialog.style.setProperty('display', 'flex')
     dialog.hidden = false
     dialog.querySelector<HTMLElement>('[data-settings-field="mouseSensitivity"]')?.focus()
   }
@@ -403,6 +441,7 @@ const createSettingsFocusActions = (
       return
     }
     dialog.hidden = true
+    dialog.style.removeProperty('display')
     const target = restoreFocus
     restoreFocus = null
     if (target?.isConnected === true) {
@@ -430,7 +469,7 @@ const initializeSettingsController = (
   updateSettingsSnapshot(initialSettingsSnapshot(options), state.activeLanguage)
 
 type SettingsController = {
-  readonly view: ReturnType<typeof createSettingsView>
+  readonly view: SettingsView<BindableAction>
   readonly initializationResult: Result.Result<SettingsSnapshot, SettingsViewModelFailure>
   readonly updateSettings: (settings: UiSettings) => Result.Result<SettingsSnapshot, SettingsViewModelFailure>
   readonly updateSettingsSnapshot: SettingsSnapshotUpdater
@@ -438,41 +477,50 @@ type SettingsController = {
   readonly closeSettings: () => void
 }
 
+const createSettingsControllerState = (
+  dialog: HTMLElement,
+  options: CreateSessionOverlaysOptions,
+): SettingsControllerState => {
+  const initialLanguage = options.initialLanguage ?? 'en'
+  applyValidatedUiLanguage(dialog, initialLanguage)
+  return {
+    activeLanguage: initialLanguage,
+    activeSettings: DEFAULT_SETTINGS,
+    view: null,
+  }
+}
+
 const createSettingsController = (
   document: Document,
   dialog: HTMLElement,
   options: CreateSessionOverlaysOptions,
 ): SettingsController => {
-  const state: SettingsControllerState = {
-    activeLanguage: options.initialLanguage ?? 'en',
-    activeSettings: DEFAULT_SETTINGS,
-    view: null,
-  }
+  const state = createSettingsControllerState(dialog, options)
   const focusActions = createSettingsFocusActions(document, dialog)
   const updateSettingsSnapshot: SettingsSnapshotUpdater = (input, language = state.activeLanguage) => {
     if (!isValidSettings(input)) {
       return Result.fail({ _tag: 'InvalidSettingsSnapshot' })
     }
     const model = settingsViewModel(input, DEFAULT_SETTINGS_BINDINGS, BINDABLE_ACTIONS, language)
-    if (Result.isFailure(model)) {
-      return Result.fail(model.failure)
-    }
-    state.activeSettings = input
-    state.activeLanguage = model.success.language
-    state.view?.render(model.success)
-    return Result.succeed(state.activeSettings)
+    return Result.map(model, (viewModel) => {
+      state.activeSettings = input
+      state.activeLanguage = viewModel.language
+      state.view?.render(viewModel)
+      return state.activeSettings
+    })
   }
   const renderCurrentSettings = (): Result.Result<SettingsSnapshot, SettingsViewModelFailure> =>
     updateSettingsSnapshot(state.activeSettings, state.activeLanguage)
   const view = createSettingsView(document, dialog, createSettingsActions({
     closeSettings: focusActions.closeSettings,
+    dialog,
     options,
     renderCurrentSettings,
     state,
     updateSettingsSnapshot,
   }))
   state.view = view
-  view.root.removeAttribute('data-mx-ui')
+  configurePauseSettingsScroller(view.root)
   const initializationResult = initializeSettingsController(options, state, updateSettingsSnapshot)
   const updateSettings = (settings: UiSettings): Result.Result<SettingsSnapshot, SettingsViewModelFailure> =>
     updateSettingsSnapshot(mergeLegacySettings(settings, state.activeSettings), state.activeLanguage)
@@ -572,6 +620,7 @@ export const createSessionOverlays = (
   options: CreateSessionOverlaysOptions = {},
 ): SessionOverlays => {
   const elements = createOverlayElements(document, parent)
+  updateDebugHud(elements.debugHudText, options.initialDebug ?? DEFAULT_DEBUG_HUD_SNAPSHOT)
   const settings = createSettingsController(document, elements.dialog, options)
   const toggleDebug = (): void => {
     elements.debugHud.hidden = !elements.debugHud.hidden

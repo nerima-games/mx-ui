@@ -14,6 +14,7 @@ import {
   UiMountError,
   type UiMountOptions,
 } from '../src/application/ui-mount'
+import { EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
 import {
   finishToastSubscriptionClose,
   finishUiMountCleanup,
@@ -50,6 +51,14 @@ import { HudPresentationSnapshotSchema } from '../src/domain/hud-presentation'
 import { hudViewModel as projectHudViewModel } from '../src/domain/hud-view-model'
 import { UI_STAGE_IDS } from '../src/stages/stage-ids'
 import { FrameServicesLayer } from './frame-services'
+import {
+  asSaveSliceId,
+  asSaveVersion,
+  asUiMessageText,
+  asWorldId,
+  asWorldNameText,
+  asWorldTypeId,
+} from './helpers/ui3-brand-values'
 
 const testScopes: Array<Scope.Closeable> = []
 
@@ -76,16 +85,19 @@ const testItemStack = (
   }
   expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
 }
-const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [{ sessionId: 'session-1', name: 'Cliff House' }]
+const SAVED_WORLDS: ReadonlyArray<SavedWorld> = [{ sessionId: asWorldId('session-1'), name: asWorldNameText('Cliff House') }]
 const WORLD_TYPES: ReadonlyArray<WorldTypeOption> = [
-  { label: { en: 'Standard', ja: '標準' }, value: 'standard' },
+  {
+    label: { en: asUiMessageText('Standard'), ja: asUiMessageText('標準') },
+    value: asWorldTypeId('standard'),
+  },
 ]
 const UNREADABLE_SAVE: UnreadableSave = {
   _tag: 'SaveDecodeError',
-  format: 'mc-save',
-  key: 'broken-save',
-  reason: 'Invalid data',
-  version: 1,
+  format: asSaveSliceId('mc-save'),
+  key: asWorldId('broken-save'),
+  reason: asUiMessageText('Invalid data'),
+  version: asSaveVersion(1),
 }
 
 afterEach(async () => {
@@ -223,8 +235,8 @@ describe('UiMount', () => {
     const result = runtime.updateLanguage('ja')
 
     expect(Result.isSuccess(result)).toBe(true)
-    expect(settingsButton?.textContent).toBe('設定')
-    expect(settingsButton?.getAttribute('aria-label')).toBe('設定')
+    expect(settingsButton?.textContent).toBe('設定...')
+    expect(settingsButton?.getAttribute('aria-label')).toBe('設定...')
 
     runtime.openSettings()
     expect(host.querySelector('[data-settings-field="language"][data-setting-value="ja"]')?.getAttribute('aria-pressed')).toBe('true')
@@ -239,7 +251,7 @@ describe('UiMount', () => {
     expect(Result.isSuccess(runtime.updateLanguage('ja'))).toBe(true)
     await Effect.runPromise(runtime.start)
 
-    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定')
+    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定...')
   })
 
   it('renders achievement events from the mounted subscriber and closes it on stop', async () => {
@@ -460,6 +472,104 @@ describe('UiMount', () => {
     expect(runtime.current()).toBeUndefined()
   })
 
+  it('rejects an invalid initial settings snapshot before mounting views', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const hostSettingsPayload = JSON.parse(JSON.stringify({
+      ...DEFAULT_SETTINGS,
+      renderDistance: MAX_RENDER_DISTANCE + 1,
+    }))
+    const runtime = makeUiMount({
+      initialSettingsSnapshot: hostSettingsPayload,
+      root: host,
+    })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Invalid initial settings snapshot' })
+    expect(runtime.current()).toBeUndefined()
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('reports an unsupported host language as a typed startup failure and cleans up its root', async () => {
+    const host = document.createElement('main')
+    const unrelated = document.createElement('p')
+    host.appendChild(unrelated)
+    document.body.appendChild(host)
+    const hostOptions = JSON.parse('{"initialLanguage":"fr"}')
+    const runtime = makeUiMount({ ...hostOptions, root: host })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toBeInstanceOf(UiMountError)
+    expect(failure._tag).toBe('UiMountError')
+    expect(runtime.current()).toBeUndefined()
+    expect(host.contains(unrelated)).toBe(true)
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('mounts when the owner document has no window or media query source', async () => {
+    const standaloneDocument = document.implementation.createHTMLDocument('standalone')
+    const host = standaloneDocument.createElement('main')
+    const runtime = makeUiMount({ motion: 'reduced', root: host })
+
+    await Effect.runPromise(runtime.start)
+
+    expect(standaloneDocument.defaultView).toBeNull()
+    expect(runtime.current()).toBeDefined()
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).not.toBeNull()
+  })
+
+  it('follows changes to the browser reduced-motion preference while using system settings', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const view = document.defaultView
+    if (view === null) {
+      throw new Error('Expected a browser window')
+    }
+    const previousMatchMedia = Object.getOwnPropertyDescriptor(view, 'matchMedia')
+    const listeners = new Set<() => void>()
+    let prefersReducedMotion = false
+    const mediaQuery = {
+      get matches() {
+        return prefersReducedMotion
+      },
+      addEventListener: (_type: 'change', listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: 'change', listener: () => void) => listeners.delete(listener),
+    }
+    const matchMedia = vi.fn(() => mediaQuery)
+    Object.defineProperty(view, 'matchMedia', { configurable: true, value: matchMedia })
+    const runtime = makeUiMount({ root: host })
+
+    try {
+      await Effect.runPromise(runtime.start)
+      const experienceFill = host.querySelector<HTMLElement>('[data-mx-ui="experience-fill"]')
+      expect(matchMedia).toHaveBeenCalledExactlyOnceWith('(prefers-reduced-motion: reduce)')
+      expect(experienceFill?.style.getPropertyValue('transition')).toBe(
+        `width ${String(EXPERIENCE_TRANSITION_MS)}ms linear`,
+      )
+
+      prefersReducedMotion = true
+      listeners.forEach((listener) => listener())
+      expect(experienceFill?.style.getPropertyValue('transition')).toBe('')
+
+      prefersReducedMotion = false
+      listeners.forEach((listener) => listener())
+      expect(experienceFill?.style.getPropertyValue('transition')).toBe(
+        `width ${String(EXPERIENCE_TRANSITION_MS)}ms linear`,
+      )
+
+      await Effect.runPromise(runtime.stop)
+      expect(listeners.size).toBe(0)
+    } finally {
+      if (typeof previousMatchMedia === 'undefined') {
+        Reflect.deleteProperty(view, 'matchMedia')
+      } else {
+        Object.defineProperty(view, 'matchMedia', previousMatchMedia)
+      }
+    }
+  })
+
   it('reports a partial-mount cleanup failure with both mount and cleanup causes', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
@@ -517,7 +627,7 @@ describe('UiMount', () => {
     runtime.updateDebug({
       chunk: { chunkX: 3, chunkZ: -2 },
       coordinates: { worldX: 12.5, worldY: 64, worldZ: -8.25 },
-      facing: 'north',
+      facing: asUiMessageText('north'),
       fps: 59.94,
     })
     expect(debug?.textContent).toContain('FPS: 59.9')
@@ -535,6 +645,7 @@ describe('UiMount', () => {
     const onRenderDistanceChange = vi.fn()
     const onFieldOfViewChange = vi.fn()
     const onMasterVolumeChange = vi.fn()
+    const onBindingActivate = vi.fn()
     const runtime = makeUiMount({
       root: host,
       settingsCallbacks: {
@@ -542,6 +653,7 @@ describe('UiMount', () => {
         onMasterVolumeChange,
         onMouseSensitivityChange,
         onRenderDistanceChange,
+        onBindingActivate,
       },
     })
     await Effect.runPromise(runtime.start)
@@ -556,6 +668,9 @@ describe('UiMount', () => {
     expect(dialog?.querySelectorAll('[data-interaction-target="settings-choice"]')).toHaveLength(17)
     expect(dialog?.querySelectorAll('[data-interaction-target="settings-binding"]')).toHaveLength(21)
     expect(dialog?.querySelectorAll('[data-interaction-target="settings-toggle"]')).toHaveLength(2)
+
+    dialog?.querySelector<HTMLButtonElement>('[data-binding-action="moveForward"]')?.click()
+    expect(onBindingActivate).toHaveBeenCalledExactlyOnceWith('moveForward')
 
     const changes = [
       ['mouseSensitivity', '1.25', onMouseSensitivityChange],
@@ -575,6 +690,39 @@ describe('UiMount', () => {
     expect(host.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.max).toBe(String(MAX_RENDER_DISTANCE))
 
     document.dispatchEvent(new KeyboardEvent('keydown', { cancelable: true, key: 'Escape' }))
+    expect(dialog?.hidden).toBe(true)
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('applies a host settings snapshot received before mount to the initial UI', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    const settings = { ...DEFAULT_SETTINGS, uiScale: 1.25 }
+
+    expect(runtime.updateSettingsSnapshot(settings)).toStrictEqual(Result.succeed(settings))
+    await Effect.runPromise(runtime.start)
+
+    expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('1.25')
+    runtime.openSettings()
+    expect(host.querySelector<HTMLInputElement>('[data-setting="uiScale"]')?.value).toBe('1.25')
+  })
+
+  it('closes settings through the host API and restores the opening focus target', async () => {
+    const host = document.createElement('main')
+    const trigger = document.createElement('button')
+    host.appendChild(trigger)
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    trigger.focus()
+    runtime.openSettings()
+    const dialog = host.querySelector<HTMLElement>('[data-mx-ui="settings"]')
+    expect(dialog?.hidden).toBe(false)
+
+    runtime.closeSettings()
+
     expect(dialog?.hidden).toBe(true)
     expect(document.activeElement).toBe(trigger)
   })
@@ -603,7 +751,7 @@ describe('UiMount', () => {
     const dialog = host.querySelector<HTMLElement>('[data-mx-ui="settings"]')
 
     dialog?.querySelector<HTMLButtonElement>('[data-settings-field="language"][data-setting-value="ja"]')?.click()
-    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定')
+    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('設定...')
     expect(onLanguageChange).toHaveBeenCalledExactlyOnceWith('ja')
 
     dialog?.querySelector<HTMLButtonElement>('[data-settings-field="reducedMotion"][data-setting-value="reduced"]')?.click()
@@ -614,6 +762,17 @@ describe('UiMount', () => {
     expect(canvas.getAttribute('data-color-vision')).toBe('protanopia')
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ colorVisionCorrection: 'protanopia' }))
 
+    dialog?.querySelector<HTMLButtonElement>('[data-settings-field="graphicsPreset"][data-setting-value="ultra"]')?.click()
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      graphicsPreset: 'ultra',
+      graphicsQuality: 'ultra',
+    }))
+
+    const audioToggle = dialog?.querySelector<HTMLButtonElement>('[data-settings-field="audioEnabled"]')
+    audioToggle?.click()
+    expect(audioToggle?.getAttribute('aria-checked')).toBe('false')
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ audioEnabled: false }))
+
     const scale = dialog?.querySelector<HTMLInputElement>('[data-setting="uiScale"]')
     if (scale === null || typeof scale === 'undefined') {
       throw new Error('Missing UI scale input')
@@ -622,6 +781,24 @@ describe('UiMount', () => {
     scale.dispatchEvent(new Event('input', { bubbles: true }))
     expect(mounted.root.style.getPropertyValue('zoom')).toBe('1.25')
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1.25 }))
+  })
+
+  it('rejects invalid host settings without changing the rendered settings controls', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+    runtime.openSettings()
+
+    const renderDistance = host.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')
+    if (renderDistance === null) {
+      throw new Error('Missing render distance input')
+    }
+    const previousValue = renderDistance.value
+    const result = runtime.updateSettingsSnapshot({ ...DEFAULT_SETTINGS, renderDistance: MAX_RENDER_DISTANCE + 1 })
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsSnapshot' }))
+    expect(renderDistance.value).toBe(previousValue)
   })
 
   it('connects settings focus groups to document arrow key navigation', async () => {
@@ -649,6 +826,18 @@ describe('UiMount', () => {
     current.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
     expect(document.activeElement).toBe(next)
+
+    const left = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowLeft' })
+    next.dispatchEvent(left)
+    expect(left.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(current)
+
+    for (const key of ['ArrowUp', 'ArrowDown', 'Tab']) {
+      const unchanged = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key })
+      current.dispatchEvent(unchanged)
+      expect(unchanged.defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(current)
+    }
   })
 
   it('uses typed focus navigation, native button activation, and Escape focus restoration', async () => {
@@ -1024,25 +1213,6 @@ describe('UiMount', () => {
     expect(document.activeElement).not.toBe(mouseSensitivityInput)
   })
 
-  it('is a no-op to close settings a second time when already closed', async () => {
-    const host = document.createElement('main')
-    document.body.appendChild(host)
-    const runtime = makeUiMount({ root: host })
-    await Effect.runPromise(runtime.start)
-
-    const dialog = host.querySelector<HTMLElement>('[data-mx-ui="settings"]')
-    expect(dialog?.hidden).toBe(true)
-
-    // Observable behavior is unchanged either way here: `restoreFocus` is
-    // already null before the first close a session ever performs, so this
-    // pins the coverage gap (the guard branch is reachable and exercised)
-    // rather than a difference the fake or real DOM can see, the same
-    // distinction docs/testing.md §5-1 draws for `setMotion`'s early return.
-    runtime.closeSettings()
-
-    expect(dialog?.hidden).toBe(true)
-  })
-
   it('forwards every host-owned menu callback through UiMount', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
@@ -1080,7 +1250,7 @@ describe('UiMount', () => {
       mode: 'survival',
       name: 'New World',
       seed: { kind: 'random' },
-      worldType: 'standard',
+      worldType: asWorldTypeId('standard'),
     })
     expect(onStateChange).toHaveBeenCalledWith(expect.objectContaining({ panel: 'new-world' }))
 
@@ -1670,34 +1840,6 @@ describe('UiMount', () => {
 
     runtime.closeInventory()
     expect(document.activeElement).toBe(trigger)
-  })
-
-  it('opens settings without capturing a focus target when the document reports none', async () => {
-    // `document.activeElement` is typed `Element | null` — jsdom (and every real document with a
-    // body) never actually hands `openSettings` a `null`, but `session-overlays.ts` still guards
-    // for it since the type says a host's document could. Overriding the getter for this one test
-    // is what reaches that path without weakening the real DOM assumption everywhere else.
-    const host = document.createElement('main')
-    document.body.appendChild(host)
-    const runtime = makeUiMount({ root: host })
-    await Effect.runPromise(runtime.start)
-
-    const original = Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement')
-    Object.defineProperty(document, 'activeElement', { configurable: true, value: null })
-    try {
-      runtime.openSettings()
-    } finally {
-      if (typeof original !== 'undefined') {
-        Object.defineProperty(Document.prototype, 'activeElement', original)
-      }
-      Reflect.deleteProperty(document, 'activeElement')
-    }
-
-    const dialog = host.querySelector<HTMLElement>('[data-mx-ui="settings"]')
-    expect(dialog?.hidden).toBe(false)
-
-    runtime.closeSettings()
-    expect(dialog?.hidden).toBe(true)
   })
 
   it('returns false when typed focus navigation has no target in a hand-built model', async () => {

@@ -2,8 +2,9 @@ import { Result } from 'effect'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { createChatView } from '../src/application/chat-view.js'
-import type { ChatFailure, ChatSubmission } from '../src/domain/chat.js'
+import type { ChatFailure, ChatMessage, ChatSubmission } from '../src/domain/chat.js'
 import { fakeDocument, fakeElement } from './fake-dom.js'
+import { asSimulationTick } from './helpers/ui3-brand-values'
 
 const mount = () => {
   const factory = fakeDocument()
@@ -22,6 +23,18 @@ const pressEnter = (input: ReturnType<typeof fakeElement>): Event => {
     code: 'Enter',
     key: 'Enter',
   })
+  for (const listener of input.eventListeners.get('keydown') ?? []) {
+    if (typeof listener === 'function') {
+      listener(event)
+    } else {
+      listener.handleEvent(event)
+    }
+  }
+  return event
+}
+
+const pressKeyOnly = (input: ReturnType<typeof fakeElement>, key: string): Event => {
+  const event = Object.assign(new Event('keydown', { cancelable: true }), { key })
   for (const listener of input.eventListeners.get('keydown') ?? []) {
     if (typeof listener === 'function') {
       listener(event)
@@ -83,6 +96,21 @@ describe('createChatView', () => {
     expect(factory.mutations.some((mutation) => mutation.kind === 'focus' && mutation.target === input)).toBe(true)
   })
 
+  it('renders raw string messages supplied in the host chat history', () => {
+    const { host, view } = mount()
+    const message: ChatMessage = {
+      text: 'Server: Welcome, Alex!',
+      tick: asSimulationTick(0),
+    }
+
+    expect(Result.isSuccess(view.render([message], asSimulationTick(0), true))).toBe(true)
+    expect(
+      fakeElement(host.find('data-mx-ui', 'chat-history'))
+        .findAll('data-mx-ui', 'chat-message')
+        .map((row) => row.textContent),
+    ).toStrictEqual(['Server: Welcome, Alex!'])
+  })
+
   it('shows only recent messages when closed and hides the surface after they expire', () => {
     const { host, view } = mount()
     const history = [
@@ -136,6 +164,33 @@ describe('createChatView', () => {
     expect(input.value).toBe('   ')
   })
 
+  it('submits when a keydown provides Enter without a KeyboardEvent code', () => {
+    const { host, submissions, view } = mount()
+    expect(Result.isSuccess(view.render([], 0, true))).toBe(true)
+    const input = fakeElement(host.find('data-mx-ui', 'chat-input'))
+    input.value = 'keyboard fallback'
+
+    const enter = pressKeyOnly(input, 'Enter')
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(submissions).toStrictEqual([{ kind: 'message', text: 'keyboard fallback' }])
+    expect(input.value).toBe('')
+  })
+
+  it('does not submit or prevent ordinary keydown events', () => {
+    const { failures, host, submissions, view } = mount()
+    expect(Result.isSuccess(view.render([], 0, true))).toBe(true)
+    const input = fakeElement(host.find('data-mx-ui', 'chat-input'))
+    input.value = 'draft remains available'
+
+    const arrow = pressKeyOnly(input, 'ArrowLeft')
+
+    expect(arrow.defaultPrevented).toBe(false)
+    expect(submissions).toStrictEqual([])
+    expect(failures).toStrictEqual([])
+    expect(input.value).toBe('draft remains available')
+  })
+
   it('does not alter the rendered screen when host data is invalid', () => {
     const { factory, view } = mount()
     const root = fakeElement(view.root)
@@ -147,6 +202,18 @@ describe('createChatView', () => {
     expect(Result.isFailure(result)).toBe(true)
     expect(factory.since(before)).toStrictEqual([])
     expect(root.attributes.has('hidden')).toBe(false)
+  })
+
+  it('returns a typed visibility failure without changing the current surface', () => {
+    const { factory, view } = mount()
+    expect(Result.isSuccess(view.render([], 0, true))).toBe(true)
+    const before = factory.mark()
+
+    const result = view.render([], 1, 'open')
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidChatVisibility', field: 'isOpen' }))
+    expect(factory.since(before)).toStrictEqual([])
+    expect(fakeElement(view.root).attributes.has('hidden')).toBe(false)
   })
 
   it('property: opening controls visibility and closed empty chat has no surface', () => {

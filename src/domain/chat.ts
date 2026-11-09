@@ -1,4 +1,22 @@
-import { Result } from 'effect'
+import {
+  type ChatHistoryIndex,
+  ChatHistoryIndexSchema,
+  type ChatKeyboardCode,
+  ChatKeyboardCodeSchema,
+  type ChatText,
+  ChatTextSchema,
+} from './ui3-brand-schemas.js'
+import { Result, Schema } from 'effect'
+import { SimulationTickSchema } from '@nerima-games/mc-kernel'
+
+export type { ChatHistoryIndex, ChatKeyboardCode, ChatText } from './ui3-brand-schemas.js'
+const chatText = Schema.decodeUnknownSync(ChatTextSchema)
+
+const chatKeyboardCode = Schema.decodeUnknownSync(ChatKeyboardCodeSchema)
+
+const chatHistoryIndex = Schema.decodeUnknownSync(ChatHistoryIndexSchema)
+type SimulationTick = Schema.Schema.Type<typeof SimulationTickSchema>
+const simulationTick = Schema.decodeUnknownSync(SimulationTickSchema)
 
 export const CHAT_TICKS_PER_SECOND: number = 20
 export const CHAT_RECENT_MESSAGE_SECONDS: number = 5
@@ -6,17 +24,17 @@ export const CHAT_RECENT_MESSAGE_TICKS: number = CHAT_TICKS_PER_SECOND * CHAT_RE
 
 export type ChatMessage = {
   readonly text: string
-  readonly tick: number
+  readonly tick: SimulationTick
 }
 
 export type ChatSubmission =
-  | { readonly kind: 'message'; readonly text: string }
-  | { readonly kind: 'command'; readonly command: string }
+  | { readonly kind: 'message'; readonly text: ChatText }
+  | { readonly kind: 'command'; readonly command: ChatText }
 
 export type ChatFailure =
   | { readonly _tag: 'InvalidChatInput'; readonly reason: 'not-string' | 'empty' | 'empty-command' }
-  | { readonly _tag: 'InvalidChatHistory'; readonly reason: 'not-array' | 'invalid-message'; readonly index?: number }
-  | { readonly _tag: 'InvalidChatTick'; readonly field: 'current' | 'message'; readonly index?: number }
+  | { readonly _tag: 'InvalidChatHistory'; readonly reason: 'not-array' | 'invalid-message'; readonly index?: ChatHistoryIndex }
+  | { readonly _tag: 'InvalidChatTick'; readonly field: 'current' | 'message'; readonly index?: ChatHistoryIndex }
   | { readonly _tag: 'InvalidChatVisibility'; readonly field: 'isOpen' }
   | {
       readonly _tag: 'InvalidChatKeyboardInput'
@@ -30,7 +48,7 @@ export type ChatKeyboardAction =
 
 export type ChatKeyboardInput = {
   /** `KeyboardEvent.code`, such as `KeyT` or `Escape`. */
-  readonly code: string
+  readonly code: ChatKeyboardCode
   readonly isOpen: boolean
   /** True for input, textarea, select, or contenteditable targets. */
   readonly isEditableTarget: boolean
@@ -45,7 +63,7 @@ const ONE = 1
 const isTick = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= ZERO
 
-const classifyNonEmptyText = (text: string): Result.Result<ChatSubmission, ChatFailure> => {
+const classifyNonEmptyText = (text: ChatText): Result.Result<ChatSubmission, ChatFailure> => {
   if (!text.startsWith('/')) {
     return Result.succeed({ kind: 'message', text })
   }
@@ -54,7 +72,7 @@ const classifyNonEmptyText = (text: string): Result.Result<ChatSubmission, ChatF
   if (command.length === ZERO) {
     return Result.fail({ _tag: 'InvalidChatInput', reason: 'empty-command' })
   }
-  return Result.succeed({ command, kind: 'command' })
+  return Result.succeed({ command: chatText(command), kind: 'command' })
 }
 
 /** Classify submitted text without executing commands. The host owns execution. */
@@ -67,7 +85,7 @@ export const classifyChatInput = (input: unknown): Result.Result<ChatSubmission,
   if (text.length === ZERO) {
     return Result.fail({ _tag: 'InvalidChatInput', reason: 'empty' })
   }
-  return classifyNonEmptyText(text)
+  return classifyNonEmptyText(chatText(text))
 }
 
 const parseChatKeyboardInput = (input: unknown): Result.Result<ChatKeyboardInput, ChatFailure> => {
@@ -82,7 +100,8 @@ const parseChatKeyboardInput = (input: unknown): Result.Result<ChatKeyboardInput
   }
 
   const { code, isEditableTarget, isOpen } = input
-  return Result.succeed({ code, isEditableTarget, isOpen })
+  const keyboardCode = chatKeyboardCode(code)
+  return Result.succeed({ code: keyboardCode, isEditableTarget, isOpen })
 }
 
 /** Resolve T/Escape behavior for the host's frame-level keyboard handler. */
@@ -109,19 +128,19 @@ const parseVisibleChatMessage = (
   currentTick: number,
 ): Result.Result<ChatMessage, ChatFailure> => {
   if (!isRecord(candidate) || typeof candidate['text'] !== 'string' || candidate['text'].length === ZERO) {
-    return Result.fail({ _tag: 'InvalidChatHistory', index, reason: 'invalid-message' })
+    return Result.fail({ _tag: 'InvalidChatHistory', index: chatHistoryIndex(index), reason: 'invalid-message' })
   }
 
   const { text, tick } = candidate
   if (!isTick(tick) || tick > currentTick) {
-    return Result.fail({ _tag: 'InvalidChatTick', field: 'message', index })
+    return Result.fail({ _tag: 'InvalidChatTick', field: 'message', index: chatHistoryIndex(index) })
   }
-  return Result.succeed(Object.freeze({ text, tick }))
+  return Result.succeed(Object.freeze({ text: chatText(text), tick: simulationTick(tick) }))
 }
 
 type VisibleChatContext = {
   readonly history: ReadonlyArray<unknown>
-  readonly currentTick: number
+  readonly currentTick: SimulationTick
   readonly isOpen: boolean
 }
 
@@ -158,7 +177,7 @@ const parseVisibleChatContext = (
   if (!Array.isArray(history)) {
     return Result.fail({ _tag: 'InvalidChatHistory', reason: 'not-array' })
   }
-  return Result.succeed({ currentTick, history, isOpen })
+  return Result.succeed({ currentTick: simulationTick(currentTick), history, isOpen })
 }
 
 /**
