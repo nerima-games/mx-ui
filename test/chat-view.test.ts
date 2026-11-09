@@ -2,9 +2,9 @@ import { Result } from 'effect'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { createChatView } from '../src/application/chat-view.js'
-import type { ChatFailure, ChatMessage, ChatSubmission } from '../src/domain/chat.js'
+import { visibleChatMessages, type ChatFailure, type ChatSubmission } from '../src/domain/chat.js'
 import { fakeDocument, fakeElement } from './fake-dom.js'
-import { asSimulationTick } from './helpers/ui3-brand-values'
+import { asChatText, asSimulationTick } from './helpers/ui3-brand-values'
 
 const mount = () => {
   const factory = fakeDocument()
@@ -80,8 +80,8 @@ describe('createChatView', () => {
     const { factory, host, view } = mount()
     const input = host.find('data-mx-ui', 'chat-input')
     const history = [
-      { text: 'older line', tick: 0 },
-      { text: 'latest line', tick: 100 },
+      { text: asChatText('older line'), tick: 0 },
+      { text: asChatText('latest line'), tick: 100 },
     ]
 
     const result = view.render(history, 100, true)
@@ -96,14 +96,14 @@ describe('createChatView', () => {
     expect(factory.mutations.some((mutation) => mutation.kind === 'focus' && mutation.target === input)).toBe(true)
   })
 
-  it('renders raw string messages supplied in the host chat history', () => {
+  it('renders chat messages validated from raw host history', () => {
     const { host, view } = mount()
-    const message: ChatMessage = {
-      text: 'Server: Welcome, Alex!',
-      tick: asSimulationTick(0),
+    const parsed = visibleChatMessages([{ text: 'Server: Welcome, Alex!', tick: 0 }], 0, true)
+    if (Result.isFailure(parsed)) {
+      throw new Error('Expected valid host chat history')
     }
 
-    expect(Result.isSuccess(view.render([message], asSimulationTick(0), true))).toBe(true)
+    expect(Result.isSuccess(view.render(parsed.success, asSimulationTick(0), true))).toBe(true)
     expect(
       fakeElement(host.find('data-mx-ui', 'chat-history'))
         .findAll('data-mx-ui', 'chat-message')
@@ -114,8 +114,8 @@ describe('createChatView', () => {
   it('shows only recent messages when closed and hides the surface after they expire', () => {
     const { host, view } = mount()
     const history = [
-      { text: 'expired', tick: 0 },
-      { text: 'recent', tick: 50 },
+      { text: asChatText('expired'), tick: 0 },
+      { text: asChatText('recent'), tick: 50 },
     ]
     const root = fakeElement(view.root)
     const log = fakeElement(host.find('data-mx-ui', 'chat-history'))

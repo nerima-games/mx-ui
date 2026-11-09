@@ -1,4 +1,4 @@
-import { type Brand, Schema } from 'effect'
+import { type Brand, Result, Schema } from 'effect'
 
 export type ChatText = string & Brand.Brand<'ChatText'>
 export const ChatTextSchema: Schema.Codec<ChatText, string> = Schema.NonEmptyString.pipe(Schema.brand('ChatText'))
@@ -20,9 +20,13 @@ export const LoadingProgressValueSchema: Schema.Codec<LoadingProgressValue, numb
 
 export type WorldSeedText = string & Brand.Brand<'WorldSeedText'>
 export const WorldSeedTextSchema: Schema.Codec<WorldSeedText, string> = Schema.String.pipe(Schema.brand('WorldSeedText'))
+export const decodeWorldSeedText: (input: unknown) => Result.Result<WorldSeedText, Schema.SchemaError> =
+  Schema.decodeUnknownResult(WorldSeedTextSchema)
 
 export type WorldTypeId = string & Brand.Brand<'WorldTypeId'>
 export const WorldTypeIdSchema: Schema.Codec<WorldTypeId, string> = Schema.String.pipe(Schema.brand('WorldTypeId'))
+export const decodeWorldTypeId: (input: unknown) => Result.Result<WorldTypeId, Schema.SchemaError> =
+  Schema.decodeUnknownResult(WorldTypeIdSchema)
 
 export type WorldSeedValue = number & Brand.Brand<'WorldSeedValue'>
 export const WorldSeedValueSchema: Schema.Codec<WorldSeedValue, number> = Schema.Int.check(
@@ -31,3 +35,5 @@ export const WorldSeedValueSchema: Schema.Codec<WorldSeedValue, number> = Schema
 
 export type WorldNameText = string & Brand.Brand<'WorldNameText'>
 export const WorldNameTextSchema: Schema.Codec<WorldNameText, string> = Schema.String.pipe(Schema.brand('WorldNameText'))
+export const decodeWorldNameText: (input: unknown) => Result.Result<WorldNameText, Schema.SchemaError> =
+  Schema.decodeUnknownResult(WorldNameTextSchema)

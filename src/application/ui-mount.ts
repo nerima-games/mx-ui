@@ -26,7 +26,7 @@ import {
   type UiLanguageFailure,
   decodeUiLanguage,
 } from '../domain/ui-language.js'
-import { Effect, Exit, Result, Schema } from 'effect'
+import { Effect, Exit, Option, Result, Schema } from 'effect'
 import {
   HOTBAR_SLOT_COUNT,
   type HudViewModel,
@@ -105,6 +105,14 @@ type SettingsOperationFailure = SettingsViewModelFailure | SettingsPreferenceFai
 type SettingsLanguageFailure = UiLanguageFailure | SettingsViewModelFailure
 type MountInitializationFailure = SettingsPreferenceFailure | SettingsViewModelFailure
 
+const noSettingsPreferenceApplication = (): Result.Result<boolean, SettingsPreferenceFailure> => Result.succeed(true)
+
+type ActiveUiMount = Readonly<{
+  views: UiMountedViews
+  motionController: MotionPreferenceController
+  colorVisionController: ColorVisionFilterController | null
+}>
+
 export type UiMountOptions = {
   readonly root: HTMLElement
   readonly motion?: MotionPreference
@@ -170,6 +178,9 @@ export const inventoryTargetAt = (
 type UiMountSession = {
   achievementToast?: AchievementToast
   mounted: UiMountedViews | null
+  motionController: MotionPreferenceController | null
+  colorVisionController: ColorVisionFilterController | null
+  applySettingsPreferences: (settings: SettingsSnapshot) => Result.Result<boolean, SettingsPreferenceFailure>
   settings: SettingsSnapshot
   settingsFailure: SettingsOperationFailure | null
   language: UiLanguage
@@ -183,8 +194,16 @@ type UiMountSession = {
   inventoryRestoreFocus: HTMLElement | null
   toastScope: Scope.Closeable | null
   toastSubscription: AchievementToastSubscription | null
-  motionController: MotionPreferenceController | null
-  colorVisionController: ColorVisionFilterController | null
+}
+
+const detachSettingsPreferences = (
+  session: UiMountSession,
+): Pick<UiMountSession, 'motionController' | 'colorVisionController'> => {
+  const { colorVisionController, motionController } = session
+  session.motionController = null
+  session.colorVisionController = null
+  session.applySettingsPreferences = noSettingsPreferenceApplication
+  return { colorVisionController, motionController }
 }
 
 /** `document.activeElement` narrowed to something focus-restorable, or nothing. */
@@ -384,6 +403,25 @@ const removeUiMountedViews = (
     },
   })
 
+const combineControllerAndViewCleanup = (
+  message: string,
+  controllerResult: Result.Result<void, UiMountError>,
+  viewsResult: Result.Result<void, UiMountError>,
+): Result.Result<void, UiMountError> => {
+  if (Result.isFailure(controllerResult)) {
+    if (Result.isFailure(viewsResult)) {
+      return Result.fail(new UiMountError(message, {
+        cause: {
+          controllerError: controllerResult.failure,
+          viewsError: viewsResult.failure,
+        },
+      }))
+    }
+    return controllerResult
+  }
+  return viewsResult
+}
+
 const createAchievementToastLifecycle = (session: UiMountSession) => {
   const close = (): Effect.Effect<void, Schema.SchemaError> => {
     const subscription = session.toastSubscription
@@ -454,6 +492,7 @@ const createMountState = (options: UiMountOptions): Readonly<{
   }
   const initialSettingsState = validatedInitialSettingsState(initialSettings)
   const session: UiMountSession = {
+    applySettingsPreferences: noSettingsPreferenceApplication,
     colorVisionController: null,
     debugSnapshot: options.initialDebugSnapshot ?? DEFAULT_DEBUG_HUD_SNAPSHOT,
     hudModel: hudViewModel(
@@ -656,7 +695,7 @@ const configureMotionPreference = (
   context: BaseViewsContext,
   hud: HudView,
   crosshair: CrosshairView,
-): Result.Result<boolean, Schema.SchemaError> => {
+): Result.Result<MotionPreferenceController, Schema.SchemaError> => {
   const result = createMotionPreferenceController(
     motionPreferenceQuery(context.document),
     context.session.settings.reducedMotion,
@@ -665,24 +704,23 @@ const configureMotionPreference = (
       crosshair.setMotion(preference)
     },
   )
-  if (Result.isFailure(result)) {
-    return Result.fail(result.failure)
-  }
-  context.session.motionController = result.success
-  context.partial.motionController = result.success
-  applyExplicitMotionOverride(context.options.motion, hud, crosshair)
-  return Result.succeed(true)
+  return Result.map(result, (controller) => {
+    context.partial.motionController = controller
+    applyExplicitMotionOverride(context.options.motion, hud, crosshair)
+    return controller
+  })
 }
 
-const configureColorVision = (context: BaseViewsContext): Result.Result<boolean, ColorVisionFilterFailure> => {
+const configureColorVision = (
+  context: BaseViewsContext,
+): Result.Result<ColorVisionFilterController | null, ColorVisionFilterFailure> => {
   const target = context.options.colorVisionTarget ?? context.options.root.querySelector('canvas')
   if (target === null || typeof target === 'undefined') {
-    return Result.succeed(false)
+    return Result.succeed(null)
   }
   const controller = createColorVisionFilterController(context.ownedRoot, target)
-  context.session.colorVisionController = controller
   context.partial.colorVisionController = controller
-  return applySettingsColorVision(controller, context.session.settings.colorVisionCorrection)
+  return Result.map(applySettingsColorVision(controller, context.session.settings.colorVisionCorrection), () => controller)
 }
 
 const createInventoryKeyHandler = (
@@ -751,24 +789,23 @@ const configureBasePreferences = (
   context: BaseViewsContext,
   hud: HudView,
   crosshair: CrosshairView,
-): Result.Result<boolean, SettingsPreferenceFailure> => {
-  const motionResult = configureMotionPreference(context, hud, crosshair)
-  if (Result.isFailure(motionResult)) {
-    return Result.fail(motionResult.failure)
-  }
-  const colorVisionResult = configureColorVision(context)
-  if (Result.isFailure(colorVisionResult)) {
-    return Result.fail(colorVisionResult.failure)
-  }
-  const scaleResult = applySettingsScale(context.ownedRoot, context.session.settings.uiScale)
-  return Result.map(scaleResult, () => true)
-}
+): Result.Result<Pick<ActiveUiMount, 'motionController' | 'colorVisionController'>, SettingsPreferenceFailure> =>
+  Result.flatMap(configureMotionPreference(context, hud, crosshair), (motionController) =>
+    Result.flatMap(configureColorVision(context), (colorVisionController) =>
+      Result.map(applySettingsScale(context.ownedRoot, context.session.settings.uiScale), () => ({
+        colorVisionController,
+        motionController,
+      })),
+    ),
+  )
 
 const createBaseViews = (context: BaseViewsContext): Result.Result<Readonly<{
+  colorVisionController: ColorVisionFilterController | null
   crosshair: CrosshairView
   handleInventoryKey: (event: KeyboardEvent) => boolean
   hud: HudView
   inventory: InventoryView
+  motionController: MotionPreferenceController
 }>, SettingsPreferenceFailure> => {
   const hud = createHudView(context.document, context.ownedRoot, context.options.motion ?? 'full', {
     onRespawn: context.options.onRespawn,
@@ -777,24 +814,29 @@ const createBaseViews = (context: BaseViewsContext): Result.Result<Readonly<{
   const crosshair = createCrosshairView(context.document, context.ownedRoot, context.options.motion ?? 'full')
   crosshair.render(context.session.crosshairModel)
   const preferences = configureBasePreferences(context, hud, crosshair)
-  if (Result.isFailure(preferences)) {
-    return Result.fail(preferences.failure)
-  }
-  hud.render(context.session.hudModel)
-  const inventory = createInitialInventoryView(context)
-  const handleInventoryKey = createInventoryKeyHandler(context, inventory)
-  return Result.succeed({ crosshair, handleInventoryKey, hud, inventory })
+  return Result.map(preferences, ({ colorVisionController, motionController }) => {
+    hud.render(context.session.hudModel)
+    const inventory = createInitialInventoryView(context)
+    const handleInventoryKey = createInventoryKeyHandler(context, inventory)
+    return { colorVisionController, crosshair, handleInventoryKey, hud, inventory, motionController }
+  })
 }
 
 const applySettingsMotion = (
-  controller: MotionPreferenceController | null,
+  controller: MotionPreferenceController,
   motion: SettingsSnapshot['reducedMotion'],
-): Result.Result<SettingsSnapshot['reducedMotion'], MotionPreferenceControllerFailure> => {
-  if (controller === null) {
-    return Result.succeed(motion)
-  }
-  return controller.update(motion)
-}
+): Result.Result<SettingsSnapshot['reducedMotion'], MotionPreferenceControllerFailure> => controller.update(motion)
+
+const createMountedSettingsPreferenceApplication = (
+  root: HTMLElement,
+  motionController: MotionPreferenceController,
+  colorVisionController: ColorVisionFilterController | null,
+): ((settings: SettingsSnapshot) => Result.Result<boolean, SettingsPreferenceFailure>) => (settings) =>
+  Result.flatMap(applySettingsScale(root, settings.uiScale), () =>
+    Result.flatMap(applySettingsColorVision(colorVisionController, settings.colorVisionCorrection), () =>
+      Result.map(applySettingsMotion(motionController, settings.reducedMotion), () => true),
+    ),
+  )
 
 type SettingsOperations = {
   readonly applySettingsPreferences: (settings: SettingsSnapshot) => Result.Result<boolean, SettingsPreferenceFailure>
@@ -808,13 +850,11 @@ const applySettingsSnapshotPreferences = (
   input: SettingsSnapshot,
   preferences: Result.Result<boolean, SettingsPreferenceFailure>,
 ): Result.Result<SettingsSnapshot, SettingsOperationFailure> => {
-  if (Result.isFailure(preferences)) {
-    session.settingsFailure = preferences.failure
-    return Result.fail(preferences.failure)
-  }
-  session.settings = input
-  session.settingsFailure = null
-  return Result.succeed(input)
+  session.settingsFailure = Option.getOrNull(Result.getFailure(preferences))
+  return Result.map(preferences, () => {
+    session.settings = input
+    return input
+  })
 }
 
 const updateValidSettingsSnapshot = (
@@ -823,31 +863,17 @@ const updateValidSettingsSnapshot = (
   applySettingsPreferences: SettingsOperations['applySettingsPreferences'],
 ): Result.Result<SettingsSnapshot, SettingsOperationFailure> => {
   const { language, mounted } = session
-  const viewResult = mounted?.overlays.updateSettingsSnapshot(input, language) ?? null
-  if (viewResult !== null && Result.isFailure(viewResult)) {
-    return viewResult
-  }
-  return applySettingsSnapshotPreferences(session, input, applySettingsPreferences(input))
+  const viewResult = mounted?.overlays.updateSettingsSnapshot(input, language) ?? Result.succeed(input)
+  return Result.flatMap(viewResult, () =>
+    applySettingsSnapshotPreferences(session, input, applySettingsPreferences(input)),
+  )
 }
 
 const createSettingsOperations = (
   session: UiMountSession,
 ): SettingsOperations => {
-  const applySettingsPreferences = (settings: SettingsSnapshot): Result.Result<boolean, SettingsPreferenceFailure> => {
-    const { mounted } = session
-    if (mounted === null) {
-      return Result.succeed(true)
-    }
-    const scaleResult = applySettingsScale(mounted.root, settings.uiScale)
-    if (Result.isFailure(scaleResult)) {
-      return Result.fail(scaleResult.failure)
-    }
-    const colorVisionResult = applySettingsColorVision(session.colorVisionController, settings.colorVisionCorrection)
-    if (Result.isFailure(colorVisionResult)) {
-      return Result.fail(colorVisionResult.failure)
-    }
-    return Result.map(applySettingsMotion(session.motionController, settings.reducedMotion), () => true)
-  }
+  const applySettingsPreferences = (settings: SettingsSnapshot): Result.Result<boolean, SettingsPreferenceFailure> =>
+    session.applySettingsPreferences(settings)
 
   const updateSettingsSnapshot = (input: unknown): Result.Result<SettingsSnapshot, SettingsOperationFailure> => {
     if (!isValidSettings(input)) {
@@ -891,40 +917,22 @@ const createSettingsOperations = (
     return mounted.overlays.updateSettingsSnapshot(session.settings, language)
   }
 
-  const restoreLanguage = (
-    mounted: UiMountedViews | null,
-    language: UiLanguage,
-  ): Result.Result<UiLanguage, UiLanguageFailure> => {
-    if (mounted === null) {
-      return Result.succeed(language)
-    }
-    return applyUiLanguage(mounted.root, language)
-  }
-
   const failLanguageUpdate = (
-    mounted: UiMountedViews | null,
-    previousLanguage: UiLanguage,
-    failure: SettingsViewModelFailure,
-  ): Result.Result<UiLanguage, SettingsLanguageFailure> => {
-    const rollback = restoreLanguage(mounted, previousLanguage)
-    if (Result.isFailure(rollback)) {
-      return rollback
-    }
-    return Result.fail(failure)
-  }
+    language: UiLanguage,
+    failure: SettingsLanguageFailure,
+  ): Result.Result<UiLanguage, SettingsLanguageFailure> =>
+    Result.flatMap(applyLanguageToMountedRoot(session.mounted, language), () => Result.fail(failure))
 
   const applyDecodedLanguage = (language: UiLanguage): Result.Result<UiLanguage, SettingsLanguageFailure> => {
-    const { mounted } = session
-    const applied = applyLanguageToMountedRoot(mounted, language)
-    if (Result.isFailure(applied)) {
-      return applied
-    }
-    const settings = updateMountedSettingsLanguage(applied.success)
-    if (Result.isFailure(settings)) {
-      return failLanguageUpdate(mounted, session.language, settings.failure)
-    }
-    session.language = applied.success
-    return applied
+    const previousLanguage = session.language
+    return Result.flatMap(applyLanguageToMountedRoot(session.mounted, language), (appliedLanguage) => {
+      const settingsUpdate = updateMountedSettingsLanguage(appliedLanguage)
+      if (Result.isFailure(settingsUpdate)) {
+        return failLanguageUpdate(previousLanguage, settingsUpdate.failure)
+      }
+      session.language = appliedLanguage
+      return Result.succeed(appliedLanguage)
+    })
   }
 
   const updateLanguage = (input: unknown): Result.Result<UiLanguage, SettingsLanguageFailure> => {
@@ -938,37 +946,6 @@ const createSettingsOperations = (
   return { applySettingsPreferences, updateLanguage, updateSettings, updateSettingsSnapshot }
 }
 
-const detachPreferenceControllers = (
-  session: UiMountSession,
-): Readonly<{
-  motionController: MotionPreferenceController | null
-  colorVisionController: ColorVisionFilterController | null
-}> => {
-  const { motionController, colorVisionController } = session
-  session.motionController = null
-  session.colorVisionController = null
-  return { colorVisionController, motionController }
-}
-
-const combineControllerAndViewCleanup = (
-  message: string,
-  controllerResult: Result.Result<void, UiMountError>,
-  viewsResult: Result.Result<void, UiMountError>,
-): Result.Result<void, UiMountError> => {
-  if (Result.isFailure(controllerResult) && Result.isFailure(viewsResult)) {
-    return Result.fail(new UiMountError(message, {
-      cause: {
-        controllerError: controllerResult.failure,
-        viewsError: viewsResult.failure,
-      },
-    }))
-  }
-  if (Result.isFailure(controllerResult)) {
-    return controllerResult
-  }
-  return viewsResult
-}
-
 const createUnmountOperation = (
   session: UiMountSession,
   toastLifecycle: ReturnType<typeof createAchievementToastLifecycle>,
@@ -977,21 +954,23 @@ const createUnmountOperation = (
     Effect.gen(function* closeMount() {
       const previous = session.mounted
       session.mounted = null
+      const preferences = detachSettingsPreferences(session)
       session.inventoryOpen = false
       session.inventoryRestoreFocus = null
-      const { colorVisionController, motionController } = detachPreferenceControllers(session)
       const subscriptionResult = yield* Effect.result(toastLifecycle.close())
       const controllerCleanup = Effect.try({
         catch: (cause) => new UiMountError(message, { cause }),
         try: () => {
-          motionController?.dispose()
-          colorVisionController?.dispose()
+          preferences.motionController?.dispose()
+          preferences.colorVisionController?.dispose()
         },
       })
       const controllerResult = yield* Effect.result(controllerCleanup)
       const viewsResult = yield* Effect.result(removeUiMountedViews(previous, message))
-      const cleanupResult = combineControllerAndViewCleanup(message, controllerResult, viewsResult)
-      return yield* finishUiMountCleanup(subscriptionResult, cleanupResult)
+      return yield* finishUiMountCleanup(
+        subscriptionResult,
+        combineControllerAndViewCleanup(message, controllerResult, viewsResult),
+      )
     })
 
 const createMountedSettingsCallbacks = (
@@ -1001,13 +980,9 @@ const createMountedSettingsCallbacks = (
 ): UiSettingsCallbacks => ({
   ...callbacks,
   onSettingsChange: (settings) => {
-    const update = settingsOperations.updateSettingsSnapshot(settings)
-    if (Result.isFailure(update)) {
-      session.settingsFailure = update.failure
-      session.mounted?.overlays.updateSettingsSnapshot(session.settings, session.language)
-      return
-    }
-    callbacks?.onSettingsChange?.(update.success)
+    const updated = settingsOperations.updateSettingsSnapshot(settings)
+    session.settingsFailure = Option.getOrNull(Result.getFailure(updated))
+    return Result.map(updated, (accepted) => callbacks?.onSettingsChange?.(accepted))
   },
 })
 
@@ -1027,9 +1002,11 @@ type CreateInitialViewsContext = Omit<CreateInitialOverlaysContext, 'handleInven
 
 type InitialBaseSessionViews = {
   readonly achievementToast: AchievementToastView
+  readonly colorVisionController: ColorVisionFilterController | null
   readonly crosshair: CrosshairView
   readonly hud: HudView
   readonly inventory: InventoryView
+  readonly motionController: MotionPreferenceController
   readonly overlays: SessionOverlays
 }
 
@@ -1051,23 +1028,32 @@ const createInitializedSessionOverlays = (
     onLanguageChange: context.settingsOperations.updateLanguage,
   })
   context.partial.overlays = overlays
-  if (Result.isFailure(overlays.initializationResult)) {
-    return Result.fail(overlays.initializationResult.failure)
-  }
-  return Result.succeed(overlays)
+  return Result.map(overlays.initializationResult, () => overlays)
 }
 
 const createInitialBaseSessionViews = (
   context: CreateInitialViewsContext,
 ): Result.Result<InitialBaseSessionViews, MountInitializationFailure> => {
   const baseViews = createBaseViews({ ...context, inventory: context.inventory })
-  if (Result.isFailure(baseViews)) {
-    return Result.fail(baseViews.failure)
-  }
-  const { crosshair, handleInventoryKey, hud, inventory } = baseViews.success
-  const achievementToast = createInitialAchievementToast(context.document, context.ownedRoot)
-  const overlaysResult = createInitializedSessionOverlays({ ...context, handleInventoryKey })
-  return Result.map(overlaysResult, (overlays) => ({ achievementToast, crosshair, hud, inventory, overlays }))
+  return Result.flatMap(baseViews, ({
+    colorVisionController,
+    crosshair,
+    handleInventoryKey,
+    hud,
+    inventory,
+    motionController,
+  }) => {
+    const achievementToast = createInitialAchievementToast(context.document, context.ownedRoot)
+    return Result.map(createInitializedSessionOverlays({ ...context, handleInventoryKey }), (overlays) => ({
+      achievementToast,
+      colorVisionController,
+      crosshair,
+      hud,
+      inventory,
+      motionController,
+      overlays,
+    }))
+  })
 }
 
 type CreateInitialMainMenuContext = {
@@ -1095,7 +1081,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
   const inventoryOperations = createInventoryOperations(session, options)
   const unmount = createUnmountOperation(session, toastLifecycle)
 
-  const buildMountedViews = (): Effect.Effect<UiMountedViews, UiMountError> =>
+  const buildMountedViews = (): Effect.Effect<ActiveUiMount, UiMountError> =>
     Effect.gen(function* run() {
       if (session.settingsFailure !== null) {
         return yield* Effect.fail(new UiMountError('Invalid initial settings snapshot'))
@@ -1110,8 +1096,8 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       }
       const mount = Effect.try({
         catch: (cause) => new UiMountError('Failed to mount mx-ui', { cause }),
-        try: (): Result.Result<UiMountedViews, MountInitializationFailure> => {
-          const initialViews = createInitialBaseSessionViews({
+        try: (): Result.Result<ActiveUiMount, MountInitializationFailure> =>
+          Result.map(createInitialBaseSessionViews({
             document,
             inventory: inventoryOperations,
             options,
@@ -1119,21 +1105,29 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
             partial,
             session,
             settingsOperations,
-          })
-          if (Result.isFailure(initialViews)) {
-            return Result.fail(initialViews.failure)
-          }
-          const { achievementToast, crosshair, hud, inventory, overlays } = initialViews.success
-          const mainMenu = createInitialMainMenu({
-            callbacks: options.menuCallbacks,
-            document,
+          }), ({
+            achievementToast,
+            colorVisionController,
+            crosshair,
+            hud,
+            inventory,
+            motionController,
             overlays,
-            ownedRoot,
-            partial,
-          })
-          applyUiLanguage(ownedRoot, session.language)
-          return Result.succeed({ achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot })
-        },
+          }) => {
+            const mainMenu = createInitialMainMenu({
+              callbacks: options.menuCallbacks,
+              document,
+              overlays,
+              ownedRoot,
+              partial,
+            })
+            applyUiLanguage(ownedRoot, session.language)
+            return {
+              colorVisionController,
+              motionController,
+              views: { achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot },
+            }
+          }),
       })
       const mountResult = Effect.flatMap(mount, (result) => {
         if (Result.isFailure(result)) {
@@ -1212,8 +1206,15 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       return yield* Effect.onInterrupt(
         Effect.gen(function* completeStartup() {
           const mounted = yield* buildMountedViews()
-          session.mounted = mounted
-          yield* toastLifecycle.start(mounted)
+          session.motionController = mounted.motionController
+          session.colorVisionController = mounted.colorVisionController
+          session.applySettingsPreferences = createMountedSettingsPreferenceApplication(
+            mounted.views.root,
+            mounted.motionController,
+            mounted.colorVisionController,
+          )
+          session.mounted = mounted.views
+          yield* toastLifecycle.start(mounted.views)
           return createUiModuleInstance(uiModule.frameStages, toastLifecycle.read)
         }),
         () => unmount('Failed to roll back interrupted mx-ui startup'),

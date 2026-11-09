@@ -23,7 +23,7 @@ export const CHAT_RECENT_MESSAGE_SECONDS: number = 5
 export const CHAT_RECENT_MESSAGE_TICKS: number = CHAT_TICKS_PER_SECOND * CHAT_RECENT_MESSAGE_SECONDS
 
 export type ChatMessage = {
-  readonly text: string
+  readonly text: ChatText
   readonly tick: SimulationTick
 }
 

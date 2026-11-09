@@ -24,6 +24,7 @@ import {
 import { hudViewModel, iconRow, slotView } from '../../src/domain/hud-view-model'
 import {
   LOADING_MINIMUM_VISIBLE_SECS,
+  createLoadingStatus,
   loadingScreenView,
   loadingStatus,
 } from '../../src/domain/loading-screen'
@@ -200,8 +201,9 @@ describe('overlay scenario catalog', () => {
       kind: 'failed',
       reason: '',
     })
-    const invalidStart = loadingStatus({ kind: 'ready' }, asMonotonicTimeSecs(0))
-    expect(invalidStart.startedAtSecs).toBe(0)
+    expect(createLoadingStatus({ kind: 'ready' }, Number.NaN)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidLoadingTimestamp', reason: 'not-finite' }),
+    )
 
     const saved = saveStatus('saved', 0)
     expect(saveStatusMessage(saved, SAVED_VISIBLE_SECS - 0.01)).toBe('saved')

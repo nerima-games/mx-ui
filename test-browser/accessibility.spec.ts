@@ -45,6 +45,7 @@ const uiMountModule = `/@fs${fileURLToPath(
 const achievementToastSubscriberModule = `/@fs${fileURLToPath(
   new URL('../src/application/achievement-toast-subscriber.ts', import.meta.url),
 )}`
+const browserEffectsModule = '/test-effects.ts'
 const settingsSnapshot = {
   ...DEFAULT_SETTINGS,
   difficulty: 'hard' as const,
@@ -295,13 +296,16 @@ test.describe('W4-C pause menu accessibility', () => {
   test('UiMount applies language, scale, color vision, and reduced motion from browser settings', async ({ page }) => {
     await openHarness(page, { screen: 'crosshair' })
     await page.evaluate(
-      async ({ mountPath, toastPath, snapshot }) => {
-        const [mountModule, toastModule, effectModule, scopeModule] = await Promise.all([
+      async ({ effectPath, mountPath, toastPath, snapshot }) => {
+        const [mountModule, toastModule, browserEffects] = await Promise.all([
           import(mountPath) as Promise<typeof import('../src/application/ui-mount')>,
           import(toastPath) as Promise<typeof import('../src/application/achievement-toast-subscriber')>,
-          import('effect') as Promise<typeof import('effect')>,
-          import('effect/Scope') as Promise<typeof import('effect/Scope')>,
+          import(effectPath) as Promise<typeof import('../apps/browser-harness/test-effects')>,
         ])
+        const harnessPage = document.querySelector<HTMLElement>('[data-harness-page]')
+        if (harnessPage !== null) {
+          harnessPage.style.display = 'none'
+        }
         const host = document.createElement('main')
         host.setAttribute('data-settings-runtime-host', '')
         const canvas = document.createElement('canvas')
@@ -322,39 +326,46 @@ test.describe('W4-C pause menu accessibility', () => {
               const result = runtime.updateSettingsSnapshot(settings)
               host.setAttribute(
                 'data-host-settings-readback',
-                result !== undefined && effectModule.Result.isSuccess(result) ? 'success' : 'failure',
+                result !== undefined && browserEffects.Result.isSuccess(result) ? 'success' : 'failure',
               )
             },
           },
         })
-        const scope = scopeModule.makeUnsafe()
+        const scope = browserEffects.Scope.makeUnsafe()
         host.addEventListener('host-settings-update', (event) => {
           const result = runtime.updateSettingsSnapshot((event as CustomEvent<unknown>).detail)
           host.setAttribute(
             'data-host-update-result',
-            result !== undefined && effectModule.Result.isSuccess(result) ? 'success' : 'failure',
+            result !== undefined && browserEffects.Result.isSuccess(result) ? 'success' : 'failure',
           )
         })
-        await effectModule.Effect.runPromise(
+        await browserEffects.Effect.runPromise(
           runtime.start.pipe(
-            effectModule.Effect.provideService(scopeModule.Scope, scope),
-            effectModule.Effect.provide(toastModule.AchievementToastEventBusLayer),
+            browserEffects.Effect.provideService(browserEffects.Scope.Scope, scope),
+            browserEffects.Effect.provide(toastModule.AchievementToastEventBusLayer),
           ),
         )
         runtime.openSettings()
         host.setAttribute('data-settings-runtime', 'ready')
       },
-      { mountPath: uiMountModule, toastPath: achievementToastSubscriberModule, snapshot: settingsSnapshot },
+      {
+        effectPath: browserEffectsModule,
+        mountPath: uiMountModule,
+        toastPath: achievementToastSubscriberModule,
+        snapshot: settingsSnapshot,
+      },
     )
 
     const host = page.locator('[data-settings-runtime-host]')
     const mountRoot = host.locator('[data-mx-ui="mount-root"]')
     const settings = mountRoot.locator('[data-mx-ui="settings"]')
     await expect(host).toHaveAttribute('data-settings-runtime', 'ready')
+    await expect(settings).toBeVisible()
     await expect.poll(() => mountRoot.evaluate((element) => getComputedStyle(element).zoom)).toBe('1.25')
 
     const reducedMotion = settings.locator('[data-settings-field="reducedMotion"][data-setting-value="full"]')
     await reducedMotion.click()
+    await expect(reducedMotion).toHaveAttribute('aria-pressed', 'true')
     const experienceTransition = mountRoot.locator('[data-mx-ui="experience-fill"]')
     await expect.poll(() => experienceTransition.evaluate((element) => (element as HTMLElement).style.transition)).toContain(
       '220ms',
@@ -635,8 +646,8 @@ const browserAccessibilityAudit = (
   ignoredMarkers: ReadonlyArray<string>,
 ): Array<string> => {
   const validRoles = new Set([
-    'alert', 'button', 'checkbox', 'combobox', 'dialog', 'group', 'img', 'list', 'listitem',
-    'menu', 'menuitem', 'note', 'option', 'progressbar', 'radio', 'radiogroup', 'region', 'slider',
+    'alert', 'button', 'checkbox', 'combobox', 'dialog', 'group', 'img', 'list', 'listitem', 'main',
+    'log', 'menu', 'menuitem', 'note', 'option', 'progressbar', 'radio', 'radiogroup', 'region', 'slider',
     'status', 'switch', 'tab', 'tabpanel', 'textbox',
   ])
   const namedRoles = new Set(['button', 'checkbox', 'combobox', 'radio', 'slider', 'switch', 'tab', 'textbox'])

@@ -364,9 +364,9 @@ describe('session scenario catalog', () => {
           element.attributes.get('data-mx-ui') === 'menu-world-row' &&
           element.attributes.get('data-session-id') === sessionId,
       )
-      expect(loadButton?.attributes.get('aria-label')).toBe(
-        `Load ${name} (${sessionId})`,
-      )
+      const expectedLabel = name === '' ? 'Load Unnamed world' : `Load ${name}`
+      expect(loadButton?.textContent).toBe(expectedLabel)
+      expect(loadButton?.attributes.get('aria-label')).toBe(expectedLabel)
     }
     mounted.dispose()
   })

@@ -55,6 +55,7 @@ const UI_MESSAGE_KEYS = [
   'menu.world-name.default',
   'menu.mode.aria',
   'menu.world-row.aria',
+  'menu.worlds.unnamed',
   'pause.close',
   'pause.back-to-game',
   'pause.save-and-quit',
@@ -572,8 +573,9 @@ export const UI_MESSAGES: Readonly<Record<UiMessageKey, Readonly<Record<UiLangua
   'menu.root.single-player': { en: 'Single Player', ja: 'シングルプレイ' },
   'menu.seed.invalid': { en: 'That integer is outside the safe range.', ja: 'その整数は安全に扱える範囲を超えています。' },
   'menu.world-name.default': { en: 'New World', ja: '新しいワールド' },
-  'menu.world-row.aria': { en: 'Load {name} ({sessionId})', ja: '{name} ({sessionId}) を読み込む' },
+  'menu.world-row.aria': { en: 'Load {name}', ja: '{name} を読み込む' },
   'menu.worlds.empty': { en: 'No saved worlds', ja: '保存済みのワールドはありません' },
+  'menu.worlds.unnamed': { en: 'Unnamed world', ja: '名前のないワールド' },
   'menu.worlds.unreadable': { en: '{count} unreadable save(s)', ja: '読み込めないセーブ: {count} 件' },
   'onboarding.action': { en: '{action}: ', ja: '{action}: ' },
   'onboarding.actions-aria': { en: 'Quick Controls actions', ja: 'かんたん操作一覧' },
@@ -665,7 +667,7 @@ export type UiMessageValue = string | number | boolean | UiMessageKeyReference
 export type UiMessageValues = Readonly<Record<string, UiMessageValue>>
 export type AchievementId = Schema.Codec.Encoded<typeof AchievementIdSchema>
 
-const INPUT_ACTION_MESSAGE_KEYS = {
+const INPUT_ACTION_MESSAGE_KEYS: Readonly<Record<string, UiMessageKey>> = {
   Jump: 'settings.action.jump',
   Move: 'settings.action.move',
   'Open inventory': 'settings.action.open-inventory',
@@ -692,7 +694,6 @@ const INPUT_ACTION_MESSAGE_KEYS = {
   sprint: 'settings.action.sprint',
   use: 'settings.action.use',
 } satisfies Readonly<Record<string, UiMessageKey>>
-
 export const inputActionMessageKey = (action: unknown): UiMessageKey => {
   if (typeof action !== 'string' || !Object.hasOwn(INPUT_ACTION_MESSAGE_KEYS, action)) {
     return 'settings.action.unknown'

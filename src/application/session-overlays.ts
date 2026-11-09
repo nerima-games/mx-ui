@@ -17,7 +17,13 @@ import {
 } from '../domain/settings-view-model.js'
 import { type TextCell, textCell } from './dom-write.js'
 import type { UiScale } from '../domain/accessibility.js'
-import { type UiLanguage, type UiLanguageFailure, type UiMessageKey, type UiMessageText } from '../domain/ui-language.js'
+import {
+  type UiLanguage,
+  type UiLanguageFailure,
+  type UiMessageKey,
+  type UiMessageText,
+  decodeUiLanguage,
+} from '../domain/ui-language.js'
 import {
   applyValidatedUiLanguage,
   setLocalizedAttribute,
@@ -335,32 +341,28 @@ const applySettingsLanguage = (context: SettingsActionsContext, language: UiLang
 const handleLanguageChoice = (
   value: UiLanguage,
   context: SettingsActionsContext,
-): void => {
+): Result.Result<void, UiLanguageFailure | SettingsViewModelFailure> => {
   const languageResult = context.options.onLanguageChange?.(value) ?? Result.succeed(value)
-  if (Result.isFailure(languageResult)) {
-    return
-  }
-  applySettingsLanguage(context, languageResult.success)
+  return Result.map(languageResult, (language) => {
+    applySettingsLanguage(context, language)
+  })
 }
 
 const handleChoiceChange = (
   field: SettingsChoiceField,
   value: SettingsChoiceValue,
   context: SettingsActionsContext,
-): void => {
+): Result.Result<void, UiLanguageFailure | SettingsViewModelFailure> => {
   if (field === 'language') {
-    if (value === 'en' || value === 'ja') {
-      handleLanguageChoice(value, context)
-    }
-    return
+    return Result.flatMap(decodeUiLanguage(value), (language) => handleLanguageChoice(language, context))
   }
   const updated = context.updateSettingsSnapshot(
     patchSettings(context.state.activeSettings, field, value),
     context.state.activeLanguage,
   )
-  if (Result.isSuccess(updated)) {
-    context.options.callbacks?.onSettingsChange?.(updated.success)
-  }
+  return Result.map(updated, (settings) => {
+    context.options.callbacks?.onSettingsChange?.(settings)
+  })
 }
 
 const notifyLegacySliderChange = (
@@ -381,30 +383,29 @@ const handleSliderChange = (
   field: SettingsSliderField,
   value: SettingsSliderValue,
   context: SettingsActionsContext,
-): void => {
+): Result.Result<void, SettingsViewModelFailure> => {
   const updated = context.updateSettingsSnapshot(
     patchSettings(context.state.activeSettings, field, value),
     context.state.activeLanguage,
   )
-  if (Result.isFailure(updated)) {
-    return
-  }
-  notifyLegacySliderChange(field, value, context.options.callbacks)
-  context.options.callbacks?.onSettingsChange?.(updated.success)
+  return Result.map(updated, (settings) => {
+    notifyLegacySliderChange(field, value, context.options.callbacks)
+    context.options.callbacks?.onSettingsChange?.(settings)
+  })
 }
 
 const handleToggleChange = (
   field: SettingsToggleField,
   checked: boolean,
   context: SettingsActionsContext,
-): void => {
+): Result.Result<void, SettingsViewModelFailure> => {
   const updated = context.updateSettingsSnapshot(
     patchSettings(context.state.activeSettings, field, checked),
     context.state.activeLanguage,
   )
-  if (Result.isSuccess(updated)) {
-    context.options.callbacks?.onSettingsChange?.(updated.success)
-  }
+  return Result.map(updated, (settings) => {
+    context.options.callbacks?.onSettingsChange?.(settings)
+  })
 }
 
 const createSettingsActions = (context: SettingsActionsContext): SettingsViewActions<BindableAction> => ({

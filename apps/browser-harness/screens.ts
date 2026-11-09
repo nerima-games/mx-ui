@@ -1,6 +1,7 @@
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioCaptionText, AudioPan, SoundCueId } from '@nerima-games/mc-audio'
 import { EntityHealthPoints } from '@nerima-games/mc-sim'
+import { Schema } from 'effect'
 import { captionLines, type CaptionEvent } from '../../src/domain/caption'
 import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
@@ -16,6 +17,9 @@ import { createMainMenuView } from '../../src/application/main-menu-view'
 import { createSaveIndicator } from '../../src/application/save-indicator'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from './scenario-types'
 import { HARNESS_ITEM_DISPLAY_NAME_OPTIONS } from './scenarios/inventory'
+import { UiMessageTextSchema } from '../../src/domain/ui-language'
+
+const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 
 const captionTime = (seconds: number): CaptionEvent['atSecs'] => MonotonicTimeSecs(seconds)
 
@@ -104,7 +108,10 @@ const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount 
     }
     case 'loading': {
       const loading = createLoadingView(factory, host)
-      let model: Parameters<typeof loading.render>[0] = { kind: 'failed', reason: 'chunk stream ended' }
+      let model: Parameters<typeof loading.render>[0] = {
+        kind: 'failed',
+        reason: decodeUiMessageText('chunk stream ended'),
+      }
       loading.render(model)
       model = { kind: 'preparing', held: true }
       loading.render(model)

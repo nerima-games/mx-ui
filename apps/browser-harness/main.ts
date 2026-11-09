@@ -1,4 +1,5 @@
 import { Effect } from 'effect'
+import './test-effects'
 import { colorVisionMatrixValues } from '../../src/domain/accessibility'
 import type { DomElementFactory } from '../../src/application/dom-surface'
 import {
@@ -146,7 +147,14 @@ const start = (): void => {
   }
 
   let diagnosticsFrame: number | null = null
-  const scheduleDiagnostics = (): void => {
+  let diagnosticsRoot: HTMLElement | null = null
+  let diagnosticsObserver: MutationObserver | null = null
+  let refreshViewModelOnNextDiagnostics = false
+  let diagnosticsViewModelMount: ScenarioMount | undefined = undefined
+  let diagnosticsViewModel: DiagnosticValue<unknown> | undefined = undefined
+  let clockTimeMutationPending = false
+  const scheduleDiagnostics = (refreshViewModel = true): void => {
+    refreshViewModelOnNextDiagnostics ||= refreshViewModel
     if (diagnosticsFrame !== null) {
       return
     }
@@ -156,6 +164,8 @@ const start = (): void => {
       if (panel === undefined) {
         return
       }
+      const shouldRefreshViewModel = refreshViewModelOnNextDiagnostics
+      refreshViewModelOnNextDiagnostics = false
       const scenario = findScenario(state.screen, state.scenario)
       const selectedMount = mounts.find(
         ({ definition }) => definition.screen === state.screen && definition.id === state.scenario,
@@ -166,6 +176,14 @@ const start = (): void => {
           candidate.dataset['harnessScenario'] === state.scenario,
       )
       const root = host?.querySelector<HTMLElement>(':scope > [data-mx-ui]') ?? null
+      if (root !== diagnosticsRoot) {
+        diagnosticsObserver?.disconnect()
+        diagnosticsRoot = root
+        if (root !== null) {
+          diagnosticsObserver ??= new MutationObserver(() => scheduleDiagnostics(!clockTimeMutationPending))
+          diagnosticsObserver.observe(root, { attributes: true, characterData: true, childList: true, subtree: true })
+        }
+      }
       const inputJson: DiagnosticValue<unknown> =
         scenario === undefined
           ? { status: 'unsupported', reason: 'The selected scenario is not registered.' }
@@ -181,14 +199,22 @@ const start = (): void => {
               },
             }
       const intents = intentLogDiagnosticValue(intentLog)
-      const viewModelJson: DiagnosticValue<unknown> =
-        scenario === undefined
-          ? { status: 'unsupported', reason: 'The selected scenario is not registered.' }
-          : selectedMount === undefined
-            ? { status: 'unsupported', reason: 'The selected scenario is not mounted.' }
-            : selectedMount.viewModel === undefined
-              ? { status: 'unsupported', reason: 'The selected scenario does not expose a view model.' }
-              : { status: 'available', value: selectedMount.viewModel() }
+      if (
+        shouldRefreshViewModel ||
+        selectedMount !== diagnosticsViewModelMount ||
+        diagnosticsViewModel === undefined
+      ) {
+        diagnosticsViewModelMount = selectedMount
+        diagnosticsViewModel =
+          scenario === undefined
+            ? { status: 'unsupported', reason: 'The selected scenario is not registered.' }
+            : selectedMount === undefined
+              ? { status: 'unsupported', reason: 'The selected scenario is not mounted.' }
+              : selectedMount.viewModel === undefined
+                ? { status: 'unsupported', reason: 'The selected scenario does not expose a view model.' }
+                : { status: 'available', value: selectedMount.viewModel() }
+      }
+      const viewModelJson = diagnosticsViewModel
       panel.setDiagnostics(collectDiagnostics(root, inputJson, intents, viewModelJson))
     })
   }
@@ -211,6 +237,8 @@ const start = (): void => {
     host.style.width = `${state.width}px`
     host.style.height = `${state.height}px`
     host.style.setProperty('--harness-safe-inset', `${state.safe}px`)
+    host.style.setProperty('--mx-ui-safe-area-top', `${state.safe}px`)
+    host.style.setProperty('--mx-ui-safe-area-bottom', `${state.safe}px`)
     host.style.setProperty('--harness-text-scale', String(state.textScale / 100))
     if (scale !== 1) {
       host.style.transform = `scale(${String(scale)})`
@@ -239,6 +267,7 @@ const start = (): void => {
     viewport.setAttribute('data-harness-viewport', '')
     viewport.style.width = `${state.width}px`
     viewport.style.height = `${state.height}px`
+    stage.append(viewport)
     for (const screen of DEFAULT_SCREEN_IDS) {
       const selected = screen === state.screen
       const scenario = selected
@@ -249,7 +278,6 @@ const start = (): void => {
       }
       mountScenario(scenario, viewport, !selected)
     }
-    stage.append(viewport)
   }
 
   const renderGallery = (): void => {
@@ -311,8 +339,15 @@ const start = (): void => {
   const clock = createVirtualClock(
     { time: state.time, playing: state.playing, speed: state.speed },
     (clockState: VirtualClockState) => {
+      const timeChanged = clockState.time !== state.time
       state = { ...state, ...clockState }
-      syncMountTime(clockState.time)
+      if (timeChanged) {
+        clockTimeMutationPending = true
+        syncMountTime(clockState.time)
+        window.queueMicrotask(() => {
+          clockTimeMutationPending = false
+        })
+      }
       updateUrl()
       updatePanel()
     },

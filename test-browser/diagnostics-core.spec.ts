@@ -51,6 +51,8 @@ test('diagnostics follow the selected scenario without changing the UI root', as
   await expect(intentOutput).toHaveText('no intents emitted')
   await root.locator('[data-mx-ui="menu-new-world"]').click()
 
+  const a11yOutput = page.getByTestId('diagnostics-a11y-tree')
+  await expect.poll(async () => a11yOutput.textContent()).toContain('"name": "Create"')
   const a11y = JSON.parse((await page.getByTestId('diagnostics-a11y-tree').textContent()) ?? 'null') as ReadonlyArray<{
     role: string
     name: string
@@ -171,7 +173,13 @@ test('view-model diagnostics do not refresh on virtual-clock frames', async ({ p
   // Catches view-model serialization on every clock frame instead of scenario changes.
   await openHarness(page, { screen: 'loading', scenario: 'loading-ready-floor', panel: true })
 
+  const loadingRoot = page.locator(
+    '[data-harness-host="loading"][data-harness-scenario="loading-ready-floor"] > [data-mx-ui="loading"]',
+  )
+  await expect(loadingRoot).not.toHaveAttribute('hidden', '')
+  await expect(loadingRoot).toHaveAttribute('data-loading-held', '')
   const viewModelOutput = page.getByTestId('diagnostics-view-model-json')
+  await expect(viewModelOutput).toContainText('"held": true')
   const before = await viewModelOutput.textContent()
   await page.getByTestId('time-slider').evaluate((element) => {
     if (!(element instanceof HTMLInputElement)) {
@@ -181,6 +189,10 @@ test('view-model diagnostics do not refresh on virtual-clock frames', async ({ p
     element.dispatchEvent(new Event('input', { bubbles: true }))
   })
   await expect(page.getByTestId('time-readout')).toHaveText('3.000 s')
+  await expect(loadingRoot).toHaveAttribute('hidden', '')
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
   await expect(viewModelOutput).toHaveText(before ?? '')
 })
 

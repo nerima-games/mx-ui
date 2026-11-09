@@ -91,3 +91,30 @@ test('main-menu world actions emit host intents with their typed payloads', asyn
     },
   ])
 })
+
+test('hides world-type controls when the host provides no choices', async ({ page }) => {
+  await openHarness(page, { screen: 'main-menu', scenario: 'new-world-survival', panel: true })
+
+  const host = page.locator(
+    '[data-harness-host="main-menu"][data-harness-scenario="new-world-survival"]',
+  )
+  await expect(host.locator('[data-menu-field="world-type"]')).toBeHidden()
+  await expect(host.locator('[data-mx-ui="menu-world-type"]')).toBeHidden()
+  const actions = [
+    host.locator('[data-mx-ui="menu-back-worlds"]'),
+    host.locator('[data-mx-ui="menu-create-world"]'),
+  ]
+  const fitsInMenu = await Promise.all(actions.map(async (action) => {
+    await expect(action).toBeVisible()
+    return action.evaluate((element) => {
+      const content = element.closest('[data-mx-ui="menu-content"]')
+      if (content === null) {
+        return false
+      }
+      const bounds = element.getBoundingClientRect()
+      const contentBounds = content.getBoundingClientRect()
+      return bounds.top >= contentBounds.top && bounds.bottom <= contentBounds.bottom
+    })
+  }))
+  expect(fitsInMenu).toEqual([true, true])
+})

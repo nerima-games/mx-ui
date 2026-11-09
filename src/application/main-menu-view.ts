@@ -496,7 +496,7 @@ const createMenuContent = (factory: DomElementFactory, root: DomElement): DomEle
     ['justify-items', 'center'],
     ['gap', '1.5rem'],
     ['width', 'min(92vw, 38rem)'],
-    ['max-height', 'calc(100vh - 2rem - var(--mx-ui-safe-area-top, env(safe-area-inset-top, 0px)) - var(--mx-ui-safe-area-bottom, env(safe-area-inset-bottom, 0px)))'],
+    ['max-height', 'calc(100vh - var(--mx-ui-safe-area-top, env(safe-area-inset-top, 0px)) - var(--mx-ui-safe-area-bottom, env(safe-area-inset-bottom, 0px)))'],
     ['box-sizing', 'border-box'],
     ['overflow-y', 'auto'],
     ['padding', '2rem'],
@@ -703,7 +703,6 @@ const createEmptySaveNote = (factory: DomElementFactory, panel: DomElement): Att
   setLocalizedText(emptyNote, 'menu.worlds.empty')
   panel.appendChild(emptyNote)
   const hidden = attributeCell(emptyNote, 'hidden')
-  hidden.previous = ''
   return hidden
 }
 
@@ -711,7 +710,6 @@ const createUnreadableSummary = (factory: DomElementFactory, panel: DomElement):
   const summary = makeElement({ factory, marker: 'menu-unreadable-summary', parent: panel, tag: 'p' })
   panel.appendChild(summary)
   const hidden = attributeCell(summary, 'hidden')
-  hidden.previous = ''
   return { hidden, text: textCell(summary) }
 }
 
@@ -817,7 +815,7 @@ const renderInputValue = (input: DomInputElement, value: string): void => {
 }
 
 const renderWorldType = (form: WorldForm, model: MainMenuViewModel): void => {
-  const selected = model.worldTypes.find((option) => option.value === model.worldType)
+  const selected = model.worldTypes.find((option) => typeof option !== 'undefined' && option.value === model.worldType)
   if (typeof selected === 'undefined') {
     writeLocalizedText(form.worldTypeButton.label, 'menu.field.world-type', { type: '' })
     writeHidden(form.worldTypeLabelHidden, true)
@@ -981,12 +979,16 @@ const showSavedWorldDeleteConfirmation = (context: MainMenuRenderContext, row: S
   renderSavedWorldRowButtons(context, row, key)
 }
 
-const confirmSavedWorldDeletion = (context: MainMenuRenderContext, row: SavedWorldRow): void => {
+const confirmSavedWorldDeletion = (
+  context: MainMenuRenderContext,
+  row: SavedWorldRow,
+  onDeleteWorld: (world: SavedWorld) => void,
+): void => {
   const key = `world:${row.world.sessionId}`
-  if (context.runtime.pendingDelete !== key || typeof context.callbacks.onDeleteWorld !== 'function') {
+  if (context.runtime.pendingDelete !== key) {
     return
   }
-  context.callbacks.onDeleteWorld(row.world)
+  onDeleteWorld(row.world)
   context.runtime.pendingDelete = `waiting:${key}`
   renderSavedWorldRowButtons(context, row, key)
 }
@@ -1000,10 +1002,17 @@ const cancelSavedWorldDeletion = (context: MainMenuRenderContext, row: SavedWorl
 }
 
 const bindSavedWorldRow = (context: MainMenuRenderContext, row: SavedWorldRow): void => {
-  bindButton(context, row.load, () => context.callbacks.onLoadWorld?.(row.world))
-  bindButton(context, row.export, () => context.callbacks.onExportWorld?.(row.world))
-  bindButton(context, row.delete, () => showSavedWorldDeleteConfirmation(context, row))
-  bindButton(context, row.confirm, () => confirmSavedWorldDeletion(context, row))
+  const { onDeleteWorld, onExportWorld, onLoadWorld } = context.callbacks
+  if (typeof onLoadWorld === 'function') {
+    bindButton(context, row.load, () => onLoadWorld(row.world))
+  }
+  if (typeof onExportWorld === 'function') {
+    bindButton(context, row.export, () => onExportWorld(row.world))
+  }
+  if (typeof onDeleteWorld === 'function') {
+    bindButton(context, row.delete, () => showSavedWorldDeleteConfirmation(context, row))
+    bindButton(context, row.confirm, () => confirmSavedWorldDeletion(context, row, onDeleteWorld))
+  }
   bindButton(context, row.cancel, () => cancelSavedWorldDeletion(context, row))
 }
 
@@ -1042,8 +1051,12 @@ const ensureSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld):
 const renderSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld): void => {
   const row = ensureSavedWorldRow(context, world)
   writeHidden(row.rootHidden, false)
-  writeLocalizedText(row.load.label, 'menu.world-row.aria', { name: world.name, sessionId: world.sessionId })
-  writeLocalizedAttribute(row.loadAccessibleName, 'menu.world-row.aria', { name: world.name, sessionId: world.sessionId })
+  const values: UiMessageValues = {
+    name: world.name || { key: 'menu.worlds.unnamed' },
+    sessionId: world.sessionId,
+  }
+  writeLocalizedText(row.load.label, 'menu.world-row.aria', values)
+  writeLocalizedAttribute(row.loadAccessibleName, 'menu.world-row.aria', values)
   renderSavedWorldRowButtons(context, row, `world:${world.sessionId}`)
 }
 
@@ -1074,12 +1087,16 @@ const showUnreadableDeleteConfirmation = (context: MainMenuRenderContext, row: U
   renderUnreadableRowButtons(context, row, key)
 }
 
-const confirmUnreadableDeletion = (context: MainMenuRenderContext, row: UnreadableSaveRow): void => {
+const confirmUnreadableDeletion = (
+  context: MainMenuRenderContext,
+  row: UnreadableSaveRow,
+  onDeleteUnreadableSave: (save: UnreadableSave) => void,
+): void => {
   const key = `unreadable:${row.save.key}`
-  if (context.runtime.pendingDelete !== key || typeof context.callbacks.onDeleteUnreadableSave !== 'function') {
+  if (context.runtime.pendingDelete !== key) {
     return
   }
-  context.callbacks.onDeleteUnreadableSave(row.save)
+  onDeleteUnreadableSave(row.save)
   context.runtime.pendingDelete = `waiting:${key}`
   renderUnreadableRowButtons(context, row, key)
 }
@@ -1093,8 +1110,11 @@ const cancelUnreadableDeletion = (context: MainMenuRenderContext, row: Unreadabl
 }
 
 const bindUnreadableSaveRow = (context: MainMenuRenderContext, row: UnreadableSaveRow): void => {
-  bindButton(context, row.delete, () => showUnreadableDeleteConfirmation(context, row))
-  bindButton(context, row.confirm, () => confirmUnreadableDeletion(context, row))
+  const { onDeleteUnreadableSave } = context.callbacks
+  if (typeof onDeleteUnreadableSave === 'function') {
+    bindButton(context, row.delete, () => showUnreadableDeleteConfirmation(context, row))
+    bindButton(context, row.confirm, () => confirmUnreadableDeletion(context, row, onDeleteUnreadableSave))
+  }
   bindButton(context, row.cancel, () => cancelUnreadableDeletion(context, row))
 }
 
@@ -1212,7 +1232,7 @@ type WorldTypeSelection =
   | { readonly kind: 'unavailable' }
 
 const selectedWorldTypeForRequest = (model: MainMenuViewModel): WorldTypeSelection => {
-  const selected = model.worldTypes.find((option) => option.value === model.worldType)
+  const selected = model.worldTypes.find((option) => typeof option !== 'undefined' && option.value === model.worldType)
   if (typeof selected !== 'undefined') {
     return { kind: 'selected', value: decodeWorldTypeId(selected.value) }
   }
@@ -1258,11 +1278,10 @@ const dispatchWorldCreation = (
   onCreateWorld(buildCreateWorldRequest(context, seed, worldType))
 }
 
-const submitWorldCreation = (context: MainMenuRenderContext): void => {
-  const { onCreateWorld } = context.callbacks
-  if (typeof onCreateWorld !== 'function') {
-    return
-  }
+const submitWorldCreation = (
+  context: MainMenuRenderContext,
+  onCreateWorld: (request: CreateWorldRequest) => void,
+): void => {
   const seed = readWorldSeed(context)
   if (seed === null) {
     return
@@ -1296,11 +1315,14 @@ const cycleWorldType = (context: MainMenuRenderContext): void => {
   if (options.length === EMPTY_COUNT) {
     return
   }
-  const currentIndex = options.findIndex((option) => option.value === context.runtime.model.worldType)
+  const currentIndex = options.findIndex((option) =>
+    typeof option !== 'undefined' && option.value === context.runtime.model.worldType,
+  )
   const next = options[(currentIndex + NEXT_INDEX) % options.length]
-  if (typeof next !== 'undefined') {
-    updateMainMenuState(context, setWorldType(context.runtime.state, next.value))
+  if (typeof next === 'undefined') {
+    return
   }
+  updateMainMenuState(context, setWorldType(context.runtime.state, next.value))
 }
 
 const bindWorldFormActions = (context: MainMenuRenderContext): void => {
@@ -1309,7 +1331,10 @@ const bindWorldFormActions = (context: MainMenuRenderContext): void => {
   bindButton(context, form.difficultyButton, () => cycleDifficulty(context))
   bindButton(context, form.worldTypeButton, () => cycleWorldType(context))
   bindButton(context, form.backButton, () => transitionMainMenuPanel(context, 'load-world'))
-  bindButton(context, form.createButton, () => submitWorldCreation(context))
+  const { onCreateWorld } = context.callbacks
+  if (typeof onCreateWorld === 'function') {
+    bindButton(context, form.createButton, () => submitWorldCreation(context, onCreateWorld))
+  }
   bindListener({
     context,
     element: form.worldNameInput,

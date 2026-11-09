@@ -491,6 +491,25 @@ describe('UiMount', () => {
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
+  it('returns a typed initialization failure and cleans up when host settings change before start', async () => {
+    const host = document.createElement('main')
+    const unrelated = document.createElement('p')
+    host.appendChild(unrelated)
+    document.body.appendChild(host)
+    const hostSettingsPayload = JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
+    const runtime = makeUiMount({ initialSettingsSnapshot: hostSettingsPayload, root: host })
+    hostSettingsPayload.reducedMotion = 'unsupported'
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toBeInstanceOf(UiMountError)
+    expect(failure['_tag']).toBe('UiMountError')
+    expect(failure.message).toBe('Could not initialize mx-ui views')
+    expect(runtime.current()).toBeUndefined()
+    expect(host.contains(unrelated)).toBe(true)
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
   it('reports an unsupported host language as a typed startup failure and cleans up its root', async () => {
     const host = document.createElement('main')
     const unrelated = document.createElement('p')
@@ -502,7 +521,7 @@ describe('UiMount', () => {
     const failure = await Effect.runPromise(Effect.flip(runtime.start))
 
     expect(failure).toBeInstanceOf(UiMountError)
-    expect(failure._tag).toBe('UiMountError')
+    expect(failure['_tag']).toBe('UiMountError')
     expect(runtime.current()).toBeUndefined()
     expect(host.contains(unrelated)).toBe(true)
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
@@ -562,6 +581,109 @@ describe('UiMount', () => {
       await Effect.runPromise(runtime.stop)
       expect(listeners.size).toBe(0)
     } finally {
+      if (typeof previousMatchMedia === 'undefined') {
+        Reflect.deleteProperty(view, 'matchMedia')
+      } else {
+        Object.defineProperty(view, 'matchMedia', previousMatchMedia)
+      }
+    }
+  })
+
+  it('removes the owned UI after reduced-motion listener cleanup fails', async () => {
+    const host = document.createElement('main')
+    const unrelated = document.createElement('p')
+    host.appendChild(unrelated)
+    document.body.appendChild(host)
+    const view = document.defaultView
+    if (view === null) {
+      throw new Error('Expected a browser window')
+    }
+    const previousMatchMedia = Object.getOwnPropertyDescriptor(view, 'matchMedia')
+    const cleanupError = new Error('media listener cleanup failed')
+    const mediaQuery = {
+      addEventListener: vi.fn((_type: 'change', _listener: () => void) => undefined),
+      matches: false,
+      removeEventListener: vi.fn((_type: 'change', _listener: () => void) => {
+        throw cleanupError
+      }),
+    }
+    Object.defineProperty(view, 'matchMedia', { configurable: true, value: vi.fn(() => mediaQuery) })
+    const runtime = makeUiMount({ root: host })
+
+    try {
+      await Effect.runPromise(runtime.start)
+      expect(host.querySelector('[data-mx-ui="mount-root"]')).not.toBeNull()
+
+      const failure = await Effect.runPromise(Effect.flip(runtime.stop))
+
+      expect(failure).toBeInstanceOf(UiMountError)
+      expect(failure['_tag']).toBe('UiMountError')
+      expect(failure.cause).toBe(cleanupError)
+      expect(runtime.current()).toBeUndefined()
+      expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+      expect(host.contains(unrelated)).toBe(true)
+      expect(mediaQuery.removeEventListener).toHaveBeenCalledOnce()
+    } finally {
+      if (typeof previousMatchMedia === 'undefined') {
+        Reflect.deleteProperty(view, 'matchMedia')
+      } else {
+        Object.defineProperty(view, 'matchMedia', previousMatchMedia)
+      }
+    }
+  })
+
+  it('preserves both cleanup failures and keeps unrelated host content when owned-root removal fails', async () => {
+    const host = document.createElement('main')
+    const unrelated = document.createElement('p')
+    host.appendChild(unrelated)
+    document.body.appendChild(host)
+    const view = document.defaultView
+    if (view === null) {
+      throw new Error('Expected a browser window')
+    }
+    const previousMatchMedia = Object.getOwnPropertyDescriptor(view, 'matchMedia')
+    const controllerError = new Error('media listener cleanup failed')
+    const viewError = new Error('owned root removal failed')
+    const mediaQuery = {
+      addEventListener: vi.fn((_type: 'change', _listener: () => void) => undefined),
+      matches: false,
+      removeEventListener: vi.fn((_type: 'change', _listener: () => void) => {
+        throw controllerError
+      }),
+    }
+    Object.defineProperty(view, 'matchMedia', { configurable: true, value: vi.fn(() => mediaQuery) })
+    const runtime = makeUiMount({ root: host })
+    let ownedRoot: HTMLElement | null = null
+    let restoreOwnedRootRemove: (() => void) | null = null
+
+    try {
+      await Effect.runPromise(runtime.start)
+      ownedRoot = runtime.current()?.root ?? null
+      if (ownedRoot === null) {
+        throw new Error('Expected a mounted UI root')
+      }
+      const removeOwnedRoot = vi.spyOn(ownedRoot, 'remove').mockImplementation(() => {
+        throw viewError
+      })
+      restoreOwnedRootRemove = () => removeOwnedRoot.mockRestore()
+
+      const failure = await Effect.runPromise(Effect.flip(runtime.stop))
+
+      expect(failure).toBeInstanceOf(UiMountError)
+      expect(failure['_tag']).toBe('UiMountError')
+      expect(failure.message).toBe('Failed to stop mx-ui')
+      expect(failure.cause).toMatchObject({
+        controllerError: { _tag: 'UiMountError', cause: controllerError },
+        viewsError: { _tag: 'UiMountError', cause: viewError },
+      })
+      expect(runtime.current()).toBeUndefined()
+      expect(host.contains(unrelated)).toBe(true)
+      expect(host.contains(ownedRoot)).toBe(true)
+      expect(removeOwnedRoot).toHaveBeenCalledOnce()
+      expect(mediaQuery.removeEventListener).toHaveBeenCalledOnce()
+    } finally {
+      restoreOwnedRootRemove?.()
+      ownedRoot?.remove()
       if (typeof previousMatchMedia === 'undefined') {
         Reflect.deleteProperty(view, 'matchMedia')
       } else {
@@ -706,6 +828,31 @@ describe('UiMount', () => {
     expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('1.25')
     runtime.openSettings()
     expect(host.querySelector<HTMLInputElement>('[data-setting="uiScale"]')?.value).toBe('1.25')
+  })
+
+  it('returns the typed settings failure and restores the prior language after a host mutates an accepted snapshot', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+    runtime.openSettings()
+    const settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
+
+    expect(Result.isSuccess(runtime.updateSettingsSnapshot(settings))).toBe(true)
+    settings.renderDistance = MAX_RENDER_DISTANCE + 1
+
+    const result = runtime.updateLanguage('ja')
+    const englishChoice = host.querySelector<HTMLButtonElement>(
+      '[data-settings-field="language"][data-setting-value="en"]',
+    )
+    const japaneseChoice = host.querySelector<HTMLButtonElement>(
+      '[data-settings-field="language"][data-setting-value="ja"]',
+    )
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsSnapshot' }))
+    expect(host.querySelector('[data-menu-entry="settings"]')?.textContent).toBe('Settings')
+    expect(englishChoice?.getAttribute('aria-pressed')).toBe('true')
+    expect(japaneseChoice?.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('closes settings through the host API and restores the opening focus target', async () => {

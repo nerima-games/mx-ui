@@ -129,7 +129,7 @@ test('layout bounds and overflow follow a scenario switch and report the removed
   const diffOutput = page.getByTestId('diagnostics-dom-diff')
   const refreshButton = page.getByTestId('diagnostics-layout-refresh')
   const worldRow = page.locator(
-    '[data-harness-host="main-menu"][data-harness-scenario="load-world-200"] [data-session-id="world-200"]',
+    '[data-harness-host="main-menu"][data-harness-scenario="load-world-200"] [data-mx-ui="menu-world-row-container"][data-session-id="world-200"]',
   )
   const worldRoot = page.locator(
     '[data-harness-host="main-menu"][data-harness-scenario="load-world-200"] [data-mx-ui="main-menu"]',
@@ -141,7 +141,7 @@ test('layout bounds and overflow follow a scenario switch and report the removed
     const rect = element.getBoundingClientRect()
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
   })
-  const worldBound = layoutBoundFor(await readLayoutBounds(boundsOutput), 'world-200')
+  const worldBound = layoutBoundFor(await readLayoutBounds(boundsOutput), 'Saved world 200')
   assertBoundsMatch(worldBound, worldRect)
   expect(worldBound.viewportOverflow).toBe(true)
   const overlayBox = page.locator(`[data-layout-bounds-for="${worldBound.selector}"]`)
@@ -165,7 +165,7 @@ test('layout bounds and overflow follow a scenario switch and report the removed
     '[data-harness-host="main-menu"][data-harness-scenario="load-world-empty"] [data-mx-ui="main-menu"]',
   )
   const backButton = page.locator(
-    '[data-harness-host="main-menu"][data-harness-scenario="load-world-empty"] [data-menu-action="back"]',
+    '[data-harness-host="main-menu"][data-harness-scenario="load-world-empty"] [data-mx-ui="menu-back-worlds"]',
   )
   const afterRoot = await emptyRoot.evaluate((element) => element.outerHTML)
   expect(afterRoot).not.toBe(beforeRoot)
@@ -174,7 +174,7 @@ test('layout bounds and overflow follow a scenario switch and report the removed
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
   })
   const backBound = (await readLayoutBounds(boundsOutput)).find(
-    (item) => item.tag === 'button' && item.label === 'Back',
+    (item) => item.tag === 'button' && item.label === 'Back' && item.x === backRect.x && item.y === backRect.y,
   )
   expect(backBound).toBeDefined()
   if (backBound === undefined) {

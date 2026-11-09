@@ -5,11 +5,16 @@ import {
   DEFAULT_WORLD_NAME,
   backToRoot,
   cycleWorldMode,
+  decodeWorldNameText,
+  decodeWorldSeedText,
+  decodeWorldTypeId,
   initialMainMenuState,
   mainMenuViewModel,
   nameWorld,
   openPanel,
   parseWorldSeed,
+  seedWorld,
+  setWorldType,
   worldNameLabel,
   type CreateWorldRequest,
   type MainMenuState,
@@ -174,10 +179,51 @@ const independentExpectedSeed = (input: string): WorldSeed | WorldSeedFailure =>
 }
 
 describe('main menu domain', () => {
-  it('decodes a plain world name at the domain boundary', () => {
-    const named = nameWorld(initialMainMenuState, 'Raw Ridge')
+  it('decodes host menu strings into their branded input types', () => {
+    expect(decodeWorldNameText('Ravine')).toEqual(Result.succeed(asWorldNameText('Ravine')))
+    expect(decodeWorldSeedText('42')).toEqual(Result.succeed(asWorldSeedText('42')))
+    expect(decodeWorldTypeId('caves')).toEqual(Result.succeed(asWorldTypeId('caves')))
+    expect(Result.isFailure(decodeWorldNameText(null))).toBe(true)
+    expect(Result.isFailure(decodeWorldSeedText(42))).toBe(true)
+    expect(Result.isFailure(decodeWorldTypeId(undefined))).toBe(true)
+  })
+
+  it('property: brand decoders return typed results for arbitrary host inputs without throwing', () => {
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const decoderSuccesses = [
+          Result.isSuccess(decodeWorldNameText(input)),
+          Result.isSuccess(decodeWorldSeedText(input)),
+          Result.isSuccess(decodeWorldTypeId(input)),
+        ]
+        const expectedSuccess = typeof input === 'string'
+        expect(decoderSuccesses).toEqual([expectedSuccess, expectedSuccess, expectedSuccess])
+      }),
+    )
+  })
+
+  it('preserves a branded world name in the draft', () => {
+    const named = nameWorld(initialMainMenuState, asWorldNameText('Raw Ridge'))
 
     expect(named.draft.name).toBe(asWorldNameText('Raw Ridge'))
+  })
+
+  it('property: branded world name, seed, and type remain in their matching draft fields', () => {
+    fc.assert(
+      fc.property(fc.string(), fc.string(), fc.string(), (name, seed, worldType) => {
+        const worldName = asWorldNameText(name)
+        const worldSeed = asWorldSeedText(seed)
+        const worldTypeId = asWorldTypeId(worldType)
+        const state = setWorldType(
+          seedWorld(nameWorld(initialMainMenuState, worldName), worldSeed),
+          worldTypeId,
+        )
+
+        expect(state.draft.name).toBe(worldName)
+        expect(state.draft.seed).toBe(worldSeed)
+        expect(state.draft.worldType).toBe(worldTypeId)
+      }),
+    )
   })
 
   it('preserves the draft across navigation and normalizes the confirmed name', () => {
@@ -207,6 +253,20 @@ describe('main menu domain', () => {
     })
   })
 
+  it('selects an available world type after sparse host entries', () => {
+    const laterWorldType: WorldTypeOption = {
+      value: asWorldTypeId('later'),
+      label: { en: asUiMessageText('Later'), ja: asUiMessageText('後') },
+    }
+    const sparseWorldTypes = new Array<WorldTypeOption>(2)
+    sparseWorldTypes[1] = laterWorldType
+
+    const viewModel = mainMenuViewModel(initialMainMenuState, [], sparseWorldTypes)
+
+    expect(viewModel.worldType).toBe(laterWorldType.value)
+    expect(viewModel.worldTypes.at(1)).toEqual(laterWorldType)
+  })
+
   it('resolves buttons only for the declared root entries', () => {
     const factory = fakeDocument()
     const buttons = {
@@ -224,26 +284,30 @@ describe('main menu domain', () => {
   })
 
   it('parses blank input as random and safe integer boundaries as fixed seeds', () => {
-    expect(parseWorldSeed(asWorldSeedText(' \t\n '))).toEqual(Result.succeed({ kind: 'random' }))
-    expect(parseWorldSeed(asWorldSeedText(String(Number.MAX_SAFE_INTEGER)))).toEqual(
+    expect(parseWorldSeed(' \t\n ')).toEqual(Result.succeed({ kind: 'random' }))
+    expect(parseWorldSeed(String(Number.MAX_SAFE_INTEGER))).toEqual(
       Result.succeed({ kind: 'fixed', value: asWorldSeedValue(Number.MAX_SAFE_INTEGER) }),
     )
-    expect(parseWorldSeed(asWorldSeedText(String(Number.MIN_SAFE_INTEGER)))).toEqual(
+    expect(parseWorldSeed(String(Number.MIN_SAFE_INTEGER))).toEqual(
       Result.succeed({ kind: 'fixed', value: asWorldSeedValue(Number.MIN_SAFE_INTEGER) }),
     )
-    expect(parseWorldSeed(asWorldSeedText(String(Number.MAX_SAFE_INTEGER + 1)))).toEqual(
+    expect(parseWorldSeed(String(Number.MAX_SAFE_INTEGER + 1))).toEqual(
       Result.fail({ _tag: 'InvalidWorldSeed', input: asWorldSeedText('9007199254740992'), reason: 'unsafe-integer' }),
     )
-    expect(parseWorldSeed(asWorldSeedText(String(Number.MIN_SAFE_INTEGER - 1)))).toEqual(
+    expect(parseWorldSeed(String(Number.MIN_SAFE_INTEGER - 1))).toEqual(
       Result.fail({ _tag: 'InvalidWorldSeed', input: asWorldSeedText('-9007199254740992'), reason: 'unsafe-integer' }),
     )
+  })
+
+  it('returns a typed failure for a non-string seed input', () => {
+    expect(parseWorldSeed(null)).toEqual(Result.fail({ _tag: 'InvalidWorldSeedInput', reason: 'not-string' }))
   })
 
   it('hashes non-integer Unicode seeds with an independently calculated UTF-8 FNV-1a value', () => {
     fc.assert(
       fc.property(fc.string(), (input) => {
         const expected = independentExpectedSeed(input)
-        const actual = parseWorldSeed(asWorldSeedText(input))
+        const actual = parseWorldSeed(input)
         if ('_tag' in expected) {
           expect(Result.isFailure(actual)).toBe(true)
           if (Result.isFailure(actual)) {
@@ -254,6 +318,18 @@ describe('main menu domain', () => {
           if (Result.isSuccess(actual)) {
             expect(actual.success).toEqual(expected)
           }
+        }
+      }),
+    )
+  })
+
+  it('property: arbitrary seed inputs return a typed result and reject non-strings', () => {
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const actual = parseWorldSeed(input)
+        expect(Result.isSuccess(actual) || Result.isFailure(actual)).toBe(true)
+        if (typeof input !== 'string') {
+          expect(actual).toEqual(Result.fail({ _tag: 'InvalidWorldSeedInput', reason: 'not-string' }))
         }
       }),
     )
@@ -337,7 +413,7 @@ describe('operable main menu', () => {
 
     const rows = mounted.root.findAll('data-mx-ui', 'menu-world-row')
     expect(rows.map((row) => row.attributes.get('data-session-id'))).toEqual(['session-1', 'session-2'])
-    expect(rows[0]?.attributes.get('aria-label')).toBe('Load Cliff House (session-1)')
+    expect(rows[0]?.attributes.get('aria-label')).toBe('Load Cliff House')
     rows[1]?.dispatch('click')
     expect(mounted.loads).toEqual([SAVED_WORLDS[1]])
     mounted.root.find('data-mx-ui', 'menu-world-export')?.dispatch('click')
@@ -360,6 +436,42 @@ describe('operable main menu', () => {
     expect(mounted.root.find('data-mx-ui', 'menu-world-row-container')?.attributes.has('hidden')).toBe(false)
   })
 
+  it('omits the saved-world id from visible and accessible load-button copy', () => {
+    const mounted = mount()
+    const world: SavedWorld = { sessionId: asWorldId('world_one'), name: asWorldNameText('Cliff House') }
+    mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), [world]))
+
+    const loadButton = mounted.root.find('data-session-id', 'world_one')?.find('data-mx-ui', 'menu-world-row')
+    if (loadButton === undefined) {
+      throw new Error('Expected a saved-world load button')
+    }
+
+    expect(loadButton.textContent).toBe('Load Cliff House')
+    expect(loadButton.attributes.get('aria-label')).toBe('Load Cliff House')
+    expect(loadButton.textContent).not.toContain('world_one')
+    expect(loadButton.attributes.get('aria-label')).not.toContain('world_one')
+    expect(loadButton.attributes.get('data-session-id')).toBe('world_one')
+    loadButton.dispatch('click')
+    expect(mounted.loads).toEqual([world])
+  })
+
+  it('uses a localized fallback for saved worlds without a name', () => {
+    const mounted = mount()
+    const world: SavedWorld = { sessionId: asWorldId('unnamed-world'), name: asWorldNameText('') }
+    mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), [world]))
+
+    const loadButton = mounted.root.find('data-session-id', 'unnamed-world')?.find('data-mx-ui', 'menu-world-row')
+    if (loadButton === undefined) {
+      throw new Error('Expected a saved-world load button')
+    }
+
+    expect(loadButton.textContent).toBe('Load Unnamed world')
+    expect(loadButton.attributes.get('aria-label')).toBe('Load Unnamed world')
+    expect(loadButton.attributes.get('data-session-id')).toBe('unnamed-world')
+    loadButton.dispatch('click')
+    expect(mounted.loads).toEqual([world])
+  })
+
   it('cancels a pending saved-world deletion without sending a host intent', () => {
     const mounted = mount()
     mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), SAVED_WORLDS))
@@ -374,6 +486,37 @@ describe('operable main menu', () => {
     expect(
       mounted.root.find('data-session-id', 'session-1')?.find('data-mx-ui', 'menu-world-delete-confirm')?.attributes.has('hidden'),
     ).toBe(true)
+  })
+
+  it('ignores stale confirmation and cancellation events for another saved world', () => {
+    const mounted = mount()
+    mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), SAVED_WORLDS))
+    const firstRow = mounted.root.find('data-session-id', 'session-1')
+    const secondRow = mounted.root.find('data-session-id', 'session-2')
+    const firstConfirm = firstRow?.find('data-mx-ui', 'menu-world-delete-confirm')
+    const secondConfirm = secondRow?.find('data-mx-ui', 'menu-world-delete-confirm')
+    const secondCancel = secondRow?.find('data-mx-ui', 'menu-world-delete-cancel')
+    if (
+      firstRow === undefined ||
+      secondRow === undefined ||
+      firstConfirm === undefined ||
+      secondConfirm === undefined ||
+      secondCancel === undefined
+    ) {
+      throw new Error('Expected saved-world delete controls')
+    }
+
+    expect(secondConfirm.attributes.has('hidden')).toBe(true)
+    secondConfirm.dispatch('click')
+    expect(mounted.deletes).toEqual([])
+
+    firstRow.find('data-mx-ui', 'menu-world-delete')?.dispatch('click')
+    expect(firstConfirm.attributes.has('hidden')).toBe(false)
+    expect(secondCancel.attributes.has('hidden')).toBe(true)
+    secondCancel.dispatch('click')
+    firstConfirm.dispatch('click')
+
+    expect(mounted.deletes).toEqual([SAVED_WORLDS[0]])
   })
 
   it('preserves a deletion confirmation across refresh and clears it when the host removes that save', () => {
@@ -433,6 +576,38 @@ describe('operable main menu', () => {
     expect(mounted.root.find('data-mx-ui', 'menu-unreadable-delete-confirm')?.attributes.has('hidden')).toBe(true)
   })
 
+  it('ignores stale unreadable-save confirmation and cancellation events for another save', () => {
+    const mounted = mount()
+    const otherSave = { ...UNREADABLE_SAVE, key: asWorldId('save:other') }
+    mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), [], WORLD_TYPES, [UNREADABLE_SAVE, otherSave]))
+    const firstRow = mounted.root.find('data-save-key', UNREADABLE_SAVE.key)
+    const secondRow = mounted.root.find('data-save-key', otherSave.key)
+    const firstConfirm = firstRow?.find('data-mx-ui', 'menu-unreadable-delete-confirm')
+    const secondConfirm = secondRow?.find('data-mx-ui', 'menu-unreadable-delete-confirm')
+    const secondCancel = secondRow?.find('data-mx-ui', 'menu-unreadable-delete-cancel')
+    if (
+      firstRow === undefined ||
+      secondRow === undefined ||
+      firstConfirm === undefined ||
+      secondConfirm === undefined ||
+      secondCancel === undefined
+    ) {
+      throw new Error('Expected unreadable-save delete controls')
+    }
+
+    expect(secondConfirm.attributes.has('hidden')).toBe(true)
+    secondConfirm.dispatch('click')
+    expect(mounted.unreadableDeletes).toEqual([])
+
+    firstRow.find('data-mx-ui', 'menu-unreadable-delete')?.dispatch('click')
+    expect(firstConfirm.attributes.has('hidden')).toBe(false)
+    expect(secondCancel.attributes.has('hidden')).toBe(true)
+    secondCancel.dispatch('click')
+    firstConfirm.dispatch('click')
+
+    expect(mounted.unreadableDeletes).toEqual([UNREADABLE_SAVE])
+  })
+
   it('creates with all host-supported fields and the parsed seed', () => {
     const mounted = mount()
     mounted.view.render(model())
@@ -478,6 +653,19 @@ describe('operable main menu', () => {
     expect(mounted.creates[0]?.seed).toEqual({ kind: 'random' })
   })
 
+  it('does not create from a view model whose selected world type is unavailable', () => {
+    const mounted = mount()
+    const inconsistentModel = {
+      ...model(openPanel(initialMainMenuState, 'new-world'), [], WORLD_TYPES),
+      worldType: asWorldTypeId('unavailable'),
+    }
+    mounted.view.render(inconsistentModel)
+
+    expect(mounted.root.find('data-mx-ui', 'menu-world-type')?.attributes.has('hidden')).toBe(true)
+    mounted.root.find('data-menu-action', 'confirm')?.dispatch('click')
+    expect(mounted.creates).toEqual([])
+  })
+
   it('rejects unsafe integer seeds and creates without a selector when the host has no world types', () => {
     const mounted = mount()
     mounted.view.render(model(openPanel(initialMainMenuState, 'new-world'), [], []))
@@ -508,6 +696,34 @@ describe('operable main menu', () => {
     }])
   })
 
+  it('does not cycle a sparse host world-type list', () => {
+    const mounted = mount()
+    const sparseWorldTypes = new Array<WorldTypeOption>(1)
+    const completeModel = model(openPanel(initialMainMenuState, 'new-world'), [], WORLD_TYPES)
+    mounted.view.render({ ...completeModel, worldTypes: sparseWorldTypes })
+
+    const worldTypeButton = mounted.root.find('data-mx-ui', 'menu-world-type')
+    expect(worldTypeButton?.attributes.has('hidden')).toBe(true)
+    worldTypeButton?.dispatch('click')
+    mounted.root.find('data-menu-action', 'confirm')?.dispatch('click')
+
+    expect(mounted.states).toEqual([])
+    expect(mounted.creates).toEqual([])
+  })
+
+  it('ignores a stale world-type click after host options become empty', () => {
+    const mounted = mount()
+    mounted.view.render(model(openPanel(initialMainMenuState, 'new-world'), [], WORLD_TYPES))
+    const worldTypeButton = mounted.root.find('data-mx-ui', 'menu-world-type')
+    expect(worldTypeButton?.attributes.has('hidden')).toBe(false)
+
+    mounted.view.render(model(openPanel(initialMainMenuState, 'new-world'), [], []))
+    expect(worldTypeButton?.attributes.has('hidden')).toBe(true)
+    worldTypeButton?.dispatch('click')
+
+    expect(mounted.states).toEqual([])
+  })
+
   it('uses the localized empty-save message and refuses unconnected callbacks', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
@@ -526,6 +742,40 @@ describe('operable main menu', () => {
     expect(root.find('data-mx-ui', 'menu-note')?.attributes.has('hidden')).toBe(false)
     expect(root.listenersInTree().every((listener) => listener === 'click' || listener === 'input')).toBe(true)
     expect(root.listenersInTree()).not.toContain('keydown')
+
+    root.find('data-mx-ui', 'menu-new-world')?.dispatch('click')
+    expect(visiblePanels(root)).toEqual(['new-world'])
+    expect(root.find('data-mx-ui', 'menu-create-world')?.attributes.has('disabled')).toBe(true)
+    expect(root.find('data-mx-ui', 'menu-seed-error')?.attributes.has('hidden')).toBe(true)
+    expect(parent.children).toContain(root)
+  })
+
+  it('disables optional host actions when their callbacks are absent', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createMainMenuView(factory, parent)
+    view.render(model(openPanel(initialMainMenuState, 'load-world'), SAVED_WORLDS, WORLD_TYPES, [UNREADABLE_SAVE]))
+    const root = fakeElement(view.root)
+
+    for (const marker of [
+      'menu-world-row',
+      'menu-world-delete',
+      'menu-world-export',
+      'menu-world-delete-confirm',
+      'menu-unreadable-delete',
+      'menu-unreadable-delete-confirm',
+      'menu-create-world',
+    ]) {
+      expect(root.find('data-mx-ui', marker)?.attributes.has('disabled')).toBe(true)
+    }
+  })
+
+  it('hides the empty-save note when saved worlds are present', () => {
+    const mounted = mount()
+    mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), SAVED_WORLDS))
+
+    expect(mounted.root.findAll('data-mx-ui', 'menu-world-row-container')).toHaveLength(SAVED_WORLDS.length)
+    expect(mounted.root.find('data-mx-ui', 'menu-note')?.attributes.has('hidden')).toBe(true)
   })
 
   it('does not write the DOM again when the host renders the same menu model', () => {

@@ -100,6 +100,9 @@ describe('visibleChatMessages', () => {
     expect(visibleChatMessages([{ text: '', tick: 0 }], 0, false)).toStrictEqual(
       Result.fail({ _tag: 'InvalidChatHistory', reason: 'invalid-message', index: 0 }),
     )
+    expect(visibleChatMessages([{ text: 17, tick: 0 }], 0, false)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidChatHistory', reason: 'invalid-message', index: 0 }),
+    )
     expect(visibleChatMessages([], 0, 'false')).toStrictEqual(
       Result.fail({ _tag: 'InvalidChatVisibility', field: 'isOpen' }),
     )

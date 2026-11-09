@@ -7,8 +7,9 @@ import {
   VolumeLevel,
   type KeyCode as KeyCodeType,
 } from '@nerima-games/mc-kernel/domain/settings'
+import { SaveSliceIdSchema, SaveVersionSchema, SimulationTickSchema, WorldIdSchema } from '@nerima-games/mc-kernel'
 import { DEFAULT_SETTINGS } from '@nerima-games/mc-sim'
-import { Result } from 'effect'
+import { Result, Schema } from 'effect'
 import { createChatView } from '../../../src/application/chat-view'
 import { createMainMenuView } from '../../../src/application/main-menu-view'
 import { createOnboardingView } from '../../../src/application/onboarding-view'
@@ -27,46 +28,60 @@ import {
   type UnreadableSave,
   type WorldTypeOption,
 } from '../../../src/domain/main-menu'
+import { ChatTextSchema, WorldNameTextSchema, WorldTypeIdSchema } from '../../../src/domain/ui3-brand-schemas'
+import { UiMessageTextSchema } from '../../../src/domain/ui-language'
 import { pauseMenuViewModel } from '../../../src/domain/pause-menu-view-model'
 import { onboardingViewModel } from '../../../src/domain/onboarding-view-model'
 import { settingsViewModel, type SettingsSnapshot } from '../../../src/domain/settings-view-model'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from '../scenario-types'
 
 const noTime = (): void => undefined
+const decodeChatText = Schema.decodeUnknownSync(ChatTextSchema)
+const decodeSaveSliceId = Schema.decodeUnknownSync(SaveSliceIdSchema)
+const decodeSaveVersion = Schema.decodeUnknownSync(SaveVersionSchema)
+const decodeSimulationTick = Schema.decodeUnknownSync(SimulationTickSchema)
+const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
+const decodeWorldId = Schema.decodeUnknownSync(WorldIdSchema)
+const decodeWorldNameText = Schema.decodeUnknownSync(WorldNameTextSchema)
+const decodeWorldTypeId = Schema.decodeUnknownSync(WorldTypeIdSchema)
 
 const longWorldName = `World ${'界'.repeat(256)}`
+const savedWorld = (sessionId: string, name: string): SavedWorld => ({
+  name: decodeWorldNameText(name),
+  sessionId: decodeWorldId(sessionId),
+})
 
 const boundaryWorlds: ReadonlyArray<SavedWorld> = [
-  { sessionId: 'empty-name', name: '' },
-  { sessionId: 'long-name', name: longWorldName },
-  { sessionId: 'newline-name', name: 'First line\nSecond line' },
-  { sessionId: 'emoji-name', name: '🧭🌌 Survival worlds 🎮' },
-  { sessionId: 'rtl-name', name: 'العالم العربي' },
-  { sessionId: 'mixed-width-name', name: '世界 ＡＢＣ ｶﾀｶﾅ' },
+  savedWorld('empty-name', ''),
+  savedWorld('long-name', longWorldName),
+  savedWorld('newline-name', 'First line\nSecond line'),
+  savedWorld('emoji-name', '🧭🌌 Survival worlds 🎮'),
+  savedWorld('rtl-name', 'العالم العربي'),
+  savedWorld('mixed-width-name', '世界 ＡＢＣ ｶﾀｶﾅ'),
 ]
 
 const manyWorlds: ReadonlyArray<SavedWorld> = Array.from({ length: 200 }, (_, index) => {
   const number = index + 1
   const suffix = String(number).padStart(3, '0')
-  return { sessionId: `world-${suffix}`, name: `Saved world ${suffix}` }
+  return savedWorld(`world-${suffix}`, `Saved world ${suffix}`)
 })
 
 const intentWorlds: ReadonlyArray<SavedWorld> = [
-  { sessionId: 'world-one', name: 'First world' },
+  savedWorld('world-one', 'First world'),
 ]
 
 const intentWorldTypes: ReadonlyArray<WorldTypeOption> = [
-  { value: 'standard', label: { en: 'Standard', ja: '標準' } },
-  { value: 'amplified', label: { en: 'Amplified', ja: '増幅' } },
+  { value: decodeWorldTypeId('standard'), label: { en: decodeUiMessageText('Standard'), ja: decodeUiMessageText('標準') } },
+  { value: decodeWorldTypeId('amplified'), label: { en: decodeUiMessageText('Amplified'), ja: decodeUiMessageText('増幅') } },
 ]
 
 const intentUnreadableSaves: ReadonlyArray<UnreadableSave> = [
   {
     _tag: 'SaveDecodeError',
-    key: 'broken-save',
-    format: 'mc-save',
-    version: 4,
-    reason: 'unsupported header',
+    key: decodeWorldId('broken-save'),
+    format: decodeSaveSliceId('mc-save'),
+    version: decodeSaveVersion(4),
+    reason: decodeUiMessageText('unsupported header'),
   },
 ]
 
@@ -106,7 +121,7 @@ const editableKeyboardTarget = (target: EventTarget | null): boolean =>
 
 const mountChat = (context: ScenarioContext): ScenarioMount => {
   const history: ReadonlyArray<ChatMessage> = [
-    { text: 'Welcome to chat', tick: CHAT_RECENT_MESSAGE_TICKS - 1 },
+    { text: decodeChatText('Welcome to chat'), tick: decodeSimulationTick(CHAT_RECENT_MESSAGE_TICKS - 1) },
   ]
   const currentTick = CHAT_RECENT_MESSAGE_TICKS
   let isOpen = false
@@ -319,7 +334,7 @@ const mountSessionOverlays = (
 }
 
 const newWorldState = (name: string, creative: boolean) => {
-  const state = nameWorld(openPanel(initialMainMenuState, 'new-world'), name)
+  const state = nameWorld(openPanel(initialMainMenuState, 'new-world'), decodeWorldNameText(name))
   return creative ? cycleWorldMode(state) : state
 }
 
@@ -387,7 +402,7 @@ export const SESSION_SCENARIOS: ReadonlyArray<ScenarioDefinition> = [
     isDefault: false,
     mount: (context) =>
       mountMainMenu(context, openPanel(initialMainMenuState, 'load-world'), [
-        { sessionId: 'world-one', name: 'First world' },
+        savedWorld('world-one', 'First world'),
       ]),
   },
   {

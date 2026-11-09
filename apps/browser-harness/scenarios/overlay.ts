@@ -65,9 +65,11 @@ import {
   saveStatusMessage,
   type SaveState,
 } from '../../../src/domain/save-status'
+import { UiMessageTextSchema } from '../../../src/domain/ui-language'
 
 const noTimeUpdate = (_seconds: number): void => undefined
 const noDispose = (): void => undefined
+const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 
 export const OVERLAY_TIME_BOUNDARIES: Readonly<{
   achievementToastDismissalSecs: number
@@ -141,7 +143,7 @@ const mountHud = (
   return { root: view.root, setTime: noTimeUpdate, dispose: noDispose, viewModel: () => model }
 }
 
-const failedReason = (reason: string): LoadingProgress => ({ kind: 'failed', reason })
+const failedReason = (reason: string): LoadingProgress => ({ kind: 'failed', reason: decodeUiMessageText(reason) })
 
 const renderLoading = (
   progress: LoadingProgress,
@@ -149,9 +151,15 @@ const renderLoading = (
   context: Parameters<ScenarioDefinition['mount']>[0],
 ): ScenarioMount => {
   const view = createLoadingView(context.factory, context.host)
-  let model = loadingScreenView(loadingStatus(progress, startedAtSecs), context.time)
+  let model = loadingScreenView(
+    loadingStatus(progress, MonotonicTimeSecs(startedAtSecs)),
+    MonotonicTimeSecs(context.time),
+  )
   const update = (seconds: number): void => {
-    model = loadingScreenView(loadingStatus(progress, startedAtSecs), seconds)
+    model = loadingScreenView(
+      loadingStatus(progress, MonotonicTimeSecs(startedAtSecs)),
+      MonotonicTimeSecs(seconds),
+    )
     view.render(model)
   }
   update(context.time)
