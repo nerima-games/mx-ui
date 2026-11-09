@@ -66,6 +66,8 @@ describe('creative inventory view', () => {
     const tooltip = typeof tooltipId === 'undefined'
       ? undefined
       : root.find('id', tooltipId)
+    expect(apple?.find('data-mx-ui', 'slot-item')?.textContent).toBe('Orcha…')
+    expect(apple?.attributes.get('aria-label')).toBe('Take Orchard token')
     expect(tooltip?.attributes.has('hidden')).toBe(false)
     expect(tooltip?.textContent).toContain('Orchard token')
     fakeElement(apple).dispatch('click')

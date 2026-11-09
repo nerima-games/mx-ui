@@ -34,6 +34,7 @@ import {
   writeAttribute,
   writeHidden,
   writeStyle,
+  writeText,
 } from './dom-write.js'
 import {
   inheritUiLanguage,
@@ -81,6 +82,10 @@ type ItemButton = Readonly<{
 const ALL_CATEGORY = 'all' as const
 const ITEM_GRID_COLUMNS = 9
 const EMPTY_ITEM_COUNT = 0
+const FIRST_ARRAY_INDEX = 0
+const ICONLESS_LABEL_MAX_CODE_POINTS = 6
+const ICONLESS_LABEL_PREFIX_CODE_POINTS = 5
+const ICONLESS_LABEL_ELLIPSIS = '…'
 const CATEGORY_BORDER_WIDTH = '1px'
 const CATEGORY_SELECTED_BORDER_WIDTH = '3px'
 
@@ -366,6 +371,13 @@ const renderVisibleItem = ({ slot, shown, index, itemDisplayNameOptions, languag
   )
   updateSlotElement(slot, view)
   const itemName = itemDisplayNameText(view, language)
+  if (typeof view.itemIcon === 'undefined' || Result.isFailure(view.itemIcon.result)) {
+    const itemNameCodePoints = Array.from(itemName)
+    if (itemNameCodePoints.length > ICONLESS_LABEL_MAX_CODE_POINTS) {
+      const compactName = itemNameCodePoints.slice(FIRST_ARRAY_INDEX, ICONLESS_LABEL_PREFIX_CODE_POINTS).join('')
+      writeText(slot.itemText, `${compactName}${ICONLESS_LABEL_ELLIPSIS}`)
+    }
+  }
   setSlotButtonView(slot, {
     disabled: false,
     focused: slot.tooltipFocused,
