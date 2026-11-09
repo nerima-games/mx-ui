@@ -280,11 +280,11 @@ mc-sim continues to own persisted settings and game state.
 
 | API | Input and result | Host responsibility |
 | --- | --- | --- |
-| `UiLanguage` / `UI_LANGUAGES` / `UiLanguageSchema` | `'en' \| 'ja'` | Store the selected language. Item names come from the host's resolver; the UI dictionary does not contain them. |
+| `UiLanguage` / `UI_LANGUAGES` / `UiLanguageSchema` | `'en' \| 'ja'` | Store the selected language. Hosts supply item names through a resolver; use `defaultItemDisplayNameResolver` to use the kernel catalog. |
 | `decodeUiLanguage(input)` | `unknown` → `Result<UiLanguage, UiLanguageFailure>` | Decode persisted input and return an unsupported-language failure instead of silently choosing the default. |
 | `UiMountOptions.initialLanguage` / `UiMount.updateLanguage(input)` | Initial value and runtime update; updates validate `unknown` and return `Result` | Pass locale changes while the mount is active. |
-| `ItemDisplayNameResolver` / `ItemDisplayNameOptions` | `(ItemType, UiLanguage) => Result<string, ItemDisplayNameResolverFailure>`; options carry the active language and resolver | Pass the callback to item-bearing view-model factories. `ItemType` is imported from `@nerima-games/mc-kernel`. |
-| `resolveItemDisplayName(itemId, language, resolver?)` | `unknown` snapshot value → `Result<ItemDisplayName, ItemDisplayNameFailure>` | Validate the item type before calling the resolver. A leading `minecraft:` namespace is removed. Invalid IDs, missing resolvers, resolver failures, empty names, and names containing `minecraft:` return typed failures. |
+| `ItemDisplayNameResolver` / `ItemDisplayNameOptions` | `(ItemType, UiLanguage) => Result<string, ItemDisplayNameResolverFailure>`; options carry the active language, a required resolver, and an optional icon resolver | Pass the callback to item-bearing view-model factories. `defaultItemDisplayNameResolver` uses the kernel catalog and can be passed explicitly. `ItemType` is imported from `@nerima-games/mc-kernel`. |
+| `resolveItemDisplayName(itemId, language, resolver?)` | `unknown` snapshot value → `Result<ItemDisplayName, ItemDisplayNameFailure>` | Validate the item type before calling the resolver and remove a leading `minecraft:` namespace. Invalid IDs, a missing resolver (`MissingItemDisplayNameResolver`), resolver failures, empty names, and names containing `minecraft:` return typed failures. |
 | `hudViewModel(vitals, hotbarSlots, selection)` | `selection` is a number or an options object with `selectedHotbarSlot`, optional `itemDisplayNameOptions`, and optional `presentation: HudPresentationSnapshot` | Pass host-owned HUD values as `presentation`; pass the resulting model to `UiMount.updateHud`. |
 | `inventoryViewModel` / `chestStorageViewModel` / `furnaceViewModel` / `anvilViewModel` / `enchantingTableViewModel` | Optional `ItemDisplayNameOptions` | Pass the same resolver and language used for the screen. Views show the resolved name in slot text, hover titles, and accessible labels; a failed lookup displays localized “Unknown item” / “不明なアイテム”. |
 | `slotView(slot, index, selection)` | `selection` is a number or an options object with `selectedIndex` and optional `itemDisplayNameOptions` | Project one slot using the selected index and host resolver. |
@@ -299,10 +299,10 @@ mc-sim continues to own persisted settings and game state.
 | `SettingsViewActions.onClose?` / station `*ViewActions.onClose?` | `() => void` | Supplying the callback adds a native close button and connects it to the host's screen transition. |
 
 `UI_MESSAGES` and `ACHIEVEMENT_TITLES` store English and Japanese text for each entry.
-`UI_TRANSLATION_KEY_COUNT` currently reports 415 combined UI message and achievement-title keys, and tests check that both languages cover every entry.
+`UI_TRANSLATION_KEY_COUNT` reports 465 combined UI message and achievement-title keys, and tests check that both languages cover every entry.
 `UiMountOptions` accepts `initialLanguage`; decode persisted values with `decodeUiLanguage` before passing them. After mount, `updateLanguage` switches localized dictionary text and aria attributes. After a successful language update, rebuild every language-dependent view model and render or update those views. Pass the new language in `ItemDisplayNameOptions` when rebuilding item-bearing models. `applyUiLanguage` does not rerun the host's item-name resolver.
 
-The item-name resolver receives a validated kernel `ItemType` without a `minecraft:` prefix and the requested `UiLanguage`. The view model retains the resolver's typed result. If the snapshot ID is invalid, the resolver is absent, or name resolution fails, the visible slot uses the localized unknown-item label and never prints the ID. Hosts provide this callback because the name catalog belongs to the host's kernel data.
+`defaultItemDisplayNameResolver` calls the kernel catalog with a validated `ItemType` without a `minecraft:` prefix and the requested `UiLanguage`. Pass it explicitly when kernel names are desired; a host-supplied resolver can provide customized names. `resolveItemDisplayName` retains the resolver's typed result. An invalid snapshot ID, a missing resolver, a resolver failure, or an item with no kernel display name returns a typed failure; the visible slot uses the localized unknown-item label and never prints the ID.
 
 ```typescript
 const itemNames: ItemDisplayNameOptions = { language, resolver: resolveHostItemName }

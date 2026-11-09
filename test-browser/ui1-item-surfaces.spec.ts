@@ -104,7 +104,7 @@ test(UI1_ITEM_SURFACE_SCENARIO_REFERENCE, async ({ page }, testInfo) => {
       { createRecipeBookView },
       { createCreativeInventoryView },
       { applyUiLanguage },
-      { createUi1ItemIconResolver, createUi1RecipeBookModel },
+      { createUi1CraftableInventory, createUi1ItemIconResolver, createUi1RecipeBookModel },
     ] =
       await Promise.all([
         import(recipePath),
@@ -119,12 +119,19 @@ test(UI1_ITEM_SURFACE_SCENARIO_REFERENCE, async ({ page }, testInfo) => {
     applyUiLanguage(recipeHost, 'ja')
     applyUiLanguage(creativeHost, 'ja')
 
+    let updateRecipeInventory: (() => void) | null = null
     const recipeView = createRecipeBookView(document, recipeHost, {
       onPlaceRecipe: (operation: RecipePlacementOperation) => {
         fixture.dataset['lastPlacement'] = JSON.stringify(operation)
+        if (updateRecipeInventory !== null) {
+          updateRecipeInventory()
+        }
       },
     })
     recipeView.render(createUi1RecipeBookModel(selectedRecipeId))
+    updateRecipeInventory = () => recipeView.render(
+      createUi1RecipeBookModel(selectedRecipeId, createUi1CraftableInventory()),
+    )
 
     const iconResolver = createUi1ItemIconResolver(iconUrl)
     createCreativeInventoryView(document, creativeHost, {}, { iconResolver })
@@ -142,10 +149,24 @@ test(UI1_ITEM_SURFACE_SCENARIO_REFERENCE, async ({ page }, testInfo) => {
   await expect(recipeHost.locator('[data-mx-ui="recipe-book"]')).toBeVisible()
   await expect(creativeHost.locator('[data-mx-ui="creative-inventory"]')).toBeVisible()
 
-  const placeTwoByTwo = recipeHost.locator('[data-mx-ui="recipe-book-place"][data-grid-width="2"]').first()
-  const placeThreeByThree = recipeHost.locator('[data-mx-ui="recipe-book-place"][data-grid-width="3"]').first()
+  const placeTwoByTwo = recipeHost.locator(
+    '[data-mx-ui="recipe-book-uncraftable"] [data-mx-ui="recipe-book-place"][data-grid-width="2"]',
+  )
+  const placeThreeByThree = recipeHost.locator(
+    '[data-mx-ui="recipe-book-uncraftable"] [data-mx-ui="recipe-book-place"][data-grid-width="3"]',
+  )
+  const craftablePlaceTwoByTwo = recipeHost.locator(
+    '[data-mx-ui="recipe-book-craftable"] [data-mx-ui="recipe-book-place"][data-grid-width="2"]',
+  )
+  const craftablePlaceThreeByThree = recipeHost.locator(
+    '[data-mx-ui="recipe-book-craftable"] [data-mx-ui="recipe-book-place"][data-grid-width="3"]',
+  )
   await expect(placeTwoByTwo).toBeVisible()
   await expect(placeThreeByThree).toBeVisible()
+  const selectedRecipe = recipeHost.locator(
+    `[data-mx-ui="recipe-book-uncraftable"] [data-mx-ui="recipe-book-entry"][data-recipe-id="${recipeEntry.recipe.id}"]`,
+  )
+  await expect(selectedRecipe).toBeVisible()
   await placeTwoByTwo.focus()
   await page.keyboard.press('Enter')
   await expect.poll(() => lastPlacementOf(page)).toEqual({
@@ -153,8 +174,14 @@ test(UI1_ITEM_SURFACE_SCENARIO_REFERENCE, async ({ page }, testInfo) => {
     recipeId: recipeEntry.recipe.id,
     gridWidth: 2,
   })
+  const craftableRecipe = recipeHost.locator(
+    `[data-mx-ui="recipe-book-craftable"] [data-mx-ui="recipe-book-entry"][data-recipe-id="${recipeEntry.recipe.id}"]`,
+  )
+  await expect(craftableRecipe).toBeVisible()
+  await expect(selectedRecipe).toBeHidden()
+  await expect(craftablePlaceTwoByTwo).toBeFocused()
   await page.keyboard.press('ArrowRight')
-  await expect(placeThreeByThree).toBeFocused()
+  await expect(craftablePlaceThreeByThree).toBeFocused()
   await page.keyboard.press('Enter')
   await expect.poll(() => lastPlacementOf(page)).toEqual({
     kind: 'place-recipe',

@@ -35,10 +35,17 @@ export type RecipeBookView = Readonly<{
 
 type RecipeSection = 'craftable' | 'uncraftable'
 
+type RecipeFocusTarget = Readonly<{ recipeId: RecipeId; gridWidth: RecipeGridWidth }>
+
+type RecipeFocusState = { current: RecipeFocusTarget | null }
+
 type RecipeCard = Readonly<{
   readonly root: DomElement
   readonly hidden: ReturnType<typeof attributeCell>
+  readonly placementButtons: ReadonlyMap<RecipeGridWidth, DomInteractiveElement>
 }>
+
+type RecipeCardShell = Omit<RecipeCard, 'placementButtons'>
 
 type RecipeCards = Readonly<{
   readonly craftable: RecipeCard
@@ -57,6 +64,7 @@ type RecipeBookElements = Readonly<{
   readonly uncraftable: RecipeList
   readonly actions: RecipeBookViewActions | undefined
   readonly options: RecipeBookViewOptions | undefined
+  readonly focusState: RecipeFocusState
 }>
 
 type RecipeCardInput = Readonly<{
@@ -68,6 +76,7 @@ type RecipeCardInput = Readonly<{
   readonly root: DomElement
   readonly options: RecipeBookViewOptions | undefined
   readonly actions: RecipeBookViewActions | undefined
+  readonly focusState: RecipeFocusState
 }>
 
 type GridButtonInput = Readonly<{
@@ -79,6 +88,7 @@ type GridButtonInput = Readonly<{
   readonly section: RecipeSection
   readonly focusIndex: number
   readonly actions: RecipeBookViewActions | undefined
+  readonly focusState: RecipeFocusState
 }>
 
 const FIRST_INDEX = 0
@@ -215,12 +225,29 @@ const attachGridButtonAction = (button: DomInteractiveElement, input: GridButton
   }
 }
 
-const createGridButton = (input: GridButtonInput): void => {
+const sameRecipeFocusTarget = (left: RecipeFocusTarget | null, right: RecipeFocusTarget): boolean =>
+  left !== null && left.recipeId === right.recipeId && left.gridWidth === right.gridWidth
+
+const attachGridButtonFocus = (button: DomInteractiveElement, input: GridButtonInput): void => {
+  const target: RecipeFocusTarget = { gridWidth: input.gridWidth, recipeId: input.recipe.id }
+  button.addEventListener('focus', () => {
+    input.focusState.current = target
+  })
+  button.addEventListener('blur', () => {
+    if (sameRecipeFocusTarget(input.focusState.current, target)) {
+      input.focusState.current = null
+    }
+  })
+}
+
+const createGridButton = (input: GridButtonInput): DomInteractiveElement => {
   const button: DomInteractiveElement = input.factory.createElement('button')
   writeGridButtonAttributes(button, input)
   writeGridButtonPresentation(button, input)
+  attachGridButtonFocus(button, input)
   attachGridButtonAction(button, input)
   input.card.appendChild(button)
+  return button
 }
 
 type OutputElementInput = Readonly<{
@@ -284,22 +311,30 @@ const createGridSizeNotes = ({ factory, root, card, entry }: GridSizeNotesInput)
   }
 }
 
-const appendGridButtons = (input: RecipeCardInput, card: DomElement, itemName: string): void => {
+const appendGridButtons = (
+  input: RecipeCardInput,
+  card: DomElement,
+  itemName: string,
+): ReadonlyMap<RecipeGridWidth, DomInteractiveElement> => {
+  const buttons = new Map<RecipeGridWidth, DomInteractiveElement>()
   for (const [buttonIndex, gridWidth] of input.entry.gridWidths.entries()) {
-    createGridButton({
+    const button = createGridButton({
       actions: input.actions,
       card,
       factory: input.factory,
       focusIndex: input.index * TWO_COLUMNS + buttonIndex,
+      focusState: input.focusState,
       gridWidth,
       itemName,
       recipe: input.entry.recipe,
       section: input.section,
     })
+    buttons.set(gridWidth, button)
   }
+  return buttons
 }
 
-const createRecipeCardShell = (input: RecipeCardInput): RecipeCard => {
+const createRecipeCardShell = (input: RecipeCardInput): RecipeCardShell => {
   const card = input.factory.createElement('article')
   card.setAttribute('data-mx-ui', 'recipe-book-entry')
   card.setAttribute('data-recipe-id', input.entry.recipe.id)
@@ -322,9 +357,9 @@ const createRecipeCard = (input: RecipeCardInput): RecipeCard => {
   })
   card.root.appendChild(output.element)
   createGridSizeNotes({ card: card.root, entry: input.entry, factory: input.factory, root: input.root })
-  appendGridButtons(input, card.root, output.itemName)
+  const placementButtons = appendGridButtons(input, card.root, output.itemName)
   input.list.appendChild(card.root)
-  return card
+  return { ...card, placementButtons }
 }
 
 type RecipeCardCopiesInput = Readonly<{
@@ -338,6 +373,7 @@ const createRecipeCardCopies = ({ elements, entry, index }: RecipeCardCopiesInpu
     actions: elements.actions,
     entry,
     factory: elements.factory,
+    focusState: elements.focusState,
     index,
     list: elements.craftable.cards,
     options: elements.options,
@@ -348,6 +384,7 @@ const createRecipeCardCopies = ({ elements, entry, index }: RecipeCardCopiesInpu
     actions: elements.actions,
     entry,
     factory: elements.factory,
+    focusState: elements.focusState,
     index,
     list: elements.uncraftable.cards,
     options: elements.options,
@@ -394,6 +431,52 @@ type UncraftableEntriesInput = Readonly<{
   readonly startingIndex: number
 }>
 
+type PlacementButtonForSectionInput = Readonly<{
+  readonly entries: ReadonlyArray<RecipeBookEntry>
+  readonly ensureCards: EnsureRecipeCards
+  readonly indexOffset: number
+  readonly section: RecipeSection
+  readonly target: RecipeFocusTarget
+}>
+
+const placementButtonForSection = ({
+  entries,
+  ensureCards,
+  indexOffset,
+  section,
+  target,
+}: PlacementButtonForSectionInput): DomInteractiveElement | undefined => {
+  const entryIndex = entries.findIndex(({ recipe }) => recipe.id === target.recipeId)
+  if (entryIndex < FIRST_INDEX) {
+    return
+  }
+  const entry = entries[entryIndex]
+  if (typeof entry === 'undefined') {
+    return
+  }
+  return ensureCards(entry, entryIndex + indexOffset)[section].placementButtons.get(target.gridWidth)
+}
+
+const placementButtonFor = (
+  model: RecipeBookViewModel,
+  target: RecipeFocusTarget,
+  ensureCards: EnsureRecipeCards,
+): DomInteractiveElement | undefined =>
+  placementButtonForSection({
+    ensureCards,
+    entries: model.craftable,
+    indexOffset: FIRST_INDEX,
+    section: 'craftable',
+    target,
+  }) ??
+  placementButtonForSection({
+    ensureCards,
+    entries: model.uncraftable,
+    indexOffset: model.craftable.length,
+    section: 'uncraftable',
+    target,
+  })
+
 const renderUncraftableEntries = ({
   entries,
   craftableIds,
@@ -410,11 +493,19 @@ const renderUncraftableEntries = ({
   }
 }
 
-const renderRecipeBookModel = (model: RecipeBookViewModel, ensureCards: EnsureRecipeCards): void => {
+const renderRecipeBookModel = (
+  model: RecipeBookViewModel,
+  ensureCards: EnsureRecipeCards,
+  focusState: RecipeFocusState,
+): void => {
+  const focusTarget = focusState.current
   const craftableIds = new Set(model.craftable.map(({ recipe }) => recipe.id))
   const uncraftableIds = new Set(model.uncraftable.map(({ recipe }) => recipe.id))
   const startingIndex = renderCraftableEntries(model.craftable, ensureCards)
   renderUncraftableEntries({ craftableIds, ensureCards, entries: model.uncraftable, startingIndex, uncraftableIds })
+  if (focusTarget !== null) {
+    placementButtonFor(model, focusTarget, ensureCards)?.focus()
+  }
 }
 
 export const createRecipeBookView = (
@@ -427,8 +518,9 @@ export const createRecipeBookView = (
   createRecipeBookTitle(factory, root)
   const craftable = createRecipeSection(factory, root, 'craftable')
   const uncraftable = createRecipeSection(factory, root, 'uncraftable')
-  const elements: RecipeBookElements = { actions, craftable, factory, options, root, uncraftable }
+  const focusState: RecipeFocusState = { current: null }
+  const elements: RecipeBookElements = { actions, craftable, factory, focusState, options, root, uncraftable }
   const ensureCards = createRecipeCardCache(elements)
-  const render = (model: RecipeBookViewModel): void => renderRecipeBookModel(model, ensureCards)
+  const render = (model: RecipeBookViewModel): void => renderRecipeBookModel(model, ensureCards, focusState)
   return { render, root, setUiScale: (input) => applyUiScale(root.style, input) }
 }
