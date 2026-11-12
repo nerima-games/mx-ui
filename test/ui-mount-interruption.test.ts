@@ -44,4 +44,35 @@ describe('UiMount startup interruption', () => {
       vi.doUnmock('../src/application/achievement-toast-subscriber.js')
     }
   })
+
+  it('destroys the main menu if its initial render fails', async () => {
+    const destroyMenu = vi.fn()
+    vi.doMock('../src/application/main-menu-view.js', () => ({
+      createMainMenuView: () => ({
+        destroy: destroyMenu,
+        render: () => {
+          throw new Error('main menu render failed')
+        },
+        root: document.createElement('div'),
+      }),
+    }))
+
+    try {
+      vi.resetModules()
+      const { makeUiMount } = await import('../src/application/ui-mount.js')
+      const root = document.createElement('main')
+      const runtime = makeUiMount({ root })
+
+      await expect(
+        Effect.runPromise(
+          Effect.scoped(runtime.start.pipe(Effect.provide(DomainEventBusLayer(TOAST_BUS_CAPACITY)))),
+        ),
+      ).rejects.toThrow('Failed to mount mx-ui')
+      expect(destroyMenu).toHaveBeenCalledOnce()
+      expect(root.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+    } finally {
+      vi.doUnmock('../src/application/main-menu-view.js')
+      vi.resetModules()
+    }
+  })
 })

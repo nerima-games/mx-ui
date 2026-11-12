@@ -637,16 +637,23 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     return { crosshair, handleInventoryKey, hud, inventory }
   }
 
-  const createMainMenu = (
-    document: Document,
-    ownedRoot: HTMLElement,
-    overlays: SessionOverlays,
-  ): MainMenuView => {
+  const createMainMenu = ({
+    document,
+    ownedRoot,
+    overlays,
+    partial,
+  }: Readonly<{
+    document: Document
+    ownedRoot: HTMLElement
+    overlays: SessionOverlays
+    partial: PartialMount
+  }>): MainMenuView => {
     const mainMenu = createMainMenuView(
       document,
       ownedRoot,
       buildMenuCallbacks(overlays, options.menuCallbacks),
     )
+    partial.mainMenu = mainMenu
     mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
     return mainMenu
   }
@@ -667,7 +674,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       initialSettings: session.settings,
     })
     partial.overlays = overlays
-    const mainMenu = createMainMenu(document, ownedRoot, overlays)
+    const mainMenu = createMainMenu({ document, overlays, ownedRoot, partial })
     applyUiLanguage(ownedRoot, session.language)
     return { achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot }
   }
