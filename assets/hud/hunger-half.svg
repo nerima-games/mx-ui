@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
 <path d="M9 5h11l6 6v10l-5 6H10l-5-6v-9Z" fill="#30363b" stroke="#a3a08b" stroke-width="2"/><path d="m9 10 2-2h8" fill="none" stroke="#666b64" stroke-width="1.5"/><defs><clipPath id="left-half"><rect x="0" y="0" width="16" height="32"/></clipPath></defs><g clip-path="url(#left-half)"><path d="M9 5h11l6 6v10l-5 6H10l-5-6v-9Z" fill="#dc9a4d" stroke="#40372e" stroke-width="1.7"/><path d="m9 8 2-2h7l-4 4-4 2-2 4Z" fill="#ffe0a0"/><path d="m20 13 2 2m-8 7 2-1m6-3 1-1" fill="none" stroke="#79533b" stroke-width="1.5"/></g>
 </svg>

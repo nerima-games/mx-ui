@@ -4,8 +4,14 @@
   "authorship": "Original vector artwork authored for this repository by project contributors.",
   "provenance": "Every symbol is drawn from geometric SVG paths and shapes in scripts/generate-hud-assets.mjs. No third-party artwork or upstream game assets were used as a source.",
   "license": {
+    "name": "CC0 1.0 Universal",
+    "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "spdxIdentifier": "CC0-1.0",
+    "notice": "The generated HUD assets are dedicated to the public domain under CC0 1.0 Universal."
+  },
+  "generatorLicense": {
     "name": "MIT",
-    "notice": "Distributed under the repository root LICENSE."
+    "notice": "The generator source is covered by the repository root LICENSE."
   },
   "generator": "scripts/generate-hud-assets.mjs",
   "outputs": [
