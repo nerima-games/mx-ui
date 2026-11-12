@@ -38,7 +38,6 @@ import {
   type CaptionLineView,
 } from '../../../src/domain/caption'
 import {
-  CROSSHAIR_PULSE_SECS,
   IDLE_CROSSHAIR_STATUS,
   crosshairViewModel,
   type CrosshairStatus,
@@ -81,7 +80,7 @@ export const OVERLAY_TIME_BOUNDARIES: Readonly<{
   achievementToastDismissalSecs: 3,
   achievementToastSecondAtSecs: 1.5,
   captionExpirySecs: CAPTION_DISPLAY_SECS,
-  crosshairPulseSecs: CROSSHAIR_PULSE_SECS,
+  crosshairPulseSecs: 0.12,
   loadingMinimumVisibleSecs: LOADING_MINIMUM_VISIBLE_SECS,
   savedVisibleSecs: SAVED_VISIBLE_SECS,
 }
@@ -192,7 +191,6 @@ const renderCaptions = (
 const renderCrosshair = (
   statusAt: (seconds: number) => CrosshairStatus,
   context: Parameters<ScenarioDefinition['mount']>[0],
-  notifyHit = false,
 ): ScenarioMount => {
   const view = createCrosshairView(context.factory, context.host, context.environment.motion)
   let model = crosshairViewModel(statusAt(context.time), context.time)
@@ -201,10 +199,6 @@ const renderCrosshair = (
     view.render(model)
   }
   update(context.time)
-  if (notifyHit) {
-    view.notifyHit()
-    model = { ...model, hit: true }
-  }
   return { root: view.root, setTime: update, dispose: noDispose, viewModel: () => model }
 }
 
@@ -524,7 +518,10 @@ export const OVERLAY_SCENARIOS: ReadonlyArray<ScenarioDefinition> = [
     renderCrosshair(() => IDLE_CROSSHAIR_STATUS, context),
   ),
   scenario('crosshair', 'crosshair-hit-window', 'Hit marker through the 120 millisecond boundary', 'crosshair', (context) =>
-    renderCrosshair(() => IDLE_CROSSHAIR_STATUS, context, true),
+    renderCrosshair(() => ({
+      ...IDLE_CROSSHAIR_STATUS,
+      lastHitAtSecs: context.time - 0.119,
+    }), context),
   ),
   scenario('crosshair', 'crosshair-progress-range', 'Block breaking at zero and full progress', 'crosshair', (context) =>
     renderCrosshair((seconds) => ({
