@@ -445,8 +445,14 @@ describe('supplemental HUD presentation surfaces', () => {
   it('renders the supplied cause and coordinates when the player is dead', () => {
     const { root, view } = mount()
     view.render(hudViewModel(damaged(0), emptyHotbar, 0, undefined, supplementalPresentation()))
+    const death = root.find('data-mx-ui', 'death')
     expect(root.find('data-mx-ui', 'death-cause')?.textContent).toBe('Cause: falling')
     expect(root.find('data-mx-ui', 'death-coordinates')?.textContent).toBe('Coordinates: 1.3 / 64.0 / -3.3')
+    expect(death?.style.properties.get('position')).toBe('absolute')
+    expect(death?.style.properties.get('display')).toBe('grid')
+    expect(death?.style.properties.get('gap')).toBe('16px')
+    expect(death?.children[0]?.style.properties.get('font-size')).toBe('32px')
+    expect(root.find('data-mx-ui', 'respawn')?.style.properties.get('min-height')).toBe('44px')
   })
 
   it('keeps absent host values absent instead of drawing invented rows or details', () => {

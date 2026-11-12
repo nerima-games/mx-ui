@@ -836,6 +836,8 @@ const configureHudRespawnButton = (
 ): void => {
   respawn.setAttribute('data-mx-ui', 'respawn')
   respawn.setAttribute('type', 'button')
+  respawn.style.setProperty('min-height', '44px')
+  respawn.style.setProperty('padding', '8px 16px')
   setLocalizedText(respawn, 'hud.respawn')
   if (!hasRespawn) {
     respawn.setAttribute('disabled', '')
@@ -872,7 +874,21 @@ type HudDeathDetailElements = Readonly<{ cause: DomElement; coordinates: DomElem
 const createHudDeathLabel = (factory: DomElementFactory, death: DomElement): void => {
   const deathLabel = factory.createElement('span')
   setLocalizedText(deathLabel, 'hud.you-died')
+  deathLabel.style.setProperty('font-size', '32px')
+  deathLabel.style.setProperty('font-weight', '700')
   death.appendChild(deathLabel)
+}
+
+const configureHudDeathLayout = (death: DomElement): void => {
+  death.style.setProperty('position', 'absolute')
+  death.style.setProperty('inset', '0')
+  death.style.setProperty('display', 'grid')
+  death.style.setProperty('align-content', 'center')
+  death.style.setProperty('justify-items', 'center')
+  death.style.setProperty('gap', '16px')
+  death.style.setProperty('padding', '24px')
+  death.style.setProperty('background-color', PALETTE_VAR.scrim)
+  death.style.setProperty('text-align', 'center')
 }
 
 const createHudDeathRoot = (factory: DomElementFactory): DomElement => {
@@ -880,6 +896,7 @@ const createHudDeathRoot = (factory: DomElementFactory): DomElement => {
   death.setAttribute('data-mx-ui', 'death')
   death.setAttribute('role', 'alert')
   death.style.setProperty('color', PALETTE_VAR.statusAlert)
+  configureHudDeathLayout(death)
   createHudDeathLabel(factory, death)
   return death
 }
