@@ -106,6 +106,7 @@ export const uiModule: GameModule<never, never, never> = {
 export type UiMountedViews = {
   readonly root: HTMLElement
   readonly hud: HudView
+  readonly crosshair: CrosshairView
   readonly inventory: InventoryView
   readonly mainMenu: MainMenuView
   readonly overlays: SessionOverlays
@@ -122,6 +123,7 @@ export type UiMountOptions = {
   readonly initialDebugSnapshot?: DebugHudSnapshot
   readonly onInventoryActivate?: (target: InventoryInteractionTarget) => void
   readonly onInventoryAction?: (action: InventoryAction) => void
+  readonly onRespawn?: () => void
 }
 
 export type UiMount = {
@@ -133,8 +135,11 @@ export type UiMount = {
   >
   readonly stop: Effect.Effect<void, UiMountError | Schema.SchemaError>
   readonly current: () => UiMountedViews | undefined
+  readonly updateHud: (model: HudViewModel) => void
+  readonly updateCrosshair: (model: CrosshairViewModel | undefined) => void
+  readonly notifyHit: () => void
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
-  readonly updateSettings: (settings: UiSettings) => void
+  readonly updateSettings: (settings: UiSettings) => Result.Result<UiScale, Schema.SchemaError>
   readonly updateLanguage: (language: unknown) => Result.Result<UiLanguage, UiLanguageFailure>
   readonly openSettings: () => void
   readonly closeSettings: () => void
@@ -163,7 +168,13 @@ export class UiMountError {
 The host passes a real `HTMLElement` as the root; mx-ui uses the structural `DomElementFactory` and `DomElement` types for children it creates inside that root.
 
 `current()` returns the mounted view handles, or `undefined` before mount.
-The returned handle contains `root`, `hud`, `inventory`, `mainMenu`, `overlays`, and `achievementToast`.
+`updateHud` stores the latest `HudViewModel` and renders it immediately when mounted.
+The host converts any `HudPresentationSnapshot` into a `HudViewModel` before calling `updateHud`.
+`updateCrosshair` stores and renders a host-supplied `CrosshairViewModel`.
+`notifyHit` marks the current crosshair model as hit when one exists.
+The host calls it after confirming a hit; mx-ui does not subscribe to gameplay attack events.
+`onRespawn` connects the death screen button to a host callback.
+Without this callback the button is disabled, and the host owns the respawn operation.
 Failures from `start` and `stop` are returned through Effect's error channel as `UiMountError | Schema.SchemaError`; `start` requires `DomainEventBus | Scope.Scope`.
 `UiMountError` is a tagged value with `_tag`, `name`, `message`, and `cause`; it does not extend native `Error`.
 
@@ -274,7 +285,7 @@ mc-sim continues to own persisted settings and game state.
 | `UiMountOptions.initialLanguage` / `UiMount.updateLanguage(input)` | Initial value and runtime update; updates validate `unknown` and return `Result` | Pass locale changes while the mount is active. |
 | `ItemDisplayNameResolver` / `ItemDisplayNameOptions` | `(ItemType, UiLanguage) => Result<string, ItemDisplayNameResolverFailure>`; options carry the active language and resolver | Pass the callback to item-bearing view-model factories. `ItemType` is imported from `@nerima-games/mc-kernel`. |
 | `resolveItemDisplayName(itemId, language, resolver?)` | `unknown` snapshot value → `Result<ItemDisplayName, ItemDisplayNameFailure>` | Validate the item type before calling the resolver. A leading `minecraft:` namespace is removed. Invalid IDs, missing resolvers, resolver failures, empty names, and names containing `minecraft:` return typed failures. |
-| `hudViewModel(vitals, hotbarSlots, selection)` | `selection` is a number or an options object with `selectedHotbarSlot` and optional `itemDisplayNameOptions` | Pass the active selection and host resolver in the options object to localize hotbar item text and labels. |
+| `hudViewModel(vitals, hotbarSlots, selection)` | `selection` is a number or an options object with `selectedHotbarSlot`, optional `itemDisplayNameOptions`, and optional `presentation: HudPresentationSnapshot` | Pass host-owned HUD values as `presentation`; pass the resulting model to `UiMount.updateHud`. |
 | `inventoryViewModel` / `chestStorageViewModel` / `furnaceViewModel` / `anvilViewModel` / `enchantingTableViewModel` | Optional `ItemDisplayNameOptions` | Pass the same resolver and language used for the screen. Views show the resolved name in slot text, hover titles, and accessible labels; a failed lookup displays localized “Unknown item” / “不明なアイテム”. |
 | `slotView(slot, index, selection)` | `selection` is a number or an options object with `selectedIndex` and optional `itemDisplayNameOptions` | Project one slot using the selected index and host resolver. |
 | `applyUiLanguage(root, input)` | Localized DOM subtree and `unknown` | Update text and aria attributes within a subtree when using an independent view. |
@@ -288,7 +299,7 @@ mc-sim continues to own persisted settings and game state.
 | `SettingsViewActions.onClose?` / station `*ViewActions.onClose?` | `() => void` | Supplying the callback adds a native close button and connects it to the host's screen transition. |
 
 `UI_MESSAGES` and `ACHIEVEMENT_TITLES` store English and Japanese text for each entry.
-`UI_TRANSLATION_KEY_COUNT` reports the combined key count, and tests check that both languages cover every entry.
+`UI_TRANSLATION_KEY_COUNT` currently reports 415 combined UI message and achievement-title keys, and tests check that both languages cover every entry.
 `UiMountOptions` accepts `initialLanguage`; decode persisted values with `decodeUiLanguage` before passing them. After mount, `updateLanguage` switches localized dictionary text and aria attributes. After a successful language update, rebuild every language-dependent view model and render or update those views. Pass the new language in `ItemDisplayNameOptions` when rebuilding item-bearing models. `applyUiLanguage` does not rerun the host's item-name resolver.
 
 The item-name resolver receives a validated kernel `ItemType` without a `minecraft:` prefix and the requested `UiLanguage`. The view model retains the resolver's typed result. If the snapshot ID is invalid, the resolver is absent, or name resolution fails, the visible slot uses the localized unknown-item label and never prints the ID. Hosts provide this callback because the name catalog belongs to the host's kernel data.
@@ -327,6 +338,33 @@ The host's topmost overlay handler dispatches Escape once to close the active sc
 
 `applyUiScale` uses CSS `zoom`.
 MDN marks this property as Baseline 2024 and notes that older browsers may not support it: [MDN `zoom`](https://developer.mozilla.org/en-US/docs/Web/CSS/zoom).
+
+### 5-3. HUD presentation snapshot
+
+`HudPresentationSnapshot` contains optional HUD values outside mc-sim's `Vitals`.
+The host maps its game state into this shape and decodes it with `HudPresentationSnapshotSchema` before passing it to `hudViewModel`.
+The schema rejects unknown fields and malformed values, and omitted fields stay absent.
+The root barrel exports `HudPresentationSnapshot`, `HudPresentationSnapshotSchema`, and `hudPresentationView`.
+
+| Field | Accepted input | Projection |
+| --- | --- | --- |
+| `absorptionPoints` | Integer from 1 to 400 | Adds health marks with current and maximum equal to this value. |
+| `armor` / `oxygen` | Integer points from 0 to 400 for `current`, and from 1 to 400 for `max`; `current <= max` | Derives full, half, and empty states in two-point units and displays the numeric current/max value. |
+| `healthCondition` | `'poison'` or `'wither'` | Selects the health-mark color treatment. |
+| `deathCause` | `'fall'`, `'lava'`, `'cactus'`, `'in_fire'`, `'on_fire'`, `'drowning'`, `'suffocation'`, `'starvation'`, `'mob'`, `'projectile'`, `'explosion'`, `'void'`, `'ender_pearl'`, `'poison'`, `'generic'`, or `'lightning'` | Maps to a message key rendered as a localized cause label while `HudViewModel.dead` is true. |
+| `position` | Finite `{ x, y, z }` coordinates | Formats each coordinate to one decimal place and shows them while `HudViewModel.dead` is true. |
+| `statusEffects` | Up to 40 `{ category, remainingSecs }` entries; category is `'positive'`, `'negative'`, or `'neutral'`; seconds are finite and greater than zero | Maps the category to a message key and icon, and rounds remaining seconds up. The renderer localizes the label. The host maps each effect to a category; the snapshot carries no effect name. |
+| `time` | `{ ticks, dayLengthTicks }`; `ticks` is a non-negative safe integer | Derives the day cue and sunset warning from simulation ticks. |
+
+`dayLengthTicks` must be an integer from `ceil((30 * TICKS_PER_SECOND - 0.5) / 0.55)` through `1,200 * TICKS_PER_SECOND`.
+The projection uses the tick position within that day: day spans 95–100% and 0–45%, dusk 45–55%, and night 55–95%.
+The sunset warning starts 30 seconds before the 55% night boundary.
+`TICKS_PER_SECOND` comes from `@nerima-games/mc-sim`.
+
+`hudPresentationView` maps the snapshot into `HudViewModel.presentation`, including meter states, message keys, time cues, and the sunset-warning seconds.
+`uiStages(state)` reads `state.hudPresentation` at `ui:hud-sync` and passes it through `hudViewModel`.
+For a standalone mount, the host passes `presentation` in the `hudViewModel` options object and sends the resulting model through `UiMount.updateHud`.
+The host remains responsible for mapping authoritative game state into this input.
 
 ### `application/**` (DOM layer; includes both **provisional contract** and **internal (visible)** APIs)
 

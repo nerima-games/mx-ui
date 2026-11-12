@@ -78,7 +78,7 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
-import type { DomElement, DomElementFactory } from './dom-surface.js'
+import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import {
   HOTBAR_SLOT_COUNT,
   type HudViewModel,
@@ -86,6 +86,7 @@ import {
   type SlotView,
   hotbarSlotIndex,
 } from '../domain/hud-view-model.js'
+import { type HudIconName, hudIconDataUri } from './hud-icons.generated.js'
 import {
   ICON_ROW_MESSAGE_KEY,
   type IconElement,
@@ -94,10 +95,7 @@ import {
   retireIconElement,
   updateIconElement,
 } from './icon-element.js'
-import {
-  type MotionPreference,
-  animationDurationMs,
-} from '../domain/accessibility.js'
+import { type MotionPreference, animationDurationMs } from '../domain/accessibility.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type SlotElement,
@@ -107,9 +105,17 @@ import {
   setSlotTabStop,
   updateSlotElement,
 } from './slot-element.js'
-import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { type UiLanguage, type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
+import {
+  inheritUiLanguage,
+  setLocalizedAttribute,
+  setLocalizedText,
+  uiLanguageForElement,
+  writeLocalizedAttribute,
+  writeLocalizedText,
+  writeLocalizedTextUsing,
+} from './ui-localization.js'
 import { itemDisplayNameText, itemDisplayNameValue } from './item-display-name.js'
-import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
 
 /**
  * How long the XP bar takes to slide, at full motion.
@@ -134,6 +140,7 @@ export const EXPERIENCE_TRANSITION_MS = 220
 const DEFAULT_TAB_STOP_INDEX = 0
 /** A duration of exactly zero means "do not animate at all" — see `applyMotion`. */
 const ZERO_DURATION_MS = 0
+const NO_STATUS_EFFECTS = 0
 /** One hotbar slot per iteration. */
 const INDEX_INCREMENT = 1
 
@@ -149,6 +156,8 @@ export type HudView = {
   readonly root: DomElement
   /** Project a model. Idempotent: the same model twice mutates nothing the second time. */
   readonly render: (model: HudViewModel) => void
+  /** Remove the optional host respawn listener when this view leaves its mount. */
+  readonly dispose: () => void
   /**
    * Change the motion preference.
    *
@@ -191,12 +200,67 @@ export type HudView = {
 type HudCells = {
   readonly hearts: IconRowElement
   readonly shanks: IconRowElement
+  readonly absorption: HudAssetRow
+  readonly armor: HudAssetRow
+  readonly oxygen: HudAssetRow
+  readonly statusEffects: HudStatusEffects
+  readonly time: HudTimeCue
+  readonly sunsetWarning: HudSunsetWarning
   readonly levelText: TextCell
   readonly experienceWidth: PercentCell
   readonly experienceTransition: StyleCell
   readonly hotbar: ReadonlyArray<SlotElement>
   readonly deadFlag: AttributeCell
   readonly deathHidden: AttributeCell
+  readonly deathCause: TextCell
+  readonly deathCauseHidden: AttributeCell
+  readonly deathCoordinates: TextCell
+  readonly deathCoordinatesHidden: AttributeCell
+}
+
+type HudAssetElement = {
+  readonly root: DomElement
+  readonly image: DomElement
+  readonly hidden: AttributeCell
+  previousName?: HudIconName
+}
+
+type HudAssetRow = {
+  readonly root: DomElement
+  readonly icons: Array<HudAssetElement>
+  readonly value: TextCell
+  readonly hidden: AttributeCell
+}
+
+type HudStatusEffectItem = {
+  readonly root: DomElement
+  readonly icon: HudAssetElement
+  readonly label: TextCell
+  readonly duration: TextCell
+  readonly hidden: AttributeCell
+  readonly category: AttributeCell
+}
+
+type HudStatusEffect = NonNullable<NonNullable<HudViewModel['presentation']>['effects']>[number]
+
+type HudStatusEffects = {
+  readonly root: DomElement
+  readonly items: Array<HudStatusEffectItem>
+  readonly hidden: AttributeCell
+}
+
+type HudTimeCue = {
+  readonly root: DomElement
+  readonly icon: HudAssetElement
+  readonly label: TextCell
+  readonly hidden: AttributeCell
+}
+
+type HudSunsetWarning = {
+  readonly root: DomElement
+  readonly icon: HudAssetElement
+  readonly label: TextCell
+  readonly hidden: AttributeCell
 }
 
 /** `''` when present, otherwise no attribute at all. */
@@ -240,10 +304,14 @@ const createIconRow = (
  * permanent element reference.
  */
 const renderIconRow = (
-  factory: DomElementFactory,
-  row: IconRowElement,
-  states: ReadonlyArray<IconState>,
+  options: Readonly<{
+    factory: DomElementFactory
+    row: IconRowElement
+    states: ReadonlyArray<IconState>
+    healthCondition?: 'poison' | 'wither'
+  }>,
 ): void => {
+  const { factory, row, states, healthCondition } = options
   while (row.icons.length < states.length) {
     const icon = createIconElement(factory, row.kind)
     row.container.appendChild(icon.root)
@@ -258,7 +326,7 @@ const renderIconRow = (
     if (typeof state === 'undefined') {
       retireIconElement(icon)
     } else {
-      updateIconElement(icon, state)
+      updateIconElement(icon, state, healthCondition)
     }
   }
 }
@@ -344,6 +412,306 @@ const createHudVitals = (factory: DomElementFactory, root: DomElement): HudVital
   const hearts = createIconRow(factory, 'heart', vitals)
   const shanks = createIconRow(factory, 'shank', vitals)
   return { hearts, shanks }
+}
+
+const RESOURCE_ICON_NAMES: Readonly<
+  Record<'absorption' | 'armor' | 'oxygen', Readonly<Record<IconState, HudIconName>>>
+> = {
+  absorption: { empty: 'health-empty', full: 'absorption-full', half: 'absorption-half' },
+  armor: { empty: 'armor-empty', full: 'armor-full', half: 'armor-half' },
+  oxygen: { empty: 'oxygen-empty', full: 'oxygen-full', half: 'oxygen-full' },
+}
+
+const createHudAssetImage = (factory: DomElementFactory): DomElement => {
+  const image = factory.createElement('img')
+  image.setAttribute('alt', '')
+  image.setAttribute('aria-hidden', 'true')
+  image.style.setProperty('width', '32px')
+  image.style.setProperty('height', '32px')
+  image.style.setProperty('image-rendering', 'pixelated')
+  return image
+}
+
+const createHudAssetElement = (factory: DomElementFactory, parent: DomElement): HudAssetElement => {
+  const icon = factory.createElement('span')
+  icon.setAttribute('data-mx-ui', 'hud-asset-icon')
+  icon.style.setProperty('display', 'inline-block')
+  icon.style.setProperty('line-height', '0')
+
+  const image = createHudAssetImage(factory)
+  icon.appendChild(image)
+  parent.appendChild(icon)
+  return { hidden: attributeCell(icon, 'hidden'), image, root: icon }
+}
+
+const updateHudAssetElement = (icon: HudAssetElement, name: HudIconName): void => {
+  writeHidden(icon.hidden, false)
+  if (icon.previousName === name) {
+    return
+  }
+  icon.previousName = name
+  icon.root.setAttribute('data-hud-icon', name)
+  icon.image.setAttribute('data-hud-icon', name)
+  icon.image.setAttribute('src', hudIconDataUri(name))
+}
+
+const createHudAssetRowRoot = (
+  factory: DomElementFactory,
+  kind: 'absorption' | 'armor' | 'oxygen',
+  label: UiMessageKey,
+): DomElement => {
+  const row = factory.createElement('div')
+  row.setAttribute('data-mx-ui', `${kind}-row`)
+  row.setAttribute('role', 'group')
+  setLocalizedAttribute(row, 'aria-label', label)
+  row.setAttribute('hidden', '')
+  return row
+}
+
+const initialHiddenCell = (element: DomElement): AttributeCell => {
+  const hidden = attributeCell(element, 'hidden')
+  hidden.previous = ''
+  return hidden
+}
+
+const createHudAssetRow = (
+  options: Readonly<{
+    factory: DomElementFactory
+    parent: DomElement
+    kind: 'absorption' | 'armor' | 'oxygen'
+    label: UiMessageKey
+  }>,
+): HudAssetRow => {
+  const { factory, parent, kind, label } = options
+  const row = createHudAssetRowRoot(factory, kind, label)
+  const value = factory.createElement('span')
+  value.setAttribute('data-mx-ui', `${kind}-value`)
+  row.appendChild(value)
+  parent.appendChild(row)
+  return {
+    hidden: initialHiddenCell(row),
+    icons: [],
+    root: row,
+    value: textCell(value),
+  }
+}
+
+type HudMeter = NonNullable<NonNullable<HudViewModel['presentation']>['armor']>
+
+const ensureHudAssetIcons = (factory: DomElementFactory, row: HudAssetRow, count: number): void => {
+  while (row.icons.length < count) {
+    row.icons.push(createHudAssetElement(factory, row.root))
+  }
+}
+
+const renderHudAssetIcons = (
+  row: HudAssetRow,
+  kind: 'absorption' | 'armor' | 'oxygen',
+  meter: HudMeter,
+): void => {
+  for (const [index, icon] of row.icons.entries()) {
+    const state = meter.states[index]
+    if (typeof state === 'undefined') {
+      writeHidden(icon.hidden, true)
+    } else {
+      updateHudAssetElement(icon, RESOURCE_ICON_NAMES[kind][state])
+    }
+  }
+}
+
+const renderHudAssetRow = (
+  options: Readonly<{
+    factory: DomElementFactory
+    row: HudAssetRow
+    kind: 'absorption' | 'armor' | 'oxygen'
+    meter: HudMeter | undefined
+  }>,
+): void => {
+  const { factory, row, kind, meter } = options
+  if (typeof meter === 'undefined') {
+    writeHidden(row.hidden, true)
+    return
+  }
+  writeHidden(row.hidden, false)
+  ensureHudAssetIcons(factory, row, meter.states.length)
+  renderHudAssetIcons(row, kind, meter)
+  writeLocalizedText(row.value, 'hud.metric-value', {
+    current: meter.current,
+    max: meter.max,
+  })
+}
+
+const createHudStatusEffects = (factory: DomElementFactory, parent: DomElement): HudStatusEffects => {
+  const root = factory.createElement('div')
+  root.setAttribute('data-mx-ui', 'status-effects')
+  root.setAttribute('role', 'group')
+  setLocalizedAttribute(root, 'aria-label', 'hud.status-effects')
+  root.setAttribute('hidden', '')
+  parent.appendChild(root)
+  return { hidden: initialHiddenCell(root), items: [], root }
+}
+
+const createStatusEffectText = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  selector: 'status-effect-label' | 'status-effect-duration',
+): TextCell => {
+  const element = factory.createElement('span')
+  element.setAttribute('data-mx-ui', selector)
+  inheritUiLanguage(parent, element)
+  parent.appendChild(element)
+  return textCell(element)
+}
+
+const createHudStatusEffectItem = (
+  factory: DomElementFactory,
+  parent: DomElement,
+): HudStatusEffectItem => {
+  const root = factory.createElement('div')
+  root.setAttribute('data-mx-ui', 'status-effect')
+  root.setAttribute('role', 'group')
+  root.setAttribute('hidden', '')
+  inheritUiLanguage(parent, root)
+  const icon = createHudAssetElement(factory, root)
+  const label = createStatusEffectText(factory, root, 'status-effect-label')
+  const duration = createStatusEffectText(factory, root, 'status-effect-duration')
+  parent.appendChild(root)
+  return {
+    category: attributeCell(root, 'data-effect-category'),
+    duration,
+    hidden: initialHiddenCell(root),
+    icon,
+    label,
+    root,
+  }
+}
+
+const ensureStatusEffectItems = (factory: DomElementFactory, group: HudStatusEffects, count: number): void => {
+  while (group.items.length < count) {
+    group.items.push(createHudStatusEffectItem(factory, group.root))
+  }
+}
+
+const renderStatusEffectItem = (item: HudStatusEffectItem, effect: HudStatusEffect | undefined): void => {
+  if (typeof effect === 'undefined') {
+    writeHidden(item.hidden, true)
+  } else {
+    writeHidden(item.hidden, false)
+    updateHudAssetElement(item.icon, effect.icon)
+    writeAttribute(item.category, effect.category)
+    writeLocalizedText(item.label, effect.label)
+    writeLocalizedText(item.duration, 'hud.effect-duration', {
+      seconds: effect.remainingSeconds,
+    })
+  }
+}
+
+const renderStatusEffectItems = (
+  items: ReadonlyArray<HudStatusEffectItem>,
+  effects: ReadonlyArray<HudStatusEffect>,
+): void => {
+  for (const [index, item] of items.entries()) {
+    renderStatusEffectItem(item, effects[index])
+  }
+}
+
+const renderHudStatusEffects = (
+  factory: DomElementFactory,
+  group: HudStatusEffects,
+  effects: NonNullable<HudViewModel['presentation']>['effects'] | undefined,
+): void => {
+  if (typeof effects === 'undefined' || effects.length === NO_STATUS_EFFECTS) {
+    writeHidden(group.hidden, true)
+    return
+  }
+  writeHidden(group.hidden, false)
+  ensureStatusEffectItems(factory, group, effects.length)
+  renderStatusEffectItems(group.items, effects)
+}
+
+const renderHudTimeCue = (
+  time: HudTimeCue,
+  presentation: HudViewModel['presentation'],
+): void => {
+  const name = presentation?.timeIcon
+  const label = presentation?.timeLabel
+  if (typeof name === 'undefined' || typeof label === 'undefined') {
+    writeHidden(time.hidden, true)
+    return
+  }
+  writeHidden(time.hidden, false)
+  updateHudAssetElement(time.icon, name)
+  writeLocalizedText(time.label, label)
+}
+
+const renderHudSunsetWarning = (
+  warning: HudSunsetWarning,
+  presentation: HudViewModel['presentation'],
+): void => {
+  const seconds = presentation?.sunsetWarningSeconds
+  if (typeof seconds === 'undefined') {
+    writeHidden(warning.hidden, true)
+    return
+  }
+  writeHidden(warning.hidden, false)
+  updateHudAssetElement(warning.icon, 'sunset-warning')
+  writeLocalizedText(warning.label, 'hud.sunset-warning', { seconds })
+}
+
+const renderDeathCause = (cells: HudCells, model: HudViewModel): void => {
+  const cause = model.presentation?.deathCause
+  if (!model.dead || typeof cause === 'undefined') {
+    writeHidden(cells.deathCauseHidden, true)
+  } else {
+    writeHidden(cells.deathCauseHidden, false)
+    writeLocalizedTextUsing(cells.deathCause, (language) =>
+      translateUiMessage(language, 'hud.death-cause', {
+        cause: translateUiMessage(language, cause),
+      }),
+    )
+  }
+
+}
+
+const renderDeathCoordinates = (cells: HudCells, model: HudViewModel): void => {
+  const coordinates = model.presentation?.coordinates
+  if (!model.dead || typeof coordinates === 'undefined') {
+    writeHidden(cells.deathCoordinatesHidden, true)
+  } else {
+    writeHidden(cells.deathCoordinatesHidden, false)
+    writeLocalizedText(cells.deathCoordinates, 'hud.death-coordinates', { coordinates })
+  }
+}
+
+const renderDeathDetails = (cells: HudCells, model: HudViewModel): void => {
+  renderDeathCause(cells, model)
+  renderDeathCoordinates(cells, model)
+}
+
+const createHudTimeCue = (factory: DomElementFactory, parent: DomElement): HudTimeCue => {
+  const root = factory.createElement('div')
+  root.setAttribute('data-mx-ui', 'time-cue')
+  root.setAttribute('role', 'group')
+  root.setAttribute('hidden', '')
+  const icon = createHudAssetElement(factory, root)
+  const labelElement = factory.createElement('span')
+  labelElement.setAttribute('data-mx-ui', 'time-label')
+  root.appendChild(labelElement)
+  parent.appendChild(root)
+  return { hidden: initialHiddenCell(root), icon, label: textCell(labelElement), root }
+}
+
+const createHudSunsetWarning = (factory: DomElementFactory, parent: DomElement): HudSunsetWarning => {
+  const root = factory.createElement('div')
+  root.setAttribute('data-mx-ui', 'sunset-warning')
+  root.setAttribute('role', 'group')
+  root.setAttribute('hidden', '')
+  const icon = createHudAssetElement(factory, root)
+  const labelElement = factory.createElement('span')
+  labelElement.setAttribute('data-mx-ui', 'sunset-warning-label')
+  root.appendChild(labelElement)
+  parent.appendChild(root)
+  return { hidden: initialHiddenCell(root), icon, label: textCell(labelElement), root }
 }
 
 const createExperienceTrack = (factory: DomElementFactory, experience: DomElement): DomElement => {
@@ -471,18 +839,38 @@ const createHotbarSlots = (
   return hotbar
 }
 
-const createHudRespawnButton = (factory: DomElementFactory, death: DomElement): void => {
+const createHudRespawnButton = (
+  factory: DomElementFactory,
+  death: DomElement,
+  onRespawn?: (() => void) | undefined,
+): (() => void) | undefined => {
   const respawn = factory.createElement('button')
   respawn.setAttribute('data-mx-ui', 'respawn')
   respawn.setAttribute('type', 'button')
   setLocalizedText(respawn, 'hud.respawn')
+  if (typeof onRespawn === 'undefined') {
+    respawn.setAttribute('disabled', '')
+  } else {
+    respawn.addEventListener('click', onRespawn)
+  }
   death.appendChild(respawn)
+  if (typeof onRespawn === 'undefined') {
+    return
+  }
+  return () => respawn.removeEventListener?.('click', onRespawn)
 }
 
 type HudDeathElements = {
   readonly deadFlag: AttributeCell
   readonly deathHidden: AttributeCell
+  readonly cause: TextCell
+  readonly causeHidden: AttributeCell
+  readonly coordinates: TextCell
+  readonly coordinatesHidden: AttributeCell
+  readonly disposeRespawn?: () => void
 }
+
+type HudDeathDetailElements = Readonly<{ cause: DomElement; coordinates: DomElement }>
 
 const createHudDeathLabel = (factory: DomElementFactory, death: DomElement): void => {
   const deathLabel = factory.createElement('span')
@@ -490,41 +878,104 @@ const createHudDeathLabel = (factory: DomElementFactory, death: DomElement): voi
   death.appendChild(deathLabel)
 }
 
-const createHudDeathOverlay = (factory: DomElementFactory, root: DomElement): HudDeathElements => {
+const createHudDeathRoot = (factory: DomElementFactory): DomElement => {
   const death = factory.createElement('div')
   death.setAttribute('data-mx-ui', 'death')
+  death.setAttribute('role', 'alert')
   death.style.setProperty('color', PALETTE_VAR.statusAlert)
   createHudDeathLabel(factory, death)
-  createHudRespawnButton(factory, death)
+  return death
+}
+
+const createHudDeathDetails = (
+  factory: DomElementFactory,
+  death: DomElement,
+): HudDeathDetailElements => {
+  const cause = factory.createElement('span')
+  cause.setAttribute('data-mx-ui', 'death-cause')
+  cause.setAttribute('hidden', '')
+  death.appendChild(cause)
+  const coordinates = factory.createElement('span')
+  coordinates.setAttribute('data-mx-ui', 'death-coordinates')
+  coordinates.setAttribute('hidden', '')
+  death.appendChild(coordinates)
+  return { cause, coordinates }
+}
+
+const createHudDeathOverlay = (
+  factory: DomElementFactory,
+  root: DomElement,
+  onRespawn?: (() => void) | undefined,
+): HudDeathElements => {
+  const death = createHudDeathRoot(factory)
+  const { cause, coordinates } = createHudDeathDetails(factory, death)
+
+  const disposeRespawn = createHudRespawnButton(factory, death, onRespawn)
   death.setAttribute('hidden', '')
   root.appendChild(death)
 
-  const deathHidden = attributeCell(death, 'hidden')
-  // `deathHidden` was set directly above so the first frame does not flash the
-  // Overlay; tell the cell what the element already says.
-  deathHidden.previous = ''
+  const deathHidden = initialHiddenCell(death)
 
-  return {
+  const elements: HudDeathElements = {
+    cause: textCell(cause),
+    causeHidden: initialHiddenCell(cause),
+    coordinates: textCell(coordinates),
+    coordinatesHidden: initialHiddenCell(coordinates),
     deadFlag: attributeCell(root, 'data-dead'),
     deathHidden,
   }
+  if (typeof disposeRespawn === 'undefined') {
+    return elements
+  }
+  return { ...elements, disposeRespawn }
 }
 
 type HudElements = {
   readonly root: DomElement
   readonly cells: HudCells
+  readonly disposeRespawn?: () => void
 }
 
-const buildHudElements = (factory: DomElementFactory): HudElements => {
+type HudSupplementalElements = Pick<
+  HudCells,
+  'absorption' | 'armor' | 'oxygen' | 'statusEffects' | 'time' | 'sunsetWarning'
+>
+
+const createHudSupplementalElements = (
+  factory: DomElementFactory,
+  root: DomElement,
+): HudSupplementalElements => ({
+  absorption: createHudAssetRow({ factory, kind: 'absorption', label: 'hud.absorption', parent: root }),
+  armor: createHudAssetRow({ factory, kind: 'armor', label: 'hud.armor', parent: root }),
+  oxygen: createHudAssetRow({ factory, kind: 'oxygen', label: 'hud.oxygen', parent: root }),
+  statusEffects: createHudStatusEffects(factory, root),
+  sunsetWarning: createHudSunsetWarning(factory, root),
+  time: createHudTimeCue(factory, root),
+})
+
+const createHudHotbarElements = (
+  factory: DomElementFactory,
+  root: DomElement,
+): ReadonlyArray<SlotElement> => createHotbarSlots(factory, createHotbarRow(factory, root))
+
+const buildHudElements = (
+  factory: DomElementFactory,
+  onRespawn?: (() => void) | undefined,
+): HudElements => {
   const root = createHudRoot(factory)
   const vitals = createHudVitals(factory, root)
+  const supplemental = createHudSupplementalElements(factory, root)
   const experience = createHudExperience(factory, root)
-  const hotbarRow = createHotbarRow(factory, root)
-  const hotbar = createHotbarSlots(factory, hotbarRow)
-  const death = createHudDeathOverlay(factory, root)
+  const hotbar = createHudHotbarElements(factory, root)
+  const death = createHudDeathOverlay(factory, root, onRespawn)
 
   const cells: HudCells = {
+    ...supplemental,
     deadFlag: death.deadFlag,
+    deathCause: death.cause,
+    deathCauseHidden: death.causeHidden,
+    deathCoordinates: death.coordinates,
+    deathCoordinatesHidden: death.coordinatesHidden,
     deathHidden: death.deathHidden,
     experienceTransition: experience.experienceTransition,
     experienceWidth: experience.experienceWidth,
@@ -534,7 +985,42 @@ const buildHudElements = (factory: DomElementFactory): HudElements => {
     shanks: vitals.shanks,
   }
 
-  return { cells, root }
+  const elements: HudElements = { cells, root }
+  if (typeof death.disposeRespawn === 'undefined') {
+    return elements
+  }
+  return { ...elements, disposeRespawn: death.disposeRespawn }
+}
+
+const renderHudVitals = (factory: DomElementFactory, cells: HudCells, model: HudViewModel): void => {
+  const healthCondition = model.presentation?.healthCondition
+  if (healthCondition) {
+    renderIconRow({ factory, healthCondition, row: cells.hearts, states: model.hearts })
+  } else {
+    renderIconRow({ factory, row: cells.hearts, states: model.hearts })
+  }
+  renderIconRow({ factory, row: cells.shanks, states: model.shanks })
+}
+
+const renderHudSupplements = (factory: DomElementFactory, cells: HudCells, model: HudViewModel): void => {
+  const { presentation } = model
+  renderHudAssetRow({ factory, kind: 'absorption', meter: presentation?.absorption, row: cells.absorption })
+  renderHudAssetRow({ factory, kind: 'armor', meter: presentation?.armor, row: cells.armor })
+  renderHudAssetRow({ factory, kind: 'oxygen', meter: presentation?.oxygen, row: cells.oxygen })
+  renderHudStatusEffects(factory, cells.statusEffects, presentation?.effects)
+  renderHudTimeCue(cells.time, presentation)
+  renderHudSunsetWarning(cells.sunsetWarning, presentation)
+}
+
+const renderHudFrame = (factory: DomElementFactory, cells: HudCells, model: HudViewModel): void => {
+  renderHudVitals(factory, cells, model)
+  renderHudSupplements(factory, cells, model)
+  writeText(cells.levelText, model.experienceLevelLabel)
+  writePercent(cells.experienceWidth, model.experiencePercent)
+  renderHotbarSlots(cells.hotbar, model.hotbar)
+  writeAttribute(cells.deadFlag, presenceValue(model.dead))
+  writeHidden(cells.deathHidden, !model.dead)
+  renderDeathDetails(cells, model)
 }
 
 /**
@@ -544,12 +1030,16 @@ const buildHudElements = (factory: DomElementFactory): HudElements => {
  * not go looking for `document`, because a preview page has to be able to stand
  * up more than one instance.
  */
-export const createHudView = (
+type CreateHudViewArguments = readonly [
   factory: DomElementFactory,
   parent: DomElement,
   motion: MotionPreference,
-): HudView => {
-  const { cells, root } = buildHudElements(factory)
+  options?: Readonly<{ readonly onRespawn?: (() => void) | undefined }>,
+]
+
+export const createHudView = (...arguments_: CreateHudViewArguments): HudView => {
+  const [factory, parent, motion, options] = arguments_
+  const { cells, disposeRespawn, root } = buildHudElements(factory, options?.onRespawn)
 
   const applyMotion = (preference: MotionPreference): void => {
     const durationMs = animationDurationMs(EXPERIENCE_TRANSITION_MS, preference)
@@ -585,16 +1075,15 @@ export const createHudView = (
   applyKeyboardFocus()
   parent.appendChild(root)
 
+  const dispose = (): void => {
+    if (typeof disposeRespawn !== 'undefined') {
+      disposeRespawn()
+    }
+  }
+
   return {
-    render: (model: HudViewModel): void => {
-      renderIconRow(factory, cells.hearts, model.hearts)
-      renderIconRow(factory, cells.shanks, model.shanks)
-      writeText(cells.levelText, model.experienceLevelLabel)
-      writePercent(cells.experienceWidth, model.experiencePercent)
-      renderHotbarSlots(cells.hotbar, model.hotbar)
-      writeAttribute(cells.deadFlag, presenceValue(model.dead))
-      writeHidden(cells.deathHidden, !model.dead)
-    },
+    dispose,
+    render: (model: HudViewModel): void => renderHudFrame(factory, cells, model),
     root,
     setKeyboardFocus: applyKeyboardFocus,
     setMotion: applyMotion,

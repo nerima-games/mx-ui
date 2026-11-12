@@ -1,6 +1,7 @@
 import { type TextCell, textCell } from './dom-write.js'
 import { setLocalizedAttribute, setLocalizedText, writeLocalizedText } from './ui-localization.js'
 import type { UiMessageKey } from '../domain/ui-language.js'
+import type { UiScale } from '../domain/accessibility.js'
 
 export type DebugHudSnapshot = {
   readonly fps: number
@@ -14,6 +15,7 @@ export type UiSettings = {
   readonly renderDistance: number
   readonly fieldOfView: number
   readonly masterVolume: number
+  readonly uiScale: UiScale
 }
 
 export type UiSettingsCallbacks = {
@@ -30,6 +32,7 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   masterVolume: 1,
   mouseSensitivity: 1,
   renderDistance: 12,
+  uiScale: 1,
 }
 
 const FIRST_INPUT_INDEX = 0

@@ -41,6 +41,7 @@ import { type ModalStack, emptyModalStack } from '../domain/modal-stack.js'
 import { UI_STAGE_IDS, UPSTREAM_STAGE_IDS } from './stage-ids.js'
 import { type UiGameModule, createUiModuleInstance } from '../application/ui-module-instance.js'
 import { type CaptionEvent } from '../domain/caption.js'
+import type { HudPresentationSnapshot } from '../domain/hud-presentation.js'
 import { type InventoryCarriedSlot } from '@nerima-games/mc-sim'
 import { type UiQaSnapshot } from '../domain/ui-qa.js'
 import { emptyInventorySnapshot } from '../domain/inventory-view-model.js'
@@ -74,6 +75,8 @@ export type UiFrameState = {
   readonly hotbarSlots: Ref.Ref<ReadonlyArray<InventoryCarriedSlot>>
   readonly selectedHotbarSlot: Ref.Ref<SelectedHotbarSlot>
   readonly hud: Ref.Ref<HudViewModel>
+  /** Strict host-adapted data missing from mc-sim's Vitals snapshot. */
+  readonly hudPresentation: Ref.Ref<HudPresentationSnapshot | null>
   /** Events from mc-audio; captionLines applies the owner's visibility policy. */
   readonly captions: Ref.Ref<ReadonlyArray<CaptionEvent>>
   readonly modals: Ref.Ref<ModalStack>
@@ -97,6 +100,7 @@ export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function
   const hud = yield* Ref.make<HudViewModel>(
     hudViewModel(spawnSnapshot, EMPTY_HOTBAR_SLOTS, INITIAL_SELECTED_HOTBAR_SLOT),
   )
+  const hudPresentation = yield* Ref.make<HudPresentationSnapshot | null>(null)
   const captions = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
   const modals = yield* Ref.make<ModalStack>(emptyModalStack)
   const elapsedSecs = yield* Ref.make(INITIAL_ELAPSED_SECS)
@@ -108,6 +112,7 @@ export const makeUiFrameState: Effect.Effect<UiFrameState> = Effect.gen(function
     fpsCounter,
     hotbarSlots,
     hud,
+    hudPresentation,
     modals,
     selectedHotbarSlot,
     snapshot,
@@ -130,7 +135,15 @@ export const uiStages = (state: UiFrameState): ReadonlyArray<StageRegistration> 
         const vitals = yield* Ref.get(state.snapshot)
         const hotbarSlots = yield* Ref.get(state.hotbarSlots)
         const selectedHotbarSlot = yield* Ref.get(state.selectedHotbarSlot)
-        yield* Ref.set(state.hud, hudViewModel(vitals, hotbarSlots, selectedHotbarSlot))
+        const hudPresentation = yield* Ref.get(state.hudPresentation)
+        const hudOptions: {
+          presentation?: HudPresentationSnapshot
+          selectedHotbarSlot: SelectedHotbarSlot
+        } = { selectedHotbarSlot }
+        if (hudPresentation !== null) {
+          hudOptions.presentation = hudPresentation
+        }
+        yield* Ref.set(state.hud, hudViewModel(vitals, hotbarSlots, hudOptions))
       }),
   },
   {

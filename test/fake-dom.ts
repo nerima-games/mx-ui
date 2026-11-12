@@ -160,6 +160,28 @@ export class FakeElement implements DomElement {
     this.record('listener', type, undefined)
   }
 
+  removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
+    if (callback === null) {
+      return
+    }
+    const callbacks = this.eventListeners.get(type)
+    if (typeof callbacks === 'undefined') {
+      return
+    }
+    const callbackIndex = callbacks.indexOf(callback)
+    if (callbackIndex < 0) {
+      return
+    }
+    callbacks.splice(callbackIndex, 1)
+    const listenerIndex = this.listeners.indexOf(type)
+    if (listenerIndex >= 0) {
+      this.listeners.splice(listenerIndex, 1)
+    }
+    if (callbacks.length === 0) {
+      this.eventListeners.delete(type)
+    }
+  }
+
   dispatch(type: string): void {
     const event = new Event(type)
     for (const callback of this.eventListeners.get(type) ?? []) {

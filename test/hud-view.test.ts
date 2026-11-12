@@ -46,7 +46,9 @@ import {
   updateSlotElement,
 } from '../src/application/slot-element'
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
+import { hudIconDataUri } from '../src/application/hud-icons.generated'
 import { ItemDisplayNameSchema, type ItemDisplayNameOptions } from '../src/domain/item-display-name'
+import { HudPresentationSnapshotSchema, type HudPresentationSnapshot } from '../src/domain/hud-presentation'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
@@ -67,7 +69,8 @@ const hudViewModel = (
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot> = emptyHotbar,
   selectedHotbarSlot = 0,
   itemDisplayNameOptions?: ItemDisplayNameOptions,
-) => projectHudViewModel(vitals, hotbarSlots, { itemDisplayNameOptions, selectedHotbarSlot })
+  presentation?: HudPresentationSnapshot,
+) => projectHudViewModel(vitals, hotbarSlots, { itemDisplayNameOptions, presentation, selectedHotbarSlot })
 
 const damaged = (healthPoints: number): Vitals => ({
   ...SPAWN_VITALS,
@@ -223,8 +226,8 @@ describe('the HUD renderer applies the palette', () => {
     }
 
     const heart = root.find('data-icon', 'heart')
-    expect(heart?.children[1]?.style.properties.get('color')).toBe(PALETTE_VAR.heart)
-    expect(heart?.children[0]?.style.properties.get('color')).toBe(PALETTE_VAR.iconEmpty)
+    expect(heart?.children[0]?.attributes.get('data-hud-icon')).toBe('health-full')
+    expect(heart?.children[0]?.attributes.get('src')).toBe(hudIconDataUri('health-full'))
   })
 
   it('carries the icon distinction on SHAPE and LENGTH as well as colour (palette G3)', () => {
@@ -241,31 +244,24 @@ describe('the HUD renderer applies the palette', () => {
     const fullHeartCount = DEFAULT_MAX_HEALTH_POINTS / HEALTH_POINTS_PER_HEART
     expect(hearts).toHaveLength(fullHeartCount)
 
-    const glyphs = hearts.map((icon) => [icon.children[0]?.textContent, icon.children[1]?.children[0]?.textContent])
-    // Hollow behind, solid in front — two different characters, on every icon.
-    expect(new Set(glyphs.map((pair) => pair.join('/')))).toStrictEqual(new Set(['♡/♥']))
-
-    const widths = hearts.map((icon) => icon.children[1]?.style.properties.get('width'))
-    // Nine full, one half — DN-UI-6's 「A player on half a heart needs to see
-    // half a heart」, expressed as a clip rather than as a colour.
-    expect(widths).toStrictEqual([...Array<string>(fullHeartCount - 1).fill('100%'), '50%'])
+    const iconNames = hearts.map((icon) => icon.children[0]?.attributes.get('data-hud-icon'))
+    expect(new Set(iconNames)).toStrictEqual(new Set(['health-full', 'health-half']))
+    expect(hearts.at(-1)?.children[0]?.attributes.get('src')).toBe(hudIconDataUri('health-half'))
     expect(hearts.map((icon) => icon.attributes.get('data-icon-state'))).toStrictEqual([
       ...Array<string>(fullHeartCount - 1).fill('full'),
       'half',
     ])
   })
 
-  it('gives hearts and shanks different glyph pairs — the channel that carries most of that signal', () => {
-    // `heart full / shank full` is 49 units and 1.21:1 apart: separated by
-    // CHROMA, 「which is the channel dichromacy compresses hardest」. The palette
-    // says outright that the shapes are 「most of the signal」 for this pair.
+  it('gives health and hunger distinct generated marks independent of hue', () => {
     const { view, root } = mount()
     view.render(hudViewModel(SPAWN_VITALS))
 
     const heart = root.find('data-icon', 'heart')
     const shank = root.find('data-icon', 'shank')
-    expect(heart?.children[0]?.textContent).toBe('♡')
-    expect(shank?.children[0]?.textContent).toBe('○')
+    expect(heart?.children[0]?.attributes.get('data-hud-icon')).toBe('health-full')
+    expect(shank?.children[0]?.attributes.get('data-hud-icon')).toBe('hunger-full')
+    expect(heart?.children[0]?.attributes.get('src')).not.toBe(shank?.children[0]?.attributes.get('src'))
     expect(root.findAll('data-icon', 'shank')).toHaveLength(DEFAULT_MAX_HUNGER_POINTS / 2)
   })
 })
@@ -313,7 +309,9 @@ describe('the HUD renderer is idempotent', () => {
     // installed at mount.
     expect(written.map((mutation) => `${mutation.kind}:${mutation.name}`)).toStrictEqual([
       'attribute:data-icon-state',
-      'style:width',
+      'attribute:data-hud-icon',
+      'attribute:src',
+      'style:mask-image',
     ])
     const hearts = root.findAll('data-icon', 'heart')
     expect(hearts[DEFAULT_MAX_HEALTH_POINTS / HEALTH_POINTS_PER_HEART - 1]?.attributes.get('data-icon-state')).toBe('half')
@@ -348,6 +346,96 @@ describe('the HUD renderer is idempotent', () => {
     const before = factory.mark()
     view.render(hudViewModel(SPAWN_VITALS))
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+})
+
+describe('supplemental HUD presentation surfaces', () => {
+  const supplementalPresentation = () => Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
+    absorptionPoints: 3,
+    armor: { current: 9, max: 20 },
+    deathCause: 'fall',
+    healthCondition: 'poison',
+    oxygen: { current: 5, max: 10 },
+    position: { xCoordinate: 1.25, yCoordinate: 64, zCoordinate: -3.25 },
+    statusEffects: [
+      { category: 'positive', remainingSecs: 12.2 },
+      { category: 'negative', remainingSecs: 1.1 },
+    ],
+    time: { dayLengthTicks: 72_000, ticks: 37_800 },
+  })
+
+  it('uses condition-specific heart art for a living player', () => {
+    const { root, view } = mount()
+    const presentation = supplementalPresentation()
+
+    view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, presentation))
+    expect(root.find('data-icon', 'heart')?.children[0]?.attributes.get('data-hud-icon')).toBe('poison-full')
+    expect(root.findAll('data-icon', 'heart').at(-1)?.children[0]?.attributes.get('data-hud-icon')).toBe('poison-half')
+    const witherPresentation = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
+      healthCondition: 'wither',
+    })
+    view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, witherPresentation))
+    expect(root.find('data-icon', 'heart')?.children[0]?.attributes.get('data-hud-icon')).toBe('wither-full')
+    expect(root.findAll('data-icon', 'heart').at(-1)?.children[0]?.attributes.get('data-hud-icon')).toBe('wither-half')
+  })
+
+  it('renders meters and the dusk warning from the supplied snapshot', () => {
+    const { root, view } = mount()
+    const presentation = supplementalPresentation()
+    view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, presentation))
+    expect(root.find('data-mx-ui', 'absorption-row')?.attributes.has('hidden')).toBe(false)
+    expect(root.find('data-mx-ui', 'absorption-value')?.textContent).toBe('3 / 3')
+    expect(root.find('data-mx-ui', 'armor-row')?.attributes.get('aria-label')).toBe('Armor')
+    expect(root.findAll('data-mx-ui', 'armor-row')[0]?.findAll('data-mx-ui', 'hud-asset-icon')).toHaveLength(10)
+    expect(root.find('data-mx-ui', 'oxygen-value')?.textContent).toBe('5 / 10')
+    expect(root.find('data-mx-ui', 'time-cue')?.attributes.has('hidden')).toBe(false)
+    expect(root.find('data-mx-ui', 'time-cue')?.find('data-hud-icon', 'time-dusk')).toBeDefined()
+    expect(root.find('data-mx-ui', 'sunset-warning')?.find('data-hud-icon', 'sunset-warning')).toBeDefined()
+    expect(root.find('data-mx-ui', 'time-label')?.textContent).toBe('Dusk')
+    expect(root.find('data-mx-ui', 'sunset-warning-label')?.textContent).toBe('Night in 30s')
+  })
+
+  it('renders localized effect categories and durations without exposing IDs', () => {
+    const { root, view } = mount()
+    view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, supplementalPresentation()))
+    const effects = root.findAll('data-mx-ui', 'status-effect')
+    expect(effects.map((effect) => effect.attributes.get('data-effect-category'))).toStrictEqual([
+      'positive',
+      'negative',
+    ])
+    expect(effects.map((effect) => effect.find('data-mx-ui', 'status-effect-label')?.textContent)).toStrictEqual([
+      'Positive effect',
+      'Negative effect',
+    ])
+    expect(effects.map((effect) => effect.find('data-mx-ui', 'status-effect-duration')?.textContent)).toStrictEqual([
+      '13s remaining',
+      '2s remaining',
+    ])
+    expect(effects.map((effect) => effect.find('data-hud-icon', 'effect-positive') !== undefined)).toStrictEqual([
+      true,
+      false,
+    ])
+    expect(effects[1]?.find('data-hud-icon', 'effect-negative')).toBeDefined()
+    expect(effects.some((effect) => effect.textContent.includes('positive'))).toBe(false)
+  })
+
+  it('renders the supplied cause and coordinates when the player is dead', () => {
+    const { root, view } = mount()
+    view.render(hudViewModel(damaged(0), emptyHotbar, 0, undefined, supplementalPresentation()))
+    expect(root.find('data-mx-ui', 'death-cause')?.textContent).toBe('Cause: falling')
+    expect(root.find('data-mx-ui', 'death-coordinates')?.textContent).toBe('Coordinates: 1.3 / 64.0 / -3.3')
+  })
+
+  it('keeps absent host values absent instead of drawing invented rows or details', () => {
+    const { root, view } = mount()
+    view.render(hudViewModel())
+
+    expect(root.find('data-mx-ui', 'absorption-row')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('data-mx-ui', 'armor-row')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('data-mx-ui', 'oxygen-row')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('data-mx-ui', 'status-effects')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('data-mx-ui', 'time-cue')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('data-mx-ui', 'sunset-warning')?.attributes.has('hidden')).toBe(true)
   })
 })
 
@@ -672,6 +760,7 @@ describe('the HUD renderer owns no keys', () => {
     expect(respawn?.tagName).toBe('button')
     expect(respawn?.attributes.get('type')).toBe('button')
     expect(respawn?.textContent).toBe('Respawn')
+    expect(respawn?.attributes.has('disabled')).toBe(true)
     expect(respawn?.listeners).toStrictEqual([])
     expect(root.listenersInTree()).toStrictEqual([])
     expect(parent.listenersInTree()).toStrictEqual([])

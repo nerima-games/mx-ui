@@ -23,6 +23,7 @@ const ENVIRONMENT: HarnessEnvironment = {
 const INTENT_CONTROL_SELECTORS: Readonly<Record<string, string>> = {
   brewing: '[data-brewing-operation="insert-selected-item"]',
   'enchanting-table': '[data-mx-ui="enchanting-offer"]:not(:disabled)',
+  'hud-death-respawn': '[data-mx-ui="respawn"]',
   onboarding: '[data-onboarding-action="OpenHowToPlay"]',
   pause: '[data-pause-action="save-and-quit-to-title"]',
   trade: '[data-mx-ui="trade-close"]',
@@ -38,6 +39,7 @@ const expectedIntentFor = (scenario: ScenarioDefinition, control: HTMLButtonElem
       }
       return target
     }
+    case 'hud': return { _tag: 'Respawn' }
     case 'onboarding': return { _tag: 'OpenHowToPlay' }
     case 'pause': return { type: 'save-and-quit-to-title' }
     case 'trade': return { _tag: 'CloseTradeUi' }
@@ -80,6 +82,15 @@ describe('scenario intent and view-model wiring', () => {
       mountedScenarios += 1
       expect(host.childNodes.length, `${scenario.screen}/${scenario.id}`).toBeGreaterThan(0)
       expect(mount.viewModel, `${scenario.screen}/${scenario.id}`).toBeTypeOf('function')
+      if (scenario.id === 'hud-death-respawn') {
+        expect(mount.viewModel()).toMatchObject({
+          dead: true,
+          presentation: {
+            coordinates: '12.5 / 64.0 / -3.3',
+            deathCause: 'hud.death-cause.fall',
+          },
+        })
+      }
       mount.dispose()
     }
 
@@ -103,7 +114,7 @@ describe('scenario intent and view-model wiring', () => {
         runSync: Effect.runSync,
       }
       const mount = scenario.mount(context)
-      const selector = INTENT_CONTROL_SELECTORS[scenario.screen]
+      const selector = INTENT_CONTROL_SELECTORS[scenario.id] ?? INTENT_CONTROL_SELECTORS[scenario.screen]
       const control = selector === undefined ? null : host.querySelector<HTMLButtonElement>(selector)
       if (control !== null && !control.disabled) {
         emittedScenarioCount += 1
@@ -111,6 +122,9 @@ describe('scenario intent and view-model wiring', () => {
         expect(emitted, `${scenario.screen}/${scenario.id}`).toStrictEqual([
           expectedIntentFor(scenario, control),
         ])
+        if (scenario.id === 'hud-death-respawn') {
+          expect(host.hasAttribute('data-respawned')).toBe(true)
+        }
       }
       mount.dispose()
     }

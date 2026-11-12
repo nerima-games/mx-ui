@@ -163,6 +163,7 @@ const nonSurfaceExportNames: ReadonlyArray<string> = [
   'HEALTH_POINTS_PER_HEART',
   'HEART',
   'HOTBAR_SLOT_COUNT',
+  'HudPresentationSnapshotSchema',
   'ICON_EMPTY',
   'ICON_ROW_LABEL',
   'IDLE_CROSSHAIR_STATUS',
@@ -392,6 +393,7 @@ const nonSurfaceExportNames: ReadonlyArray<string> = [
   'decodeUiLanguage',
   'decodeUiScale',
   'focusTargetForElement',
+  'hudPresentationView',
   'inputActionMessageKey',
   'itemDisplayNameView',
   'moveFocusTarget',
@@ -539,6 +541,7 @@ const surfaceEntries: ReadonlyArray<UiSurfaceLedgerEntry> = [
     classification: 'visual',
     scenarioIds: [
       'hud/default',
+      'hud/hud-death-respawn',
       'hud/hud-zero-health',
       'hud/hud-half-heart-low-hunger',
       'hud/hud-full-selected-hotbar',

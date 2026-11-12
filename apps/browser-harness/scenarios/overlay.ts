@@ -52,6 +52,7 @@ import {
   HOTBAR_SLOT_COUNT,
   hudViewModel,
 } from '../../../src/domain/hud-view-model'
+import { HudPresentationSnapshotSchema } from '../../../src/domain/hud-presentation'
 import {
   LOADING_MINIMUM_VISIBLE_SECS,
   loadingScreenView,
@@ -191,6 +192,7 @@ const renderCaptions = (
 const renderCrosshair = (
   statusAt: (seconds: number) => CrosshairStatus,
   context: Parameters<ScenarioDefinition['mount']>[0],
+  notifyHit = false,
 ): ScenarioMount => {
   const view = createCrosshairView(context.factory, context.host, context.environment.motion)
   let model = crosshairViewModel(statusAt(context.time), context.time)
@@ -199,7 +201,28 @@ const renderCrosshair = (
     view.render(model)
   }
   update(context.time)
+  if (notifyHit) {
+    view.notifyHit()
+    model = { ...model, hit: true }
+  }
   return { root: view.root, setTime: update, dispose: noDispose, viewModel: () => model }
+}
+
+const renderDeathHud = (context: Parameters<ScenarioDefinition['mount']>[0]): ScenarioMount => {
+  const view = createHudView(context.factory, context.host, context.environment.motion, {
+    onRespawn: () => {
+      context.host.setAttribute('data-respawned', '')
+      context.emitIntent({ _tag: 'Respawn' })
+    },
+  })
+  const presentation = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
+    deathCause: 'fall',
+    position: { xCoordinate: 12.5, yCoordinate: 64, zCoordinate: -3.25 },
+  })
+  const vitals = validVitals({ ...SPAWN_VITALS, healthPoints: 0 })
+  const model = hudViewModel(vitals, emptyHotbar, { presentation, selectedHotbarSlot: 0 })
+  view.render(model)
+  return { root: view.root, setTime: noTimeUpdate, dispose: view.dispose, viewModel: () => model }
 }
 
 const emptyDebugModel: DebugOverlayModel = {
@@ -501,7 +524,7 @@ export const OVERLAY_SCENARIOS: ReadonlyArray<ScenarioDefinition> = [
     renderCrosshair(() => IDLE_CROSSHAIR_STATUS, context),
   ),
   scenario('crosshair', 'crosshair-hit-window', 'Hit marker through the 120 millisecond boundary', 'crosshair', (context) =>
-    renderCrosshair(() => ({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }), context),
+    renderCrosshair(() => IDLE_CROSSHAIR_STATUS, context, true),
   ),
   scenario('crosshair', 'crosshair-progress-range', 'Block breaking at zero and full progress', 'crosshair', (context) =>
     renderCrosshair((seconds) => ({
@@ -515,6 +538,7 @@ export const OVERLAY_SCENARIOS: ReadonlyArray<ScenarioDefinition> = [
       return { ...IDLE_CROSSHAIR_STATUS, breakProgress: PROGRESS_CASES[index] }
     }, context),
   ),
+  scenario('hud', 'hud-death-respawn', 'Death cause, coordinates, and keyboard respawn', 'hud', renderDeathHud),
   scenario('hud', 'debug-hud-all-values', 'Debug HUD with all available values', 'debug-overlay', (context) =>
     mountDebugOverlay(allDebugValues, context),
   ),

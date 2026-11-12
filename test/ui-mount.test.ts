@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
 import { Effect, Exit, Result, Schema } from 'effect'
+import * as Ref from 'effect/Ref'
 import * as Scope from 'effect/Scope'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as fc from 'fast-check'
 import {
   AchievementToastEventBusLayer,
 } from '../src/application/achievement-toast-subscriber'
@@ -18,16 +20,22 @@ import {
 } from '../src/application/ui-mount-cleanup'
 import { achievementToastFromEvent } from '../src/domain/achievement-toast'
 import type { InventoryInteractionTarget } from '../src/application/inventory-view'
-import { uiModule } from '../src/stages/registration'
+import { makeUiFrameState, uiModule, uiStages } from '../src/stages/registration'
 import { initialMainMenuState, mainMenuViewModel, type SavedWorld } from '../src/domain/main-menu'
 import {
   emptyInventorySnapshot,
   inventoryViewModel,
   type InventoryViewModel,
 } from '../src/domain/inventory-view-model'
-import { DomainEventBus, itemStack as makeItemStack } from '@nerima-games/mc-sim'
+import { DeltaTimeSecs } from '@nerima-games/mc-kernel'
+import { DomainEventBus, SPAWN_VITALS, VitalsSchema, itemStack as makeItemStack } from '@nerima-games/mc-sim'
 import { achievementEvent, untrustedAchievementEvent } from './helpers/achievement-event'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
+import { DEFAULT_UI_SETTINGS } from '../src/application/session-overlays'
+import { HudPresentationSnapshotSchema } from '../src/domain/hud-presentation'
+import { hudViewModel as projectHudViewModel } from '../src/domain/hud-view-model'
+import { UI_STAGE_IDS } from '../src/stages/stage-ids'
+import { FrameServicesLayer } from './frame-services'
 
 const testScopes: Array<Scope.Closeable> = []
 
@@ -95,6 +103,89 @@ describe('UiMount', () => {
     expect(runtime.current()).toBeUndefined()
     expect(host.contains(unrelated)).toBe(true)
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
+  it('projects the registered host HUD snapshot through updateHud into scaled DOM and respawn', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const onRespawn = vi.fn()
+    const runtime = makeUiMount({
+      initialSettings: { ...DEFAULT_UI_SETTINGS, uiScale: 1.25 },
+      onRespawn,
+      root: host,
+    })
+    await Effect.runPromise(runtime.start)
+
+    const state = await Effect.runPromise(makeUiFrameState)
+    const presentation = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
+      absorptionPoints: 3,
+      armor: { current: 12, max: 20 },
+      deathCause: 'fall',
+      healthCondition: 'poison',
+      oxygen: { current: 10, max: 20 },
+      position: { xCoordinate: 12.5, yCoordinate: 64, zCoordinate: -3.25 },
+      statusEffects: [{ category: 'negative', remainingSecs: 12.2 }],
+      time: { dayLengthTicks: 72_000, ticks: 37_800 },
+    })
+    const deadVitals = Schema.decodeUnknownSync(VitalsSchema)({
+      ...SPAWN_VITALS,
+      healthPoints: 0,
+    })
+    await Effect.runPromise(Ref.set(state.snapshot, deadVitals))
+    await Effect.runPromise(Ref.set(state.hudPresentation, presentation))
+    const hudSync = uiStages(state).find((stage) => stage.id === UI_STAGE_IDS.hudSync)
+    if (typeof hudSync === 'undefined') {
+      throw new Error('Expected the registered HUD sync stage')
+    }
+    await Effect.runPromise(hudSync.run(DeltaTimeSecs(0.016)).pipe(Effect.provide(FrameServicesLayer)))
+    const model = await Effect.runPromise(Ref.get(state.hud))
+    runtime.updateHud(model)
+
+    const mounted = runtime.current()
+    expect(mounted?.root.style.getPropertyValue('zoom')).toBe('1.25')
+    expect(host.querySelector('[data-mx-ui="hud"] [data-mx-ui="time-cue"]')?.hasAttribute('hidden')).toBe(false)
+    expect(host.querySelector('[data-mx-ui="sunset-warning-label"]')?.textContent).toBe('Night in 30s')
+    expect(host.querySelector('[data-mx-ui="status-effect-label"]')?.textContent).toBe('Negative effect')
+    expect(host.querySelector('[data-mx-ui="death-cause"]')?.textContent).toBe('Cause: falling')
+    expect(host.querySelector('[data-mx-ui="death-coordinates"]')?.textContent).toBe('Coordinates: 12.5 / 64.0 / -3.3')
+    expect(host.querySelector('[data-icon="heart"] [data-hud-icon="health-empty"]')).not.toBeNull()
+
+    expect(Result.isSuccess(runtime.updateLanguage('ja'))).toBe(true)
+    expect(host.querySelector('[data-mx-ui="status-effect-label"]')?.textContent).toBe('不利な効果')
+    expect(host.querySelector('[data-mx-ui="death-cause"]')?.textContent).toBe('原因: 落下')
+
+    const respawn = host.querySelector<HTMLButtonElement>('[data-mx-ui="respawn"]')
+    expect(respawn?.disabled).toBe(false)
+    respawn?.click()
+    expect(onRespawn).toHaveBeenCalledOnce()
+
+    const livingVitals = Schema.decodeUnknownSync(VitalsSchema)({
+      ...SPAWN_VITALS,
+      healthPoints: 2,
+    })
+    await Effect.runPromise(Ref.set(state.snapshot, livingVitals))
+    await Effect.runPromise(hudSync.run(DeltaTimeSecs(0.016)).pipe(Effect.provide(FrameServicesLayer)))
+    runtime.updateHud(await Effect.runPromise(Ref.get(state.hud)))
+    expect(host.querySelector('[data-icon="heart"] [data-hud-icon="poison-full"]')).not.toBeNull()
+    expect(host.querySelector('[data-mx-ui="death"]')?.hasAttribute('hidden')).toBe(true)
+    expect(host.querySelector('[data-mx-ui="armor-value"]')?.textContent).toBe('12 / 20')
+    expect(host.querySelector('[data-mx-ui="oxygen-value"]')?.textContent).toBe('10 / 20')
+    expect(host.querySelector('[data-mx-ui="status-effect-label"]')?.textContent).toBe('不利な効果')
+    expect(host.querySelector('[data-mx-ui="time-label"]')?.textContent).toBe('夕暮れ')
+    expect(host.querySelector('[data-mx-ui="sunset-warning-label"]')?.textContent).toBe('夜まであと30秒')
+
+    const witherPresentation = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
+      ...presentation,
+      healthCondition: 'wither',
+    })
+    await Effect.runPromise(Ref.set(state.hudPresentation, witherPresentation))
+    await Effect.runPromise(hudSync.run(DeltaTimeSecs(0.016)).pipe(Effect.provide(FrameServicesLayer)))
+    runtime.updateHud(await Effect.runPromise(Ref.get(state.hud)))
+    expect(host.querySelector('[data-icon="heart"] [data-hud-icon="wither-full"]')).not.toBeNull()
+
+    await Effect.runPromise(runtime.stop)
+    respawn?.click()
+    expect(onRespawn).toHaveBeenCalledOnce()
   })
 
   it('updates the mounted menu in the selected language', async () => {
@@ -953,11 +1044,95 @@ describe('UiMount', () => {
     const runtime = makeUiMount({ root: host })
     await Effect.runPromise(runtime.start)
 
-    runtime.updateSettings({ fieldOfView: 90, masterVolume: 0.5, mouseSensitivity: 2, renderDistance: 20 })
+    runtime.updateSettings({ fieldOfView: 90, masterVolume: 0.5, mouseSensitivity: 2, renderDistance: 20, uiScale: 1 })
 
     runtime.openSettings()
     expect(host.querySelector<HTMLInputElement>('[data-setting="fieldOfView"]')?.value).toBe('90')
     expect(host.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.value).toBe('20')
+  })
+
+  it('applies valid UI scale updates to every owned surface and rejects values outside its range', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const changed = runtime.updateSettings({ ...DEFAULT_UI_SETTINGS, uiScale: 1.4 })
+    expect(Result.isSuccess(changed)).toBe(true)
+    expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('1.4')
+    expect(host.querySelector('[data-mx-ui="hud"]')?.parentElement?.style.getPropertyValue('zoom')).toBe('1.4')
+    expect(host.querySelector('[data-mx-ui="time-cue"]')?.closest('[data-mx-ui="mount-root"]')).not.toBeNull()
+
+    fc.assert(
+      fc.property(fc.integer({ min: 75, max: 150 }), (hundredths) => {
+        const scale = hundredths / 100
+        const result = runtime.updateSettings({ ...DEFAULT_UI_SETTINGS, uiScale: scale })
+        expect(Result.isSuccess(result)).toBe(true)
+        expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe(String(scale))
+      }),
+      { numRuns: 76 },
+    )
+
+    const atMaximum = runtime.updateSettings({ ...DEFAULT_UI_SETTINGS, uiScale: 1.5 })
+    expect(Result.isSuccess(atMaximum)).toBe(true)
+    expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('1.5')
+
+    const rejected = runtime.updateSettings({ ...DEFAULT_UI_SETTINGS, uiScale: 1.5001 })
+    expect(Result.isFailure(rejected)).toBe(true)
+    expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('1.5')
+    expect(Result.isSuccess(runtime.updateSettings({ ...DEFAULT_UI_SETTINGS, uiScale: 0.75 }))).toBe(true)
+    expect(Result.isFailure(runtime.updateSettings({ ...DEFAULT_UI_SETTINGS, uiScale: 0.7499 }))).toBe(true)
+    expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('0.75')
+  })
+
+  it('routes a host hit notification through the mounted crosshair, resetting on the next frame', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    runtime.updateCrosshair({ breakProgress: 0.5, hit: false })
+    runtime.notifyHit()
+    await Effect.runPromise(runtime.start)
+
+    const crosshair = host.querySelector('[data-mx-ui="crosshair"]')
+    expect(crosshair?.getAttribute('data-crosshair-hit')).toBe('')
+    runtime.updateCrosshair({ breakProgress: 0.5, hit: false })
+    expect(crosshair?.hasAttribute('data-crosshair-hit')).toBe(false)
+
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (hit, breakProgress) => {
+          runtime.updateCrosshair({ breakProgress, hit })
+          runtime.notifyHit()
+          expect(crosshair?.getAttribute('data-crosshair-hit')).toBe('')
+          runtime.updateCrosshair({ breakProgress, hit: false })
+          expect(crosshair?.hasAttribute('data-crosshair-hit')).toBe(false)
+        },
+      ),
+      { numRuns: 50 },
+    )
+  })
+
+  it('property: updateHud projects each legal health boundary to death state in the mounted DOM', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 20 }), (healthPoints) => {
+        const vitals = Schema.decodeUnknownSync(VitalsSchema)({
+          ...SPAWN_VITALS,
+          healthPoints,
+        })
+        const model = projectHudViewModel(vitals, [], { selectedHotbarSlot: 0 })
+        runtime.updateHud(model)
+        expect(host.querySelector('[data-mx-ui="hud"]')?.hasAttribute('data-dead')).toBe(healthPoints === 0)
+        expect(host.querySelector('[data-mx-ui="death"]')?.hasAttribute('hidden')).toBe(healthPoints !== 0)
+      }),
+      { numRuns: 21 },
+    )
   })
 
   it('rejects stop when tearing down the previous mount throws', async () => {

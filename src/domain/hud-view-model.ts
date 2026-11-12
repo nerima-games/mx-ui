@@ -1,6 +1,10 @@
 /** Project owner supplied game state into UI-ready HUD values. */
 
 import {
+  type HudPresentationSnapshot,
+  hudPresentationView,
+} from './hud-presentation.js'
+import {
   type InventoryCarriedSlot,
   type Vitals,
   clampHotbarIndex,
@@ -51,6 +55,7 @@ type SlotViewOptions = Readonly<{
 type HudViewModelOptions = Readonly<{
   readonly selectedHotbarSlot: number
   readonly itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
+  readonly presentation?: HudPresentationSnapshot | undefined
 }>
 
 export type HudViewModel = {
@@ -60,6 +65,7 @@ export type HudViewModel = {
   readonly experiencePercent: number
   readonly hotbar: ReadonlyArray<SlotView>
   readonly dead: boolean
+  readonly presentation?: ReturnType<typeof hudPresentationView>
 }
 
 /** Split owner supplied points into full, half, and empty icons. */
@@ -179,12 +185,12 @@ export const hudViewModel = (
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot>,
   selection: number | HudViewModelOptions,
 ): HudViewModel => {
-  const { itemDisplayNameOptions, selectedHotbarSlot } = hudOptionsOf(selection)
+  const { itemDisplayNameOptions, presentation, selectedHotbarSlot } = hudOptionsOf(selection)
   const view = vitalsView(vitals)
   const selectedIndex = clampHotbarIndex(selectedHotbarSlot)
   const slotOptions: SlotViewOptions = { itemDisplayNameOptions, selectedIndex }
 
-  return {
+  const model: HudViewModel = {
     dead: isDead(vitals),
     experienceLevelLabel: String(view.experienceLevel),
     experiencePercent: Math.floor(view.experienceProgress * FULL_PERCENT),
@@ -192,4 +198,9 @@ export const hudViewModel = (
     hotbar: hotbarSlots.map((slot, index) => slotView(slot, index, slotOptions)),
     shanks: iconRow(view.hungerPoints, view.maxHungerPoints),
   }
+
+  if (typeof presentation !== 'undefined') {
+    return { ...model, presentation: hudPresentationView(presentation) }
+  }
+  return model
 }

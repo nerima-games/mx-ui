@@ -1,221 +1,265 @@
-/**
- * A heart or a shank — and the reason it is two elements rather than one.
- *
- * ---------------------------------------------------------------------------
- * G3 is not satisfiable by an attribute
- * ---------------------------------------------------------------------------
- *
- * `domain/palette.ts` G3: 「NO PAIR IS CARRIED BY HUE ALONE. Every critical pair
- * also declares a non-colour channel — shape, outline, bar length, border
- * weight, position or a numeral — and `surveyPalette` refuses a pair that
- * declares none」. `heart full / heart empty` declares `['shape', 'position']`,
- * and `heart full / shank full` declares the same, with a note that the pair is
- * 49 units and 1.21:1 apart so 「The three icon shapes are not decoration here;
- * they are most of the signal」.
- *
- * A renderer that drew one glyph and recoloured it would satisfy G2's numbers
- * and quietly delete G3 — the declaration in `domain/palette.ts` would still say
- * "shape", and nothing would be false except the screen. Worse, the reference's
- * decision to leave the DOM HUD UN-corrected (`<reference-impl>/index.html:416`,
- * 「the HUD already carries icon/shape/numeric redundancy」) is underwritten by
- * that redundancy existing. Deleting it here invalidates a choice made in
- * another repository.
- *
- * So an icon is a HOLLOW glyph with a FILLED glyph clipped over it:
- *
- *     ♡  in ICON_EMPTY, always drawn, always full width      ← shape + position
- *     ♥  in HEART, clipped to 100% / 50% / 0%                ← shape + length
- *
- * which gives three visibly different icons under a greyscale print, let alone
- * under dichromacy, and gives them without any per-frame colour write: the
- * colours are set once, and a state change moves the clip.
- *
- * The half state is the one that forces this shape. DN-UI-6 requires that 19
- * health reads as nine full hearts and one HALF; there is no half-heart
- * character to switch to, and 「an icon is full at 2 points, half at exactly 1」
- * is not expressible by recolouring. A 50% clip is exactly expressible.
- */
+/** A health or hunger icon backed by the generated HUD asset set. */
+
 import {
+  type StyleCell,
   type AttributeCell,
-  type PercentCell,
   attributeCell,
-  percentCell,
+  styleCell,
   writeAttribute,
   writeHidden,
-  writePercent,
+  writeStyle,
 } from './dom-write.js'
 import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
 import type { DomElement, DomElementFactory } from './dom-surface.js'
-import type { IconState } from '../domain/hud-view-model.js'
-import { PALETTE_VAR } from './palette-css.js'
+import { type HudIconName, hudIconDataUri } from './hud-icons.generated.js'
+import { type IconState } from '../domain/hud-view-model.js'
+import { PALETTE_VAR, type PaletteTokenName } from './palette-css.js'
 
-/** Which row an icon belongs to. Selects the glyph pair and the fill token. */
 export type IconKind = 'heart' | 'shank'
+type HealthCondition = 'poison' | 'wither'
+type FilledIconState = Exclude<IconState, 'empty'>
 
-/**
- * The glyphs.
- *
- * A hollow/solid PAIR per kind, and two pairs that are not each other's
- * outlines: `♡ ♥` against `○ ●`. That is the `shape` channel `heart full /
- * shank full` declares, and the reason it is declared — those two colours are
- * separated by chroma, which is the channel dichromacy compresses hardest.
- */
-const GLYPHS: Readonly<Record<IconKind, { readonly hollow: string; readonly solid: string }>> = {
-  heart: { hollow: '♡', solid: '♥' },
-  shank: { hollow: '○', solid: '●' },
-}
-
-const FILL_TOKEN: Readonly<Record<IconKind, string>> = {
-  heart: PALETTE_VAR.heart,
-  shank: PALETTE_VAR.shank,
-}
-
-/**
- * What a row of these icons IS, in words.
- *
- * The glyphs are the whole content of the vitals display, and they are `♡` and
- * `○` — characters a screen reader announces as "white heart suit" and "white
- * circle", ten and ten of them in a row, with nothing anywhere saying which row
- * is health and which is hunger. A player using a screen reader can hear that
- * something changed and cannot hear whether they are about to starve or about to
- * die.
- *
- * The reference asserted exactly this from the browser side —
- * `<reference-impl>/e2e/ui/hud.e2e.ts:65-66` locates the two displays by
- * `getByLabel('Health')` and `getByLabel('Hunger')` — and it is the one claim in
- * the demoted E2E set that mx-ui could be asked and answered "no". The names are
- * static, so they cost one `setAttribute` each at mount and nothing per frame.
- */
-export const ICON_ROW_LABEL: Readonly<Record<IconKind, string>> = {
+const ICON_ROW_LABELS: Readonly<Record<IconKind, string>> = {
   heart: translateUiMessage(DEFAULT_UI_LANGUAGE, 'hud.health'),
   shank: translateUiMessage(DEFAULT_UI_LANGUAGE, 'hud.hunger'),
 }
+
+export const ICON_ROW_LABEL: Readonly<Record<IconKind, string>> = ICON_ROW_LABELS
 
 export const ICON_ROW_MESSAGE_KEY: Readonly<Record<IconKind, UiMessageKey>> = {
   heart: 'hud.health',
   shank: 'hud.hunger',
 }
 
-const FILL_PERCENT: Readonly<Record<IconState, number>> = {
-  empty: 0,
-  full: 100,
-  half: 50,
+const DEFAULT_ICON: Readonly<Record<IconKind, Readonly<Record<IconState, HudIconName>>>> = {
+  heart: {
+    empty: 'health-empty',
+    full: 'health-full',
+    half: 'health-half',
+  },
+  shank: {
+    empty: 'hunger-empty',
+    full: 'hunger-full',
+    half: 'hunger-half',
+  },
+}
+
+const CONDITION_ICON: Readonly<Record<HealthCondition, Readonly<Record<FilledIconState, HudIconName>>>> = {
+  poison: {
+    full: 'poison-full',
+    half: 'poison-half',
+  },
+  wither: {
+    full: 'wither-full',
+    half: 'wither-half',
+  },
+}
+
+const iconName = (
+  kind: IconKind,
+  state: IconState,
+  healthCondition?: HealthCondition,
+): HudIconName => {
+  if (kind === 'heart' && state !== 'empty' && typeof healthCondition !== 'undefined') {
+    return CONDITION_ICON[healthCondition][state]
+  }
+  return DEFAULT_ICON[kind][state]
+}
+
+const iconPaletteToken = (
+  kind: IconKind,
+  state: IconState,
+  healthCondition?: HealthCondition,
+): PaletteTokenName => {
+  if (kind === 'heart' && state !== 'empty' && typeof healthCondition !== 'undefined') {
+    if (healthCondition === 'poison') {
+      return 'statusAlert'
+    }
+    return 'inkMuted'
+  }
+  if (state === 'empty') {
+    return 'iconEmpty'
+  }
+  if (kind === 'heart') {
+    return 'heart'
+  }
+  return 'shank'
+}
+
+const iconMaskSource = (name: HudIconName): string => `url("${hudIconDataUri(name)}")`
+
+const configureIconArt = (art: DomElement): void => {
+  art.setAttribute('data-mx-ui', 'icon-art')
+  art.setAttribute('aria-hidden', 'true')
+  art.style.setProperty('display', 'inline-block')
+  art.style.setProperty('height', '32px')
+  art.style.setProperty('image-rendering', 'pixelated')
+  art.style.setProperty('line-height', '0')
+  art.style.setProperty('position', 'relative')
+  art.style.setProperty('width', '32px')
+}
+
+const configureMaskLayer = (layer: DomElement, name: HudIconName, color: string): void => {
+  layer.setAttribute('aria-hidden', 'true')
+  layer.style.setProperty('background-color', color)
+  layer.style.setProperty('display', 'inline-block')
+  layer.style.setProperty('height', '32px')
+  layer.style.setProperty('image-rendering', 'pixelated')
+  layer.style.setProperty('inset', '0')
+  layer.style.setProperty('mask-image', iconMaskSource(name))
+  layer.style.setProperty('mask-mode', 'alpha')
+  layer.style.setProperty('mask-position', 'center')
+  layer.style.setProperty('mask-repeat', 'no-repeat')
+  layer.style.setProperty('mask-size', 'contain')
+  layer.style.setProperty('position', 'absolute')
+  layer.style.setProperty('width', '32px')
 }
 
 export type IconElement = {
+  readonly kind: IconKind
   readonly root: DomElement
+  readonly art: DomElement
   readonly stateFlag: AttributeCell
   readonly hiddenFlag: AttributeCell
-  readonly fillWidth: PercentCell
-  // Not optional: `exactOptionalPropertyTypes` forbids assigning `undefined`
-  // To an optional property, and `writeIconState` needs to CLEAR this field,
-  // Not just ever leave it unset.
-  previous: IconState | undefined
+  readonly artNameFlag: AttributeCell
+  readonly artSourceFlag: AttributeCell
+  readonly artMaskFlag: StyleCell
+  readonly artColorFlag: StyleCell
+  readonly artVisibilityFlag: StyleCell
+  previous: IconState | null
+  previousCondition: HealthCondition | null
+  previousArt: HudIconName | null
+  previousPaletteToken: PaletteTokenName | null
 }
 
-type IconElementCells = {
-  readonly root: DomElement
-  readonly stateFlag: AttributeCell
-  readonly hiddenFlag: AttributeCell
-  readonly fillWidth: PercentCell
-}
-
-/** `previous` starts absent by omission — see `writeIconState` below. */
-const buildIconElement = (cells: IconElementCells, previous?: IconState): IconElement => ({
-  ...cells,
-  previous,
-})
-
-const buildRootElement = (factory: DomElementFactory, kind: IconKind): DomElement => {
+const createIconRoot = (factory: DomElementFactory, kind: IconKind): DomElement => {
   const root = factory.createElement('span')
   root.setAttribute('data-mx-ui', 'icon')
   root.setAttribute('data-icon', kind)
-  root.style.setProperty('position', 'relative')
   root.style.setProperty('display', 'inline-block')
+  root.style.setProperty('line-height', '0')
   return root
 }
 
-const appendHollowGlyph = (factory: DomElementFactory, root: DomElement, hollowGlyph: string): void => {
-  const hollow = factory.createElement('span')
-  hollow.setAttribute('data-mx-ui', 'icon-hollow')
-  hollow.textContent = hollowGlyph
-  hollow.style.setProperty('color', PALETTE_VAR.iconEmpty)
-  root.appendChild(hollow)
+const createIconArt = (
+  factory: DomElementFactory,
+  kind: IconKind,
+): Readonly<{
+  art: DomElement
+  artColorFlag: StyleCell
+  artMaskFlag: StyleCell
+  artVisibilityFlag: StyleCell
+  artNameFlag: AttributeCell
+  artSourceFlag: AttributeCell
+  initialArt: HudIconName
+}> => {
+  const art = factory.createElement('span')
+  configureIconArt(art)
+  const initialArt = DEFAULT_ICON[kind].empty
+  const outline = factory.createElement('span')
+  configureMaskLayer(outline, DEFAULT_ICON[kind].empty, PALETTE_VAR.iconEmpty)
+  const fill = factory.createElement('span')
+  configureMaskLayer(fill, initialArt, PALETTE_VAR.iconEmpty)
+  fill.style.setProperty('transform', 'scale(0.84)')
+  fill.style.setProperty('transform-origin', 'center')
+  art.appendChild(outline)
+  art.appendChild(fill)
+  const artNameFlag = attributeCell(art, 'data-hud-icon')
+  const artSourceFlag = attributeCell(art, 'src')
+  const artMaskFlag = styleCell(fill, 'mask-image')
+  const artColorFlag = styleCell(fill, 'background-color')
+  const artVisibilityFlag = styleCell(fill, 'display')
+  writeAttribute(artNameFlag, initialArt)
+  writeAttribute(artSourceFlag, hudIconDataUri(initialArt))
+  writeStyle(artColorFlag, PALETTE_VAR.iconEmpty)
+  writeStyle(artVisibilityFlag, 'none')
+  return {
+    art,
+    artColorFlag,
+    artMaskFlag,
+    artNameFlag,
+    artSourceFlag,
+    artVisibilityFlag,
+    initialArt,
+  }
 }
 
-// The clip. `overflow: hidden` on a positioned box whose width is the state,
-// With the solid glyph at full size inside it — so a half icon is half a
-// Glyph rather than a differently coloured one.
-const buildClipElement = (factory: DomElementFactory, kind: IconKind): DomElement => {
-  const clip = factory.createElement('span')
-  clip.setAttribute('data-mx-ui', 'icon-clip')
-  clip.style.setProperty('position', 'absolute')
-  clip.style.setProperty('left', '0')
-  clip.style.setProperty('top', '0')
-  clip.style.setProperty('overflow', 'hidden')
-  clip.style.setProperty('white-space', 'nowrap')
-  clip.style.setProperty('color', FILL_TOKEN[kind])
-  return clip
-}
+const buildIconElement = (factory: DomElementFactory, kind: IconKind): IconElement => {
+  const root = createIconRoot(factory, kind)
+  const {
+    art,
+    artColorFlag,
+    artMaskFlag,
+    artNameFlag,
+    artSourceFlag,
+    artVisibilityFlag,
+    initialArt,
+  } = createIconArt(factory, kind)
+  root.appendChild(art)
 
-const appendSolidGlyph = (factory: DomElementFactory, clip: DomElement, solidGlyph: string): void => {
-  const solid = factory.createElement('span')
-  solid.setAttribute('data-mx-ui', 'icon-solid')
-  solid.textContent = solidGlyph
-  clip.appendChild(solid)
-}
-
-/**
- * Set (or clear) the state attribute and the tracked previous state together,
- * so the two can never drift apart. Omitting `state` — rather than passing an
- * explicit "no state" literal — is what `retireIconElement` uses to clear both.
- */
-const writeIconState = (icon: IconElement, state?: IconState): void => {
-  icon.previous = state
-  writeAttribute(icon.stateFlag, state)
-}
-
-export const createIconElement = (factory: DomElementFactory, kind: IconKind): IconElement => {
-  const glyphs = GLYPHS[kind]
-  const root = buildRootElement(factory, kind)
-  appendHollowGlyph(factory, root, glyphs.hollow)
-  const clip = buildClipElement(factory, kind)
-  root.appendChild(clip)
-  appendSolidGlyph(factory, clip, glyphs.solid)
-
-  return buildIconElement({
-    fillWidth: percentCell(clip, 'width'),
+  return {
+    art,
+    artColorFlag,
+    artMaskFlag,
+    artNameFlag,
+    artSourceFlag,
+    artVisibilityFlag,
     hiddenFlag: attributeCell(root, 'hidden'),
+    kind,
+    previous: null,
+    previousArt: initialArt,
+    previousCondition: null,
+    previousPaletteToken: 'iconEmpty',
     root,
     stateFlag: attributeCell(root, 'data-icon-state'),
-  })
+  }
 }
 
-/**
- * An icon a shorter row no longer needs.
- *
- * Hidden rather than removed — see `application/hud-view.ts` on why the tree
- * built at mount is permanent — and diffed, so a row that has been the same
- * length for a thousand frames costs nothing for its surplus either.
- */
+export const createIconElement = (factory: DomElementFactory, kind: IconKind): IconElement =>
+  buildIconElement(factory, kind)
+
 export const retireIconElement = (icon: IconElement): void => {
   writeHidden(icon.hiddenFlag, true)
-  writeIconState(icon)
+  writeAttribute(icon.stateFlag)
+  icon.previous = null
+  icon.previousCondition = null
 }
 
-/**
- * Two writes on a state change, zero otherwise — and never a colour.
- *
- * `previous` is compared before either cell is touched, so an unchanged icon
- * costs one string comparison. A heart row is ten of those, and a hunger row is
- * ten more; on a frame where the player took no damage that is the entire cost
- * of the vitals block.
- */
-export const updateIconElement = (icon: IconElement, state: IconState): void => {
+const updateIconArt = (
+  icon: IconElement,
+  name: HudIconName,
+  paletteToken: PaletteTokenName,
+  state: IconState,
+): void => {
+  if (icon.previousArt !== name) {
+    icon.previousArt = name
+    writeAttribute(icon.artNameFlag, name)
+    writeAttribute(icon.artSourceFlag, hudIconDataUri(name))
+    writeStyle(icon.artMaskFlag, iconMaskSource(name))
+  }
+  if (icon.previousPaletteToken !== paletteToken) {
+    icon.previousPaletteToken = paletteToken
+    writeStyle(icon.artColorFlag, PALETTE_VAR[paletteToken])
+  }
+  writeStyle(icon.artVisibilityFlag, state === 'empty' ? 'none' : 'inline-block')
+}
+
+export const updateIconElement = (
+  icon: IconElement,
+  state: IconState,
+  healthCondition?: HealthCondition,
+): void => {
   writeHidden(icon.hiddenFlag, false)
-  if (icon.previous === state) {
+  const name = iconName(icon.kind, state, healthCondition)
+  if (
+    icon.previous === state &&
+    icon.previousCondition === (healthCondition ?? null) &&
+    icon.previousArt === name
+  ) {
     return
   }
-  writeIconState(icon, state)
-  writePercent(icon.fillWidth, FILL_PERCENT[state])
+  icon.previous = state
+  icon.previousCondition = healthCondition ?? null
+  writeAttribute(icon.stateFlag, state)
+  updateIconArt(icon, name, iconPaletteToken(icon.kind, state, healthCondition), state)
 }
