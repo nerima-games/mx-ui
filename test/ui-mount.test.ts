@@ -1216,6 +1216,36 @@ describe('UiMount', () => {
     expect(focusRingAt(0)?.hasAttribute('hidden')).toBe(false)
   })
 
+  it('restores hotbar focus and its HUD ring when the public inventory close is called', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+
+    const hotbarSlot = host.querySelector<HTMLElement>(
+      '[data-mx-ui="hud"] [data-focus-group="hotbar"][data-focus-index="4"]',
+    )
+    if (hotbarSlot === null) {
+      throw new Error('expected the fifth HUD hotbar slot')
+    }
+    const mounted = runtime.current()
+    if (typeof mounted === 'undefined') {
+      throw new Error('expected a mounted session')
+    }
+    mounted.hud.setKeyboardFocus(4)
+    hotbarSlot.focus()
+    expect(document.activeElement).toBe(hotbarSlot)
+
+    runtime.openInventory()
+    expect(runtime.moveFocus('right')).toBe(true)
+    expect(document.activeElement?.getAttribute('data-focus-index')).toBe('1')
+    runtime.closeInventory()
+
+    expect(document.activeElement).toBe(hotbarSlot)
+    expect(hotbarSlot.querySelector('[data-mx-ui="slot-focus-ring"]')?.hasAttribute('hidden')).toBe(false)
+    expect(hotbarSlot.getAttribute('tabindex')).toBe('0')
+  })
+
   it('routes focus through the crafting output using typed grid directions', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)

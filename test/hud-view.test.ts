@@ -266,6 +266,17 @@ describe('the HUD renderer applies the palette', () => {
     expect(shank?.children[0]?.attributes.get('data-hud-icon')).toBe('hunger-full')
     expect(heart?.children[0]?.attributes.get('src')).not.toBe(shank?.children[0]?.attributes.get('src'))
     expect(root.findAll('data-icon', 'shank')).toHaveLength(DEFAULT_MAX_HUNGER_POINTS / 2)
+
+    const halfHungerVitals = Schema.decodeUnknownSync(VitalsSchema)({
+      ...SPAWN_VITALS,
+      hungerPoints: 19,
+      saturation: 19,
+    })
+    view.render(hudViewModel(halfHungerVitals))
+    const halfShank = root.findAll('data-icon', 'shank').at(-1)?.children[0]
+    expect(halfShank?.attributes.get('data-hud-icon')).toBe('hunger-half')
+    expect(halfShank?.children[1]?.style.properties.get('mask-image')).toBe(`url("${hudIconDataUri('hunger-full')}")`)
+    expect(halfShank?.children[1]?.style.properties.get('clip-path')).toBe('inset(0 50% 0 0)')
   })
 })
 

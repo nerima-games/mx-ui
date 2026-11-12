@@ -697,6 +697,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       if (target?.isConnected === true) {
         target.focus()
       }
+      syncKeyboardFocus()
     },
     closeSettings: () => session.mounted?.overlays.closeSettings(),
     current: () => {
