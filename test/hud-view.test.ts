@@ -247,6 +247,9 @@ describe('the HUD renderer applies the palette', () => {
     const iconNames = hearts.map((icon) => icon.children[0]?.attributes.get('data-hud-icon'))
     expect(new Set(iconNames)).toStrictEqual(new Set(['health-full', 'health-half']))
     expect(hearts.at(-1)?.children[0]?.attributes.get('src')).toBe(hudIconDataUri('health-half'))
+    const halfFill = hearts.at(-1)?.children[0]?.children[1]
+    expect(halfFill?.style.properties.get('mask-image')).toBe(`url("${hudIconDataUri('health-full')}")`)
+    expect(halfFill?.style.properties.get('clip-path')).toBe('inset(0 50% 0 0)')
     expect(hearts.map((icon) => icon.attributes.get('data-icon-state'))).toStrictEqual([
       ...Array<string>(fullHeartCount - 1).fill('full'),
       'half',
@@ -311,7 +314,7 @@ describe('the HUD renderer is idempotent', () => {
       'attribute:data-icon-state',
       'attribute:data-hud-icon',
       'attribute:src',
-      'style:mask-image',
+      'style:clip-path',
     ])
     const hearts = root.findAll('data-icon', 'heart')
     expect(hearts[DEFAULT_MAX_HEALTH_POINTS / HEALTH_POINTS_PER_HEART - 1]?.attributes.get('data-icon-state')).toBe('half')
@@ -370,13 +373,19 @@ describe('supplemental HUD presentation surfaces', () => {
 
     view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, presentation))
     expect(root.find('data-icon', 'heart')?.children[0]?.attributes.get('data-hud-icon')).toBe('poison-full')
-    expect(root.findAll('data-icon', 'heart').at(-1)?.children[0]?.attributes.get('data-hud-icon')).toBe('poison-half')
+    const poisonHalf = root.findAll('data-icon', 'heart').at(-1)?.children[0]
+    expect(poisonHalf?.attributes.get('data-hud-icon')).toBe('poison-half')
+    expect(poisonHalf?.children[1]?.style.properties.get('mask-image')).toBe(`url("${hudIconDataUri('poison-full')}")`)
+    expect(poisonHalf?.children[1]?.style.properties.get('clip-path')).toBe('inset(0 50% 0 0)')
     const witherPresentation = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
       healthCondition: 'wither',
     })
     view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, witherPresentation))
     expect(root.find('data-icon', 'heart')?.children[0]?.attributes.get('data-hud-icon')).toBe('wither-full')
-    expect(root.findAll('data-icon', 'heart').at(-1)?.children[0]?.attributes.get('data-hud-icon')).toBe('wither-half')
+    const witherHalf = root.findAll('data-icon', 'heart').at(-1)?.children[0]
+    expect(witherHalf?.attributes.get('data-hud-icon')).toBe('wither-half')
+    expect(witherHalf?.children[1]?.style.properties.get('mask-image')).toBe(`url("${hudIconDataUri('wither-full')}")`)
+    expect(witherHalf?.children[1]?.style.properties.get('clip-path')).toBe('inset(0 50% 0 0)')
   })
 
   it('renders meters and the dusk warning from the supplied snapshot', () => {
@@ -388,6 +397,9 @@ describe('supplemental HUD presentation surfaces', () => {
     expect(root.find('data-mx-ui', 'armor-row')?.attributes.get('aria-label')).toBe('Armor')
     expect(root.findAll('data-mx-ui', 'armor-row')[0]?.findAll('data-mx-ui', 'hud-asset-icon')).toHaveLength(10)
     expect(root.find('data-mx-ui', 'oxygen-value')?.textContent).toBe('5 / 10')
+    const oxygenIcons = root.find('data-mx-ui', 'oxygen-row')?.findAll('data-mx-ui', 'hud-asset-icon')
+    expect(oxygenIcons?.[2]?.children[0]?.attributes.get('data-hud-icon')).toBe('oxygen-half')
+    expect(oxygenIcons?.[2]?.children[0]?.attributes.get('src')).toBe(hudIconDataUri('oxygen-half'))
     expect(root.find('data-mx-ui', 'time-cue')?.attributes.has('hidden')).toBe(false)
     expect(root.find('data-mx-ui', 'time-cue')?.find('data-hud-icon', 'time-dusk')).toBeDefined()
     expect(root.find('data-mx-ui', 'sunset-warning')?.find('data-hud-icon', 'sunset-warning')).toBeDefined()

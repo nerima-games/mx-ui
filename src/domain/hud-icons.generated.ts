@@ -18,6 +18,7 @@ export type HudIconName =
   | 'hunger-half'
   | 'oxygen-empty'
   | 'oxygen-full'
+  | 'oxygen-half'
   | 'poison-full'
   | 'poison-half'
   | 'sunset-warning'

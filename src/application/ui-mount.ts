@@ -443,12 +443,19 @@ type UiMountInventoryOperations = Readonly<{
   moveFocus: (direction: InventoryNavigationDirection) => boolean
   moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
   renderInventory: (view: InventoryView, focus?: boolean) => void
+  syncKeyboardFocus: () => void
 }>
 
 const createUiMountInventoryOperations = (
   options: UiMountOptions,
   session: UiMountSession,
 ): UiMountInventoryOperations => {
+  const syncKeyboardFocus = (): void => {
+    const focusedTarget = focusTargetForUiElement(options.root.ownerDocument.activeElement)
+    const hotbarIndex = focusedTarget?.group === 'hotbar' ? focusedTarget.index : undefined
+    session.mounted?.hud.setKeyboardFocus(hotbarIndex)
+  }
+
   const renderInventory = (view: InventoryView, focus = false): void => {
     const targets = inventoryTargets(session.inventoryModel)
     // Host-assembled models can have no navigable slot. Retain an inert target
@@ -464,6 +471,7 @@ const createUiMountInventoryOperations = (
       const root = options.root.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
       const target = inventoryFocusTarget(root, session.inventoryFocus)
       target?.focus()
+      syncKeyboardFocus()
     }
   }
 
@@ -485,7 +493,12 @@ const createUiMountInventoryOperations = (
     if (isInventoryFocusTarget(session, target)) {
       return moveInventoryFocus(direction)
     }
-    return moveFocusTarget(options.root, target, direction)
+    const moved = moveFocusTarget(options.root, target, direction)
+    if (!moved) {
+      return false
+    }
+    syncKeyboardFocus()
+    return true
   }
 
   const activateInventoryFocus = (kind: 'click' | 'shift-click' = 'click'): boolean => {
@@ -515,13 +528,26 @@ const createUiMountInventoryOperations = (
     return true
   }
 
-  return { activateInventoryFocus, dragInventorySlot, moveFocus, moveInventoryFocus, renderInventory }
+  return {
+    activateInventoryFocus,
+    dragInventorySlot,
+    moveFocus,
+    moveInventoryFocus,
+    renderInventory,
+    syncKeyboardFocus,
+  }
 }
 
 export const makeUiMount = (options: UiMountOptions): UiMount => {
   const { session, toastLifecycle } = createMountState(options)
-  const { activateInventoryFocus, dragInventorySlot, moveFocus, moveInventoryFocus, renderInventory } =
-    createUiMountInventoryOperations(options, session)
+  const {
+    activateInventoryFocus,
+    dragInventorySlot,
+    moveFocus,
+    moveInventoryFocus,
+    renderInventory,
+    syncKeyboardFocus,
+  } = createUiMountInventoryOperations(options, session)
 
   const unmount = (
     message = 'Failed to stop mx-ui',
@@ -585,6 +611,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       if (target?.isConnected === true) {
         target.focus()
       }
+      syncKeyboardFocus()
     }
     // No `if (session.inventoryOpen) return` guard here, unlike the public
     // `openInventory` member below: this closure's only real caller is

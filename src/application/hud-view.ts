@@ -51,16 +51,13 @@
  * `domain/modal-stack.ts` holds the decision; mc-render delivers the key; this
  * file draws the result.
  *
- * `setKeyboardFocus` is the same split applied one level down, and it is worth
- * being precise about because it looks like an exception and is not. The hotbar
- * IS focusable now — a roving `tabindex` makes it a single tab stop, which the
- * browser honours natively with no listener anywhere — and mx-ui draws the ring
- * out of `FOCUS_RING` / `FOCUS_RING_SHADOW`. What it does not do is take the
- * keystroke that moves focus, or watch for the focus event that would tell it the
- * player pressed Tab: neither operation is available on a generic `DomElement`.
- * A focus RING is a rendering concern; a focus
- * MOVE is an input one, and they were only ever the same thing because nobody
- * had separated them.
+ * `setKeyboardFocus` is the same split applied one level down. The hotbar IS
+ * focusable now — a roving `tabindex` makes it a single tab stop, which the
+ * browser honours natively — and mx-ui draws the ring out of `FOCUS_RING` /
+ * `FOCUS_RING_SHADOW`. `HudView` has no key or focus-event listener. The mount's
+ * typed `moveFocus` and `moveInventoryFocus` helpers do own their explicit DOM
+ * moves and synchronize the ring after them; native Tab and host-managed moves
+ * still need their input owner to call `setKeyboardFocus`.
  */
 import {
   type AttributeCell,
@@ -170,14 +167,12 @@ export type HudView = {
   /**
    * Say which hotbar slot the keyboard is on, or omit it for "not here".
    *
-   * THE SEAM, and the half of the focus ring that is not mx-ui's. mx-ui makes a
-   * slot focusable and decides what focus LOOKS like; it cannot move focus
-   * (`focus()` is not in `application/dom-surface.ts`) and cannot observe it
-   * (`addEventListener` is not, and must never be — DN-UI-4/DN-UI-13c). Both of
-   * those are input, and input is mc-render's (plan.md §2.3-2). So the input
-   * owner says where the keyboard went, exactly as it hands over a colour-vision
-   * mode (`applyColorVision`) and a motion preference (`setMotion`) rather than
-   * mx-ui reading either.
+   * THE SEAM: mx-ui draws the ring but does not observe native Tab or arbitrary
+   * host-managed focus changes (`addEventListener` is not, and must never be —
+   * DN-UI-4/DN-UI-13c). `UiMount` calls this after its explicit typed focus moves;
+   * the input owner reports any focus changes outside those helpers, just as it
+   * supplies a colour-vision mode (`applyColorVision`) and motion preference
+   * (`setMotion`).
    *
    * Separate from `render` for the same reason `setMotion` is: this is not a
    * projection of mc-sim's state, and threading it through `HudViewModel` would
@@ -187,12 +182,8 @@ export type HudView = {
    * `selectedHotbarIndex` goes through — a `9` or a `NaN` from across a boundary
    * moves the ring to a real slot rather than losing it (DN-UI-7a).
    *
-   * WHAT IS STILL OPEN, precisely: until the input owner calls this, a player who
-   * presses Tab lands on the default stop and sees the USER AGENT's focus ring
-   * rather than the palette's. That is not a hook with nothing behind it — the
-   * ring, the tokens and the tab stop are all real and all reachable — but it is
-   * the one thing this repository cannot close on its own, because closing it
-   * means noticing a keystroke.
+   * Native Tab focus still needs the input owner to call this, since the view
+   * cannot observe that key or focus event itself.
    */
   readonly setKeyboardFocus: (index?: number) => void
 }
@@ -419,7 +410,7 @@ const RESOURCE_ICON_NAMES: Readonly<
 > = {
   absorption: { empty: 'health-empty', full: 'absorption-full', half: 'absorption-half' },
   armor: { empty: 'armor-empty', full: 'armor-full', half: 'armor-half' },
-  oxygen: { empty: 'oxygen-empty', full: 'oxygen-full', half: 'oxygen-full' },
+  oxygen: { empty: 'oxygen-empty', full: 'oxygen-full', half: 'oxygen-half' },
 }
 
 const createHudAssetImage = (factory: DomElementFactory): DomElement => {

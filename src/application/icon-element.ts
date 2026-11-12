@@ -55,6 +55,9 @@ const CONDITION_ICON: Readonly<Record<HealthCondition, Readonly<Record<FilledIco
   },
 }
 
+const NO_ICON_CLIP = 'none'
+const HALF_ICON_CLIP = 'inset(0 50% 0 0)'
+
 const iconName = (
   kind: IconKind,
   state: IconState,
@@ -64,6 +67,26 @@ const iconName = (
     return CONDITION_ICON[healthCondition][state]
   }
   return DEFAULT_ICON[kind][state]
+}
+
+const fillMaskName = (
+  kind: IconKind,
+  state: IconState,
+  healthCondition?: HealthCondition,
+): HudIconName => {
+  if (state !== 'half') {
+    return iconName(kind, state, healthCondition)
+  }
+  if (kind === 'shank') {
+    return 'hunger-full'
+  }
+  if (healthCondition === 'poison') {
+    return 'poison-full'
+  }
+  if (healthCondition === 'wither') {
+    return 'wither-full'
+  }
+  return 'health-full'
 }
 
 const iconPaletteToken = (
@@ -125,6 +148,7 @@ export type IconElement = {
   readonly artSourceFlag: AttributeCell
   readonly artMaskFlag: StyleCell
   readonly artColorFlag: StyleCell
+  readonly artClipFlag: StyleCell
   readonly artVisibilityFlag: StyleCell
   previous: IconState | null
   previousCondition: HealthCondition | null
@@ -147,6 +171,7 @@ const createIconArt = (
 ): Readonly<{
   art: DomElement
   artColorFlag: StyleCell
+  artClipFlag: StyleCell
   artMaskFlag: StyleCell
   artVisibilityFlag: StyleCell
   artNameFlag: AttributeCell
@@ -168,13 +193,16 @@ const createIconArt = (
   const artSourceFlag = attributeCell(art, 'src')
   const artMaskFlag = styleCell(fill, 'mask-image')
   const artColorFlag = styleCell(fill, 'background-color')
+  const artClipFlag = styleCell(fill, 'clip-path')
   const artVisibilityFlag = styleCell(fill, 'display')
   writeAttribute(artNameFlag, initialArt)
   writeAttribute(artSourceFlag, hudIconDataUri(initialArt))
   writeStyle(artColorFlag, PALETTE_VAR.iconEmpty)
+  writeStyle(artClipFlag, NO_ICON_CLIP)
   writeStyle(artVisibilityFlag, 'none')
   return {
     art,
+    artClipFlag,
     artColorFlag,
     artMaskFlag,
     artNameFlag,
@@ -188,6 +216,7 @@ const buildIconElement = (factory: DomElementFactory, kind: IconKind): IconEleme
   const root = createIconRoot(factory, kind)
   const {
     art,
+    artClipFlag,
     artColorFlag,
     artMaskFlag,
     artNameFlag,
@@ -199,6 +228,7 @@ const buildIconElement = (factory: DomElementFactory, kind: IconKind): IconEleme
 
   return {
     art,
+    artClipFlag,
     artColorFlag,
     artMaskFlag,
     artNameFlag,
@@ -228,6 +258,7 @@ export const retireIconElement = (icon: IconElement): void => {
 const updateIconArt = (
   icon: IconElement,
   name: HudIconName,
+  maskName: HudIconName,
   paletteToken: PaletteTokenName,
   state: IconState,
 ): void => {
@@ -235,12 +266,13 @@ const updateIconArt = (
     icon.previousArt = name
     writeAttribute(icon.artNameFlag, name)
     writeAttribute(icon.artSourceFlag, hudIconDataUri(name))
-    writeStyle(icon.artMaskFlag, iconMaskSource(name))
+    writeStyle(icon.artMaskFlag, iconMaskSource(maskName))
   }
   if (icon.previousPaletteToken !== paletteToken) {
     icon.previousPaletteToken = paletteToken
     writeStyle(icon.artColorFlag, PALETTE_VAR[paletteToken])
   }
+  writeStyle(icon.artClipFlag, state === 'half' ? HALF_ICON_CLIP : NO_ICON_CLIP)
   writeStyle(icon.artVisibilityFlag, state === 'empty' ? 'none' : 'inline-block')
 }
 
@@ -261,5 +293,11 @@ export const updateIconElement = (
   icon.previous = state
   icon.previousCondition = healthCondition ?? null
   writeAttribute(icon.stateFlag, state)
-  updateIconArt(icon, name, iconPaletteToken(icon.kind, state, healthCondition), state)
+  updateIconArt(
+    icon,
+    name,
+    fillMaskName(icon.kind, state, healthCondition),
+    iconPaletteToken(icon.kind, state, healthCondition),
+    state,
+  )
 }

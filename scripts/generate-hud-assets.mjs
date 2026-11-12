@@ -38,11 +38,20 @@ const armorSvg = ({ fill, light, isHalf = false, empty = false }) => {
   return iconSvg(isHalf ? `${emptyShape}${half(filledShape)}` : filledShape)
 }
 
-const oxygenSvg = (empty = false) => {
-  const fill = empty ? '#26343f' : '#76d9e6'
-  const edge = empty ? '#a0b5bd' : '#173b55'
-  const glint = empty ? '#647781' : '#e9ffff'
-  return iconSvg(`<g stroke="${edge}" stroke-width="1.6"><circle cx="10" cy="17" r="6" fill="${fill}"/><circle cx="21" cy="13" r="5" fill="${fill}"/><circle cx="21" cy="23" r="3.2" fill="${fill}"/></g><path d="M7.5 14.5a2.5 2.5 0 0 1 3-1M19 10.5a2 2 0 0 1 2.5-.3" fill="none" stroke="${glint}" stroke-width="1.5"/>`)
+const oxygenArtwork = (fill, edge, glint) =>
+  `<g stroke="${edge}" stroke-width="1.6"><circle cx="10" cy="17" r="6" fill="${fill}"/><circle cx="21" cy="13" r="5" fill="${fill}"/><circle cx="21" cy="23" r="3.2" fill="${fill}"/></g><path d="M7.5 14.5a2.5 2.5 0 0 1 3-1M19 10.5a2 2 0 0 1 2.5-.3" fill="none" stroke="${glint}" stroke-width="1.5"/>`
+
+const oxygenSvg = (empty = false, isHalf = false) => {
+  const filled = oxygenArtwork('#76d9e6', '#173b55', '#e9ffff')
+  if (empty) {
+    return iconSvg(oxygenArtwork('#26343f', '#a0b5bd', '#647781'))
+  }
+  if (!isHalf) {
+    return iconSvg(filled)
+  }
+  const emptyBubbles = oxygenArtwork('#26343f', '#a0b5bd', '#647781')
+  const leftHalfClip = '<defs><clipPath id="oxygen-left-half"><rect x="0" y="0" width="16" height="32"/></clipPath></defs>'
+  return iconSvg(`${emptyBubbles}${leftHalfClip}<g clip-path="url(#oxygen-left-half)">${filled}</g>`)
 }
 
 const icons = [
@@ -62,6 +71,7 @@ const icons = [
   { name: 'armor-half', description: 'Half-filled blue-steel shield.', svg: armorSvg({ fill: '#729bb0', light: '#d5f0f2', isHalf: true }) },
   { name: 'armor-empty', description: 'Outlined empty shield.', svg: armorSvg({ empty: true }) },
   { name: 'oxygen-full', description: 'Three filled air bubbles.', svg: oxygenSvg() },
+  { name: 'oxygen-half', description: 'Three half-filled air bubbles.', svg: oxygenSvg(false, true) },
   { name: 'oxygen-empty', description: 'Three outlined air bubbles.', svg: oxygenSvg(true) },
   { name: 'effect-positive', description: 'Leaf and rising mark for a helpful effect.', svg: iconSvg('<path d="M6 22c1-9 8-15 20-15-1 12-7 19-17 18" fill="#83cf76" stroke="#264d46" stroke-width="2"/><path d="M8 25 21 11m-7 8-1-5m5 1 5-1" fill="none" stroke="#e5ffd0" stroke-width="1.7"/>') },
   { name: 'effect-negative', description: 'Jagged spark for a harmful effect.', svg: iconSvg('<path d="m18 2-3 10H7l7 5-3 13 14-18h-8l3-10Z" fill="#e77668" stroke="#522d3c" stroke-width="2"/><path d="m16 14-3 2 3 1-1 5 6-8h-4l1-3Z" fill="#ffe1a0"/>') },

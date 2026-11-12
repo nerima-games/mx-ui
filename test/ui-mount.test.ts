@@ -1196,15 +1196,24 @@ describe('UiMount', () => {
         index: active.getAttribute('data-focus-index'),
       }
     }
+    const focusRingAt = (index: number) =>
+      host.querySelector<HTMLElement>(
+        `[data-focus-group="hotbar"][data-focus-index="${String(index)}"] [data-mx-ui="slot-focus-ring"]`,
+      )
 
+    expect(focusRingAt(0)?.hasAttribute('hidden')).toBe(false)
     expect(runtime.moveFocus('right')).toBe(true)
     expect(currentTarget()).toStrictEqual({ group: 'hotbar', index: '1' })
+    expect(focusRingAt(1)?.hasAttribute('hidden')).toBe(false)
+    expect(focusRingAt(0)?.hasAttribute('hidden')).toBe(true)
     expect(runtime.moveFocus('down')).toBe(true)
     expect(currentTarget()).toStrictEqual({ group: 'main', index: '1' })
+    expect(focusRingAt(1)?.hasAttribute('hidden')).toBe(true)
     expect(runtime.moveFocus('left')).toBe(true)
     expect(currentTarget()).toStrictEqual({ group: 'main', index: '0' })
     expect(runtime.moveFocus('up')).toBe(true)
     expect(currentTarget()).toStrictEqual({ group: 'hotbar', index: '0' })
+    expect(focusRingAt(0)?.hasAttribute('hidden')).toBe(false)
   })
 
   it('routes focus through the crafting output using typed grid directions', async () => {

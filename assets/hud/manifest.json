@@ -90,6 +90,11 @@
       "description": "Three filled air bubbles."
     },
     {
+      "file": "oxygen-half.svg",
+      "name": "oxygen-half",
+      "description": "Three half-filled air bubbles."
+    },
+    {
       "file": "oxygen-empty.svg",
       "name": "oxygen-empty",
       "description": "Three outlined air bubbles."
