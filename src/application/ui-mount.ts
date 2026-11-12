@@ -452,8 +452,11 @@ const createUiMountInventoryOperations = (
 ): UiMountInventoryOperations => {
   const syncKeyboardFocus = (): void => {
     const focusedTarget = focusTargetForUiElement(options.root.ownerDocument.activeElement)
-    const hotbarIndex = focusedTarget?.group === 'hotbar' ? focusedTarget.index : undefined
-    session.mounted?.hud.setKeyboardFocus(hotbarIndex)
+    if (focusedTarget?.group === 'hotbar') {
+      session.mounted?.hud.setKeyboardFocus(focusedTarget.index)
+      return
+    }
+    session.mounted?.hud.setKeyboardFocus()
   }
 
   const renderInventory = (view: InventoryView, focus = false): void => {
@@ -634,6 +637,41 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     return { crosshair, handleInventoryKey, hud, inventory }
   }
 
+  const createMainMenu = (
+    document: Document,
+    ownedRoot: HTMLElement,
+    overlays: SessionOverlays,
+  ): MainMenuView => {
+    const mainMenu = createMainMenuView(
+      document,
+      ownedRoot,
+      buildMenuCallbacks(overlays, options.menuCallbacks),
+    )
+    mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
+    return mainMenu
+  }
+
+  const createMountedViews = (
+    document: Document,
+    ownedRoot: HTMLElement,
+    partial: PartialMount,
+  ): UiMountedViews => {
+    const { crosshair, handleInventoryKey, hud, inventory } = createBaseViews(document, ownedRoot)
+    partial.hud = hud
+    const achievementToast = createAchievementToastView(document, ownedRoot)
+    achievementToast.render()
+    const overlays = createSessionOverlays(document, ownedRoot, {
+      callbacks: options.settingsCallbacks,
+      delegateKeyDown: handleInventoryKey,
+      initialDebug: session.debugSnapshot,
+      initialSettings: session.settings,
+    })
+    partial.overlays = overlays
+    const mainMenu = createMainMenu(document, ownedRoot, overlays)
+    applyUiLanguage(ownedRoot, session.language)
+    return { achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot }
+  }
+
   const buildMountedViews = (): Effect.Effect<UiMountedViews, UiMountError> =>
     Effect.gen(function* run() {
       const { document, ownedRoot } = yield* requireOwnedRoot(options.root)
@@ -647,28 +685,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       }
       const mount = Effect.try({
         catch: (cause) => new UiMountError('Failed to mount mx-ui', { cause }),
-        try: () => {
-          const { crosshair, handleInventoryKey, hud, inventory } = createBaseViews(document, ownedRoot)
-          partial.hud = hud
-          const achievementToast = createAchievementToastView(document, ownedRoot)
-          achievementToast.render()
-          const overlays = createSessionOverlays(document, ownedRoot, {
-            callbacks: options.settingsCallbacks,
-            delegateKeyDown: handleInventoryKey,
-            initialDebug: session.debugSnapshot,
-            initialSettings: session.settings,
-          })
-          partial.overlays = overlays
-          const mainMenu = createMainMenuView(
-            document,
-            ownedRoot,
-            buildMenuCallbacks(overlays, options.menuCallbacks),
-          )
-          partial.mainMenu = mainMenu
-          mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
-          applyUiLanguage(ownedRoot, session.language)
-          return { achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot }
-        },
+        try: () => createMountedViews(document, ownedRoot, partial),
       })
       return yield* Effect.catch(mount, (mountError) =>
         Effect.andThen(

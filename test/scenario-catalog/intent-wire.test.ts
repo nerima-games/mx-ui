@@ -79,17 +79,21 @@ describe('scenario intent and view-model wiring', () => {
         runSync: Effect.runSync,
       }
       const mount = scenario.mount(context)
+      const { viewModel } = mount
       mountedScenarios += 1
       expect(host.childNodes.length, `${scenario.screen}/${scenario.id}`).toBeGreaterThan(0)
-      expect(mount.viewModel, `${scenario.screen}/${scenario.id}`).toBeTypeOf('function')
+      expect(viewModel).toBeTypeOf('function')
       if (scenario.id === 'hud-death-respawn') {
-        expect(mount.viewModel()).toMatchObject({
-          dead: true,
-          presentation: {
-            coordinates: '12.5 / 64.0 / -3.3',
-            deathCause: 'hud.death-cause.fall',
-          },
-        })
+        expect(viewModel).toBeTypeOf('function')
+        if (typeof viewModel === 'function') {
+          expect(viewModel()).toMatchObject({
+            dead: true,
+            presentation: {
+              coordinates: '12.5 / 64.0 / -3.3',
+              deathCause: 'hud.death-cause.fall',
+            },
+          })
+        }
       }
       mount.dispose()
     }

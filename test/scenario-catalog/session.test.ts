@@ -31,7 +31,7 @@ class SessionFakeInteractiveElement extends SessionFakeElement implements DomInt
     this.record('focus', 'focus', undefined)
   }
 
-  removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
+  override removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
     if (callback === null) {
       return
     }

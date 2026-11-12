@@ -1,8 +1,8 @@
 /** A health or hunger icon backed by the generated HUD asset set. */
 
 import {
-  type StyleCell,
   type AttributeCell,
+  type StyleCell,
   attributeCell,
   styleCell,
   writeAttribute,
@@ -10,10 +10,10 @@ import {
   writeStyle,
 } from './dom-write.js'
 import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
-import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { type DomElement, type DomElementFactory } from './dom-surface.js'
 import { type HudIconName, hudIconDataUri } from './hud-icons.generated.js'
-import { type IconState } from '../domain/hud-view-model.js'
 import { PALETTE_VAR, type PaletteTokenName } from './palette-css.js'
+import { type IconState } from '../domain/hud-view-model.js'
 
 export type IconKind = 'heart' | 'shank'
 type HealthCondition = 'poison' | 'wither'
@@ -122,6 +122,14 @@ const configureIconArt = (art: DomElement): void => {
   art.style.setProperty('width', '32px')
 }
 
+const configureMaskSource = (layer: DomElement, name: HudIconName): void => {
+  layer.style.setProperty('mask-image', iconMaskSource(name))
+  layer.style.setProperty('mask-mode', 'alpha')
+  layer.style.setProperty('mask-position', 'center')
+  layer.style.setProperty('mask-repeat', 'no-repeat')
+  layer.style.setProperty('mask-size', 'contain')
+}
+
 const configureMaskLayer = (layer: DomElement, name: HudIconName, color: string): void => {
   layer.setAttribute('aria-hidden', 'true')
   layer.style.setProperty('background-color', color)
@@ -129,11 +137,7 @@ const configureMaskLayer = (layer: DomElement, name: HudIconName, color: string)
   layer.style.setProperty('height', '32px')
   layer.style.setProperty('image-rendering', 'pixelated')
   layer.style.setProperty('inset', '0')
-  layer.style.setProperty('mask-image', iconMaskSource(name))
-  layer.style.setProperty('mask-mode', 'alpha')
-  layer.style.setProperty('mask-position', 'center')
-  layer.style.setProperty('mask-repeat', 'no-repeat')
-  layer.style.setProperty('mask-size', 'contain')
+  configureMaskSource(layer, name)
   layer.style.setProperty('position', 'absolute')
   layer.style.setProperty('width', '32px')
 }
@@ -165,51 +169,69 @@ const createIconRoot = (factory: DomElementFactory, kind: IconKind): DomElement 
   return root
 }
 
-const createIconArt = (
+const createMaskLayer = (
   factory: DomElementFactory,
+  name: HudIconName,
+  color: string,
+): DomElement => {
+  const layer = factory.createElement('span')
+  configureMaskLayer(layer, name, color)
+  return layer
+}
+
+type IconArtLayers = Readonly<{ fill: DomElement; initialArt: HudIconName }>
+
+const createIconArtLayers = (
+  factory: DomElementFactory,
+  art: DomElement,
   kind: IconKind,
-): Readonly<{
-  art: DomElement
+): IconArtLayers => {
+  const initialArt = DEFAULT_ICON[kind].empty
+  const outline = createMaskLayer(factory, initialArt, PALETTE_VAR.iconEmpty)
+  const fill = createMaskLayer(factory, initialArt, PALETTE_VAR.iconEmpty)
+  fill.style.setProperty('transform', 'scale(0.84)')
+  fill.style.setProperty('transform-origin', 'center')
+  art.appendChild(outline)
+  art.appendChild(fill)
+  return { fill, initialArt }
+}
+
+type IconArtCells = Readonly<{
   artColorFlag: StyleCell
   artClipFlag: StyleCell
   artMaskFlag: StyleCell
   artVisibilityFlag: StyleCell
   artNameFlag: AttributeCell
   artSourceFlag: AttributeCell
-  initialArt: HudIconName
-}> => {
+}>
+
+const createIconArtCells = (art: DomElement, fill: DomElement): IconArtCells => ({
+  artClipFlag: styleCell(fill, 'clip-path'),
+  artColorFlag: styleCell(fill, 'background-color'),
+  artMaskFlag: styleCell(fill, 'mask-image'),
+  artNameFlag: attributeCell(art, 'data-hud-icon'),
+  artSourceFlag: attributeCell(art, 'src'),
+  artVisibilityFlag: styleCell(fill, 'display'),
+})
+
+const initializeIconArtCells = (cells: IconArtCells, initialArt: HudIconName): void => {
+  writeAttribute(cells.artNameFlag, initialArt)
+  writeAttribute(cells.artSourceFlag, hudIconDataUri(initialArt))
+  writeStyle(cells.artColorFlag, PALETTE_VAR.iconEmpty)
+  writeStyle(cells.artClipFlag, NO_ICON_CLIP)
+  writeStyle(cells.artVisibilityFlag, 'none')
+}
+
+const createIconArt = (
+  factory: DomElementFactory,
+  kind: IconKind,
+): Readonly<IconArtCells & { art: DomElement; initialArt: HudIconName }> => {
   const art = factory.createElement('span')
   configureIconArt(art)
-  const initialArt = DEFAULT_ICON[kind].empty
-  const outline = factory.createElement('span')
-  configureMaskLayer(outline, DEFAULT_ICON[kind].empty, PALETTE_VAR.iconEmpty)
-  const fill = factory.createElement('span')
-  configureMaskLayer(fill, initialArt, PALETTE_VAR.iconEmpty)
-  fill.style.setProperty('transform', 'scale(0.84)')
-  fill.style.setProperty('transform-origin', 'center')
-  art.appendChild(outline)
-  art.appendChild(fill)
-  const artNameFlag = attributeCell(art, 'data-hud-icon')
-  const artSourceFlag = attributeCell(art, 'src')
-  const artMaskFlag = styleCell(fill, 'mask-image')
-  const artColorFlag = styleCell(fill, 'background-color')
-  const artClipFlag = styleCell(fill, 'clip-path')
-  const artVisibilityFlag = styleCell(fill, 'display')
-  writeAttribute(artNameFlag, initialArt)
-  writeAttribute(artSourceFlag, hudIconDataUri(initialArt))
-  writeStyle(artColorFlag, PALETTE_VAR.iconEmpty)
-  writeStyle(artClipFlag, NO_ICON_CLIP)
-  writeStyle(artVisibilityFlag, 'none')
-  return {
-    art,
-    artClipFlag,
-    artColorFlag,
-    artMaskFlag,
-    artNameFlag,
-    artSourceFlag,
-    artVisibilityFlag,
-    initialArt,
-  }
+  const { fill, initialArt } = createIconArtLayers(factory, art, kind)
+  const cells = createIconArtCells(art, fill)
+  initializeIconArtCells(cells, initialArt)
+  return { art, initialArt, ...cells }
 }
 
 const buildIconElement = (factory: DomElementFactory, kind: IconKind): IconElement => {
@@ -255,25 +277,51 @@ export const retireIconElement = (icon: IconElement): void => {
   icon.previousCondition = null
 }
 
-const updateIconArt = (
-  icon: IconElement,
-  name: HudIconName,
-  maskName: HudIconName,
-  paletteToken: PaletteTokenName,
-  state: IconState,
-): void => {
+const updateIconIdentity = (icon: IconElement, name: HudIconName, maskName: HudIconName): void => {
   if (icon.previousArt !== name) {
     icon.previousArt = name
     writeAttribute(icon.artNameFlag, name)
     writeAttribute(icon.artSourceFlag, hudIconDataUri(name))
     writeStyle(icon.artMaskFlag, iconMaskSource(maskName))
   }
+}
+
+const updateIconPalette = (icon: IconElement, paletteToken: PaletteTokenName): void => {
   if (icon.previousPaletteToken !== paletteToken) {
     icon.previousPaletteToken = paletteToken
     writeStyle(icon.artColorFlag, PALETTE_VAR[paletteToken])
   }
-  writeStyle(icon.artClipFlag, state === 'half' ? HALF_ICON_CLIP : NO_ICON_CLIP)
-  writeStyle(icon.artVisibilityFlag, state === 'empty' ? 'none' : 'inline-block')
+}
+
+const updateIconClip = (icon: IconElement, state: IconState): void => {
+  if (state === 'half') {
+    writeStyle(icon.artClipFlag, HALF_ICON_CLIP)
+    return
+  }
+  writeStyle(icon.artClipFlag, NO_ICON_CLIP)
+}
+
+const updateIconVisibility = (icon: IconElement, state: IconState): void => {
+  if (state === 'empty') {
+    writeStyle(icon.artVisibilityFlag, 'none')
+    return
+  }
+  writeStyle(icon.artVisibilityFlag, 'inline-block')
+}
+
+type IconArtUpdate = Readonly<{
+  icon: IconElement
+  name: HudIconName
+  maskName: HudIconName
+  paletteToken: PaletteTokenName
+  state: IconState
+}>
+
+const updateIconArt = (update: IconArtUpdate): void => {
+  updateIconIdentity(update.icon, update.name, update.maskName)
+  updateIconPalette(update.icon, update.paletteToken)
+  updateIconClip(update.icon, update.state)
+  updateIconVisibility(update.icon, update.state)
 }
 
 export const updateIconElement = (
@@ -293,11 +341,11 @@ export const updateIconElement = (
   icon.previous = state
   icon.previousCondition = healthCondition ?? null
   writeAttribute(icon.stateFlag, state)
-  updateIconArt(
+  updateIconArt({
     icon,
+    maskName: fillMaskName(icon.kind, state, healthCondition),
     name,
-    fillMaskName(icon.kind, state, healthCondition),
-    iconPaletteToken(icon.kind, state, healthCondition),
+    paletteToken: iconPaletteToken(icon.kind, state, healthCondition),
     state,
-  )
+  })
 }

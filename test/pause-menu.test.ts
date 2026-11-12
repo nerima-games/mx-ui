@@ -18,7 +18,7 @@ import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElem
 import { fakeDocument, fakeElement, FakeInteractiveElement, type FakeDocument, type FakeElement } from './fake-dom'
 
 class RemovableInteractiveElement extends FakeInteractiveElement {
-  removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
+  override removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
     if (callback === null) {
       return
     }

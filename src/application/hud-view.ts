@@ -75,7 +75,7 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
-import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
+import type { DomElement, DomElementFactory } from './dom-surface.js'
 import {
   HOTBAR_SLOT_COUNT,
   type HudViewModel,
@@ -830,24 +830,30 @@ const createHotbarSlots = (
   return hotbar
 }
 
+const configureHudRespawnButton = (
+  respawn: DomElement,
+  hasRespawn: boolean,
+): void => {
+  respawn.setAttribute('data-mx-ui', 'respawn')
+  respawn.setAttribute('type', 'button')
+  setLocalizedText(respawn, 'hud.respawn')
+  if (!hasRespawn) {
+    respawn.setAttribute('disabled', '')
+  }
+}
+
 const createHudRespawnButton = (
   factory: DomElementFactory,
   death: DomElement,
   onRespawn?: (() => void) | undefined,
 ): (() => void) | undefined => {
   const respawn = factory.createElement('button')
-  respawn.setAttribute('data-mx-ui', 'respawn')
-  respawn.setAttribute('type', 'button')
-  setLocalizedText(respawn, 'hud.respawn')
-  if (typeof onRespawn === 'undefined') {
-    respawn.setAttribute('disabled', '')
-  } else {
-    respawn.addEventListener('click', onRespawn)
-  }
+  configureHudRespawnButton(respawn, typeof onRespawn !== 'undefined')
   death.appendChild(respawn)
   if (typeof onRespawn === 'undefined') {
     return
   }
+  respawn.addEventListener('click', onRespawn)
   return () => respawn.removeEventListener?.('click', onRespawn)
 }
 
@@ -949,16 +955,33 @@ const createHudHotbarElements = (
   root: DomElement,
 ): ReadonlyArray<SlotElement> => createHotbarSlots(factory, createHotbarRow(factory, root))
 
-const buildHudElements = (
+type HudElementParts = Readonly<{
+  death: HudDeathElements
+  experience: HudExperienceElements
+  hotbar: ReadonlyArray<SlotElement>
+  supplemental: HudSupplementalElements
+  vitals: HudVitals
+}>
+
+const createHudElementParts = (
   factory: DomElementFactory,
+  root: DomElement,
   onRespawn?: (() => void) | undefined,
-): HudElements => {
-  const root = createHudRoot(factory)
+): HudElementParts => {
   const vitals = createHudVitals(factory, root)
   const supplemental = createHudSupplementalElements(factory, root)
   const experience = createHudExperience(factory, root)
   const hotbar = createHudHotbarElements(factory, root)
   const death = createHudDeathOverlay(factory, root, onRespawn)
+  return { death, experience, hotbar, supplemental, vitals }
+}
+
+const buildHudElements = (
+  factory: DomElementFactory,
+  onRespawn?: (() => void) | undefined,
+): HudElements => {
+  const root = createHudRoot(factory)
+  const { death, experience, hotbar, supplemental, vitals } = createHudElementParts(factory, root, onRespawn)
 
   const cells: HudCells = {
     ...supplemental,
