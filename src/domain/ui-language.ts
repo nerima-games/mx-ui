@@ -642,10 +642,11 @@ const INPUT_ACTION_MESSAGE_KEYS: Readonly<Record<string, UiMessageKey>> = {
 }
 
 export const inputActionMessageKey = (action: unknown): UiMessageKey => {
-  if (typeof action !== 'string') {
+  if (typeof action !== 'string' || !Object.hasOwn(INPUT_ACTION_MESSAGE_KEYS, action)) {
     return 'settings.action.unknown'
   }
-  return INPUT_ACTION_MESSAGE_KEYS[action] ?? 'settings.action.unknown'
+  // Object.hasOwn does not narrow the string-indexed Record's value type.
+  return Schema.decodeUnknownSync(literals(UI_MESSAGE_KEYS))(INPUT_ACTION_MESSAGE_KEYS[action])
 }
 
 export const ACHIEVEMENT_TITLES: Readonly<Record<AchievementId, Readonly<Record<UiLanguage, string>>>> = {

@@ -283,6 +283,10 @@ describe('UI language', () => {
     )
   })
 
+  it.each(['__proto__', 'constructor', 'toString'])('maps inherited input-action key %s to the unknown message', (action) => {
+    expect(inputActionMessageKey(action)).toBe('settings.action.unknown')
+  })
+
   it('updates achievement titles and dynamic text when a mounted root changes language', () => {
     const host = document.createElement('main')
     const achievement = document.createElement('span')
