@@ -352,7 +352,7 @@ The root barrel exports `HudPresentationSnapshot`, `HudPresentationSnapshotSchem
 | `armor` / `oxygen` | Integer points from 0 to 400 for `current`, and from 1 to 400 for `max`; `current <= max` | Derives full, half, and empty states in two-point units and displays the numeric current/max value. |
 | `healthCondition` | `'poison'` or `'wither'` | Selects the health-mark color treatment. |
 | `deathCause` | `'fall'`, `'lava'`, `'cactus'`, `'in_fire'`, `'on_fire'`, `'drowning'`, `'suffocation'`, `'starvation'`, `'mob'`, `'projectile'`, `'explosion'`, `'void'`, `'ender_pearl'`, `'poison'`, `'generic'`, or `'lightning'` | Maps to a message key rendered as a localized cause label while `HudViewModel.dead` is true. |
-| `position` | Finite `{ x, y, z }` coordinates | Formats each coordinate to one decimal place and shows them while `HudViewModel.dead` is true. |
+| `position` | Finite `{ xCoordinate, yCoordinate, zCoordinate }` coordinates | Formats each coordinate to one decimal place and shows them while `HudViewModel.dead` is true. |
 | `statusEffects` | Up to 40 `{ category, remainingSecs }` entries; category is `'positive'`, `'negative'`, or `'neutral'`; seconds are finite and greater than zero | Maps the category to a message key and icon, and rounds remaining seconds up. The renderer localizes the label. The host maps each effect to a category; the snapshot carries no effect name. |
 | `time` | `{ ticks, dayLengthTicks }`; `ticks` is a non-negative safe integer | Derives the day cue and sunset warning from simulation ticks. |
 
@@ -373,7 +373,7 @@ The host remains responsible for mapping authoritative game state into this inpu
 | モジュール | export | 種別 | 分類 |
 | --- | --- | --- | --- |
 | `application/dom-surface.ts` | `DomNode` / `DomStyle` / `DomElement` / `DomElementFactory` / `DomAttributeTarget` | type | **Provisional contract** (structural DOM boundary used to create child elements inside the host-provided root) |
-| `application/hud-view.ts` | `createHudView` / `HudView`（`render` / `setMotion` / `setKeyboardFocus`）/ `EXPERIENCE_TRANSITION_MS` | 関数 + type + 定数 | **契約(暫定)** |
+| `application/hud-view.ts` | `createHudView` / `HudView`（`render` / `setMotion` / `setKeyboardFocus` / `dispose`）/ `EXPERIENCE_TRANSITION_MS` | 関数 + type + 定数 | **契約(暫定)** |
 | `application/caption-view.ts` | `createCaptionView` / `CaptionView` | 関数 + type | **契約(暫定)** |
 | `application/inventory-view.ts` | `createInventoryView` / `InventoryView` | 関数 + type | **契約(暫定)** |
 | `application/save-indicator.ts` | `createSaveIndicator` / `SaveIndicator` / `SAVE_MESSAGES` / `SAVE_STATUS_GLYPH` / `SAVE_STATUS_LABEL` | 関数 + type + 定数 | **契約(暫定)** |
