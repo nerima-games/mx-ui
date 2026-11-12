@@ -130,7 +130,9 @@ export const HUD_ICON_SVG: Readonly<Record<HudIconName, string>> = {
 ${sortedIcons.map(({ name, svg }) => `  '${name}': ${JSON.stringify(svg)},`).join('\n')}
 }
 
-export const hudIconDataUri = (name: HudIconName): string =>
+type HudIconDataUri = \`data:image/svg+xml,\${string}\`
+
+export const hudIconDataUri = (name: HudIconName): HudIconDataUri =>
   \`data:image/svg+xml,\${encodeURIComponent(HUD_ICON_SVG[name])}\`
 `
 
