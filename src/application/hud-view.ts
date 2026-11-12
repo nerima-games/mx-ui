@@ -203,6 +203,7 @@ type HudCells = {
   readonly hotbar: ReadonlyArray<SlotElement>
   readonly deadFlag: AttributeCell
   readonly deathHidden: AttributeCell
+  readonly deathDisplay: StyleCell
   readonly deathCause: TextCell
   readonly deathCauseHidden: AttributeCell
   readonly deathCoordinates: TextCell
@@ -862,6 +863,7 @@ const createHudRespawnButton = (
 type HudDeathElements = {
   readonly deadFlag: AttributeCell
   readonly deathHidden: AttributeCell
+  readonly deathDisplay: StyleCell
   readonly cause: TextCell
   readonly causeHidden: AttributeCell
   readonly coordinates: TextCell
@@ -882,7 +884,7 @@ const createHudDeathLabel = (factory: DomElementFactory, death: DomElement): voi
 const configureHudDeathLayout = (death: DomElement): void => {
   death.style.setProperty('position', 'absolute')
   death.style.setProperty('inset', '0')
-  death.style.setProperty('display', 'grid')
+  death.style.setProperty('display', 'none')
   death.style.setProperty('align-content', 'center')
   death.style.setProperty('justify-items', 'center')
   death.style.setProperty('gap', '16px')
@@ -936,6 +938,7 @@ const createHudDeathOverlay = (
     coordinates: textCell(coordinates),
     coordinatesHidden: initialHiddenCell(coordinates),
     deadFlag: attributeCell(root, 'data-dead'),
+    deathDisplay: styleCell(death, 'display'),
     deathHidden,
   }
   if (typeof disposeRespawn === 'undefined') {
@@ -1007,6 +1010,7 @@ const buildHudElements = (
     deathCauseHidden: death.causeHidden,
     deathCoordinates: death.coordinates,
     deathCoordinatesHidden: death.coordinatesHidden,
+    deathDisplay: death.deathDisplay,
     deathHidden: death.deathHidden,
     experienceTransition: experience.experienceTransition,
     experienceWidth: experience.experienceWidth,
@@ -1043,15 +1047,24 @@ const renderHudSupplements = (factory: DomElementFactory, cells: HudCells, model
   renderHudSunsetWarning(cells.sunsetWarning, presentation)
 }
 
+const renderHudDeathState = (cells: HudCells, model: HudViewModel): void => {
+  writeAttribute(cells.deadFlag, presenceValue(model.dead))
+  if (model.dead) {
+    writeStyle(cells.deathDisplay, 'grid')
+  } else {
+    writeStyle(cells.deathDisplay, 'none')
+  }
+  writeHidden(cells.deathHidden, !model.dead)
+  renderDeathDetails(cells, model)
+}
+
 const renderHudFrame = (factory: DomElementFactory, cells: HudCells, model: HudViewModel): void => {
   renderHudVitals(factory, cells, model)
   renderHudSupplements(factory, cells, model)
   writeText(cells.levelText, model.experienceLevelLabel)
   writePercent(cells.experienceWidth, model.experiencePercent)
   renderHotbarSlots(cells.hotbar, model.hotbar)
-  writeAttribute(cells.deadFlag, presenceValue(model.dead))
-  writeHidden(cells.deathHidden, !model.dead)
-  renderDeathDetails(cells, model)
+  renderHudDeathState(cells, model)
 }
 
 /**

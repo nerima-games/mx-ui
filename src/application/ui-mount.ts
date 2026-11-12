@@ -172,23 +172,27 @@ const saveUiSettings = (
   mounted?.overlays.updateSettings(settings)
 }
 
+const applySessionUiScale = (
+  mounted: UiMountedViews | null,
+  input: unknown,
+): Result.Result<UiScale, Schema.SchemaError> => {
+  if (mounted === null) {
+    return decodeUiScale(input)
+  }
+  return applyUiScale(mounted.root.style, input)
+}
+
 const updateUiSettings = (
   session: UiMountSession,
   nextSettings: UiSettings,
 ): Result.Result<UiScale, Schema.SchemaError> => {
-  const decodedScale = decodeUiScale(nextSettings.uiScale)
-  if (Result.isFailure(decodedScale)) {
-    return decodedScale
-  }
   const { mounted } = session
-  if (mounted !== null) {
-    const appliedScale = applyUiScale(mounted.root.style, decodedScale.success)
-    if (Result.isFailure(appliedScale)) {
-      return appliedScale
-    }
+  const appliedScale = applySessionUiScale(mounted, nextSettings.uiScale)
+  if (Result.isFailure(appliedScale)) {
+    return appliedScale
   }
   saveUiSettings(session, nextSettings, mounted)
-  return decodedScale
+  return appliedScale
 }
 
 /** `document.activeElement` narrowed to something focus-restorable, or nothing. */

@@ -418,6 +418,19 @@ describe('supplemental HUD presentation surfaces', () => {
     expect(root.find('data-mx-ui', 'sunset-warning-label')?.textContent).toBe('Night in 30s')
   })
 
+  it('hides stale armor marks when the host lowers the armor maximum', () => {
+    const { root, view } = mount()
+    const smallerArmorMeter = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
+      armor: { current: 4, max: 10 },
+    })
+    view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, supplementalPresentation()))
+    view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, smallerArmorMeter))
+    const armorIcons = root.find('data-mx-ui', 'armor-row')?.findAll('data-mx-ui', 'hud-asset-icon')
+    expect(armorIcons).toHaveLength(10)
+    expect(armorIcons?.slice(0, 5).every((icon) => !icon.attributes.has('hidden'))).toBe(true)
+    expect(armorIcons?.slice(5).every((icon) => icon.attributes.has('hidden'))).toBe(true)
+  })
+
   it('renders localized effect categories and durations without exposing IDs', () => {
     const { root, view } = mount()
     view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, supplementalPresentation()))
@@ -440,6 +453,13 @@ describe('supplemental HUD presentation surfaces', () => {
     ])
     expect(effects[1]?.find('data-hud-icon', 'effect-negative')).toBeDefined()
     expect(effects.some((effect) => effect.textContent.includes('positive'))).toBe(false)
+
+    const oneEffect = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
+      statusEffects: [{ category: 'positive', remainingSecs: 5 }],
+    })
+    view.render(hudViewModel(damaged(19), emptyHotbar, 0, undefined, oneEffect))
+    expect(effects[0]?.attributes.has('hidden')).toBe(false)
+    expect(effects[1]?.attributes.has('hidden')).toBe(true)
   })
 
   it('renders the supplied cause and coordinates when the player is dead', () => {
@@ -465,6 +485,8 @@ describe('supplemental HUD presentation surfaces', () => {
     expect(root.find('data-mx-ui', 'status-effects')?.attributes.has('hidden')).toBe(true)
     expect(root.find('data-mx-ui', 'time-cue')?.attributes.has('hidden')).toBe(true)
     expect(root.find('data-mx-ui', 'sunset-warning')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('data-mx-ui', 'death')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('data-mx-ui', 'death')?.style.properties.get('display')).toBe('none')
   })
 })
 

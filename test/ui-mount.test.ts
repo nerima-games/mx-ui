@@ -709,6 +709,12 @@ describe('UiMount', () => {
 
     expect(runtime.moveInventoryFocus('right')).toBe(false)
     expect(runtime.activateInventoryFocus()).toBe(false)
+    const firstHotbarSlot = host.querySelector<HTMLElement>(
+      '[data-mx-ui="hud"] [data-mx-ui="slot"][data-slot-index="0"]',
+    )
+    firstHotbarSlot?.focus()
+    expect(runtime.moveFocus('left')).toBe(false)
+    expect(document.activeElement).toBe(firstHotbarSlot)
     runtime.openInventory()
 
     expect(runtime.moveFocus('right')).toBe(true)
@@ -1042,9 +1048,16 @@ describe('UiMount', () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const runtime = makeUiMount({ root: host })
+    const settings = runtime.updateSettings({
+      fieldOfView: 90,
+      masterVolume: 0.5,
+      mouseSensitivity: 2,
+      renderDistance: 20,
+      uiScale: 1.25,
+    })
+    expect(Result.isSuccess(settings)).toBe(true)
     await Effect.runPromise(runtime.start)
-
-    runtime.updateSettings({ fieldOfView: 90, masterVolume: 0.5, mouseSensitivity: 2, renderDistance: 20, uiScale: 1 })
+    expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('1.25')
 
     runtime.openSettings()
     expect(host.querySelector<HTMLInputElement>('[data-setting="fieldOfView"]')?.value).toBe('90')
@@ -1085,10 +1098,28 @@ describe('UiMount', () => {
     expect(runtime.current()?.root.style.getPropertyValue('zoom')).toBe('0.75')
   })
 
+  it('rejects an invalid initial UI scale and removes its owned mount root', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({
+      initialSettings: { ...DEFAULT_UI_SETTINGS, uiScale: 1.5001 },
+      root: host,
+    })
+
+    await expect(Effect.runPromise(runtime.start)).rejects.toMatchObject({
+      message: 'Invalid initial UI scale',
+      name: 'UiMountError',
+    })
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
   it('routes a host hit notification through the mounted crosshair, resetting on the next frame', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
     const runtime = makeUiMount({ root: host })
+    runtime.notifyHit()
+    runtime.updateCrosshair(undefined)
+    runtime.notifyHit()
     runtime.updateCrosshair({ breakProgress: 0.5, hit: false })
     runtime.notifyHit()
     await Effect.runPromise(runtime.start)
@@ -1096,6 +1127,9 @@ describe('UiMount', () => {
     const crosshair = host.querySelector('[data-mx-ui="crosshair"]')
     expect(crosshair?.getAttribute('data-crosshair-hit')).toBe('')
     runtime.updateCrosshair({ breakProgress: 0.5, hit: false })
+    expect(crosshair?.hasAttribute('data-crosshair-hit')).toBe(false)
+    runtime.updateCrosshair(undefined)
+    runtime.notifyHit()
     expect(crosshair?.hasAttribute('data-crosshair-hit')).toBe(false)
 
     fc.assert(
