@@ -36,6 +36,7 @@ import type {
   ColorVisionMode,
   FramesPerSecond,
   GpuTimeMilliseconds,
+  HudPresentationSnapshot,
   InventoryNavigationDirection,
   OnboardingCallbacks,
   OnboardingInput,
@@ -173,7 +174,7 @@ describe('public API surface', () => {
       expect(ui.UI_LANGUAGES).toStrictEqual(['en', 'ja'])
       expect(ui.UI_SCALE_MIN).toBe(0.75)
       expect(ui.UI_SCALE_MAX).toBe(1.5)
-      expect(ui.UI_TRANSLATION_KEY_COUNT).toBe(384)
+      expect(ui.UI_TRANSLATION_KEY_COUNT).toBe(415)
     }),
   )
 
@@ -275,6 +276,7 @@ describe('public API surface', () => {
       type Ui4Types = [
         UiLanguage,
         UiLanguageFailure,
+        HudPresentationSnapshot,
         ColorVisionMode,
         MotionSetting,
         MotionPreference,
@@ -288,6 +290,8 @@ describe('public API surface', () => {
 
       const moveFocus: UiMount['moveFocus'] = (_direction: InventoryNavigationDirection) => true
       expect(moveFocus('right')).toBe(true)
+      const notifyHit: UiMount['notifyHit'] = () => undefined
+      notifyHit()
     }),
   )
 
@@ -300,6 +304,8 @@ describe('public API surface', () => {
         'HOTBAR_SLOT_COUNT',
         'iconRow',
         'hudViewModel',
+        'HudPresentationSnapshotSchema',
+        'hudPresentationView',
         'spawnSnapshot',
         'emptyModalStack',
         'topOf',

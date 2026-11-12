@@ -103,7 +103,8 @@ const registerInvalidImportTest = (inputCase: InvalidImportCase): void => {
     await jsonField.fill(inputCase.input(base))
     await page.getByRole('button', { name: 'Import JSON' }).click()
 
-    const alert = page.getByRole('alert')
+    const alert = page.getByRole('alert').filter({ hasText: inputCase.alert })
+    await expect(alert).toHaveCount(1)
     await expect(alert).toBeVisible()
     await expect(alert).toHaveText(inputCase.alert)
     await expect(

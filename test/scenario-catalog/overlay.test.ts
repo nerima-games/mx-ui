@@ -121,6 +121,24 @@ describe('overlay scenario catalog', () => {
     }
   })
 
+  it('renders death cause and schema-validated coordinates in the registered HUD scenario', () => {
+    const definition = OVERLAY_SCENARIOS.find((item) => item.id === 'hud-death-respawn')
+    if (definition === undefined) {
+      throw new Error('missing death HUD scenario')
+    }
+    const factory = fakeDocument()
+    const mounted = definition.mount(contextFor(factory))
+    const root = fakeElement(mounted.root)
+    const deathCause = root.find('data-mx-ui', 'death-cause')
+    const deathCoordinates = root.find('data-mx-ui', 'death-coordinates')
+
+    expect(deathCause?.textContent).toBe('Cause: falling')
+    expect(deathCause?.attributes.has('hidden')).toBe(false)
+    expect(deathCoordinates?.textContent).toBe('Coordinates: 12.5 / 64.0 / -3.3')
+    expect(deathCoordinates?.attributes.has('hidden')).toBe(false)
+    mounted.dispose()
+  })
+
   it('shows rejected schema values as mounted decode-failure scenarios', () => {
     const cases = [
       ['hud', 'hud-vitals-decode-failure', 'boundary rejected'],

@@ -27,6 +27,7 @@
  * Plain `it`, not `it.effect`, per DN-UI-2 and `docs/testing.md` §3.
  */
 import { describe, expect, it } from 'vitest'
+import * as fc from 'fast-check'
 import {
   CROSSHAIR_PULSE_SECS,
   crosshairViewModel,
@@ -259,6 +260,43 @@ describe('the hit marker is a duration, not a timer (DN-UI-10)', () => {
     view.render(crosshairViewModel({ modals: ['inventory'], lastHitAtSecs: 0 }, 0))
     expect(root.attributes.has('hidden')).toBe(true)
     expect(root.listenersInTree()).toStrictEqual([])
+  })
+
+  it('notifies an immediate hit on a visible reticle and the next frame owns expiry', () => {
+    const { root, view } = mount('reduced')
+    view.render({ breakProgress: 0.375, hit: false })
+
+    view.notifyHit()
+    expect(root.attributes.get('data-crosshair-hit')).toBe('')
+    expect(thicknessOf(root)).toStrictEqual([
+      CROSSHAIR_ARM_HIT_WEIGHT,
+      CROSSHAIR_ARM_HIT_WEIGHT,
+    ])
+    expect(root.find('data-mx-ui', 'crosshair-mark')?.style.properties.has('transform')).toBe(false)
+
+    view.render({ breakProgress: 0.375, hit: false })
+    expect(root.attributes.has('data-crosshair-hit')).toBe(false)
+  })
+
+  it('leaves a hidden reticle hidden when a hit notification arrives', () => {
+    const { root, view } = mount()
+    view.notifyHit()
+
+    expect(root.attributes.has('hidden')).toBe(true)
+    expect(root.attributes.has('data-crosshair-hit')).toBe(false)
+  })
+
+  it('property: a notification marks any visible break-progress model as hit', () => {
+    fc.assert(
+      fc.property(fc.boolean(), fc.double({ min: 0, max: 1, noNaN: true }), (hit, breakProgress) => {
+        const { root, view } = mount('reduced')
+        view.render({ breakProgress, hit })
+        view.notifyHit()
+        expect(root.attributes.get('data-crosshair-hit')).toBe('')
+        expect(progress(root)?.attributes.has('hidden')).toBe(false)
+      }),
+      { numRuns: 50 },
+    )
   })
 
   it('REGRESSION: the hit is carried by WEIGHT, so reduced motion loses no information', () => {

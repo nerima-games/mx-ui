@@ -39,6 +39,19 @@ for (const scenario of OVERLAY_SCENARIOS) {
     if (scenario.id === 'achievement-toast-sequence') {
       await expect(host.locator('[data-mx-ui="achievement-toast-title"]')).toHaveText('Getting an Upgrade')
     }
+    if (scenario.id === 'crosshair-hit-window') {
+      await expect(host.locator('[data-mx-ui="crosshair"]')).toHaveAttribute('data-crosshair-hit', '')
+      await expect(host.locator('[data-mx-ui="crosshair-arm"]')).toHaveCount(2)
+    }
+    if (scenario.id === 'hud-death-respawn') {
+      await expect(host.locator('[data-mx-ui="death-cause"]')).toHaveText('Cause: falling')
+      await expect(host.locator('[data-mx-ui="death-coordinates"]')).toHaveText('Coordinates: 12.5 / 64.0 / -3.3')
+      const respawn = host.locator('[data-mx-ui="respawn"]')
+      await expect(respawn).toBeEnabled()
+      await respawn.focus()
+      await page.keyboard.press('Enter')
+      await expect(host).toHaveAttribute('data-respawned', '')
+    }
 
     const titleSlug = scenario.title.toLowerCase().replace(/[^a-z0-9]+/gu, '-')
     await page.screenshot({

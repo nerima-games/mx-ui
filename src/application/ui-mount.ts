@@ -4,6 +4,7 @@ import {
   startAchievementToastSubscriber,
 } from './achievement-toast-subscriber.js'
 import { type AchievementToastView, createAchievementToastView } from './achievement-toast-view.js'
+import { type CrosshairView, createCrosshairView } from './crosshair-view.js'
 import {
   DEFAULT_DEBUG_HUD_SNAPSHOT,
   DEFAULT_UI_SETTINGS,
@@ -22,6 +23,7 @@ import {
 import { Effect, Exit, Result, Schema } from 'effect'
 import {
   HOTBAR_SLOT_COUNT,
+  type HudViewModel,
   hudViewModel,
   spawnSnapshot,
 } from '../domain/hud-view-model.js'
@@ -56,15 +58,17 @@ import {
   type MainMenuView,
   createMainMenuView,
 } from './main-menu-view.js'
+import { type MotionPreference, type UiScale, decodeUiScale } from '../domain/accessibility.js'
 import { finishToastSubscriptionClose, finishUiMountCleanup } from './ui-mount-cleanup.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import type { AchievementToast } from '../domain/achievement-toast.js'
+import { type CrosshairViewModel } from '../domain/crosshair.js'
 import { DomainEventBus } from '@nerima-games/mc-sim'
 import type { FocusTarget } from '@nerima-games/mc-render'
-import type { MotionPreference } from '../domain/accessibility.js'
 import { UiMountError } from './ui-mount-error.js'
 import type { UiQaSnapshot } from '../domain/ui-qa.js'
 import { applyUiLanguage } from './ui-localization.js'
+import { applyUiScale } from './ui-scale.js'
 import { createUiModuleInstance } from './ui-module-instance.js'
 import { uiModule } from '../stages/registration.js'
 
@@ -76,6 +80,7 @@ const INITIAL_SELECTED_HOTBAR_SLOT = 0
 export type UiMountedViews = {
   readonly root: HTMLElement
   readonly hud: HudView
+  readonly crosshair: CrosshairView
   readonly inventory: InventoryView
   readonly mainMenu: MainMenuView
   readonly overlays: SessionOverlays
@@ -92,6 +97,7 @@ export type UiMountOptions = {
   readonly initialDebugSnapshot?: DebugHudSnapshot
   readonly onInventoryActivate?: (target: InventoryInteractionTarget) => void
   readonly onInventoryAction?: (action: InventoryAction) => void
+  readonly onRespawn?: () => void
 }
 
 /** The browser-session shape consumed by mc-compose, without a package cycle. */
@@ -104,8 +110,12 @@ export type UiMount = {
   >
   readonly stop: Effect.Effect<void, UiMountError | Schema.SchemaError>
   readonly current: () => UiMountedViews | undefined
+  readonly updateHud: (model: HudViewModel) => void
+  readonly updateCrosshair: (model: CrosshairViewModel | undefined) => void
+  /** Apply a hit immediately; the next frame's updateCrosshair result owns expiry. */
+  readonly notifyHit: () => void
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
-  readonly updateSettings: (settings: UiSettings) => void
+  readonly updateSettings: (settings: UiSettings) => Result.Result<UiScale, Schema.SchemaError>
   readonly updateLanguage: (language: unknown) => Result.Result<UiLanguage, UiLanguageFailure>
   readonly openSettings: () => void
   readonly closeSettings: () => void
@@ -146,9 +156,43 @@ type UiMountSession = {
   inventoryOpen: boolean
   inventoryFocus: InventoryInteractionTarget
   inventoryActionState: InventoryActionState
+  hudModel: HudViewModel
+  crosshairModel?: CrosshairViewModel
   inventoryRestoreFocus: HTMLElement | null
   toastScope: Scope.Closeable | null
   toastSubscription: AchievementToastSubscription | null
+}
+
+const saveUiSettings = (
+  session: UiMountSession,
+  settings: UiSettings,
+  mounted: UiMountedViews | null,
+): void => {
+  session.settings = settings
+  mounted?.overlays.updateSettings(settings)
+}
+
+const applySessionUiScale = (
+  mounted: UiMountedViews | null,
+  input: unknown,
+): Result.Result<UiScale, Schema.SchemaError> => {
+  if (mounted === null) {
+    return decodeUiScale(input)
+  }
+  return applyUiScale(mounted.root.style, input)
+}
+
+const updateUiSettings = (
+  session: UiMountSession,
+  nextSettings: UiSettings,
+): Result.Result<UiScale, Schema.SchemaError> => {
+  const { mounted } = session
+  const appliedScale = applySessionUiScale(mounted, nextSettings.uiScale)
+  if (Result.isFailure(appliedScale)) {
+    return appliedScale
+  }
+  saveUiSettings(session, nextSettings, mounted)
+  return appliedScale
 }
 
 /** `document.activeElement` narrowed to something focus-restorable, or nothing. */
@@ -258,6 +302,7 @@ const requireOwnedRoot = (
 }
 
 type PartialMount = {
+  hud?: HudView
   mainMenu: MainMenuView | null
   overlays: SessionOverlays | null
   readonly ownedRoot: HTMLElement
@@ -268,6 +313,7 @@ const destroyPartialMount = (partial: PartialMount): Effect.Effect<void, UiMount
   Effect.try({
     catch: (cause) => new UiMountError('Failed to clean up partial mx-ui mount', { cause }),
     try: () => {
+      partial.hud?.dispose()
       partial.mainMenu?.destroy()
       partial.overlays?.destroy()
       partial.ownedRoot.remove()
@@ -294,6 +340,7 @@ const removeUiMountedViews = (
   Effect.try({
     catch: (cause) => new UiMountError(message, { cause }),
     try: () => {
+      previous?.hud.dispose()
       previous?.mainMenu.destroy()
       previous?.overlays.destroy()
       previous?.root.remove()
@@ -352,6 +399,11 @@ const createMountState = (options: UiMountOptions): Readonly<{
 }> => {
   const session: UiMountSession = {
     debugSnapshot: options.initialDebugSnapshot ?? DEFAULT_DEBUG_HUD_SNAPSHOT,
+    hudModel: hudViewModel(
+      spawnSnapshot,
+      emptyInventorySnapshot.inventory.slots.slice(HOTBAR_START_INDEX, HOTBAR_SLOT_COUNT),
+      INITIAL_SELECTED_HOTBAR_SLOT,
+    ),
     inventoryActionState: { kind: 'idle' },
     inventoryFocus: { index: ZERO, kind: 'slot', region: 'hotbar' },
     inventoryModel: inventoryViewModel(emptyInventorySnapshot),
@@ -389,8 +441,27 @@ const activationKind = (shiftKey: boolean): 'click' | 'shift-click' => {
   return 'click'
 }
 
-export const makeUiMount = (options: UiMountOptions): UiMount => {
-  const { session, toastLifecycle } = createMountState(options)
+type UiMountInventoryOperations = Readonly<{
+  activateInventoryFocus: (kind?: 'click' | 'shift-click') => boolean
+  dragInventorySlot: (source: InventoryDragTarget, target: InventoryDragTarget) => boolean
+  moveFocus: (direction: InventoryNavigationDirection) => boolean
+  moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
+  renderInventory: (view: InventoryView, focus?: boolean) => void
+  syncKeyboardFocus: () => void
+}>
+
+const createUiMountInventoryOperations = (
+  options: UiMountOptions,
+  session: UiMountSession,
+): UiMountInventoryOperations => {
+  const syncKeyboardFocus = (): void => {
+    const focusedTarget = focusTargetForUiElement(options.root.ownerDocument.activeElement)
+    if (focusedTarget?.group === 'hotbar') {
+      session.mounted?.hud.setKeyboardFocus(focusedTarget.index)
+      return
+    }
+    session.mounted?.hud.setKeyboardFocus()
+  }
 
   const renderInventory = (view: InventoryView, focus = false): void => {
     const targets = inventoryTargets(session.inventoryModel)
@@ -407,6 +478,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       const root = options.root.querySelector<HTMLElement>('[data-mx-ui="inventory"]')
       const target = inventoryFocusTarget(root, session.inventoryFocus)
       target?.focus()
+      syncKeyboardFocus()
     }
   }
 
@@ -428,7 +500,12 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     if (isInventoryFocusTarget(session, target)) {
       return moveInventoryFocus(direction)
     }
-    return moveFocusTarget(options.root, target, direction)
+    const moved = moveFocusTarget(options.root, target, direction)
+    if (!moved) {
+      return false
+    }
+    syncKeyboardFocus()
+    return true
   }
 
   const activateInventoryFocus = (kind: 'click' | 'shift-click' = 'click'): boolean => {
@@ -458,6 +535,27 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     return true
   }
 
+  return {
+    activateInventoryFocus,
+    dragInventorySlot,
+    moveFocus,
+    moveInventoryFocus,
+    renderInventory,
+    syncKeyboardFocus,
+  }
+}
+
+export const makeUiMount = (options: UiMountOptions): UiMount => {
+  const { session, toastLifecycle } = createMountState(options)
+  const {
+    activateInventoryFocus,
+    dragInventorySlot,
+    moveFocus,
+    moveInventoryFocus,
+    renderInventory,
+    syncKeyboardFocus,
+  } = createUiMountInventoryOperations(options, session)
+
   const unmount = (
     message = 'Failed to stop mx-ui',
   ): Effect.Effect<void, UiMountError | Schema.SchemaError> =>
@@ -472,22 +570,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       return yield* finishUiMountCleanup(subscriptionResult, viewsResult)
     })
 
-  const createBaseViews = (
-    document: Document,
-    ownedRoot: HTMLElement,
-  ): { readonly handleInventoryKey: (event: KeyboardEvent) => boolean; readonly hud: HudView; readonly inventory: InventoryView } => {
-    const hud = createHudView(document, ownedRoot, options.motion ?? 'full')
-    hud.render(
-      hudViewModel(
-        spawnSnapshot,
-        emptyInventorySnapshot.inventory.slots.slice(
-          HOTBAR_START_INDEX,
-          HOTBAR_SLOT_COUNT,
-        ),
-        INITIAL_SELECTED_HOTBAR_SLOT,
-      ),
-    )
-
+  const createBaseInventory = (document: Document, ownedRoot: HTMLElement): InventoryView => {
     const inventory = createInventoryView(document, ownedRoot, {
       onActivate: (target, shiftKey) => {
         session.inventoryFocus = target
@@ -500,6 +583,26 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     })
     inventory.root.setAttribute('hidden', '')
     renderInventory(inventory)
+    return inventory
+  }
+
+  const createBaseViews = (
+    document: Document,
+    ownedRoot: HTMLElement,
+  ): {
+    readonly handleInventoryKey: (event: KeyboardEvent) => boolean
+    readonly hud: HudView
+    readonly crosshair: CrosshairView
+    readonly inventory: InventoryView
+  } => {
+    const hud = createHudView(document, ownedRoot, options.motion ?? 'full', {
+      onRespawn: options.onRespawn,
+    })
+    hud.render(session.hudModel)
+    const crosshair = createCrosshairView(document, ownedRoot, options.motion ?? 'full')
+    crosshair.render(session.crosshairModel)
+
+    const inventory = createBaseInventory(document, ownedRoot)
 
     // No `if (!session.inventoryOpen) return` guard here, unlike the public
     // `closeInventory` member below: this closure is only reachable through
@@ -515,6 +618,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       if (target?.isConnected === true) {
         target.focus()
       }
+      syncKeyboardFocus()
     }
     // No `if (session.inventoryOpen) return` guard here, unlike the public
     // `openInventory` member below: this closure's only real caller is
@@ -534,36 +638,65 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
         session,
       })
 
-    return { handleInventoryKey, hud, inventory }
+    return { crosshair, handleInventoryKey, hud, inventory }
+  }
+
+  const createMainMenu = ({
+    document,
+    ownedRoot,
+    overlays,
+    partial,
+  }: Readonly<{
+    document: Document
+    ownedRoot: HTMLElement
+    overlays: SessionOverlays
+    partial: PartialMount
+  }>): MainMenuView => {
+    const mainMenu = createMainMenuView(
+      document,
+      ownedRoot,
+      buildMenuCallbacks(overlays, options.menuCallbacks),
+    )
+    partial.mainMenu = mainMenu
+    mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
+    return mainMenu
+  }
+
+  const createMountedViews = (
+    document: Document,
+    ownedRoot: HTMLElement,
+    partial: PartialMount,
+  ): UiMountedViews => {
+    const { crosshair, handleInventoryKey, hud, inventory } = createBaseViews(document, ownedRoot)
+    partial.hud = hud
+    const achievementToast = createAchievementToastView(document, ownedRoot)
+    achievementToast.render()
+    const overlays = createSessionOverlays(document, ownedRoot, {
+      callbacks: options.settingsCallbacks,
+      delegateKeyDown: handleInventoryKey,
+      initialDebug: session.debugSnapshot,
+      initialSettings: session.settings,
+    })
+    partial.overlays = overlays
+    const mainMenu = createMainMenu({ document, overlays, ownedRoot, partial })
+    applyUiLanguage(ownedRoot, session.language)
+    return { achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot }
   }
 
   const buildMountedViews = (): Effect.Effect<UiMountedViews, UiMountError> =>
     Effect.gen(function* run() {
       const { document, ownedRoot } = yield* requireOwnedRoot(options.root)
       const partial: PartialMount = { mainMenu: null, overlays: null, ownedRoot }
+      const uiScale = applyUiScale(ownedRoot.style, session.settings.uiScale)
+      if (Result.isFailure(uiScale)) {
+        return yield* Effect.andThen(
+          destroyPartialMount(partial),
+          Effect.fail(new UiMountError('Invalid initial UI scale', { cause: uiScale.failure })),
+        )
+      }
       const mount = Effect.try({
         catch: (cause) => new UiMountError('Failed to mount mx-ui', { cause }),
-        try: () => {
-          const { handleInventoryKey, hud, inventory } = createBaseViews(document, ownedRoot)
-          const achievementToast = createAchievementToastView(document, ownedRoot)
-          achievementToast.render()
-          const overlays = createSessionOverlays(document, ownedRoot, {
-            callbacks: options.settingsCallbacks,
-            delegateKeyDown: handleInventoryKey,
-            initialDebug: session.debugSnapshot,
-            initialSettings: session.settings,
-          })
-          partial.overlays = overlays
-          const mainMenu = createMainMenuView(
-            document,
-            ownedRoot,
-            buildMenuCallbacks(overlays, options.menuCallbacks),
-          )
-          partial.mainMenu = mainMenu
-          mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
-          applyUiLanguage(ownedRoot, session.language)
-          return { achievementToast, hud, inventory, mainMenu, overlays, root: ownedRoot }
-        },
+        try: () => createMountedViews(document, ownedRoot, partial),
       })
       return yield* Effect.catch(mount, (mountError) =>
         Effect.andThen(
@@ -592,6 +725,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       if (target?.isConnected === true) {
         target.focus()
       }
+      syncKeyboardFocus()
     },
     closeSettings: () => session.mounted?.overlays.closeSettings(),
     current: () => {
@@ -604,6 +738,18 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     moveFocus,
     moveInventoryFocus,
     name: '@nerima-games/mx-ui',
+    notifyHit: () => {
+      const model = session.crosshairModel
+      if (typeof model === 'undefined') {
+        return
+      }
+      session.crosshairModel = { ...model, hit: true }
+      const crosshair = session.mounted?.crosshair
+      if (typeof crosshair === 'undefined') {
+        return
+      }
+      crosshair.notifyHit()
+    },
     openInventory: (model) => {
       if (typeof model !== 'undefined') {
         session.inventoryModel = model
@@ -631,9 +777,21 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       )
     }),
     stop: Effect.suspend(unmount),
+    updateCrosshair: (model) => {
+      if (typeof model === 'undefined') {
+        delete session.crosshairModel
+      } else {
+        session.crosshairModel = model
+      }
+      session.mounted?.crosshair.render(model)
+    },
     updateDebug: (snapshot) => {
       session.debugSnapshot = snapshot
       session.mounted?.overlays.updateDebug(snapshot)
+    },
+    updateHud: (model) => {
+      session.hudModel = model
+      session.mounted?.hud.render(model)
     },
     updateInventory: (model) => {
       session.inventoryModel = model
@@ -660,9 +818,6 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       }
       return decoded
     },
-    updateSettings: (nextSettings) => {
-      session.settings = nextSettings
-      session.mounted?.overlays.updateSettings(nextSettings)
-    },
+    updateSettings: (nextSettings) => updateUiSettings(session, nextSettings),
   }
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
+<path d="M5 19a11 11 0 0 1 22 0" fill="#ef8c5a" stroke="#603d50" stroke-width="2"/><path d="M4 20h24v3H4z" fill="#64788a"/><path d="M3 25h8m3 0h4m3 0h8" stroke="#dce8e2" stroke-width="2"/><path d="M16 4v4m-9 1 3 3m15-3-3 3" stroke="#ffd77c" stroke-width="2"/>
+</svg>

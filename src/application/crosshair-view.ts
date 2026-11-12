@@ -152,6 +152,8 @@ export type CrosshairView = {
   readonly root: DomElement
   /** Project a model, or `undefined` for 「not aiming」. Idempotent. */
   readonly render: (model: CrosshairViewModel | undefined) => void
+  /** Mark the currently visible reticle as hit; the next frame render owns expiry. */
+  readonly notifyHit: () => void
   /**
    * Change the motion preference.
    *
@@ -460,6 +462,13 @@ export const createCrosshairView = (
   project()
 
   return {
+    notifyHit: (): void => {
+      if (latest === null || latest.hit) {
+        return
+      }
+      latest = { ...latest, hit: true }
+      project()
+    },
     render: (model: CrosshairViewModel | undefined): void => {
       latest = model ?? null
       project()

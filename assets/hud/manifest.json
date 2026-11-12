@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "title": "HUD vector symbols",
+  "authorship": "Original vector artwork authored for this repository by project contributors.",
+  "provenance": "Every symbol is drawn from geometric SVG paths and shapes in scripts/generate-hud-assets.mjs. No third-party artwork or upstream game assets were used as a source.",
+  "license": {
+    "name": "CC0 1.0 Universal",
+    "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "spdxIdentifier": "CC0-1.0",
+    "notice": "The generated HUD assets are dedicated to the public domain under CC0 1.0 Universal."
+  },
+  "generatorLicense": {
+    "name": "MIT",
+    "notice": "The generator source is covered by the repository root LICENSE."
+  },
+  "generator": "scripts/generate-hud-assets.mjs",
+  "outputs": [
+    {
+      "file": "health-full.svg",
+      "name": "health-full",
+      "description": "Filled health mark."
+    },
+    {
+      "file": "health-half.svg",
+      "name": "health-half",
+      "description": "Half-filled health mark."
+    },
+    {
+      "file": "health-empty.svg",
+      "name": "health-empty",
+      "description": "Outlined empty health mark."
+    },
+    {
+      "file": "absorption-full.svg",
+      "name": "absorption-full",
+      "description": "Filled golden health mark with a small glint."
+    },
+    {
+      "file": "absorption-half.svg",
+      "name": "absorption-half",
+      "description": "Half-filled golden health mark with a small glint."
+    },
+    {
+      "file": "poison-full.svg",
+      "name": "poison-full",
+      "description": "Filled violet health mark with three bubbles."
+    },
+    {
+      "file": "poison-half.svg",
+      "name": "poison-half",
+      "description": "Half-filled violet health mark with three bubbles."
+    },
+    {
+      "file": "wither-full.svg",
+      "name": "wither-full",
+      "description": "Filled slate health mark crossed by a pale fracture."
+    },
+    {
+      "file": "wither-half.svg",
+      "name": "wither-half",
+      "description": "Half-filled slate health mark crossed by a pale fracture."
+    },
+    {
+      "file": "hunger-full.svg",
+      "name": "hunger-full",
+      "description": "Filled warm food mark with crumb details."
+    },
+    {
+      "file": "hunger-half.svg",
+      "name": "hunger-half",
+      "description": "Half-filled warm food mark with crumb details."
+    },
+    {
+      "file": "hunger-empty.svg",
+      "name": "hunger-empty",
+      "description": "Outlined empty food mark."
+    },
+    {
+      "file": "armor-full.svg",
+      "name": "armor-full",
+      "description": "Filled blue-steel shield."
+    },
+    {
+      "file": "armor-half.svg",
+      "name": "armor-half",
+      "description": "Half-filled blue-steel shield."
+    },
+    {
+      "file": "armor-empty.svg",
+      "name": "armor-empty",
+      "description": "Outlined empty shield."
+    },
+    {
+      "file": "oxygen-full.svg",
+      "name": "oxygen-full",
+      "description": "Three filled air bubbles."
+    },
+    {
+      "file": "oxygen-half.svg",
+      "name": "oxygen-half",
+      "description": "Three half-filled air bubbles."
+    },
+    {
+      "file": "oxygen-empty.svg",
+      "name": "oxygen-empty",
+      "description": "Three outlined air bubbles."
+    },
+    {
+      "file": "effect-positive.svg",
+      "name": "effect-positive",
+      "description": "Leaf and rising mark for a helpful effect."
+    },
+    {
+      "file": "effect-negative.svg",
+      "name": "effect-negative",
+      "description": "Jagged spark for a harmful effect."
+    },
+    {
+      "file": "effect-neutral.svg",
+      "name": "effect-neutral",
+      "description": "Balanced ring and dots for a neutral effect."
+    },
+    {
+      "file": "time-day.svg",
+      "name": "time-day",
+      "description": "Daylight sun with eight clear rays."
+    },
+    {
+      "file": "time-dusk.svg",
+      "name": "time-dusk",
+      "description": "Sun setting behind a stepped horizon."
+    },
+    {
+      "file": "time-night.svg",
+      "name": "time-night",
+      "description": "Crescent moon above two stars."
+    },
+    {
+      "file": "sunset-warning.svg",
+      "name": "sunset-warning",
+      "description": "Setting sun with an attention ray."
+    },
+    {
+      "file": "hit-idle.svg",
+      "name": "hit-idle",
+      "description": "Open centered sight with four short arms."
+    },
+    {
+      "file": "hit-confirm.svg",
+      "name": "hit-confirm",
+      "description": "Four radiating marks around a clear center."
+    },
+    {
+      "file": "../../src/domain/hud-icons.generated.ts",
+      "name": "HUD icon-name type",
+      "description": "Generated shared icon-name union."
+    },
+    {
+      "file": "../../src/application/hud-icons.generated.ts",
+      "name": "HUD icon SVG module",
+      "description": "Generated inline SVG strings and data URI helper."
+    }
+  ]
+}
