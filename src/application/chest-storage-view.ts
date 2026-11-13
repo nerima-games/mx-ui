@@ -68,6 +68,41 @@ const PLAYER_INVENTORY_SLOT_COUNT = HOTBAR_SLOT_COUNT + INVENTORY_MAIN_SLOT_COUN
 const isValidSlotIndex = (slot: unknown): slot is number =>
   typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= ZERO_INDEX
 
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isValidItemDisplayNameView = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const language = Reflect.get(input, 'language')
+  if (language !== 'en' && language !== 'ja') {
+    return false
+  }
+  const result = Reflect.get(input, 'result')
+  if (!isRecord(result)) {
+    return false
+  }
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  if (tag !== 'Failure') {
+    return false
+  }
+  const failure = Reflect.get(result, 'failure')
+  if (!isRecord(failure)) {
+    return false
+  }
+  const failureTag = Reflect.get(failure, '_tag')
+  return typeof failureTag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(failureTag)
+}
+
 const slotBelongsToRegion = (region: unknown, slot: number): boolean => {
   if (region === 'chest') {
     return slot < CHEST_STORAGE_SLOT_COUNT
@@ -276,67 +311,118 @@ const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | und
   })
 }
 
-const invalidGridSlotField = (model: ChestStorageViewModel): string | undefined => {
+const invalidGridSlotField = (model: unknown): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const chest = Reflect.get(model, 'chest')
+  const playerMain = Reflect.get(model, 'playerMain')
+  const playerHotbar = Reflect.get(model, 'playerHotbar')
   const regions = [
-    ['chest', model.chest],
-    ['playerMain', model.playerMain],
-    ['playerHotbar', model.playerHotbar],
+    ['chest', chest],
+    ['playerMain', playerMain],
+    ['playerHotbar', playerHotbar],
   ] as const
   for (const [region, slots] of regions) {
+    if (!Array.isArray(slots)) {
+      return region
+    }
     for (const slot of slots) {
-      if (slot === null) {
+      if (slot === null || (typeof slot !== 'undefined' && !isRecord(slot))) {
         return `${region}.slot`
       }
-      if (typeof slot !== 'undefined' && Reflect.get(slot, 'itemDisplayName') === null) {
-        return `${region}.itemDisplayName`
-      }
-      if (typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null) {
-        return `${region}.countLabel`
+      if (typeof slot !== 'undefined') {
+        const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+        if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+          return `${region}.itemDisplayName`
+        }
+        const countLabel = Reflect.get(slot, 'countLabel')
+        if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+          return `${region}.countLabel`
+        }
       }
     }
   }
   return
 }
 
-const invalidChestStorageCursorField = (model: ChestStorageViewModel): string | undefined => {
-  if (Reflect.get(model, 'cursor') === null) {
+const invalidChestStorageCursorField = (model: unknown): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const cursor = Reflect.get(model, 'cursor')
+  if (typeof cursor === 'undefined') {
+    return
+  }
+  if (!isRecord(cursor)) {
     return 'cursor'
   }
-  if (typeof model.cursor !== 'undefined' && Reflect.get(model.cursor, 'countLabel') === null) {
+  const stack = Reflect.get(cursor, 'stack')
+  if (!isRecord(stack)) {
+    return 'cursor'
+  }
+  if (typeof Reflect.get(stack, 'item') !== 'string' || typeof Reflect.get(stack, 'count') !== 'number') {
+    return 'cursor.stack'
+  }
+  const stackDurability = Reflect.get(stack, 'durability')
+  if (typeof stackDurability !== 'undefined' && typeof stackDurability !== 'number') {
+    return 'cursor.stack.durability'
+  }
+  const countLabel = Reflect.get(cursor, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
     return 'cursor.countLabel'
   }
-  if (typeof model.cursor !== 'undefined' && Reflect.get(model.cursor, 'itemDisplayName') === null) {
+  const itemDisplayName = Reflect.get(cursor, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
     return 'cursor.itemDisplayName'
+  }
+  const itemId = Reflect.get(cursor, 'itemId')
+  if (typeof itemId !== 'undefined' && typeof itemId !== 'string') {
+    return 'cursor.itemId'
+  }
+  const durabilityPercent = Reflect.get(cursor, 'durabilityPercent')
+  if (typeof durabilityPercent !== 'undefined' && (typeof durabilityPercent !== 'number' || !Number.isFinite(durabilityPercent))) {
+    return 'cursor.durabilityPercent'
+  }
+  if (typeof Reflect.get(cursor, 'empty') !== 'boolean') {
+    return 'cursor.empty'
+  }
+  if (typeof Reflect.get(cursor, 'index') !== 'number') {
+    return 'cursor.index'
+  }
+  if (typeof Reflect.get(cursor, 'selected') !== 'boolean') {
+    return 'cursor.selected'
   }
   return
 }
 
 const invalidChestStorageInteractionField = (
-  interaction: ChestStorageInteractionView | undefined,
+  interaction: unknown,
 ): string | undefined => {
   if (typeof interaction === 'undefined') {
     return
+  }
+  if (!isRecord(interaction)) {
+    return 'interaction'
   }
   const focusedSlot = Reflect.get(interaction, 'focusedSlot')
   if (typeof focusedSlot !== 'undefined' && !isChestStorageSlotTarget(focusedSlot)) {
     return 'interaction.focusedSlot'
   }
-  if (Reflect.get(interaction, 'status') === null) {
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
     return 'interaction.status'
   }
   return
 }
 
 const invalidChestStorageViewInputField = (
-  model: ChestStorageViewModel,
-  interaction: ChestStorageInteractionView | null | undefined,
+  model: unknown,
+  interaction: unknown,
 ): string | undefined => {
   const invalidSlotField = invalidGridSlotField(model)
   if (typeof invalidSlotField !== 'undefined') {
     return invalidSlotField
-  }
-  if (interaction === null) {
-    return 'interaction'
   }
   const invalidCursorField = invalidChestStorageCursorField(model)
   if (typeof invalidCursorField !== 'undefined') {

@@ -583,16 +583,76 @@ type InvalidInventoryViewInput = Readonly<{
     | 'crafting.output.countLabel'
     | 'crafting.output.itemDisplayName'
     | 'interaction'
+    | 'interaction.focused'
     | 'interaction.status'
     | 'regions.countLabel'
     | 'regions.itemDisplayName'
 }>
 
-const hasNullCountLabel = (slot: unknown): boolean =>
-  typeof slot === 'object' && slot !== null && Reflect.get(slot, 'countLabel') === null
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
 
-const hasNullItemDisplayName = (slot: unknown): boolean =>
-  typeof slot === 'object' && slot !== null && Reflect.get(slot, 'itemDisplayName') === null
+const isOptionalString = (input: unknown): boolean =>
+  typeof input === 'undefined' || typeof input === 'string'
+
+const isItemDisplayNameView = (input: unknown): boolean => {
+  if (typeof input === 'undefined') {
+    return true
+  }
+  if (!isRecord(input)) {
+    return false
+  }
+  const language = Reflect.get(input, 'language')
+  const result = Reflect.get(input, 'result')
+  if ((language !== 'en' && language !== 'ja') || !isRecord(result)) {
+    return false
+  }
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  if (tag === 'Failure') {
+    const failure = Reflect.get(result, 'failure')
+    return isRecord(failure) && [
+      'InvalidItemDisplayName',
+      'InvalidItemId',
+      'ItemDisplayNameUnavailable',
+      'MissingItemDisplayNameResolver',
+    ].some((failureTag) => Reflect.get(failure, '_tag') === failureTag)
+  }
+  return false
+}
+
+const hasInvalidCountLabel = (slot: unknown): boolean => {
+  if (typeof slot === 'undefined') {
+    return false
+  }
+  return !isRecord(slot) || !isOptionalString(Reflect.get(slot, 'countLabel'))
+}
+
+const hasInvalidItemDisplayName = (slot: unknown): boolean => {
+  if (typeof slot === 'undefined') {
+    return false
+  }
+  return !isRecord(slot) || !isItemDisplayNameView(Reflect.get(slot, 'itemDisplayName'))
+}
+
+const isInventoryInteractionTarget = (input: unknown): input is InventoryInteractionTarget => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  if (kind === 'crafting-output') {
+    return true
+  }
+  if (kind !== 'slot') {
+    return false
+  }
+  const region = Reflect.get(input, 'region')
+  const index = Reflect.get(input, 'index')
+  return ['armour', 'crafting-grid', 'hotbar', 'main', 'offhand'].some((candidate) => candidate === region) &&
+    typeof index === 'number' && Number.isSafeInteger(index) && index >= ZERO
+}
 
 const invalidInventoryInteractionField = (
   interaction: InventoryInteractionView | undefined,
@@ -600,21 +660,30 @@ const invalidInventoryInteractionField = (
   if (Object.is(interaction, null)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'interaction' }
   }
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  if (!isRecord(interaction)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction' }
+  }
+  if (!isInventoryInteractionTarget(Reflect.get(interaction, 'focused'))) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.focused' }
+  }
+  if (!isOptionalString(Reflect.get(interaction, 'status'))) {
     return { _tag: 'InvalidInventoryViewInput', field: 'interaction.status' }
   }
   return
 }
 
 const invalidInventoryCountLabelField = (model: InventoryViewModel): InvalidInventoryViewInput | undefined => {
-  if (hasNullCountLabel(model.carried)) {
+  if (hasInvalidCountLabel(model.carried)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'carried.countLabel' }
   }
-  if (model.crafting.kind === 'match' && hasNullCountLabel(model.crafting.output)) {
+  if (model.crafting.kind === 'match' && hasInvalidCountLabel(model.crafting.output)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'crafting.output.countLabel' }
   }
   for (const region of model.regions) {
-    if (region.kind === 'slots' && region.slots.some(hasNullCountLabel)) {
+    if (region.kind === 'slots' && region.slots.some(hasInvalidCountLabel)) {
       return { _tag: 'InvalidInventoryViewInput', field: 'regions.countLabel' }
     }
   }
@@ -624,14 +693,14 @@ const invalidInventoryCountLabelField = (model: InventoryViewModel): InvalidInve
 const invalidInventoryItemDisplayNameField = (
   model: InventoryViewModel,
 ): InvalidInventoryViewInput | undefined => {
-  if (hasNullItemDisplayName(model.carried)) {
+  if (hasInvalidItemDisplayName(model.carried)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'carried.itemDisplayName' }
   }
-  if (model.crafting.kind === 'match' && hasNullItemDisplayName(model.crafting.output)) {
+  if (model.crafting.kind === 'match' && hasInvalidItemDisplayName(model.crafting.output)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'crafting.output.itemDisplayName' }
   }
   for (const region of model.regions) {
-    if (region.kind === 'slots' && region.slots.some(hasNullItemDisplayName)) {
+    if (region.kind === 'slots' && region.slots.some(hasInvalidItemDisplayName)) {
       return { _tag: 'InvalidInventoryViewInput', field: 'regions.itemDisplayName' }
     }
   }

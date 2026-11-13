@@ -237,6 +237,80 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     }
   })
 
+  it('returns typed failures for wrong-typed slot labels and interaction inputs before rendering', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel(emptyInventorySnapshot)
+    const hotbar = base.regions.find((region) => region.id === 'hotbar')
+    if (typeof hotbar === 'undefined' || hotbar.kind !== 'slots' || typeof hotbar.slots[0] === 'undefined') {
+      expect(hotbar).toBeDefined()
+      return
+    }
+
+    const invalidHotbar = { ...hotbar, slots: hotbar.slots.map((slot) => ({ ...slot })) }
+    const invalidHotbarSlot = invalidHotbar.slots[0]
+    expect(invalidHotbarSlot).toBeDefined()
+    if (typeof invalidHotbarSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(invalidHotbarSlot, 'countLabel', 7)).toBe(true)
+    const invalidRegions = base.regions.map((region) => region.id === hotbar.id ? invalidHotbar : region)
+    const invalidRegionModel = { ...base, regions: invalidRegions }
+
+    const invalidCarried = { ...hotbar.slots[0] }
+    expect(Reflect.set(invalidCarried, 'countLabel', 7)).toBe(true)
+    const invalidCarriedModel = { ...base, carried: invalidCarried }
+
+    const invalidOutput = { ...hotbar.slots[0] }
+    expect(Reflect.set(invalidOutput, 'countLabel', 7)).toBe(true)
+    const invalidOutputModel = { ...base, crafting: { kind: 'match' as const, output: invalidOutput } }
+
+    const invalidDisplayName = { ...base, carried: { ...hotbar.slots[0] } }
+    expect(Reflect.set(invalidDisplayName.carried, 'itemDisplayName', 7)).toBe(true)
+    const invalidStatus = { focused: { kind: 'crafting-output' as const }, status: '' }
+    expect(Reflect.set(invalidStatus, 'status', 7)).toBe(true)
+    const unavailableNameModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 1),
+    }, {
+      language: 'en',
+      resolver: () => Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
+    })
+    expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
+    const before = factory.mark()
+
+    expect(view.render(invalidRegionModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'regions.countLabel',
+    }))
+    expect(view.render(invalidCarriedModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.countLabel',
+    }))
+    expect(view.render(invalidOutputModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'crafting.output.countLabel',
+    }))
+    expect(view.render(invalidDisplayName)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.itemDisplayName',
+    }))
+    expect(view.render(base, invalidStatus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'interaction.status',
+    }))
+    expect(Reflect.apply(view.render, view, [base, 7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'interaction',
+    }))
+    expect(Reflect.apply(view.render, view, [base, { status: '', focused: null }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'interaction.focused',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
   it('returns typed failures when carried, output, or region item display names are null', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))

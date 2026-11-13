@@ -244,6 +244,64 @@ describe('createChestStorageView', () => {
     }))
   })
 
+  it('returns typed failures for malformed slot, cursor, model, and interaction values', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const valid = chestStorageViewModel({
+      chest: [{ item: 'minecraft:arrow', count: 1, durability: undefined }],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: { item: 'minecraft:stone', count: 1, durability: undefined },
+      selectedSlot: undefined,
+    }, fakeItemDisplayNameOptions())
+    const [slot] = valid.chest
+    if (typeof slot === 'undefined') {
+      expect(slot).toBeDefined()
+      return
+    }
+    const invalidCount = { ...valid }
+    expect(Reflect.set(invalidCount, 'chest', [{ ...slot, countLabel: 7 }])).toBe(true)
+    const invalidName = { ...valid }
+    expect(Reflect.set(invalidName, 'chest', [{ ...slot, itemDisplayName: 7 }])).toBe(true)
+    const invalidCursorRecord = { ...valid }
+    expect(Reflect.set(invalidCursorRecord, 'cursor', {})).toBe(true)
+    const invalidCursorPrimitive = { ...valid }
+    expect(Reflect.set(invalidCursorPrimitive, 'cursor', 7)).toBe(true)
+
+    expect(view.render(invalidCount)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'chest.countLabel',
+    }))
+    expect(view.render(invalidName)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'chest.itemDisplayName',
+    }))
+    expect(view.render(invalidCursorRecord)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'cursor',
+    }))
+    expect(view.render(invalidCursorPrimitive)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'cursor',
+    }))
+    expect(Reflect.apply(view.render, view, [valid, 7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'interaction',
+    }))
+    expect(Reflect.apply(view.render, view, [valid, { focusedSlot: { region: 'chest', slot: 0 }, status: 7 }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'interaction.status',
+    }))
+    expect(Reflect.apply(view.render, view, [7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'model',
+    }))
+    expect(Reflect.apply(view.render, view, [{}])).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'chest',
+    }))
+  })
+
   it.each([
     { region: 'inventory', slot: 0 },
     { region: 'chest', slot: -1 },

@@ -52,6 +52,12 @@ const FULL_OPACITY = 1
 /** The queue index step: one line element per queue slot. */
 const INDEX_INCREMENT = 1
 
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isCaptionArrow = (input: unknown): boolean =>
+  typeof input === 'undefined' || input === '←' || input === '→'
+
 type CaptionLineElement = {
   readonly hidden: AttributeCell
   readonly arrow: TextCell
@@ -63,7 +69,7 @@ export type CaptionView = {
   readonly root: DomElement
   readonly render: (
     lines: ReadonlyArray<CaptionLineView>,
-  ) => Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' }>>
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' | 'lines' }>>
   readonly setMotion: (motion: MotionPreference) => void
 }
 
@@ -179,8 +185,11 @@ export const createCaptionView = (
   return {
     render: (
       next: ReadonlyArray<CaptionLineView>,
-    ): Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' }>> => {
-      if (next.some((line) => Reflect.get(line, 'arrow') === null)) {
+    ): Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' | 'lines' }>> => {
+      if (!Array.isArray(next)) {
+        return Result.fail({ _tag: 'InvalidCaptionViewInput', field: 'lines' })
+      }
+      if (next.some((line) => !isRecord(line) || !isCaptionArrow(Reflect.get(line, 'arrow')))) {
         return Result.fail({ _tag: 'InvalidCaptionViewInput', field: 'arrow' })
       }
       latest = next

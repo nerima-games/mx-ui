@@ -392,7 +392,12 @@ describe('crosshairViewModel input guards', () => {
 
         expect(Result.isSuccess(result)).toBe(expectedSuccess)
         if (Result.isFailure(result)) {
-          expect(result.failure._tag).toBe('InvalidCrosshairViewModelInput')
+          const failure: unknown = result.failure
+          expect(isRecord(failure)).toBe(true)
+          if (!isRecord(failure)) {
+            return
+          }
+          expect(failure['_tag']).toBe('InvalidCrosshairViewModelInput')
           expect([
             'breakProgress',
             'lastHitAtSecs',
@@ -400,7 +405,7 @@ describe('crosshairViewModel input guards', () => {
             'nowSecs',
             'pulseSecs',
             'status',
-          ]).toContain(result.failure.field)
+          ]).toContain(failure['field'])
           return
         }
 
@@ -421,6 +426,25 @@ describe('crosshairViewModel input guards', () => {
       }),
       { numRuns: 100 },
     )
+  })
+
+  it('reads a modal-stack getter once and uses the validated value', () => {
+    let modalReads = 0
+    const status = {
+      get modals(): unknown {
+        modalReads += 1
+        return modalReads === 1 ? [] : null
+      },
+      lastHitAtSecs: undefined,
+    }
+
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [status, 0])
+
+    expect(Result.isSuccess(result)).toBe(true)
+    if (Result.isSuccess(result)) {
+      expect(result.success).toStrictEqual({ hit: false, breakProgress: undefined })
+    }
+    expect(modalReads).toBe(1)
   })
 })
 

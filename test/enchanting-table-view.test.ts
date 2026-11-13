@@ -2,7 +2,7 @@ import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { createEnchantingTableView, type EnchantingInteractionView } from '../src/application/enchanting-table-view'
 import { enchantingTableViewModel } from '../src/domain/enchanting-table-view-model'
-import { fakeDocument, fakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, writeNames } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createEnchantingTableView', () => {
@@ -11,6 +11,18 @@ describe('createEnchantingTableView', () => {
     const view = createEnchantingTableView(factory, factory.createElement('main'))
 
     expect(view.render(null)).toStrictEqual(Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'model' }))
+    expect(Reflect.apply(view.render, view, [7])).toStrictEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'model' }),
+    )
+    expect(Reflect.apply(view.render, view, [[]])).toStrictEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'model' }),
+    )
+    expect(Reflect.apply(view.render, view, [{ slots: null, offers: [] }])).toStrictEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'slots' }),
+    )
+    expect(Reflect.apply(view.render, view, [{ slots: [], offers: null }])).toStrictEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'offers' }),
+    )
   })
 
   it('returns typed failures for null slot labels and offer rejection reasons', () => {
@@ -90,6 +102,71 @@ describe('createEnchantingTableView', () => {
       _tag: 'InvalidEnchantingTableViewInput',
       field: 'interaction.focusedTarget',
     }))
+  })
+
+  it('returns typed failures for wrong-typed labels, messages, and interaction inputs', () => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+    const valid = enchantingTableViewModel({
+      item: { itemId: 'diamond_sword', count: 1 },
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    })
+    const invalidCountLabel = { ...valid, slots: valid.slots.map((slot) => ({ ...slot })) }
+    const firstSlot = invalidCountLabel.slots[0]
+    expect(firstSlot).toBeDefined()
+    if (typeof firstSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(firstSlot, 'countLabel', 7)).toBe(true)
+    const invalidItemDisplayName = { ...valid, slots: valid.slots.map((slot) => ({ ...slot })) }
+    const firstDisplayNameSlot = invalidItemDisplayName.slots[0]
+    expect(firstDisplayNameSlot).toBeDefined()
+    if (typeof firstDisplayNameSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(firstDisplayNameSlot, 'itemDisplayName', 7)).toBe(true)
+    const invalidRejectionReason = { ...valid, offers: valid.offers.map((offer) => ({ ...offer })) }
+    const firstOffer = invalidRejectionReason.offers[0]
+    expect(firstOffer).toBeDefined()
+    if (typeof firstOffer === 'undefined') {
+      return
+    }
+    expect(Reflect.set(firstOffer, 'rejectionReason', 7)).toBe(true)
+    const invalidStatus: EnchantingInteractionView = { focusedTarget: 'item', status: 'ready' }
+    expect(Reflect.set(invalidStatus, 'status', 7)).toBe(true)
+    const failedNameModel = enchantingTableViewModel({
+      item: { itemId: 'diamond_sword', count: 1 },
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    }, {
+      language: 'en',
+      resolver: () => Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
+    })
+    expect(view.render(failedNameModel)).toStrictEqual(Result.void)
+    const before = factory.mark()
+
+    expect(view.render(invalidCountLabel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'slots[].countLabel',
+    }))
+    expect(view.render(invalidItemDisplayName)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'slots[].itemDisplayName',
+    }))
+    expect(view.render(invalidRejectionReason)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'offers[].rejectionReason',
+    }))
+    expect(view.render(valid, invalidStatus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'interaction.status',
+    }))
+    expect(Reflect.apply(view.render, view, [valid, 7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'interaction',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
   it('projects five operation targets, costs, rejection, and accessibility without listeners', () => {

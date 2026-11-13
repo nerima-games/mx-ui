@@ -20,7 +20,7 @@ import {
   type Settings,
   isValidSettings,
 } from '@nerima-games/mc-sim'
-import { type KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
+import { KeyCode as KernelKeyCode, type KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { Result } from 'effect'
 
 const UI_SCALE_MIN = 0.75
@@ -85,6 +85,7 @@ export type SettingsViewModel<Action extends string = string> = {
 export type SettingsViewModelFailure =
   | { readonly _tag: 'InvalidSettingsSnapshot' }
   | { readonly _tag: 'InvalidSettingsLanguage' }
+  | { readonly _tag: 'InvalidSettingsDefaultBindings' }
 
 const REDUCED_MOTION_SETTINGS: ReadonlyArray<ReducedMotionSetting> = ['system', 'full', 'reduced']
 const COLOR_VISION_CORRECTIONS: ReadonlyArray<ColorVisionCorrection> = [
@@ -160,6 +161,22 @@ const numericField = (
 
 const percentLabel = (value: number): string => `${String(Math.round(value * PERCENT_SCALE))}%`
 
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const hasValidDefaultBindings = (input: unknown, actions: unknown): boolean => {
+  if (!isRecord(input) || !Array.isArray(actions)) {
+    return false
+  }
+  return actions.every((action) => {
+    if (typeof action !== 'string' || !Object.hasOwn(input, action)) {
+      return false
+    }
+    const code = Reflect.get(input, action)
+    return typeof code === 'string' && KernelKeyCode.is(code)
+  })
+}
+
 const bindingRow = <Action extends string>(
   settings: Settings,
   defaultBindings: Readonly<Record<Action, KeyCode>>,
@@ -184,6 +201,9 @@ export const settingsViewModel = <Action extends string>(
   const [bindableActions, languageInput = DEFAULT_UI_LANGUAGE] = viewOptions
   if (!isValidSettings(input)) {
     return Result.fail({ _tag: 'InvalidSettingsSnapshot' })
+  }
+  if (!hasValidDefaultBindings(defaultBindings, bindableActions)) {
+    return Result.fail({ _tag: 'InvalidSettingsDefaultBindings' })
   }
   const decodedLanguage = decodeUiLanguage(languageInput)
   if (Result.isFailure(decodedLanguage)) {

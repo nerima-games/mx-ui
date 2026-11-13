@@ -207,6 +207,49 @@ describe('settingsViewModel', () => {
     }
   })
 
+  it.each([
+    { bindings: null, label: 'a null bindings record' },
+    { bindings: 7, label: 'a non-record bindings value' },
+    { bindings: {}, label: 'a missing fallback key' },
+    { bindings: { attack: null }, label: 'a null fallback code' },
+    { bindings: { attack: 7 }, label: 'a non-string fallback code' },
+    { bindings: { attack: '' }, label: 'a blank fallback code' },
+  ])('returns a typed failure for $label', ({ bindings }) => {
+    const settingsWithoutAttackBinding = { ...SNAPSHOT, keyBindings: {} }
+    const result = Reflect.apply(settingsViewModel, undefined, [settingsWithoutAttackBinding, bindings, ['attack']])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsDefaultBindings' }))
+  })
+
+  it('property: validates fallback bindings before projecting a missing settings binding', () => {
+    const settingsWithoutAttackBinding = { ...SNAPSHOT, keyBindings: {} }
+    fc.assert(
+      fc.property(fc.anything(), (bindings) => {
+        const result = Reflect.apply(settingsViewModel, undefined, [settingsWithoutAttackBinding, bindings, ['attack']])
+        const candidate =
+          bindings !== null && typeof bindings === 'object' && !Array.isArray(bindings) && Object.hasOwn(bindings, 'attack')
+            ? Reflect.get(bindings, 'attack')
+            : undefined
+        const validCode = typeof candidate === 'string' && KernelKeyCode.is(candidate)
+
+        if (!validCode) {
+          expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsDefaultBindings' }))
+          return true
+        }
+
+        if (!Result.isResult(result) || !Result.isSuccess(result)) {
+          return false
+        }
+        if (result.success === null || typeof result.success !== 'object') {
+          return false
+        }
+        expect(Reflect.get(result.success, 'bindingRows')).toStrictEqual([{ action: 'attack', code: candidate }])
+        return true
+      }),
+      { numRuns: 100 },
+    )
+  })
+
   it('rejects an explicit null key binding instead of using the default binding', () => {
     const input = {
       ...SNAPSHOT,

@@ -158,7 +158,7 @@ export type HudView = {
   ) =>
     Result.Result<
       void,
-      Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' | 'hotbar.itemDisplayName' }>
+      Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudViewField }>
     >
   /** Remove the optional host respawn listener when this view leaves its mount. */
   readonly dispose: () => void
@@ -231,6 +231,42 @@ type HudAssetRow = {
   readonly icons: Array<HudAssetElement>
   readonly value: TextCell
   readonly hidden: AttributeCell
+}
+
+type InvalidHudViewField = 'hotbar' | 'hotbar.countLabel' | 'hotbar.itemDisplayName' | 'model'
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isOptionalString = (input: unknown): boolean =>
+  typeof input === 'undefined' || typeof input === 'string'
+
+const isItemDisplayNameView = (input: unknown): boolean => {
+  if (typeof input === 'undefined') {
+    return true
+  }
+  if (!isRecord(input)) {
+    return false
+  }
+  const language = Reflect.get(input, 'language')
+  const result = Reflect.get(input, 'result')
+  if ((language !== 'en' && language !== 'ja') || !isRecord(result)) {
+    return false
+  }
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  if (tag === 'Failure') {
+    const failure = Reflect.get(result, 'failure')
+    return isRecord(failure) && [
+      'InvalidItemDisplayName',
+      'InvalidItemId',
+      'ItemDisplayNameUnavailable',
+      'MissingItemDisplayNameResolver',
+    ].some((failureTag) => Reflect.get(failure, '_tag') === failureTag)
+  }
+  return false
 }
 
 type HudStatusEffectItem = {
@@ -1067,14 +1103,24 @@ const renderHudDeathState = (cells: HudCells, model: HudViewModel): void => {
   renderDeathDetails(cells, model)
 }
 
-type InvalidHudFrameField = 'hotbar.countLabel' | 'hotbar.itemDisplayName'
-
-const invalidHudFrameField = (model: HudViewModel): InvalidHudFrameField | undefined => {
-  if (model.hotbar.some((slot) => Reflect.get(slot, 'countLabel') === null)) {
-    return 'hotbar.countLabel'
+const invalidHudFrameField = (model: unknown): InvalidHudViewField | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
   }
-  if (model.hotbar.some((slot) => Reflect.get(slot, 'itemDisplayName') === null)) {
-    return 'hotbar.itemDisplayName'
+  const hotbar = Reflect.get(model, 'hotbar')
+  if (!Array.isArray(hotbar)) {
+    return 'hotbar'
+  }
+  for (const slot of hotbar) {
+    if (!isRecord(slot)) {
+      return 'hotbar'
+    }
+    if (!isOptionalString(Reflect.get(slot, 'countLabel'))) {
+      return 'hotbar.countLabel'
+    }
+    if (!isItemDisplayNameView(Reflect.get(slot, 'itemDisplayName'))) {
+      return 'hotbar.itemDisplayName'
+    }
   }
   return
 }
@@ -1085,7 +1131,7 @@ const renderHudFrame = (
   model: HudViewModel,
 ): Result.Result<
   void,
-  Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudFrameField }>
+  Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudViewField }>
 > => {
   const invalidField = invalidHudFrameField(model)
   if (typeof invalidField !== 'undefined') {
@@ -1138,7 +1184,7 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
   const applyKeyboardFocus = (
     index?: number,
   ): Result.Result<void, Readonly<{ _tag: 'InvalidHudFocusInput'; field: 'index' }>> => {
-    if (Object.is(index, null)) {
+    if (typeof index !== 'undefined' && typeof index !== 'number') {
       return Result.fail({ _tag: 'InvalidHudFocusInput', field: 'index' })
     }
     const focusedIndex = focusedIndexFor(index)
@@ -1168,7 +1214,7 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
     dispose,
     render: (model: HudViewModel): Result.Result<
       void,
-      Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' | 'hotbar.itemDisplayName' }>
+      Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudViewField }>
     > => renderHudFrame(factory, cells, model),
     root,
     setKeyboardFocus: applyKeyboardFocus,

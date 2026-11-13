@@ -74,6 +74,60 @@ describe('createAnvilView', () => {
     }))
   })
 
+  it('returns typed failures instead of stringifying malformed slot, rejection, and interaction text', () => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const valid = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: { count: 1, itemId: 'iron_sword' },
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    }, fakeItemDisplayNameOptions())
+    const invalidCount = { ...valid }
+    const countSlots = valid.slots.map((slot) =>
+      slot.id === 'primary-input' ? { ...slot, countLabel: 7 } : slot,
+    )
+    expect(Reflect.set(invalidCount, 'slots', countSlots)).toBe(true)
+    const invalidName = { ...valid }
+    const nameSlots = valid.slots.map((slot) =>
+      slot.id === 'primary-input' ? { ...slot, itemDisplayName: 7 } : slot,
+    )
+    expect(Reflect.set(invalidName, 'slots', nameSlots)).toBe(true)
+    const invalidRejection = { ...valid }
+    expect(Reflect.set(invalidRejection, 'rejectionReason', 7)).toBe(true)
+
+    expect(view.render(invalidCount)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'slots[].countLabel',
+    }))
+    expect(view.render(invalidName)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'slots[].itemDisplayName',
+    }))
+    expect(view.render(invalidRejection)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'rejectionReason',
+    }))
+    expect(Reflect.apply(view.render, view, [valid, { focusedTarget: 'name', status: 7 }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'interaction.status',
+    }))
+    expect(Reflect.apply(view.render, view, [valid, 7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'interaction',
+    }))
+    expect(Reflect.apply(view.render, view, [7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'model',
+    }))
+    expect(Reflect.apply(view.render, view, [{}])).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'slots',
+    }))
+  })
+
   it('returns typed failures for null interaction, status, and focus inputs', () => {
     const factory = fakeDocument()
     const view = createAnvilView(factory, factory.createElement('main'))

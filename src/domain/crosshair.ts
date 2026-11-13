@@ -193,7 +193,8 @@ export const crosshairViewModel = (
   if (status === null || typeof status !== 'object' || Array.isArray(status)) {
     return invalidCrosshairViewModelInput('status')
   }
-  if (!isModalStack(Reflect.get(status, 'modals'))) {
+  const modals = Reflect.get(status, 'modals')
+  if (!isModalStack(modals)) {
     return invalidCrosshairViewModelInput('modals')
   }
   const breakProgress = clampBreakProgress(Reflect.get(status, 'breakProgress'))
@@ -210,7 +211,7 @@ export const crosshairViewModel = (
   if (!isFiniteSeconds(pulseSecs) || pulseSecs < ZERO) {
     return invalidCrosshairViewModelInput('pulseSecs')
   }
-  if (pointerLockReleased(status.modals)) {
+  if (pointerLockReleased(modals)) {
     return noCrosshairView()
   }
   return Result.succeed({

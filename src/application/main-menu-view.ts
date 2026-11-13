@@ -1382,11 +1382,23 @@ const bindMainMenuActions = (context: MainMenuRenderContext): void => {
   bindWorldListActions(context)
 }
 
-const invalidExternalRootCallbackField = (callbacks: unknown): string | undefined => {
+const MAIN_MENU_CALLBACK_FIELDS: ReadonlyArray<keyof MainMenuCallbacks> = [
+  'onStateChange',
+  'onCreateWorld',
+  'onLoadWorld',
+  'onDeleteWorld',
+  'onDeleteUnreadableSave',
+  'onExportWorld',
+  'onOpenMultiplayer',
+  'onOpenSettings',
+  'onExit',
+]
+
+const invalidMainMenuCallbackField = (callbacks: unknown): string | undefined => {
   if (callbacks === null || typeof callbacks !== 'object') {
     return 'callbacks'
   }
-  for (const field of ['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const) {
+  for (const field of MAIN_MENU_CALLBACK_FIELDS) {
     const callback = Reflect.get(callbacks, field)
     if (typeof callback !== 'undefined' && typeof callback !== 'function') {
       return `callbacks.${field}`
@@ -1401,7 +1413,7 @@ const initializeMainMenuCallbacks = (
   callbacks: MainMenuCallbacks
   result: Result.Result<void, MainMenuViewInputFailure>
 }> => {
-  const invalidCallbackField = invalidExternalRootCallbackField(callbacks)
+  const invalidCallbackField = invalidMainMenuCallbackField(callbacks)
   if (typeof invalidCallbackField === 'undefined') {
     return { callbacks, result: Result.void }
   }

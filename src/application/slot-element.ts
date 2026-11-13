@@ -56,6 +56,7 @@ import { PALETTE_VAR } from './palette-css.js'
 import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameText } from './item-display-name.js'
+import type { ItemDisplayNameView } from '../domain/item-display-name.js'
 
 /**
  * Below this, a durability bar turns from `DURABILITY_HIGH` to `DURABILITY_LOW`.
@@ -585,6 +586,37 @@ const updateSlotText = (
   writeAttribute(title, value)
 }
 
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isItemDisplayNameView = (input: unknown): input is ItemDisplayNameView => {
+  if (!isRecord(input) || (Reflect.get(input, 'language') !== 'en' && Reflect.get(input, 'language') !== 'ja')) {
+    return false
+  }
+  const result = Reflect.get(input, 'result')
+  if (!isRecord(result)) {
+    return false
+  }
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  if (tag !== 'Failure') {
+    return false
+  }
+  const failure = Reflect.get(result, 'failure')
+  if (!isRecord(failure)) {
+    return false
+  }
+  const failureTag = Reflect.get(failure, '_tag')
+  return typeof failureTag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(failureTag)
+}
+
 const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
   if (typeof view.itemId === 'undefined') {
     updateSlotText(slot.itemText, slot.itemTitle)
@@ -619,11 +651,16 @@ export const updateSlotElement = (
   slot: SlotElement,
   view: SlotView,
   mergeable?: boolean,
-): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: 'countLabel' | 'itemDisplayName' }>> => {
-  if (Reflect.get(view, 'itemDisplayName') === null) {
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: 'countLabel' | 'itemDisplayName' | 'view' }>> => {
+  if (!isRecord(view)) {
+    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'view' })
+  }
+  const itemDisplayName = Reflect.get(view, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isItemDisplayNameView(itemDisplayName)) {
     return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' })
   }
-  if (Reflect.get(view, 'countLabel') === null) {
+  const countLabel = Reflect.get(view, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
     return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'countLabel' })
   }
   projectSlotView(slot, view, mergeable)

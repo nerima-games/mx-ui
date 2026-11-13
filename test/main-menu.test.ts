@@ -579,7 +579,17 @@ describe('operable main menu', () => {
     expect(mounted.root.findAll('data-mx-ui', 'menu-world-row')).toHaveLength(0)
   })
 
-  it.each(['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const)(
+  it.each([
+    'onStateChange',
+    'onCreateWorld',
+    'onLoadWorld',
+    'onDeleteWorld',
+    'onDeleteUnreadableSave',
+    'onExportWorld',
+    'onOpenMultiplayer',
+    'onOpenSettings',
+    'onExit',
+  ] as const)(
     'returns a typed initialization failure for an explicit null $field callback',
     (field) => {
       const factory = fakeDocument()
@@ -597,26 +607,60 @@ describe('operable main menu', () => {
     },
   )
 
-  it('property: root callbacks accept only an omitted value or a function', () => {
-    const fields = ['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const
-    const factory = fakeDocument()
-    const parent = fakeElement(factory.createElement('div'))
+  it('property: every callback rejects arbitrary invalid values before rendering can invoke them', () => {
+    const fields = [
+      'onStateChange',
+      'onCreateWorld',
+      'onLoadWorld',
+      'onDeleteWorld',
+      'onDeleteUnreadableSave',
+      'onExportWorld',
+      'onOpenMultiplayer',
+      'onOpenSettings',
+      'onExit',
+    ] as const
+    const callbackValues = fc.oneof(fc.anything(), fc.constant(() => {}))
 
     for (const field of fields) {
       fc.assert(
-        fc.property(fc.anything(), (value) => {
-          const callbacks: MainMenuCallbacks = {}
+        fc.property(callbackValues, (value) => {
+          let callbackInvocations = 0
+          const countInvocation = (): void => { callbackInvocations += 1 }
+          const callbacks: MainMenuCallbacks = {
+            onStateChange: countInvocation,
+            onCreateWorld: countInvocation,
+            onLoadWorld: countInvocation,
+            onDeleteWorld: countInvocation,
+            onDeleteUnreadableSave: countInvocation,
+            onExportWorld: countInvocation,
+            onOpenMultiplayer: countInvocation,
+            onOpenSettings: countInvocation,
+            onExit: countInvocation,
+          }
           expect(Reflect.set(callbacks, field, value)).toBe(true)
+          const factory = fakeDocument()
+          const parent = fakeElement(factory.createElement('div'))
           const view = createMainMenuView(factory, parent, callbacks)
           const isValidCallback = typeof value === 'undefined' || typeof value === 'function'
 
-          expect(Result.isSuccess(view.initializationResult)).toBe(isValidCallback)
-          if (!isValidCallback && Result.isFailure(view.initializationResult)) {
-            expect(view.initializationResult.failure).toStrictEqual({
-              _tag: 'InvalidMainMenuViewInput',
-              field: `callbacks.${field}`,
-            })
+          if (isValidCallback) {
+            expect(Result.isSuccess(view.initializationResult)).toBe(true)
+            view.destroy()
+            return
           }
+
+          const expectedFailure = Result.fail({
+            _tag: 'InvalidMainMenuViewInput',
+            field: `callbacks.${field}`,
+          })
+          expect(Result.isFailure(view.initializationResult)).toBe(true)
+          expect(view.initializationResult).toStrictEqual(expectedFailure)
+
+          let renderResult: unknown
+          expect(() => { renderResult = view.render(model()) }).not.toThrow()
+          expect(renderResult).toStrictEqual(expectedFailure)
+          expect(callbackInvocations).toBe(0)
+          view.destroy()
         }),
         { numRuns: 100 },
       )

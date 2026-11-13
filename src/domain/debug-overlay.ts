@@ -1,5 +1,5 @@
 import { type Brand, type Effect, Result, Schema } from 'effect'
-import type { PlayerServiceApi, TimeServiceApi } from '@nerima-games/mc-sim'
+import { TimeStateSchema, type PlayerServiceApi, type TimeServiceApi } from '@nerima-games/mc-sim'
 import type { DeltaTimeSecs as DeltaTimeSecsType } from '@nerima-games/mc-kernel'
 
 export type FramesPerSecond = number & Brand.Brand<'FramesPerSecond'>
@@ -98,7 +98,7 @@ const invalidDimensionField = (input: unknown): string | undefined => {
 }
 
 const invalidWorldTimeField = (input: unknown): string | undefined => {
-  if (typeof input === 'undefined' || isRecord(input)) {
+  if (typeof input === 'undefined' || Schema.is(TimeStateSchema)(input)) {
     return
   }
   return 'worldTime'

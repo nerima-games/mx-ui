@@ -56,4 +56,31 @@ describe('createSlotElement', () => {
     expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' }))
     expect(factory.since(before)).toStrictEqual([])
   })
+
+  it.each([
+    { field: 'countLabel', value: 7 },
+    { field: 'itemDisplayName', value: 7 },
+  ])('returns a typed failure for a non-string $field value', ({ field, value }) => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView({ itemId: 'stone', count: 2 }, 0, 0)
+    expect(Reflect.set(view, field, value)).toBe(true)
+    const before = factory.mark()
+
+    const result = updateSlotElement(slot, view)
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotViewInput', field }))
+    expect(factory.since(before)).toStrictEqual([])
+  })
+
+  it('returns a typed failure for a malformed slot view before reading its fields', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const before = factory.mark()
+
+    const result = Reflect.apply(updateSlotElement, undefined, [slot, null])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotViewInput', field: 'view' }))
+    expect(factory.since(before)).toStrictEqual([])
+  })
 })

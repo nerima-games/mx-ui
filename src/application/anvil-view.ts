@@ -47,43 +47,95 @@ type AnvilViewInputFailure = Readonly<{
   readonly field: string
 }>
 
-const invalidAnvilModelField = (model: AnvilViewModel): string | undefined => {
-  if (Reflect.get(model, 'rejectionReason') === null) {
-    return 'rejectionReason'
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isValidItemDisplayNameView = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
   }
-  if (model.slots.some((slot) =>
-    typeof slot !== 'undefined' && Reflect.get(slot, 'itemDisplayName') === null,
-  )) {
-    return 'slots[].itemDisplayName'
+  const language = Reflect.get(input, 'language')
+  if (language !== 'en' && language !== 'ja') {
+    return false
   }
-  if (model.slots.some((slot) =>
-    typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null,
-  )) {
-    return 'slots[].countLabel'
+  const result = Reflect.get(input, 'result')
+  if (!isRecord(result)) {
+    return false
   }
-  return
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  if (tag !== 'Failure') {
+    return false
+  }
+  const failure = Reflect.get(result, 'failure')
+  if (!isRecord(failure)) {
+    return false
+  }
+  const failureTag = Reflect.get(failure, '_tag')
+  return typeof failureTag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(failureTag)
 }
 
-const invalidAnvilInteractionField = (interaction: AnvilInteractionView | undefined): string | undefined => {
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
-    return 'interaction.status'
+const invalidAnvilModelField = (model: unknown): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
   }
-  if (typeof interaction !== 'undefined') {
-    const focusedTarget = Reflect.get(interaction, 'focusedTarget')
-    if (
-      typeof focusedTarget !== 'undefined' &&
-      !ANVIL_OPERATION_TARGETS.some((target) => target === focusedTarget)
-    ) {
-      return 'interaction.focusedTarget'
+  const slots = Reflect.get(model, 'slots')
+  if (!Array.isArray(slots)) {
+    return 'slots'
+  }
+  const rejectionReason = Reflect.get(model, 'rejectionReason')
+  if (typeof rejectionReason !== 'undefined' && typeof rejectionReason !== 'string') {
+    return 'rejectionReason'
+  }
+  for (const slot of slots) {
+    if (typeof slot === 'undefined') {
+      continue
+    }
+    if (!isRecord(slot)) {
+      return 'slots[].slot'
+    }
+    const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+    if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+      return 'slots[].itemDisplayName'
+    }
+    const countLabel = Reflect.get(slot, 'countLabel')
+    if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+      return 'slots[].countLabel'
     }
   }
   return
 }
 
-const invalidAnvilViewInputField = (
-  model: AnvilViewModel,
-  interaction: AnvilInteractionView | undefined,
-): string | undefined => invalidAnvilModelField(model) ?? invalidAnvilInteractionField(interaction)
+const invalidAnvilInteractionField = (interaction: unknown): string | undefined => {
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  if (!isRecord(interaction)) {
+    return 'interaction'
+  }
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
+    return 'interaction.status'
+  }
+  const focusedTarget = Reflect.get(interaction, 'focusedTarget')
+  if (
+    typeof focusedTarget !== 'undefined' &&
+    !ANVIL_OPERATION_TARGETS.some((target) => target === focusedTarget)
+  ) {
+    return 'interaction.focusedTarget'
+  }
+  return
+}
+
+const invalidAnvilViewInputField = (model: unknown, interaction: unknown): string | undefined =>
+  invalidAnvilModelField(model) ?? invalidAnvilInteractionField(interaction)
 
 export type AnvilViewActions = {
   readonly onActivate?: (target: AnvilOperationTarget) => void

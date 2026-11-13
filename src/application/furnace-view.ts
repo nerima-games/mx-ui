@@ -47,42 +47,88 @@ type FurnaceViewInputFailure = Readonly<{
   readonly field: string
 }>
 
-const invalidFurnaceModelField = (model: FurnaceViewModel): string | undefined => {
-  if (model.slots.some((slot) =>
-    typeof slot !== 'undefined' && Reflect.get(slot, 'itemDisplayName') === null,
-  )) {
-    return 'slots[].itemDisplayName'
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isValidItemDisplayNameView = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
   }
-  if (model.slots.some((slot) =>
-    typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null,
-  )) {
-    return 'slots[].countLabel'
+  const language = Reflect.get(input, 'language')
+  if (language !== 'en' && language !== 'ja') {
+    return false
+  }
+  const result = Reflect.get(input, 'result')
+  if (!isRecord(result)) {
+    return false
+  }
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  if (tag !== 'Failure') {
+    return false
+  }
+  const failure = Reflect.get(result, 'failure')
+  if (!isRecord(failure)) {
+    return false
+  }
+  const failureTag = Reflect.get(failure, '_tag')
+  return typeof failureTag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(failureTag)
+}
+
+const invalidFurnaceModelField = (model: unknown): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const slots = Reflect.get(model, 'slots')
+  if (!Array.isArray(slots)) {
+    return 'slots'
+  }
+  for (const slot of slots) {
+    if (typeof slot === 'undefined') {
+      continue
+    }
+    if (!isRecord(slot)) {
+      return 'slots[].slot'
+    }
+    const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+    if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+      return 'slots[].itemDisplayName'
+    }
+    const countLabel = Reflect.get(slot, 'countLabel')
+    if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+      return 'slots[].countLabel'
+    }
   }
   return
 }
 
-const invalidFurnaceInteractionField = (
-  interaction: FurnaceInteractionView | null | undefined,
-): string | undefined => {
-  if (interaction === null) {
+const invalidFurnaceInteractionField = (interaction: unknown): string | undefined => {
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  if (!isRecord(interaction)) {
     return 'interaction'
   }
-  if (typeof interaction !== 'undefined') {
-    const focusedSlot = Reflect.get(interaction, 'focusedSlot')
-    if (typeof focusedSlot !== 'undefined' && !FURNACE_SLOT_IDS.some((slotId) => slotId === focusedSlot)) {
-      return 'interaction.focusedSlot'
-    }
+  const focusedSlot = Reflect.get(interaction, 'focusedSlot')
+  if (typeof focusedSlot !== 'undefined' && !FURNACE_SLOT_IDS.some((slotId) => slotId === focusedSlot)) {
+    return 'interaction.focusedSlot'
   }
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
     return 'interaction.status'
   }
   return
 }
 
-const invalidFurnaceViewInputField = (
-  model: FurnaceViewModel,
-  interaction: FurnaceInteractionView | null | undefined,
-): string | undefined => invalidFurnaceModelField(model) ?? invalidFurnaceInteractionField(interaction)
+const invalidFurnaceViewInputField = (model: unknown, interaction: unknown): string | undefined =>
+  invalidFurnaceModelField(model) ?? invalidFurnaceInteractionField(interaction)
 
 export type FurnaceViewActions = {
   readonly onActivate?: (target: FurnaceSlotId) => void

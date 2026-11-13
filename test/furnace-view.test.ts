@@ -62,6 +62,53 @@ describe('createFurnaceView', () => {
     }))
   })
 
+  it('returns typed failures instead of stringifying malformed slot and interaction text', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const valid = furnaceViewModel({
+      input: { itemId: 'sand', count: 1 },
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    }, fakeItemDisplayNameOptions())
+    const invalidCount = { ...valid }
+    const countSlots = valid.slots.map((slot) =>
+      slot.id === 'input' ? { ...slot, countLabel: 7 } : slot,
+    )
+    expect(Reflect.set(invalidCount, 'slots', countSlots)).toBe(true)
+    const invalidName = { ...valid }
+    const nameSlots = valid.slots.map((slot) =>
+      slot.id === 'input' ? { ...slot, itemDisplayName: 7 } : slot,
+    )
+    expect(Reflect.set(invalidName, 'slots', nameSlots)).toBe(true)
+
+    expect(view.render(invalidCount)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'slots[].countLabel',
+    }))
+    expect(view.render(invalidName)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'slots[].itemDisplayName',
+    }))
+    expect(Reflect.apply(view.render, view, [valid, { focusedSlot: 'input', status: 7 }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'interaction.status',
+    }))
+    expect(Reflect.apply(view.render, view, [valid, 7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'interaction',
+    }))
+    expect(Reflect.apply(view.render, view, [7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'model',
+    }))
+    expect(Reflect.apply(view.render, view, [{}])).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'slots',
+    }))
+  })
+
   it('returns typed failures for null interaction, status, and focus inputs', () => {
     const factory = fakeDocument()
     const view = createFurnaceView(factory, factory.createElement('main'))

@@ -179,6 +179,19 @@ describe('debugOverlayModel', () => {
     )
   })
 
+  it.each([
+    { label: 'a non-record', worldTime: 7 },
+    { label: 'a null tick counter', worldTime: { ticks: null, dayLengthTicks: 24_000 } },
+    { label: 'a non-numeric day length', worldTime: { ticks: 0, dayLengthTicks: false } },
+    { label: 'a zero day length', worldTime: { ticks: 0, dayLengthTicks: 0 } },
+  ])('rejects world time with $label instead of projecting it', ({ worldTime }) => {
+    const snapshot: Record<string, unknown> = { ...emptySnapshot(), worldTime }
+
+    expect(debugOverlayModel(snapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'worldTime' }),
+    )
+  })
+
   it('returns a typed snapshot failure when a getter changes during validation', () => {
     let reads = 0
     const unstableSnapshot = new Proxy(emptySnapshot(), {

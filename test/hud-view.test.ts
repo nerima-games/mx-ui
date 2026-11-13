@@ -779,6 +779,75 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     }
   })
 
+  it('returns typed failures for wrong-typed hotbar labels and focus without mutating the HUD', () => {
+    const { factory, view } = mount()
+    const unavailableNameModel = projectHudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(1)], {
+      itemDisplayNameOptions: {
+        language: 'en',
+        resolver: () => Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
+      },
+      selectedHotbarSlot: 0,
+    })
+    expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const firstSlot = model.hotbar[0]
+    expect(firstSlot).toBeDefined()
+    if (typeof firstSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(firstSlot, 'countLabel', 7)).toBe(true)
+    const before = factory.mark()
+
+    expect(view.render(model)).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar.countLabel',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    const itemNameModel = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const itemNameSlot = itemNameModel.hotbar[0]
+    expect(itemNameSlot).toBeDefined()
+    if (typeof itemNameSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(itemNameSlot, 'itemDisplayName', 7)).toBe(true)
+    expect(view.render(itemNameModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar.itemDisplayName',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    expect(Reflect.apply(view.render, view, [7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'model',
+    }))
+    expect(Reflect.apply(view.render, view, [{ hotbar: 7 }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar',
+    }))
+    expect(Reflect.apply(view.render, view, [{ hotbar: [7] }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    for (const invalidIndex of [true, '2', {}]) {
+      const focusResult = Reflect.apply(view.setKeyboardFocus, view, [invalidIndex])
+      expect(focusResult).toStrictEqual(Result.fail({ _tag: 'InvalidHudFocusInput', field: 'index' }))
+      expect(writeNames(factory.since(before))).toStrictEqual([])
+    }
+  })
+
   it('returns a typed failure when a public icon update receives a null health condition', () => {
     const icon = createIconElement(fakeDocument(), 'shank')
 
