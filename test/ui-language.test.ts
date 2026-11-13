@@ -317,6 +317,53 @@ describe('UI language', () => {
     )
   })
 
+  it('classifies arbitrary item ids as a typed failure or a decodable display name', () => {
+    const options = fakeItemDisplayNameOptions('ja')
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const view = itemDisplayNameView(input, options)
+        expect(view.language).toBe('ja')
+        if (Result.isFailure(view.result)) {
+          expect(view.result.failure).toStrictEqual({ _tag: 'InvalidItemId' })
+          return
+        }
+        expect(Result.isSuccess(Schema.decodeUnknownResult(ItemDisplayNameSchema)(view.result.success))).toBe(true)
+        expect(view.result.success).not.toContain('minecraft:')
+      }),
+    )
+  })
+
+  it('rejects explicit null options and absent option languages without choosing a default', () => {
+    const resolverCalls: Array<Readonly<{ itemType: ItemType; language: UiLanguage }>> = []
+    const resolver: ItemDisplayNameResolver = (itemType, language) => {
+      resolverCalls.push({ itemType, language })
+      return Result.succeed(`${language}:${itemType}`)
+    }
+    const invalidViews = [
+      itemDisplayNameView('stone', null),
+      itemDisplayNameView('stone', { language: null, resolver }),
+      itemDisplayNameView('stone', { language: undefined, resolver }),
+      itemDisplayNameView('stone', { language: 'ja', resolver: null }),
+    ]
+
+    for (const view of invalidViews) {
+      expect(view.language).toBeUndefined()
+      expect(Result.isFailure(view.result)).toBe(true)
+      if (Result.isFailure(view.result)) {
+        expect(view.result.failure).toStrictEqual({ _tag: 'InvalidItemDisplayNameOptions' })
+      }
+    }
+
+    fc.assert(
+      fc.property(fc.anything(), (itemId) => {
+        const invalidView = itemDisplayNameView(itemId, null)
+        expect(invalidView.language).toBeUndefined()
+        expect(Result.isFailure(invalidView.result)).toBe(true)
+      }),
+    )
+    expect(resolverCalls).toHaveLength(0)
+  })
+
   it.each(['__proto__', 'constructor', 'toString'])('maps inherited input-action key %s to the unknown message', (action) => {
     expect(inputActionMessageKey(action)).toBe('settings.action.unknown')
   })

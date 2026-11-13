@@ -33,6 +33,7 @@
  * it as its own field, and `slotSnapshotOf` remains the one place that
  * attaches it.
  */
+import { Result } from 'effect'
 import { DEFAULT_UI_LANGUAGE, type UiMessageKey, type UiMessageValues, translateUiMessage } from './ui-language.js'
 import {
   HOTBAR_SLOT_COUNT,
@@ -219,11 +220,41 @@ const EMPTY_STACK_COUNT = 0
  * because `slotView` already knows what to do with one and DN-UI-7c is about
  * what happens when two places decide separately what "empty" means.
  */
-export const slotSnapshotOf = (slot: Slot, durability?: number): HotbarSlotSnapshot => ({
+type NullSlotSnapshotFailure = Readonly<{ readonly _tag: 'NullInventorySlot' }>
+type InvalidSlotCountInput = Readonly<{ readonly count: null | undefined; readonly item?: unknown }>
+type InvalidSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
+const slotSnapshotOfValidSlot = (slot: Slot, durability?: number): HotbarSlotSnapshot => ({
   count: slot?.count ?? EMPTY_STACK_COUNT,
   durability,
   itemId: slot?.item,
 })
+
+export function slotSnapshotOf(slot: Slot, durability?: number): HotbarSlotSnapshot
+export function slotSnapshotOf(
+  slot: null,
+  durability?: number,
+): Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure>
+export function slotSnapshotOf(
+  slot: InvalidSlotCountInput,
+  durability?: number,
+): Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure>
+export function slotSnapshotOf(
+  slot: Slot | InvalidSlotCountInput | null,
+  durability?: number,
+): HotbarSlotSnapshot | Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure>
+export function slotSnapshotOf(
+  slot: Slot | InvalidSlotCountInput | null,
+  durability?: number,
+): HotbarSlotSnapshot | Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure> {
+  if (slot === null) {
+    return Result.fail({ _tag: 'NullInventorySlot' })
+  }
+  if (typeof slot !== 'undefined' && typeof slot.count !== 'number') {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
+  return slotSnapshotOfValidSlot(slot, durability)
+}
 
 type ProjectRegionOptions = {
   readonly id: RegionId

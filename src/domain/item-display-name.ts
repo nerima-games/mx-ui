@@ -29,10 +29,25 @@ export type ItemDisplayNameOptions = Readonly<{
   readonly resolver: ItemDisplayNameResolver
 }>
 
+type InvalidItemDisplayNameOptions = null | Readonly<{
+  readonly language: UiLanguage | null | undefined
+  readonly resolver: ItemDisplayNameResolver | null | undefined
+}>
+
 export type ItemDisplayNameView = Readonly<{
   readonly language: UiLanguage
   readonly result: Result.Result<ItemDisplayName, ItemDisplayNameFailure>
 }>
+
+type InvalidItemDisplayNameOptionsView = Readonly<{
+  readonly language: undefined
+  readonly result: Result.Result<ItemDisplayName, Readonly<{ readonly _tag: 'InvalidItemDisplayNameOptions' }>>
+}>
+
+const invalidItemDisplayNameOptionsView = (): InvalidItemDisplayNameOptionsView => ({
+  language: undefined,
+  result: Result.fail({ _tag: 'InvalidItemDisplayNameOptions' }),
+})
 
 const itemTypeFromId = (input: unknown): ItemType | undefined => {
   if (typeof input !== 'string') {
@@ -90,11 +105,29 @@ export const resolveItemDisplayName = (
   return resolveForItemType(itemType, language, resolver)
 }
 
-export const itemDisplayNameView = (
+export function itemDisplayNameView(
   itemId: unknown,
   options?: ItemDisplayNameOptions,
-): ItemDisplayNameView => {
-  const language = options?.language ?? 'en'
+): ItemDisplayNameView
+export function itemDisplayNameView(
+  itemId: unknown,
+  options: InvalidItemDisplayNameOptions,
+): InvalidItemDisplayNameOptionsView
+export function itemDisplayNameView(
+  itemId: unknown,
+  options: ItemDisplayNameOptions | InvalidItemDisplayNameOptions,
+): ItemDisplayNameView | InvalidItemDisplayNameOptionsView
+export function itemDisplayNameView(
+  itemId: unknown,
+  options?: ItemDisplayNameOptions | InvalidItemDisplayNameOptions,
+): ItemDisplayNameView | InvalidItemDisplayNameOptionsView {
+  if (options === null || (
+    typeof options === 'object' &&
+    (options.language === null || typeof options.language === 'undefined' || typeof options.resolver !== 'function')
+  )) {
+    return invalidItemDisplayNameOptionsView()
+  }
+  const language = typeof options === 'undefined' ? 'en' : options.language
   return {
     language,
     result: resolveItemDisplayName(itemId, language, options?.resolver),

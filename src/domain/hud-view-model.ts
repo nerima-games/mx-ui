@@ -11,6 +11,7 @@ import {
   isDead,
   vitalsView,
 } from '@nerima-games/mc-sim'
+import { Result } from 'effect'
 import { type ItemDisplayNameOptions, type ItemDisplayNameView, itemDisplayNameView } from './item-display-name.js'
 
 export {
@@ -149,11 +150,45 @@ const hudOptionsOf = (selection: number | HudViewModelOptions): HudViewModelOpti
   return selection
 }
 
-export const slotView = (
+type NullSlotViewFailure = Readonly<{ readonly _tag: 'NullSlotViewInput' }>
+type InvalidSlotCountInput = Readonly<{
+  readonly count: null | undefined
+  readonly item?: unknown
+  readonly itemId?: unknown
+}>
+type InvalidSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
+export function slotView(
   slot: InventoryCarriedSlot | HotbarSlotSnapshot,
   index: number,
   selection: number | SlotViewOptions,
-): SlotView => {
+): SlotView
+export function slotView(
+  slot: null,
+  index: number,
+  selection: number | SlotViewOptions,
+): Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure>
+export function slotView(
+  slot: InvalidSlotCountInput,
+  index: number,
+  selection: number | SlotViewOptions,
+): Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure>
+export function slotView(
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot | InvalidSlotCountInput | null,
+  index: number,
+  selection: number | SlotViewOptions,
+): SlotView | Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure>
+export function slotView(
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot | InvalidSlotCountInput | null,
+  index: number,
+  selection: number | SlotViewOptions,
+): SlotView | Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure> {
+  if (slot === null) {
+    return Result.fail({ _tag: 'NullSlotViewInput' })
+  }
+  if (typeof slot !== 'undefined' && typeof slot.count !== 'number') {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
   const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
 
   const count = slot?.count ?? ZERO
