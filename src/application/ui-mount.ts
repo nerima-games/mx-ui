@@ -322,19 +322,72 @@ type PartialMount = {
   readonly ownedRoot: HTMLElement
 }
 
+type UiCleanupFailure = {
+  readonly operation: string
+  readonly error: UiMountError
+}
+
+const NO_CLEANUP_FAILURES = 0
+const SINGLE_CLEANUP_FAILURE = 1
+
+type UiCleanupOperation = {
+  readonly name: string
+  readonly run: () => void
+}
+
+const attemptUiCleanup = (
+  message: string,
+  operations: ReadonlyArray<UiCleanupOperation>,
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  Effect.gen(function* collectCleanupFailures() {
+    const failures: Array<UiCleanupFailure> = []
+    for (const operation of operations) {
+      const result = yield* Effect.result(Effect.try({
+        catch: (cause) => new UiMountError(message, { cause }),
+        try: operation.run,
+      }))
+      if (Result.isFailure(result)) {
+        failures.push({ error: result.failure, operation: operation.name })
+      }
+    }
+    return failures
+  })
+
+const finishUiCleanup = (
+  message: string,
+  failures: ReadonlyArray<UiCleanupFailure>,
+): Result.Result<void, UiMountError> => {
+  if (failures.length === NO_CLEANUP_FAILURES) {
+    return Result.void
+  }
+  if (failures.length === SINGLE_CLEANUP_FAILURE) {
+    const firstFailure = failures.at(NO_CLEANUP_FAILURES)
+    if (typeof firstFailure !== 'undefined') {
+      return Result.fail(firstFailure.error)
+    }
+  }
+  return Result.fail(new UiMountError(message, { cause: { cleanupErrors: failures } }))
+}
+
 /** Removes the views and owned root left by a failed initialization. */
 const destroyPartialMount = (partial: PartialMount): Effect.Effect<void, UiMountError> =>
-  Effect.try({
-    catch: (cause) => new UiMountError('Failed to clean up partial mx-ui mount', { cause }),
-    try: () => {
-      partial.hud?.dispose()
-      partial.mainMenu?.destroy()
-      partial.overlays?.destroy()
-      partial.motionController?.dispose()
-      partial.colorVisionController?.dispose()
-      partial.ownedRoot.remove()
+  Effect.flatMap(
+    attemptUiCleanup('Failed to clean up partial mx-ui mount', [
+      { name: 'hud', run: () => partial.hud?.dispose() },
+      { name: 'mainMenu', run: () => partial.mainMenu?.destroy() },
+      { name: 'overlays', run: () => partial.overlays?.destroy() },
+      { name: 'motionController', run: () => partial.motionController?.dispose() },
+      { name: 'colorVisionController', run: () => partial.colorVisionController?.dispose() },
+      { name: 'ownedRoot', run: () => partial.ownedRoot.remove() },
+    ]),
+    (failures) => {
+      const result = finishUiCleanup('Failed to clean up partial mx-ui mount', failures)
+      if (Result.isFailure(result)) {
+        return Effect.fail(result.failure)
+      }
+      return Effect.void
     },
-  })
+  )
 
 type MutableMainMenuCallbacks = {
   -readonly [Key in keyof MainMenuCallbacks]?: MainMenuCallbacks[Key]
@@ -393,35 +446,28 @@ const buildMenuCallbacks = (
 const removeUiMountedViews = (
   previous: UiMountedViews | null,
   message: string,
-): Effect.Effect<void, UiMountError> =>
-  Effect.try({
-    catch: (cause) => new UiMountError(message, { cause }),
-    try: () => {
-      previous?.hud.dispose()
-      previous?.mainMenu.destroy()
-      previous?.overlays.destroy()
-      previous?.root.remove()
-    },
-  })
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  attemptUiCleanup(message, [
+    { name: 'hud', run: () => previous?.hud.dispose() },
+    { name: 'mainMenu', run: () => previous?.mainMenu.destroy() },
+    { name: 'overlays', run: () => previous?.overlays.destroy() },
+  ])
 
-const combineControllerAndViewCleanup = (
+const removeOwnedRoot = (
+  previous: UiMountedViews | null,
   message: string,
-  controllerResult: Result.Result<void, UiMountError>,
-  viewsResult: Result.Result<void, UiMountError>,
-): Result.Result<void, UiMountError> => {
-  if (Result.isFailure(controllerResult)) {
-    if (Result.isFailure(viewsResult)) {
-      return Result.fail(new UiMountError(message, {
-        cause: {
-          controllerError: controllerResult.failure,
-          viewsError: viewsResult.failure,
-        },
-      }))
-    }
-    return controllerResult
-  }
-  return viewsResult
-}
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  attemptUiCleanup(message, [{ name: 'ownedRoot', run: () => previous?.root.remove() }])
+
+const combineSettingsControllerCleanup = (
+  message: string,
+  motionController: MotionPreferenceController | null,
+  colorVisionController: ColorVisionFilterController | null,
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  attemptUiCleanup(message, [
+    { name: 'motionController', run: () => motionController?.dispose() },
+    { name: 'colorVisionController', run: () => colorVisionController?.dispose() },
+  ])
 
 const createAchievementToastLifecycle = (session: UiMountSession) => {
   const close = (): Effect.Effect<void, Schema.SchemaError> => {
@@ -487,12 +533,19 @@ const validatedInitialSettingsState = (
   return { failure: { _tag: 'InvalidSettingsSnapshot' }, settings: DEFAULT_SETTINGS }
 }
 
-const createMountState = (options: UiMountOptions): Readonly<{
-  session: UiMountSession
-  toastLifecycle: ReturnType<typeof createAchievementToastLifecycle>
-}> => {
-  const legacySettings = options.initialSettings ?? DEFAULT_UI_SETTINGS
-  const initialSettings: unknown = options.initialSettingsSnapshot ?? {
+const resolveInitialSettings = (options: UiMountOptions): unknown => {
+  if (typeof options.initialSettingsSnapshot !== 'undefined') {
+    return options.initialSettingsSnapshot
+  }
+
+  let legacySettings: typeof DEFAULT_UI_SETTINGS | null = DEFAULT_UI_SETTINGS
+  if (typeof options.initialSettings !== 'undefined') {
+    legacySettings = options.initialSettings
+  }
+  if (legacySettings === null) {
+    return null
+  }
+  return {
     ...DEFAULT_SETTINGS,
     fovDegrees: legacySettings.fieldOfView,
     masterVolume: legacySettings.masterVolume,
@@ -500,7 +553,13 @@ const createMountState = (options: UiMountOptions): Readonly<{
     renderDistance: legacySettings.renderDistance,
     uiScale: legacySettings.uiScale,
   }
-  const initialSettingsState = validatedInitialSettingsState(initialSettings)
+}
+
+const createMountState = (options: UiMountOptions): Readonly<{
+  session: UiMountSession
+  toastLifecycle: ReturnType<typeof createAchievementToastLifecycle>
+}> => {
+  const initialSettingsState = validatedInitialSettingsState(resolveInitialSettings(options))
   const session: UiMountSession = {
     applySettingsPreferences: noSettingsPreferenceApplication,
     colorVisionController: null,
@@ -956,6 +1015,26 @@ const createSettingsOperations = (
   return { applySettingsPreferences, updateLanguage, updateSettings, updateSettingsSnapshot }
 }
 
+const collectUnmountCleanupResult = (
+  message: string,
+  previous: UiMountedViews | null,
+  preferences: Pick<UiMountSession, 'motionController' | 'colorVisionController'>,
+): Effect.Effect<Result.Result<void, UiMountError>> =>
+  Effect.gen(function* collectUnmountCleanup() {
+    const controllerFailures = yield* combineSettingsControllerCleanup(
+      message,
+      preferences.motionController,
+      preferences.colorVisionController,
+    )
+    const viewFailures = yield* removeUiMountedViews(previous, message)
+    const rootFailures = yield* removeOwnedRoot(previous, message)
+    return finishUiCleanup(message, [
+      ...controllerFailures,
+      ...viewFailures,
+      ...rootFailures,
+    ])
+  })
+
 const createUnmountOperation = (
   session: UiMountSession,
   toastLifecycle: ReturnType<typeof createAchievementToastLifecycle>,
@@ -968,19 +1047,8 @@ const createUnmountOperation = (
       session.inventoryOpen = false
       session.inventoryRestoreFocus = null
       const subscriptionResult = yield* Effect.result(toastLifecycle.close())
-      const controllerCleanup = Effect.try({
-        catch: (cause) => new UiMountError(message, { cause }),
-        try: () => {
-          preferences.motionController?.dispose()
-          preferences.colorVisionController?.dispose()
-        },
-      })
-      const controllerResult = yield* Effect.result(controllerCleanup)
-      const viewsResult = yield* Effect.result(removeUiMountedViews(previous, message))
-      return yield* finishUiMountCleanup(
-        subscriptionResult,
-        combineControllerAndViewCleanup(message, controllerResult, viewsResult),
-      )
+      const cleanupResult = yield* collectUnmountCleanupResult(message, previous, preferences)
+      return yield* finishUiMountCleanup(subscriptionResult, cleanupResult)
     })
 
 const createMountedSettingsCallbacks = (

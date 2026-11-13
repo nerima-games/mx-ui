@@ -96,6 +96,8 @@ const UNREADABLE_SAVE: UnreadableSave = {
   _tag: 'SaveDecodeError',
   format: asSaveSliceId('mc-save'),
   key: asWorldId('broken-save'),
+  record: { _tag: 'Save', key: asWorldId('broken-save') },
+  repair: { discardableChunkKeys: [], lastHealthyRevisionAvailable: false },
   reason: asUiMessageText('Invalid data'),
   version: asSaveVersion(1),
 }
@@ -491,6 +493,23 @@ describe('UiMount', () => {
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
+  it.each(['initialSettings', 'initialSettingsSnapshot'] as const)(
+    'rejects explicit null in %s instead of substituting defaults',
+    async (settingKey) => {
+      const host = document.createElement('main')
+      document.body.appendChild(host)
+      const options = { root: host }
+      expect(Reflect.set(options, settingKey, null)).toBe(true)
+      const runtime = makeUiMount(options)
+
+      const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+      expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Invalid initial settings snapshot' })
+      expect(runtime.current()).toBeUndefined()
+      expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+    },
+  )
+
   it('returns a typed initialization failure and cleans up when host settings change before start', async () => {
     const host = document.createElement('main')
     const unrelated = document.createElement('p')
@@ -592,7 +611,10 @@ describe('UiMount', () => {
   it('removes the owned UI after reduced-motion listener cleanup fails', async () => {
     const host = document.createElement('main')
     const unrelated = document.createElement('p')
+    const canvas = document.createElement('canvas')
+    canvas.style.setProperty('filter', 'contrast(0.8)')
     host.appendChild(unrelated)
+    host.appendChild(canvas)
     document.body.appendChild(host)
     const view = document.defaultView
     if (view === null) {
@@ -608,11 +630,14 @@ describe('UiMount', () => {
       }),
     }
     Object.defineProperty(view, 'matchMedia', { configurable: true, value: vi.fn(() => mediaQuery) })
-    const runtime = makeUiMount({ root: host })
+    const runtime = makeUiMount({ colorVisionTarget: canvas, root: host })
+    let restoreColorVisionStyle: (() => void) | null = null
 
     try {
       await Effect.runPromise(runtime.start)
       expect(host.querySelector('[data-mx-ui="mount-root"]')).not.toBeNull()
+      const setProperty = vi.spyOn(canvas.style, 'setProperty')
+      restoreColorVisionStyle = () => setProperty.mockRestore()
 
       const failure = await Effect.runPromise(Effect.flip(runtime.stop))
 
@@ -622,8 +647,11 @@ describe('UiMount', () => {
       expect(runtime.current()).toBeUndefined()
       expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
       expect(host.contains(unrelated)).toBe(true)
+      expect(canvas.style.getPropertyValue('filter')).toBe('contrast(0.8)')
+      expect(setProperty).toHaveBeenCalledWith('filter', 'contrast(0.8)', '')
       expect(mediaQuery.removeEventListener).toHaveBeenCalledOnce()
     } finally {
+      restoreColorVisionStyle?.()
       if (typeof previousMatchMedia === 'undefined') {
         Reflect.deleteProperty(view, 'matchMedia')
       } else {
@@ -632,29 +660,34 @@ describe('UiMount', () => {
     }
   })
 
-  it('preserves both cleanup failures and keeps unrelated host content when owned-root removal fails', async () => {
+  it('attempts both controller cleanups and owned-root removal after failures', async () => {
     const host = document.createElement('main')
     const unrelated = document.createElement('p')
+    const canvas = document.createElement('canvas')
+    canvas.style.setProperty('filter', 'contrast(0.8)')
     host.appendChild(unrelated)
+    host.appendChild(canvas)
     document.body.appendChild(host)
     const view = document.defaultView
     if (view === null) {
       throw new Error('Expected a browser window')
     }
     const previousMatchMedia = Object.getOwnPropertyDescriptor(view, 'matchMedia')
-    const controllerError = new Error('media listener cleanup failed')
-    const viewError = new Error('owned root removal failed')
+    const motionError = new Error('media listener cleanup failed')
+    const colorVisionError = new Error('color vision cleanup failed')
+    const rootError = new Error('owned root removal failed')
     const mediaQuery = {
       addEventListener: vi.fn((_type: 'change', _listener: () => void) => undefined),
       matches: false,
       removeEventListener: vi.fn((_type: 'change', _listener: () => void) => {
-        throw controllerError
+        throw motionError
       }),
     }
     Object.defineProperty(view, 'matchMedia', { configurable: true, value: vi.fn(() => mediaQuery) })
-    const runtime = makeUiMount({ root: host })
+    const runtime = makeUiMount({ colorVisionTarget: canvas, root: host })
     let ownedRoot: HTMLElement | null = null
     let restoreOwnedRootRemove: (() => void) | null = null
+    let restoreColorVisionStyle: (() => void) | null = null
 
     try {
       await Effect.runPromise(runtime.start)
@@ -662,8 +695,20 @@ describe('UiMount', () => {
       if (ownedRoot === null) {
         throw new Error('Expected a mounted UI root')
       }
+      const originalSetProperty = canvas.style.setProperty.bind(canvas.style)
+      const setProperty = vi.spyOn(canvas.style, 'setProperty').mockImplementation((
+        propertyName,
+        value,
+        priority,
+      ) => {
+        if (propertyName === 'filter') {
+          throw colorVisionError
+        }
+        originalSetProperty(propertyName, value, priority)
+      })
+      restoreColorVisionStyle = () => setProperty.mockRestore()
       const removeOwnedRoot = vi.spyOn(ownedRoot, 'remove').mockImplementation(() => {
-        throw viewError
+        throw rootError
       })
       restoreOwnedRootRemove = () => removeOwnedRoot.mockRestore()
 
@@ -673,15 +718,20 @@ describe('UiMount', () => {
       expect(failure['_tag']).toBe('UiMountError')
       expect(failure.message).toBe('Failed to stop mx-ui')
       expect(failure.cause).toMatchObject({
-        controllerError: { _tag: 'UiMountError', cause: controllerError },
-        viewsError: { _tag: 'UiMountError', cause: viewError },
+        cleanupErrors: [
+          { operation: 'motionController', error: { _tag: 'UiMountError', cause: motionError } },
+          { operation: 'colorVisionController', error: { _tag: 'UiMountError', cause: colorVisionError } },
+          { operation: 'ownedRoot', error: { _tag: 'UiMountError', cause: rootError } },
+        ],
       })
       expect(runtime.current()).toBeUndefined()
       expect(host.contains(unrelated)).toBe(true)
+      expect(host.contains(canvas)).toBe(true)
       expect(host.contains(ownedRoot)).toBe(true)
       expect(removeOwnedRoot).toHaveBeenCalledOnce()
       expect(mediaQuery.removeEventListener).toHaveBeenCalledOnce()
     } finally {
+      restoreColorVisionStyle?.()
       restoreOwnedRootRemove?.()
       ownedRoot?.remove()
       if (typeof previousMatchMedia === 'undefined') {
@@ -692,9 +742,30 @@ describe('UiMount', () => {
     }
   })
 
-  it('reports a partial-mount cleanup failure with both mount and cleanup causes', async () => {
+  it('continues partial-mount cleanup through both controllers and the owned root after failures', async () => {
     const host = document.createElement('main')
+    const canvas = document.createElement('canvas')
+    canvas.style.setProperty('filter', 'contrast(0.8)')
+    host.appendChild(canvas)
     document.body.appendChild(host)
+    const view = document.defaultView
+    if (view === null) {
+      throw new Error('Expected a browser window')
+    }
+    const previousMatchMedia = Object.getOwnPropertyDescriptor(view, 'matchMedia')
+    const motionError = new Error('media listener cleanup failed')
+    const colorVisionError = new Error('color vision cleanup failed')
+    const rootError = new Error('owned root cleanup failed')
+    const renderError = new Error('render failed')
+    let failColorVisionCleanup = false
+    const mediaQuery = {
+      addEventListener: vi.fn((_type: 'change', _listener: () => void) => undefined),
+      matches: false,
+      removeEventListener: vi.fn((_type: 'change', _listener: () => void) => {
+        throw motionError
+      }),
+    }
+    Object.defineProperty(view, 'matchMedia', { configurable: true, value: vi.fn(() => mediaQuery) })
     const originalSetAttribute = HTMLElement.prototype.setAttribute
     const originalRemove = HTMLElement.prototype.remove
     vi.spyOn(HTMLElement.prototype, 'setAttribute').mockImplementation(function (
@@ -703,33 +774,62 @@ describe('UiMount', () => {
       value,
     ) {
       if (name === 'data-world-type-options') {
-        throw new Error('render failed')
+        failColorVisionCleanup = true
+        throw renderError
       }
       return originalSetAttribute.call(this, name, value)
     })
     vi.spyOn(HTMLElement.prototype, 'remove').mockImplementation(function (this: HTMLElement) {
       if (this.getAttribute('data-mx-ui') === 'mount-root') {
-        throw new Error('cleanup failed')
+        throw rootError
       }
       return originalRemove.call(this)
     })
-    const runtime = makeUiMount({ root: host })
-
-    const failure = await Effect.runPromise(Effect.flip(runtime.start))
-
-    expect(failure).toMatchObject({
-      _tag: 'UiMountError',
-      message: 'Failed to mount mx-ui',
-      cause: {
-        cleanupError: {
-          _tag: 'UiMountError',
-          message: 'Failed to clean up partial mx-ui mount',
-          cause: { message: 'cleanup failed' },
-        },
-        mountError: { _tag: 'UiMountError', cause: { message: 'render failed' } },
-      },
+    const runtime = makeUiMount({ colorVisionTarget: canvas, root: host })
+    const originalSetProperty = canvas.style.setProperty.bind(canvas.style)
+    const setProperty = vi.spyOn(canvas.style, 'setProperty').mockImplementation((
+      propertyName,
+      value,
+      priority,
+    ) => {
+      if (failColorVisionCleanup && propertyName === 'filter') {
+        throw colorVisionError
+      }
+      originalSetProperty(propertyName, value, priority)
     })
-    expect(runtime.current()).toBeUndefined()
+
+    try {
+      const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+      expect(failure).toMatchObject({
+        _tag: 'UiMountError',
+        message: 'Failed to mount mx-ui',
+        cause: {
+          cleanupError: {
+            _tag: 'UiMountError',
+            message: 'Failed to clean up partial mx-ui mount',
+            cause: {
+              cleanupErrors: [
+                { operation: 'motionController', error: { _tag: 'UiMountError', cause: motionError } },
+                { operation: 'colorVisionController', error: { _tag: 'UiMountError', cause: colorVisionError } },
+                { operation: 'ownedRoot', error: { _tag: 'UiMountError', cause: rootError } },
+              ],
+            },
+          },
+          mountError: { _tag: 'UiMountError', cause: renderError },
+        },
+      })
+      expect(runtime.current()).toBeUndefined()
+      expect(mediaQuery.removeEventListener).toHaveBeenCalledOnce()
+    } finally {
+      setProperty.mockRestore()
+      vi.restoreAllMocks()
+      if (typeof previousMatchMedia === 'undefined') {
+        Reflect.deleteProperty(view, 'matchMedia')
+      } else {
+        Object.defineProperty(view, 'matchMedia', previousMatchMedia)
+      }
+    }
   })
 
   it('toggles the debug HUD and updates it from a typed snapshot', async () => {
