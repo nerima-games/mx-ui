@@ -3,12 +3,10 @@ import { DEFAULT_SETTINGS } from '@nerima-games/mc-sim'
 import { InputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { Result } from 'effect'
 import { fileURLToPath } from 'node:url'
-import { furnaceViewModel } from '../src/domain/furnace-view-model'
 import { onboardingViewModel } from '../src/domain/onboarding-view-model'
 import { settingsViewModel, type SettingsViewModel } from '../src/domain/settings-view-model'
 import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from '../test/fixtures/settings-input'
 import { openHarness } from './harness'
-import { browserItemDisplayNameOptions } from './item-display-names'
 
 const debugOverlayViewModule = `/@fs${fileURLToPath(
   new URL('../src/application/debug-overlay-view.ts', import.meta.url),
@@ -27,6 +25,9 @@ const settingsViewModule = `/@fs${fileURLToPath(
 )}`
 const furnaceViewModule = `/@fs${fileURLToPath(
   new URL('../src/application/furnace-view.ts', import.meta.url),
+)}`
+const furnaceViewModelModule = `/@fs${fileURLToPath(
+  new URL('../src/domain/furnace-view-model.ts', import.meta.url),
 )}`
 const onboardingViewModule = `/@fs${fileURLToPath(
   new URL('../src/application/onboarding-view.ts', import.meta.url),
@@ -111,14 +112,6 @@ if (!Result.isSuccess(settingsBaselineResult)) {
   throw new Error('Expected a valid settings baseline fixture')
 }
 const SETTINGS_BASELINE_MODEL: SettingsViewModel = settingsBaselineResult.success
-
-const FURNACE_BASELINE_MODEL = furnaceViewModel({
-  burnProgress: 0.4,
-  cookProgress: 0.65,
-  fuel: { count: 4, itemId: 'minecraft:coal' },
-  input: { count: 2, itemId: 'minecraft:iron_ore' },
-  output: { count: 2, itemId: 'minecraft:iron_ingot' },
-}, browserItemDisplayNameOptions())
 
 const ONBOARDING_BASELINE_MODEL = onboardingViewModel({
   firstRun: true,
@@ -336,8 +329,20 @@ test.describe('exact screen baselines', () => {
       width: '640px',
     })
     await page.evaluate(
-      async ({ modulePath, model }) => {
+      async ({ modulePath, modelPath }) => {
         const { createFurnaceView } = (await import(modulePath)) as typeof import('../src/application/furnace-view')
+        const { furnaceViewModel } = (await import(modelPath)) as typeof import('../src/domain/furnace-view-model')
+        const { Result } = await import('effect')
+        const model = furnaceViewModel({
+          burnProgress: 0.4,
+          cookProgress: 0.65,
+          fuel: { count: 4, itemId: 'minecraft:coal' },
+          input: { count: 2, itemId: 'minecraft:iron_ore' },
+          output: { count: 2, itemId: 'minecraft:iron_ingot' },
+        }, {
+          language: 'en',
+          resolver: (itemType) => Result.succeed(itemType.replaceAll('_', ' ')),
+        })
         const host = document.querySelector<HTMLElement>('[data-d-baseline="furnace-station"]')
         if (host === null) {
           throw new Error('Expected the furnace baseline fixture')
@@ -349,7 +354,7 @@ test.describe('exact screen baselines', () => {
         const view = createFurnaceView(document, host)
         view.render(model, { focusedSlot: 'input', status: 'Smelting iron ore' })
       },
-      { modulePath: furnaceViewModule, model: FURNACE_BASELINE_MODEL },
+      { modelPath: furnaceViewModelModule, modulePath: furnaceViewModule },
     )
     await page.evaluate(async () => {
       await document.fonts.ready

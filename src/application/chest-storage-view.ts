@@ -71,37 +71,34 @@ const isValidSlotIndex = (slot: unknown): slot is number =>
 const isRecord = (input: unknown): input is Record<string, unknown> =>
   input !== null && typeof input === 'object' && !Array.isArray(input)
 
-const isValidItemDisplayNameView = (input: unknown): boolean => {
+const isValidItemDisplayNameFailure = (input: unknown): boolean => {
   if (!isRecord(input)) {
     return false
   }
-  const language = Reflect.get(input, 'language')
-  if (language !== 'en' && language !== 'ja') {
-    return false
-  }
-  const result = Reflect.get(input, 'result')
-  if (!isRecord(result)) {
-    return false
-  }
-  const tag = Reflect.get(result, '_tag')
-  if (tag === 'Success') {
-    return typeof Reflect.get(result, 'success') === 'string'
-  }
-  if (tag !== 'Failure') {
-    return false
-  }
-  const failure = Reflect.get(result, 'failure')
-  if (!isRecord(failure)) {
-    return false
-  }
-  const failureTag = Reflect.get(failure, '_tag')
-  return typeof failureTag === 'string' && [
+  const tag = Reflect.get(input, '_tag')
+  return typeof tag === 'string' && [
     'ItemDisplayNameUnavailable',
     'InvalidItemId',
     'MissingItemDisplayNameResolver',
     'InvalidItemDisplayName',
-  ].includes(failureTag)
+  ].includes(tag)
 }
+
+const isValidItemDisplayNameResult = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  if (Reflect.get(input, '_tag') === 'Success') {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return Reflect.get(input, '_tag') === 'Failure' &&
+    isValidItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const isValidItemDisplayNameView = (input: unknown): boolean =>
+  isRecord(input) &&
+  (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
+  isValidItemDisplayNameResult(Reflect.get(input, 'result'))
 
 const slotBelongsToRegion = (region: unknown, slot: number): boolean => {
   if (region === 'chest') {
@@ -311,36 +308,50 @@ const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | und
   })
 }
 
+const invalidGridSlotValueField = (region: string, slot: unknown): string | undefined => {
+  if (slot === null || (typeof slot !== 'undefined' && !isRecord(slot))) {
+    return `${region}.slot`
+  }
+  if (typeof slot === 'undefined') {
+    return
+  }
+  const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+    return `${region}.itemDisplayName`
+  }
+  const countLabel = Reflect.get(slot, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return `${region}.countLabel`
+  }
+  return
+}
+
+const invalidGridRegionField = (region: string, slots: unknown): string | undefined => {
+  if (!Array.isArray(slots)) {
+    return region
+  }
+  for (const slot of slots) {
+    const field = invalidGridSlotValueField(region, slot)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  return
+}
+
 const invalidGridSlotField = (model: unknown): string | undefined => {
   if (!isRecord(model)) {
     return 'model'
   }
-  const chest = Reflect.get(model, 'chest')
-  const playerMain = Reflect.get(model, 'playerMain')
-  const playerHotbar = Reflect.get(model, 'playerHotbar')
   const regions = [
-    ['chest', chest],
-    ['playerMain', playerMain],
-    ['playerHotbar', playerHotbar],
+    ['chest', Reflect.get(model, 'chest')],
+    ['playerMain', Reflect.get(model, 'playerMain')],
+    ['playerHotbar', Reflect.get(model, 'playerHotbar')],
   ] as const
   for (const [region, slots] of regions) {
-    if (!Array.isArray(slots)) {
-      return region
-    }
-    for (const slot of slots) {
-      if (slot === null || (typeof slot !== 'undefined' && !isRecord(slot))) {
-        return `${region}.slot`
-      }
-      if (typeof slot !== 'undefined') {
-        const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
-        if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
-          return `${region}.itemDisplayName`
-        }
-        const countLabel = Reflect.get(slot, 'countLabel')
-        if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
-          return `${region}.countLabel`
-        }
-      }
+    const field = invalidGridRegionField(region, slots)
+    if (typeof field !== 'undefined') {
+      return field
     }
   }
   return

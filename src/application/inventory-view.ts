@@ -675,11 +675,14 @@ const isMergeTargetsShape = (input: unknown): boolean => {
     return false
   }
   const kind = Reflect.get(input, 'kind')
-  return kind === 'unknown' || (
-    kind === 'known' &&
-    isRecord(Reflect.get(input, 'indices')) &&
-    typeof Reflect.get(Reflect.get(input, 'indices'), 'has') === 'function'
-  )
+  if (kind === 'unknown') {
+    return true
+  }
+  if (kind !== 'known') {
+    return false
+  }
+  const indices = Reflect.get(input, 'indices')
+  return isRecord(indices) && typeof Reflect.get(indices, 'has') === 'function'
 }
 
 const isInventoryViewModelShape = (input: unknown): boolean =>

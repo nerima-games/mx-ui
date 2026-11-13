@@ -50,36 +50,72 @@ type AnvilViewInputFailure = Readonly<{
 const isRecord = (input: unknown): input is Record<string, unknown> =>
   input !== null && typeof input === 'object' && !Array.isArray(input)
 
-const isValidItemDisplayNameView = (input: unknown): boolean => {
+const isValidItemDisplayNameFailure = (input: unknown): boolean => {
   if (!isRecord(input)) {
     return false
   }
-  const language = Reflect.get(input, 'language')
-  if (language !== 'en' && language !== 'ja') {
-    return false
-  }
-  const result = Reflect.get(input, 'result')
-  if (!isRecord(result)) {
-    return false
-  }
-  const tag = Reflect.get(result, '_tag')
-  if (tag === 'Success') {
-    return typeof Reflect.get(result, 'success') === 'string'
-  }
-  if (tag !== 'Failure') {
-    return false
-  }
-  const failure = Reflect.get(result, 'failure')
-  if (!isRecord(failure)) {
-    return false
-  }
-  const failureTag = Reflect.get(failure, '_tag')
-  return typeof failureTag === 'string' && [
+  const tag = Reflect.get(input, '_tag')
+  return typeof tag === 'string' && [
     'ItemDisplayNameUnavailable',
     'InvalidItemId',
     'MissingItemDisplayNameResolver',
     'InvalidItemDisplayName',
-  ].includes(failureTag)
+  ].includes(tag)
+}
+
+const isValidItemDisplayNameResult = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  if (Reflect.get(input, '_tag') === 'Success') {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return Reflect.get(input, '_tag') === 'Failure' &&
+    isValidItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const isValidItemDisplayNameView = (input: unknown): boolean =>
+  isRecord(input) &&
+  (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
+  isValidItemDisplayNameResult(Reflect.get(input, 'result'))
+
+const invalidAnvilSlotRecordField = (slot: Record<string, unknown>): string | undefined => {
+  const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+    return 'slots[].itemDisplayName'
+  }
+  const countLabel = Reflect.get(slot, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return 'slots[].countLabel'
+  }
+  return
+}
+
+const invalidAnvilSlotField = (slot: unknown): string | undefined => {
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if (!isRecord(slot)) {
+    return 'slots[].slot'
+  }
+  return invalidAnvilSlotRecordField(slot)
+}
+
+const invalidAnvilModelSlotsField = (
+  model: Record<string, unknown>,
+  slots: ReadonlyArray<unknown>,
+): string | undefined => {
+  const rejectionReason = Reflect.get(model, 'rejectionReason')
+  if (typeof rejectionReason !== 'undefined' && typeof rejectionReason !== 'string') {
+    return 'rejectionReason'
+  }
+  for (const slot of slots) {
+    const field = invalidAnvilSlotField(slot)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  return
 }
 
 const invalidAnvilModelField = (model: unknown): string | undefined => {
@@ -90,25 +126,17 @@ const invalidAnvilModelField = (model: unknown): string | undefined => {
   if (!Array.isArray(slots)) {
     return 'slots'
   }
-  const rejectionReason = Reflect.get(model, 'rejectionReason')
-  if (typeof rejectionReason !== 'undefined' && typeof rejectionReason !== 'string') {
-    return 'rejectionReason'
+  return invalidAnvilModelSlotsField(model, slots)
+}
+
+const invalidAnvilInteractionRecordField = (interaction: Record<string, unknown>): string | undefined => {
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
+    return 'interaction.status'
   }
-  for (const slot of slots) {
-    if (typeof slot === 'undefined') {
-      continue
-    }
-    if (!isRecord(slot)) {
-      return 'slots[].slot'
-    }
-    const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
-    if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
-      return 'slots[].itemDisplayName'
-    }
-    const countLabel = Reflect.get(slot, 'countLabel')
-    if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
-      return 'slots[].countLabel'
-    }
+  const focusedTarget = Reflect.get(interaction, 'focusedTarget')
+  if (typeof focusedTarget !== 'undefined' && !ANVIL_OPERATION_TARGETS.some((target) => target === focusedTarget)) {
+    return 'interaction.focusedTarget'
   }
   return
 }
@@ -120,18 +148,7 @@ const invalidAnvilInteractionField = (interaction: unknown): string | undefined 
   if (!isRecord(interaction)) {
     return 'interaction'
   }
-  const status = Reflect.get(interaction, 'status')
-  if (typeof status !== 'undefined' && typeof status !== 'string') {
-    return 'interaction.status'
-  }
-  const focusedTarget = Reflect.get(interaction, 'focusedTarget')
-  if (
-    typeof focusedTarget !== 'undefined' &&
-    !ANVIL_OPERATION_TARGETS.some((target) => target === focusedTarget)
-  ) {
-    return 'interaction.focusedTarget'
-  }
-  return
+  return invalidAnvilInteractionRecordField(interaction)
 }
 
 const invalidAnvilViewInputField = (model: unknown, interaction: unknown): string | undefined =>
