@@ -1827,6 +1827,7 @@ describe('UiMount', () => {
     if (typeof mounted === 'undefined') {
       throw new Error('expected a mounted session')
     }
+    const removeOwnedRoot = vi.spyOn(mounted.root, 'remove')
     vi.spyOn(mounted.overlays, 'destroy').mockImplementation(() => {
       throw new Error('destroy failed')
     })
@@ -1842,6 +1843,8 @@ describe('UiMount', () => {
         },
       ],
     })
+    expect(removeOwnedRoot).toHaveBeenCalledOnce()
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
   it('rejects start when tearing down the previous mount throws', async () => {
