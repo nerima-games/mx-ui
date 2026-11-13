@@ -1387,7 +1387,8 @@ const invalidExternalRootCallbackField = (callbacks: unknown): string | undefine
     return 'callbacks'
   }
   for (const field of ['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const) {
-    if (Reflect.get(callbacks, field) === null) {
+    const callback = Reflect.get(callbacks, field)
+    if (typeof callback !== 'undefined' && typeof callback !== 'function') {
       return `callbacks.${field}`
     }
   }

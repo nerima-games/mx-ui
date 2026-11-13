@@ -307,6 +307,123 @@ describe('block-breaking progress', () => {
   })
 })
 
+describe('crosshairViewModel input guards', () => {
+  it.each([
+    { label: 'null', value: null },
+    { label: 'not an array', value: 7 },
+    { label: 'unknown screen id', value: ['unknown'] },
+    { label: 'null screen id', value: [null] },
+  ])('returns a typed failure when modals are $label', ({ value }) => {
+    const status: CrosshairStatus = { ...aiming }
+    expect(Reflect.set(status, 'modals', value)).toBe(true)
+
+    expect(crosshairViewModelResult(status, 0)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'modals' }),
+    )
+  })
+
+  it('returns a typed failure for an explicit null last-hit timestamp', () => {
+    const status: CrosshairStatus = { ...aiming }
+    expect(Reflect.set(status, 'lastHitAtSecs', null)).toBe(true)
+
+    expect(crosshairViewModelResult(status, 0)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'lastHitAtSecs' }),
+    )
+  })
+
+  it('returns a typed failure for an explicit null current timestamp', () => {
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [aiming, null])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'nowSecs' }))
+  })
+
+  it('returns a typed failure for an explicit null pulse duration', () => {
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [aiming, 0, null])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'pulseSecs' }))
+  })
+
+  it.each([
+    { label: 'NaN current time', nowSecs: Number.NaN, pulseSecs: CROSSHAIR_PULSE_SECS, field: 'nowSecs' },
+    { label: 'infinite current time', nowSecs: Number.POSITIVE_INFINITY, pulseSecs: CROSSHAIR_PULSE_SECS, field: 'nowSecs' },
+    { label: 'infinite last-hit time', nowSecs: 0, pulseSecs: CROSSHAIR_PULSE_SECS, lastHitAtSecs: Number.POSITIVE_INFINITY, field: 'lastHitAtSecs' },
+    { label: 'negative pulse duration', nowSecs: 0, pulseSecs: -1, field: 'pulseSecs' },
+  ])('returns a typed failure for $label', ({ nowSecs, pulseSecs, lastHitAtSecs, field }) => {
+    const status: CrosshairStatus = { ...aiming }
+    if (typeof lastHitAtSecs !== 'undefined') {
+      expect(Reflect.set(status, 'lastHitAtSecs', lastHitAtSecs)).toBe(true)
+    }
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [status, nowSecs, pulseSecs])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field }))
+  })
+
+  it('property: arbitrary public inputs return a typed failure or a valid view model', () => {
+    const screenIds: ReadonlyArray<ScreenId> = [
+      'pause',
+      'settings',
+      'inventory',
+      'crafting',
+      'chat',
+      'achievements',
+      'statistics',
+    ]
+    const isRecord = (input: unknown): input is Record<string, unknown> =>
+      input !== null && typeof input === 'object' && !Array.isArray(input)
+    const isFiniteNumber = (input: unknown): input is number =>
+      typeof input === 'number' && Number.isFinite(input)
+
+    fc.assert(
+      fc.property(fc.anything(), fc.anything(), fc.anything(), (status, nowSecs, pulseSecs) => {
+        const result = Reflect.apply(crosshairViewModelResult, undefined, [status, nowSecs, pulseSecs])
+        const pulseDuration = typeof pulseSecs === 'undefined' ? CROSSHAIR_PULSE_SECS : pulseSecs
+        const record = isRecord(status) ? status : undefined
+        const modals: unknown = typeof record === 'undefined' ? undefined : Reflect.get(record, 'modals')
+        const progress: unknown = typeof record === 'undefined' ? undefined : Reflect.get(record, 'breakProgress')
+        const lastHitAtSecs: unknown = typeof record === 'undefined' ? undefined : Reflect.get(record, 'lastHitAtSecs')
+        const validModals = Array.isArray(modals) && Array.from(modals).every((screen) =>
+          typeof screen === 'string' && screenIds.some((knownScreen) => knownScreen === screen),
+        )
+        const validProgress = typeof progress === 'undefined' || isFiniteNumber(progress)
+        const validLastHit = typeof lastHitAtSecs === 'undefined' || isFiniteNumber(lastHitAtSecs)
+        const validNow = isFiniteNumber(nowSecs)
+        const validPulse = isFiniteNumber(pulseDuration) && pulseDuration >= 0
+        const expectedSuccess = record !== undefined && validModals && validProgress && validLastHit && validNow && validPulse
+
+        expect(Result.isSuccess(result)).toBe(expectedSuccess)
+        if (Result.isFailure(result)) {
+          expect(result.failure._tag).toBe('InvalidCrosshairViewModelInput')
+          expect([
+            'breakProgress',
+            'lastHitAtSecs',
+            'modals',
+            'nowSecs',
+            'pulseSecs',
+            'status',
+          ]).toContain(result.failure.field)
+          return
+        }
+
+        if (!Array.isArray(modals)) {
+          return
+        }
+        if (modals.length > 0) {
+          expect(result.success).toBeUndefined()
+          return
+        }
+        const since = isFiniteNumber(nowSecs) && isFiniteNumber(lastHitAtSecs)
+          ? nowSecs - lastHitAtSecs
+          : undefined
+        expect(result.success).toStrictEqual({
+          breakProgress: isFiniteNumber(progress) ? Math.min(1, Math.max(0, progress)) : undefined,
+          hit: typeof since === 'number' && isFiniteNumber(pulseDuration) && since >= 0 && since < pulseDuration,
+        })
+      }),
+      { numRuns: 100 },
+    )
+  })
+})
+
 describe('the hit marker is a duration, not a timer (DN-UI-10)', () => {
   it('REGRESSION: marks a landed hit for exactly CROSSHAIR_PULSE_SECS', () => {
     // `<reference-impl>/packages/presentation/hud/crosshair.ts:141` does this
@@ -329,7 +446,9 @@ describe('the hit marker is a duration, not a timer (DN-UI-10)', () => {
     // 「within 120 ms」 from 「within 120 ms and already happened」.
     expect(crosshairViewModel(hitAt(0.05), 0)?.hit).toBe(false)
     expect(crosshairViewModel(hitAt(5), 1)?.hit).toBe(false)
-    expect(crosshairViewModel(hitAt(Number.NaN), 1)?.hit).toBe(false)
+    expect(crosshairViewModelResult(hitAt(Number.NaN), 1)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'lastHitAtSecs' }),
+    )
     expect(crosshairViewModel(aiming, 1)?.hit).toBe(false)
   })
 

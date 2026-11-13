@@ -52,7 +52,7 @@
  * because a timer that outlives the thing it was about will fire into a
  * crosshair that has since been taken down.
  */
-import { type ModalStack, pointerLockReleased } from './modal-stack.js'
+import { type ModalStack, type ScreenId, pointerLockReleased } from './modal-stack.js'
 import { Result } from 'effect'
 
 /**
@@ -112,8 +112,36 @@ const PROGRESS_UPPER_BOUND = 1
 
 type InvalidCrosshairViewModelInput = Readonly<{
   readonly _tag: 'InvalidCrosshairViewModelInput'
-  readonly field: 'breakProgress' | 'status'
+  readonly field: 'breakProgress' | 'lastHitAtSecs' | 'modals' | 'nowSecs' | 'pulseSecs' | 'status'
 }>
+
+const SCREEN_IDS: ReadonlyArray<ScreenId> = [
+  'pause',
+  'settings',
+  'inventory',
+  'crafting',
+  'chat',
+  'achievements',
+  'statistics',
+]
+
+const isScreenId = (input: unknown): input is ScreenId =>
+  typeof input === 'string' && SCREEN_IDS.some((screen) => screen === input)
+
+const isFiniteSeconds = (input: unknown): input is number =>
+  typeof input === 'number' && Number.isFinite(input)
+
+const isModalStack = (input: unknown): input is ModalStack => {
+  if (!Array.isArray(input)) {
+    return false
+  }
+  for (const screen of input) {
+    if (!isScreenId(screen)) {
+      return false
+    }
+  }
+  return true
+}
 
 const invalidCrosshairViewModelInput = (
   field: InvalidCrosshairViewModelInput['field'],
@@ -162,18 +190,31 @@ export const crosshairViewModel = (
   nowSecs: number,
   pulseSecs: number = CROSSHAIR_PULSE_SECS,
 ): Result.Result<CrosshairViewModel | undefined, InvalidCrosshairViewModelInput> => {
-  if (status === null || typeof status !== 'object') {
+  if (status === null || typeof status !== 'object' || Array.isArray(status)) {
     return invalidCrosshairViewModelInput('status')
+  }
+  if (!isModalStack(Reflect.get(status, 'modals'))) {
+    return invalidCrosshairViewModelInput('modals')
   }
   const breakProgress = clampBreakProgress(Reflect.get(status, 'breakProgress'))
   if (Result.isFailure(breakProgress)) {
     return Result.fail(breakProgress.failure)
+  }
+  const lastHitAtSecs = Reflect.get(status, 'lastHitAtSecs') as unknown
+  if (typeof lastHitAtSecs !== 'undefined' && !isFiniteSeconds(lastHitAtSecs)) {
+    return invalidCrosshairViewModelInput('lastHitAtSecs')
+  }
+  if (!isFiniteSeconds(nowSecs)) {
+    return invalidCrosshairViewModelInput('nowSecs')
+  }
+  if (!isFiniteSeconds(pulseSecs) || pulseSecs < ZERO) {
+    return invalidCrosshairViewModelInput('pulseSecs')
   }
   if (pointerLockReleased(status.modals)) {
     return noCrosshairView()
   }
   return Result.succeed({
     breakProgress: breakProgress.success,
-    hit: isRecentHit(status.lastHitAtSecs, nowSecs, pulseSecs),
+    hit: isRecentHit(lastHitAtSecs, nowSecs, pulseSecs),
   })
 }

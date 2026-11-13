@@ -248,12 +248,17 @@ describe('main menu domain', () => {
     expect(worldNameLabel(creative.draft)).toBe('Ravine')
     expect(openPanel(creative, 'new-world')).toBe(creative)
     expect(cycleWorldMode(creative).draft.mode).toBe('survival')
-    expect(mainMenuViewModel(creative, SAVED_WORLDS)).toMatchObject({
+    expect(mainMenuViewModel(creative, SAVED_WORLDS)).toStrictEqual({
+      difficulty: 'normal',
+      mode: 'creative',
       panel: 'new-world',
       worldNameInput: '  Ravine  ',
       worldName: 'Ravine',
-      mode: 'creative',
+      seedInput: asWorldSeedText(''),
+      worldType: asWorldTypeId(''),
+      worldTypes: [],
       savedWorlds: SAVED_WORLDS,
+      unreadableSaves: [],
     })
   })
 
@@ -574,19 +579,48 @@ describe('operable main menu', () => {
     expect(mounted.root.findAll('data-mx-ui', 'menu-world-row')).toHaveLength(0)
   })
 
-  it('returns a typed initialization failure for an explicit null external root callback', () => {
+  it.each(['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const)(
+    'returns a typed initialization failure for an explicit null $field callback',
+    (field) => {
+      const factory = fakeDocument()
+      const parent = fakeElement(factory.createElement('div'))
+      const callbacks: MainMenuCallbacks = {}
+      expect(Reflect.set(callbacks, field, null)).toBe(true)
+      const view = createMainMenuView(factory, parent, callbacks)
+      const failure = Result.fail({
+        _tag: 'InvalidMainMenuViewInput',
+        field: `callbacks.${field}`,
+      })
+
+      expect(view.initializationResult).toStrictEqual(failure)
+      expect(view.render(model())).toStrictEqual(failure)
+    },
+  )
+
+  it('property: root callbacks accept only an omitted value or a function', () => {
+    const fields = ['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
-    const callbacks: MainMenuCallbacks = {}
-    Reflect.set(callbacks, 'onOpenSettings', null)
-    const view = createMainMenuView(factory, parent, callbacks)
-    const failure = Result.fail({
-      _tag: 'InvalidMainMenuViewInput',
-      field: 'callbacks.onOpenSettings',
-    })
 
-    expect(view.initializationResult).toStrictEqual(failure)
-    expect(view.render(model())).toStrictEqual(failure)
+    for (const field of fields) {
+      fc.assert(
+        fc.property(fc.anything(), (value) => {
+          const callbacks: MainMenuCallbacks = {}
+          expect(Reflect.set(callbacks, field, value)).toBe(true)
+          const view = createMainMenuView(factory, parent, callbacks)
+          const isValidCallback = typeof value === 'undefined' || typeof value === 'function'
+
+          expect(Result.isSuccess(view.initializationResult)).toBe(isValidCallback)
+          if (!isValidCallback && Result.isFailure(view.initializationResult)) {
+            expect(view.initializationResult.failure).toStrictEqual({
+              _tag: 'InvalidMainMenuViewInput',
+              field: `callbacks.${field}`,
+            })
+          }
+        }),
+        { numRuns: 100 },
+      )
+    }
   })
 
   it('cancels a pending saved-world deletion without sending a host intent', () => {
