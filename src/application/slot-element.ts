@@ -619,7 +619,10 @@ export const updateSlotElement = (
   slot: SlotElement,
   view: SlotView,
   mergeable?: boolean,
-): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: 'countLabel' }>> => {
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: 'countLabel' | 'itemDisplayName' }>> => {
+  if (Reflect.get(view, 'itemDisplayName') === null) {
+    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' })
+  }
   if (Reflect.get(view, 'countLabel') === null) {
     return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'countLabel' })
   }

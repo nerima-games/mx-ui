@@ -70,10 +70,10 @@ const hasValidHotbarSlotCounts = (
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot | InvalidCountCarriedSlot>,
 ): hotbarSlots is ReadonlyArray<InventoryCarriedSlot> => {
   for (const slot of hotbarSlots) {
-    if (typeof slot === 'undefined') {
-      continue
-    }
-    if (Object.is(slot, null) || typeof slot !== 'object' || typeof slot.count !== 'number') {
+    if (
+      typeof slot !== 'undefined' &&
+      (Object.is(slot, null) || typeof slot !== 'object' || typeof slot.count !== 'number')
+    ) {
       return false
     }
   }

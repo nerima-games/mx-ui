@@ -1067,19 +1067,29 @@ const renderHudDeathState = (cells: HudCells, model: HudViewModel): void => {
   renderDeathDetails(cells, model)
 }
 
+type InvalidHudFrameField = 'hotbar.countLabel' | 'hotbar.itemDisplayName'
+
+const invalidHudFrameField = (model: HudViewModel): InvalidHudFrameField | undefined => {
+  if (model.hotbar.some((slot) => Reflect.get(slot, 'countLabel') === null)) {
+    return 'hotbar.countLabel'
+  }
+  if (model.hotbar.some((slot) => Reflect.get(slot, 'itemDisplayName') === null)) {
+    return 'hotbar.itemDisplayName'
+  }
+  return
+}
+
 const renderHudFrame = (
   factory: DomElementFactory,
   cells: HudCells,
   model: HudViewModel,
 ): Result.Result<
   void,
-  Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' | 'hotbar.itemDisplayName' }>
+  Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudFrameField }>
 > => {
-  if (model.hotbar.some((slot) => Reflect.get(slot, 'countLabel') === null)) {
-    return Result.fail({ _tag: 'InvalidHudViewInput', field: 'hotbar.countLabel' })
-  }
-  if (model.hotbar.some((slot) => Reflect.get(slot, 'itemDisplayName') === null)) {
-    return Result.fail({ _tag: 'InvalidHudViewInput', field: 'hotbar.itemDisplayName' })
+  const invalidField = invalidHudFrameField(model)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidHudViewInput', field: invalidField })
   }
   renderHudVitals(factory, cells, model)
   renderHudSupplements(factory, cells, model)

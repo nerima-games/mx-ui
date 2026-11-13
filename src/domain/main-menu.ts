@@ -21,6 +21,11 @@ import {
   decodeWorldTypeId,
 } from './ui3-brand-schemas.js'
 
+const schemaArray = Schema.Array
+const schemaLiterals = Schema.Literals
+const schemaStruct = Schema.Struct
+const schemaUnion = Schema.Union
+
 export type { WorldNameText, WorldSeedText, WorldSeedValue, WorldTypeId } from './ui3-brand-schemas.js'
 export { decodeWorldNameText, decodeWorldSeedText, decodeWorldTypeId }
 const worldTypeId = Schema.decodeUnknownSync(WorldTypeIdSchema)
@@ -50,9 +55,9 @@ export type WorldTypeOption = {
   readonly label: Readonly<Record<UiLanguage, UiMessageText>>
 }
 
-const WorldTypeOptionSchema = Schema.Struct({
+const WorldTypeOptionSchema = schemaStruct({
+  label: schemaStruct({ en: UiMessageTextSchema, ja: UiMessageTextSchema }),
   value: WorldTypeIdSchema,
-  label: Schema.Struct({ en: UiMessageTextSchema, ja: UiMessageTextSchema }),
 })
 
 export type WorldSeed = { readonly kind: 'random' } | { readonly kind: 'fixed'; readonly value: WorldSeedValue }
@@ -206,9 +211,9 @@ export type SavedWorld = {
   readonly name: WorldNameText
 }
 
-const SavedWorldSchema = Schema.Struct({
-  sessionId: WorldIdSchema,
+const SavedWorldSchema = schemaStruct({
   name: WorldNameTextSchema,
+  sessionId: WorldIdSchema,
 })
 
 /** Local structural mirror of mc-save 0.8.0 until L5 aligns on kernel 0.17.0. */
@@ -232,25 +237,25 @@ type UnreadableSaveRepair = {
   readonly discardableChunkKeys: ReadonlyArray<WorldId>
 }
 
-const UnreadableSaveRecordSchema = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literals(['Save']), key: WorldIdSchema }),
-  Schema.Struct({ _tag: Schema.Literals(['Head']), key: WorldIdSchema }),
-  Schema.Struct({ _tag: Schema.Literals(['Chunk']), key: WorldIdSchema }),
+const UnreadableSaveRecordSchema = schemaUnion([
+  schemaStruct({ _tag: schemaLiterals(['Save']), key: WorldIdSchema }),
+  schemaStruct({ _tag: schemaLiterals(['Head']), key: WorldIdSchema }),
+  schemaStruct({ _tag: schemaLiterals(['Chunk']), key: WorldIdSchema }),
 ])
 
-const UnreadableSaveRepairSchema = Schema.Struct({
+const UnreadableSaveRepairSchema = schemaStruct({
+  discardableChunkKeys: schemaArray(WorldIdSchema),
   lastHealthyRevisionAvailable: Schema.Boolean,
-  discardableChunkKeys: Schema.Array(WorldIdSchema),
 })
 
-const UnreadableSaveSchema = Schema.Struct({
-  _tag: Schema.Literals(['SaveDecodeError']),
-  key: WorldIdSchema,
+const UnreadableSaveSchema = schemaStruct({
+  _tag: schemaLiterals(['SaveDecodeError']),
   format: SaveSliceIdSchema,
-  version: SaveVersionSchema,
+  key: WorldIdSchema,
   reason: UiMessageTextSchema,
   record: UnreadableSaveRecordSchema,
   repair: UnreadableSaveRepairSchema,
+  version: SaveVersionSchema,
 })
 
 export type CreateWorldRequest = {
@@ -348,44 +353,58 @@ const isGameMode = (input: unknown): input is GameMode => GAME_MODES.some((mode)
 const isGameDifficulty = (input: unknown): input is GameDifficulty =>
   GAME_DIFFICULTIES.some((difficulty) => difficulty === input)
 
-const decodeMainMenuState = (
+type InvalidMainMenuState = Readonly<{ _tag: 'InvalidMainMenuState' }>
+
+const invalidMainMenuState = (): InvalidMainMenuState => ({ _tag: 'InvalidMainMenuState' })
+
+const decodeMainMenuDraft = (
   input: unknown,
-): Result.Result<MainMenuState, Readonly<{ _tag: 'InvalidMainMenuState' }>> => {
+): Result.Result<MainMenuState['draft'], InvalidMainMenuState> => {
   if (!isRecord(input)) {
-    return Result.fail({ _tag: 'InvalidMainMenuState' })
+    return Result.fail(invalidMainMenuState())
   }
-  const { draft, panel } = input
-  if (!isRecord(draft)) {
-    return Result.fail({ _tag: 'InvalidMainMenuState' })
-  }
-  const name = decodeWorldNameText(draft['name'])
-  const seed = decodeWorldSeedText(draft['seed'])
-  const worldType = decodeWorldTypeId(draft['worldType'])
-  const mode = draft['mode']
-  const difficulty = draft['difficulty']
+  const { difficulty, mode, name: nameInput, seed: seedInput, worldType: worldTypeInput } = input
+  const name = decodeWorldNameText(nameInput)
+  const seed = decodeWorldSeedText(seedInput)
+  const worldType = decodeWorldTypeId(worldTypeInput)
   if (
-    !isMenuPanel(panel) ||
     Result.isFailure(name) ||
     Result.isFailure(seed) ||
     !isGameMode(mode) ||
     !isGameDifficulty(difficulty) ||
     Result.isFailure(worldType)
   ) {
-    return Result.fail({ _tag: 'InvalidMainMenuState' })
+    return Result.fail(invalidMainMenuState())
   }
   return Result.succeed({
-    panel,
-    draft: {
-      name: name.success,
-      seed: seed.success,
-      mode,
-      difficulty,
-      worldType: worldType.success,
-    },
+    difficulty,
+    mode,
+    name: name.success,
+    seed: seed.success,
+    worldType: worldType.success,
   })
 }
 
+const decodeMainMenuState = (
+  input: unknown,
+): Result.Result<MainMenuState, InvalidMainMenuState> => {
+  if (!isRecord(input)) {
+    return Result.fail(invalidMainMenuState())
+  }
+  const { draft, panel } = input
+  if (!isMenuPanel(panel)) {
+    return Result.fail(invalidMainMenuState())
+  }
+  return Result.map(decodeMainMenuDraft(draft), (validDraft) => ({ draft: validDraft, panel }))
+}
+
 type InvalidMainMenuArrayInput = Readonly<{ _tag: 'InvalidMainMenuArrayInput' }>
+
+const decodeMainMenuArrayEntry = <Source extends Schema.Codec<unknown>>(
+  input: unknown,
+  schema: Source,
+): Result.Result<Source['Type'], InvalidMainMenuArrayInput> =>
+  Result.mapError(Schema.decodeUnknownResult(schema)(input), () => ({ _tag: 'InvalidMainMenuArrayInput' }))
 
 const decodeMainMenuArray = <Source extends Schema.Codec<unknown>>(
   input: unknown,
@@ -394,16 +413,17 @@ const decodeMainMenuArray = <Source extends Schema.Codec<unknown>>(
   if (!Array.isArray(input)) {
     return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
   }
-  const values: Array<Source['Type']> = []
-  for (let index = 0; index < input.length; index += 1) {
-    const decoded = Schema.decodeUnknownResult(schema)(input[index])
-    if (Result.isFailure(decoded)) {
-      return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
-    }
-    values.push(decoded.success)
-  }
-  return Result.succeed(values)
+  return Result.all(
+    Array.from({ length: input.length }, (_element, index) => decodeMainMenuArrayEntry(input[index], schema)),
+  )
 }
+
+const decodeWorldTypeOption = (
+  input: unknown,
+): Result.Result<WorldTypeOption, InvalidMainMenuArrayInput> =>
+  Result.mapError(Schema.decodeUnknownResult(WorldTypeOptionSchema)(input), () => ({
+    _tag: 'InvalidMainMenuArrayInput',
+  }))
 
 const decodeWorldTypeOptions = (
   input: unknown,
@@ -411,46 +431,37 @@ const decodeWorldTypeOptions = (
   if (!Array.isArray(input)) {
     return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
   }
-  const options = new Array<WorldTypeOption>(input.length)
-  for (let index = 0; index < input.length; index += 1) {
-    const option: unknown = input[index]
+  const decodedOptions = input.flatMap((option: unknown, index) => {
     if (typeof option === 'undefined') {
-      continue
+      return []
     }
-    const decoded = Schema.decodeUnknownResult(WorldTypeOptionSchema)(option)
-    if (Result.isFailure(decoded)) {
-      return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
+    const decoded = Result.map(decodeWorldTypeOption(option), (validOption) => [index, validOption] as const)
+    return [decoded]
+  })
+  return Result.map(Result.all(decodedOptions), (decodedEntries) => {
+    const options = new Array<WorldTypeOption>(input.length)
+    for (const [index, option] of decodedEntries) {
+      options[index] = option
     }
-    options[index] = decoded.success
-  }
-  return Result.succeed(options)
+    return options
+  })
 }
+
+const decodeMainMenuInput = <Value, Failure>(
+  result: Result.Result<Value, Failure>,
+  field: string,
+): Result.Result<Value, InvalidMainMenuViewModelInput> =>
+  Result.mapError(result, () => ({ _tag: 'InvalidMainMenuViewModelInput', field }))
 
 const validateMainMenuViewModelArguments = (
   args: MainMenuViewModelValidationArguments,
 ): Result.Result<ValidMainMenuViewModelArguments, InvalidMainMenuViewModelInput> => {
   const [stateInput, savedWorldsInput, worldTypesInput, unreadableSavesInput] = args
-  const state = decodeMainMenuState(stateInput)
-  if (Result.isFailure(state)) {
-    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'state' })
-  }
-  const savedWorlds = decodeMainMenuArray(savedWorldsInput, SavedWorldSchema)
-  if (Result.isFailure(savedWorlds)) {
-    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'savedWorlds' })
-  }
-  const worldTypes = decodeWorldTypeOptions(worldTypesInput)
-  if (Result.isFailure(worldTypes)) {
-    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'worldTypes' })
-  }
-  const unreadableSaves = decodeMainMenuArray(unreadableSavesInput, UnreadableSaveSchema)
-  if (Result.isFailure(unreadableSaves)) {
-    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'unreadableSaves' })
-  }
-  return Result.succeed([
-    state.success,
-    savedWorlds.success,
-    worldTypes.success,
-    unreadableSaves.success,
+  return Result.all([
+    decodeMainMenuInput(decodeMainMenuState(stateInput), 'state'),
+    decodeMainMenuInput(decodeMainMenuArray(savedWorldsInput, SavedWorldSchema), 'savedWorlds'),
+    decodeMainMenuInput(decodeWorldTypeOptions(worldTypesInput), 'worldTypes'),
+    decodeMainMenuInput(decodeMainMenuArray(unreadableSavesInput, UnreadableSaveSchema), 'unreadableSaves'),
   ])
 }
 

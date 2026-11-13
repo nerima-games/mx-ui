@@ -247,7 +247,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       ...emptyInventorySnapshot,
       carried: testItemStack('stone', 12),
     }, options)
-    const carried = carriedModel.carried
+    const { carried } = carriedModel
     if (typeof carried === 'undefined') {
       expect(carried).toBeDefined()
       return

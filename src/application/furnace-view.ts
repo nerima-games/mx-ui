@@ -47,13 +47,7 @@ type FurnaceViewInputFailure = Readonly<{
   readonly field: string
 }>
 
-const invalidFurnaceViewInputField = (
-  model: FurnaceViewModel,
-  interaction: FurnaceInteractionView | null | undefined,
-): string | undefined => {
-  if (interaction === null) {
-    return 'interaction'
-  }
+const invalidFurnaceModelField = (model: FurnaceViewModel): string | undefined => {
   if (model.slots.some((slot) =>
     typeof slot !== 'undefined' && Reflect.get(slot, 'itemDisplayName') === null,
   )) {
@@ -64,6 +58,15 @@ const invalidFurnaceViewInputField = (
   )) {
     return 'slots[].countLabel'
   }
+  return
+}
+
+const invalidFurnaceInteractionField = (
+  interaction: FurnaceInteractionView | null | undefined,
+): string | undefined => {
+  if (interaction === null) {
+    return 'interaction'
+  }
   if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'focusedSlot') === null) {
     return 'interaction.focusedSlot'
   }
@@ -72,6 +75,11 @@ const invalidFurnaceViewInputField = (
   }
   return
 }
+
+const invalidFurnaceViewInputField = (
+  model: FurnaceViewModel,
+  interaction: FurnaceInteractionView | null | undefined,
+): string | undefined => invalidFurnaceModelField(model) ?? invalidFurnaceInteractionField(interaction)
 
 export type FurnaceViewActions = {
   readonly onActivate?: (target: FurnaceSlotId) => void

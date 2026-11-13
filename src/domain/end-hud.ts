@@ -71,16 +71,21 @@ const isBossHealthSnapshot = (input: unknown): input is BossHealthSnapshot => {
       input['phase'] === 'dead')
 }
 
+const bossName = (name: string, language: UiLanguage): string => {
+  const trimmedName = name.trim()
+  const omittedBossName = trimmedName.length === ZERO
+  // Vanilla treats a whitespace-only boss name as omitted and uses the default name.
+  if (omittedBossName) {
+    return translateUiMessage(language, 'end-hud.boss-default-name')
+  }
+  return trimmedName
+}
+
 const projectBossHealthBarViewModel = (
   snapshot: BossHealthSnapshot,
   language: UiLanguage,
 ): BossHealthBarViewModel => {
-  const trimmedName = snapshot.name.trim()
-  const omittedBossName = trimmedName.length === ZERO
-  // Vanilla treats a whitespace-only boss name as omitted and uses the default name.
-  const name = omittedBossName
-    ? translateUiMessage(language, 'end-hud.boss-default-name')
-    : trimmedName
+  const name = bossName(snapshot.name, language)
   const max = Math.max(ZERO, finiteOrZero(snapshot.max))
   const current = clamp(finiteOrZero(snapshot.current), ZERO, max)
   const hidden = snapshot.phase === 'dead' || max === ZERO || current === ZERO

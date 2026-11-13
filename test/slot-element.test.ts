@@ -43,4 +43,16 @@ describe('createSlotElement', () => {
     }
     expect(fakeElement(slot.root).find('data-mx-ui', 'slot-count')?.textContent).toBe('')
   })
+
+  it('returns a typed failure for an explicitly null item display name before projecting the slot', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView({ itemId: 'stone', count: 2 }, 0, 0)
+    Reflect.set(view, 'itemDisplayName', null)
+
+    const result = updateSlotElement(slot, view)
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' }))
+    expect(factory.writes).toStrictEqual([])
+  })
 })

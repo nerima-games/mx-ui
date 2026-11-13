@@ -146,7 +146,7 @@ describe('createChestStorageView', () => {
       ['playerMain', 'playerMain.itemDisplayName'],
       ['playerHotbar', 'playerHotbar.itemDisplayName'],
     ] as const) {
-      const slot = valid[region][0]
+      const [slot] = valid[region]
       if (typeof slot === 'undefined') {
         expect(slot).toBeDefined()
         return
@@ -165,7 +165,7 @@ describe('createChestStorageView', () => {
       }))
     }
 
-    const cursor = valid.cursor
+    const { cursor } = valid
     if (typeof cursor === 'undefined') {
       expect(cursor).toBeDefined()
       return

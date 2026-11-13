@@ -47,10 +47,7 @@ type AnvilViewInputFailure = Readonly<{
   readonly field: string
 }>
 
-const invalidAnvilViewInputField = (
-  model: AnvilViewModel,
-  interaction: AnvilInteractionView | undefined,
-): string | undefined => {
+const invalidAnvilModelField = (model: AnvilViewModel): string | undefined => {
   if (Reflect.get(model, 'rejectionReason') === null) {
     return 'rejectionReason'
   }
@@ -64,6 +61,10 @@ const invalidAnvilViewInputField = (
   )) {
     return 'slots[].countLabel'
   }
+  return
+}
+
+const invalidAnvilInteractionField = (interaction: AnvilInteractionView | undefined): string | undefined => {
   if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
     return 'interaction.status'
   }
@@ -72,6 +73,11 @@ const invalidAnvilViewInputField = (
   }
   return
 }
+
+const invalidAnvilViewInputField = (
+  model: AnvilViewModel,
+  interaction: AnvilInteractionView | undefined,
+): string | undefined => invalidAnvilModelField(model) ?? invalidAnvilInteractionField(interaction)
 
 export type AnvilViewActions = {
   readonly onActivate?: (target: AnvilOperationTarget) => void
