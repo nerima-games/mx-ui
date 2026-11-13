@@ -170,19 +170,15 @@ describe('createAnvilView', () => {
     expect(root.find('data-mx-ui', 'anvil-rejection')?.attributes.has('hidden')).toBe(true)
   })
 
-  it('REGRESSION: an unrecognized focused target falls back to the primary input instead of throwing', () => {
-    // `AnvilInteractionView` is a published type with no canonical constructor — a host assembles
-    // `focusedTarget` itself, so a stale index or a value round-tripped through persistence can
-    // disagree with the `AnvilOperationTarget` union it claims to satisfy at compile time.
+  it('returns a typed failure for an unrecognized focused target', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createAnvilView(factory, host)
-    const root = fakeElement(view.root)
     const interaction: AnvilInteractionView = {
       focusedTarget: JSON.parse('"stale-target"'),
       status: 'Recovered focus',
     }
-    view.render(
+    const result = view.render(
       anvilViewModel({
         levelCost: 1,
         name: '',
@@ -194,11 +190,9 @@ describe('createAnvilView', () => {
       interaction,
     )
 
-    expect(
-      root
-        .findAll('data-interaction-target', 'anvil-operation')
-        .map((target) => target.attributes.get('tabindex')),
-    ).toStrictEqual(['0', '-1', '-1', '-1'])
+    expect(result).toStrictEqual(
+      Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'interaction.focusedTarget' }),
+    )
   })
 
   it('REGRESSION: a shorter slots array than the DOM leaves the surplus slot elements untouched', () => {

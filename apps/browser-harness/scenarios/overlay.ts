@@ -10,7 +10,7 @@ import {
   type ItemStackFailure,
   itemStack,
 } from '@nerima-games/mc-kernel'
-import { Result, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import {
   SPAWN_VITALS,
   VitalsSchema,
@@ -41,6 +41,7 @@ import {
   IDLE_CROSSHAIR_STATUS,
   crosshairViewModel,
   type CrosshairStatus,
+  type CrosshairViewModel,
 } from '../../../src/domain/crosshair'
 import {
   FramesPerSecondSchema,
@@ -68,6 +69,18 @@ import {
 import { UiMessageTextSchema } from '../../../src/domain/ui-language'
 
 const noTimeUpdate = (_seconds: number): void => undefined
+
+const crosshairModel = (
+  status: CrosshairStatus,
+  nowSecs: number,
+  context: Parameters<ScenarioDefinition['mount']>[0],
+): CrosshairViewModel | undefined => {
+  const result = crosshairViewModel(status, nowSecs)
+  if (Result.isFailure(result)) {
+    return context.runSync(Effect.fail(result.failure))
+  }
+  return result.success
+}
 const noDispose = (): void => undefined
 const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 
@@ -201,9 +214,9 @@ const renderCrosshair = (
   context: Parameters<ScenarioDefinition['mount']>[0],
 ): ScenarioMount => {
   const view = createCrosshairView(context.factory, context.host, context.environment.motion)
-  let model = crosshairViewModel(statusAt(context.time), context.time)
+  let model = crosshairModel(statusAt(context.time), context.time, context)
   const update = (seconds: number): void => {
-    model = crosshairViewModel(statusAt(seconds), seconds)
+    model = crosshairModel(statusAt(seconds), seconds, context)
     view.render(model)
   }
   update(context.time)

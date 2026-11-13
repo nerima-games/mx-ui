@@ -76,8 +76,14 @@ const invalidEnchantingTableModelField = (model: EnchantingTableViewModel): stri
 const invalidEnchantingInteractionField = (
   interaction: EnchantingInteractionView | undefined,
 ): string | undefined => {
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'focusedTarget') === null) {
-    return 'interaction.focusedTarget'
+  if (typeof interaction !== 'undefined') {
+    const focusedTarget = Reflect.get(interaction, 'focusedTarget')
+    if (
+      typeof focusedTarget !== 'undefined' &&
+      !ENCHANTING_OPERATION_TARGETS.some((target) => target === focusedTarget)
+    ) {
+      return 'interaction.focusedTarget'
+    }
   }
   if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
     return 'interaction.status'
@@ -214,19 +220,6 @@ const offerLabel = (offer: EnchantingOfferView): Readonly<{ key: UiMessageKey; v
   }
 }
 
-const resolveFocusedTarget = (
-  requested: EnchantingOperationTarget,
-): EnchantingOperationTarget => {
-  // `EnchantingInteractionView` is a published type with no canonical constructor.
-  // A host can hand `render()` a stale or round-tripped value that only claims to satisfy the
-  // `EnchantingOperationTarget` union at compile time.
-  // Falling back to the item slot is the inert answer.
-  if (ENCHANTING_OPERATION_TARGETS.includes(requested)) {
-    return requested
-  }
-  return 'item'
-}
-
 type PreparedEnchantingRender = Readonly<{
   model: EnchantingTableViewModel
   interaction: EnchantingInteractionView | undefined
@@ -248,7 +241,7 @@ const prepareEnchantingRender = (
     return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: invalidField })
   }
   return Result.succeed({
-    focusedTarget: resolveFocusedTarget(interaction?.focusedTarget ?? 'item'),
+    focusedTarget: interaction?.focusedTarget ?? 'item',
     interaction,
     model,
   })

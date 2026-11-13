@@ -68,8 +68,14 @@ const invalidAnvilInteractionField = (interaction: AnvilInteractionView | undefi
   if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
     return 'interaction.status'
   }
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'focusedTarget') === null) {
-    return 'interaction.focusedTarget'
+  if (typeof interaction !== 'undefined') {
+    const focusedTarget = Reflect.get(interaction, 'focusedTarget')
+    if (
+      typeof focusedTarget !== 'undefined' &&
+      !ANVIL_OPERATION_TARGETS.some((target) => target === focusedTarget)
+    ) {
+      return 'interaction.focusedTarget'
+    }
   }
   return
 }
@@ -108,17 +114,6 @@ const slotAriaLabel = (
     key: 'anvil.slot-item',
     values: { count: slot.countLabel ?? '1', item: itemDisplayNameValue(slot, language), slot: { key: SLOT_MESSAGE_KEY[slot.id] } },
   }
-}
-
-const resolveFocusedTarget = (requested: AnvilOperationTarget): AnvilOperationTarget => {
-  // `AnvilInteractionView` is a published type with no canonical constructor, unlike `AnvilViewModel`.
-  // A host assembles `focusedTarget` itself.
-  // A stale or round-tripped value can disagree with the type it claims to satisfy at compile time.
-  // Falling back to the default target is the inert answer.
-  if (ANVIL_OPERATION_TARGETS.includes(requested)) {
-    return requested
-  }
-  return 'primary-input'
 }
 
 const tabStopValue = (tabbable: boolean): string => {
@@ -391,7 +386,7 @@ export const createAnvilView = (
   }
 
   const projectAnvilModel = (model: AnvilViewModel, interaction: AnvilInteractionView | undefined): void => {
-    const focusedTarget = resolveFocusedTarget(interaction?.focusedTarget ?? 'primary-input')
+    const focusedTarget = interaction?.focusedTarget ?? 'primary-input'
     renderSlots(model, focusedTarget, interaction)
     renderAnvilDetails(model, focusedTarget, interaction)
   }

@@ -457,12 +457,22 @@ const validateMainMenuViewModelArguments = (
   args: MainMenuViewModelValidationArguments,
 ): Result.Result<ValidMainMenuViewModelArguments, InvalidMainMenuViewModelInput> => {
   const [stateInput, savedWorldsInput, worldTypesInput, unreadableSavesInput] = args
-  return Result.all([
+  return Result.flatMap(Result.all([
     decodeMainMenuInput(decodeMainMenuState(stateInput), 'state'),
     decodeMainMenuInput(decodeMainMenuArray(savedWorldsInput, SavedWorldSchema), 'savedWorlds'),
     decodeMainMenuInput(decodeWorldTypeOptions(worldTypesInput), 'worldTypes'),
     decodeMainMenuInput(decodeMainMenuArray(unreadableSavesInput, UnreadableSaveSchema), 'unreadableSaves'),
-  ])
+  ]), (decoded) => {
+    const state = decoded[0]
+    const worldTypes = decoded[2]
+    const hasSelectedWorldType = worldTypes.some((option) =>
+      typeof option !== 'undefined' && option.value === state.draft.worldType,
+    )
+    if (state.draft.worldType !== '' && !hasSelectedWorldType) {
+      return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'state.draft.worldType' })
+    }
+    return Result.succeed(decoded)
+  })
 }
 
 const projectMainMenuViewModel = ([

@@ -67,8 +67,11 @@ const invalidFurnaceInteractionField = (
   if (interaction === null) {
     return 'interaction'
   }
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'focusedSlot') === null) {
-    return 'interaction.focusedSlot'
+  if (typeof interaction !== 'undefined') {
+    const focusedSlot = Reflect.get(interaction, 'focusedSlot')
+    if (typeof focusedSlot !== 'undefined' && !FURNACE_SLOT_IDS.some((slotId) => slotId === focusedSlot)) {
+      return 'interaction.focusedSlot'
+    }
   }
   if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
     return 'interaction.status'
@@ -261,17 +264,6 @@ const createFurnaceStatus = (factory: DomElementFactory, root: DomElement): Text
   return textCell(status)
 }
 
-const resolveFocusedSlot = (requested: FurnaceSlotId): FurnaceSlotId => {
-  // `FurnaceInteractionView` is a published type with no canonical constructor.
-  // A host can hand `render()` a stale or round-tripped value that only claims to satisfy the
-  // `FurnaceSlotId` union at compile time.
-  // Falling back to the input slot is the inert answer.
-  if (FURNACE_SLOT_IDS.includes(requested)) {
-    return requested
-  }
-  return 'input'
-}
-
 type FurnaceSlotsProjection = Readonly<{
   slots: ReadonlyArray<SlotElement>
   slotViews: FurnaceViewModel['slots']
@@ -313,7 +305,7 @@ const projectFurnaceModel = (
   model: FurnaceViewModel,
   interaction: FurnaceInteractionView | null | undefined,
 ): void => {
-  const focusedSlot = resolveFocusedSlot(interaction?.focusedSlot ?? 'input')
+  const focusedSlot = interaction?.focusedSlot ?? 'input'
   renderFurnaceSlots({ focusedSlot, interaction, slotViews: model.slots, slots: elements.slots })
   renderProgress(elements.cook, model.cookProgressPercent)
   renderProgress(elements.burn, model.burnProgressPercent)

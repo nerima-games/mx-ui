@@ -31,7 +31,7 @@ import * as fc from 'fast-check'
 import { Result } from 'effect'
 import {
   CROSSHAIR_PULSE_SECS,
-  crosshairViewModel,
+  crosshairViewModel as crosshairViewModelResult,
   IDLE_CROSSHAIR_STATUS,
   type CrosshairStatus,
   type CrosshairViewModel,
@@ -65,6 +65,17 @@ const mount = (motion: 'full' | 'reduced' = 'full') => {
 
 const aiming: CrosshairStatus = IDLE_CROSSHAIR_STATUS
 const hitAt = (secs: number): CrosshairStatus => ({ modals: [], lastHitAtSecs: secs })
+const crosshairViewModel = (
+  status: CrosshairStatus,
+  nowSecs: number,
+): CrosshairViewModel | undefined => {
+  const result = crosshairViewModelResult(status, nowSecs)
+  expect(Result.isFailure(result)).toBe(false)
+  if (Result.isFailure(result)) {
+    return undefined
+  }
+  return result.success
+}
 
 const arms = (root: FakeElement): ReadonlyArray<FakeElement> =>
   root.findAll('data-mx-ui', 'crosshair-arm')
@@ -181,7 +192,7 @@ describe('block-breaking progress', () => {
     expect(legacyModel.breakProgress).toBeUndefined()
   })
 
-  it('normalises finite progress and rejects non-finite values', () => {
+  it('normalises finite progress and returns typed failures for invalid progress', () => {
     const model = (breakProgress: number): number | undefined =>
       crosshairViewModel({ ...aiming, breakProgress }, 0)?.breakProgress
 
@@ -190,8 +201,59 @@ describe('block-breaking progress', () => {
     expect(model(0.375)).toBe(0.375)
     expect(model(1)).toBe(1)
     expect(model(1.25)).toBe(1)
-    expect(model(Number.NaN)).toBeUndefined()
-    expect(model(Number.POSITIVE_INFINITY)).toBeUndefined()
+    for (const breakProgress of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const result = crosshairViewModelResult({ ...aiming, breakProgress }, 0)
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isFailure(result)) {
+        expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewModelInput', field: 'breakProgress' })
+      }
+    }
+  })
+
+  it('returns a typed failure for an explicit null progress value', () => {
+    const status: CrosshairStatus = { ...aiming }
+    expect(Reflect.set(status, 'breakProgress', null)).toBe(true)
+    const result = crosshairViewModelResult(status, 0)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewModelInput', field: 'breakProgress' })
+    }
+  })
+
+  it.each([null, 7])('returns a typed failure for an invalid status container %s', (status) => {
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [status, 0])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'status' }))
+  })
+
+  it('returns typed failures or a finite view model for arbitrary progress values', () => {
+    fc.assert(
+      fc.property(fc.anything(), (breakProgress) => {
+        const status: CrosshairStatus = { ...aiming }
+        expect(Reflect.set(status, 'breakProgress', breakProgress)).toBe(true)
+        const result = crosshairViewModelResult(status, 0)
+        if (typeof breakProgress === 'undefined') {
+          expect(Result.isSuccess(result)).toBe(true)
+          if (Result.isSuccess(result)) {
+            expect(result.success?.breakProgress).toBeUndefined()
+          }
+          return
+        }
+        if (typeof breakProgress === 'number' && Number.isFinite(breakProgress)) {
+          expect(Result.isSuccess(result)).toBe(true)
+          if (Result.isSuccess(result)) {
+            expect(result.success?.breakProgress).toBe(Math.min(1, Math.max(0, breakProgress)))
+          }
+          return
+        }
+        expect(Result.isFailure(result)).toBe(true)
+        if (Result.isFailure(result)) {
+          expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewModelInput', field: 'breakProgress' })
+        }
+      }),
+      { numRuns: 100 },
+    )
   })
 
   it('distinguishes an active empty bar from no active break', () => {

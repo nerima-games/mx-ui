@@ -210,28 +210,22 @@ describe('createEnchantingTableView', () => {
     ])
   })
 
-  it('REGRESSION: an unrecognized focused target falls back to the item slot instead of throwing', () => {
-    // `EnchantingInteractionView` is a published type with no canonical constructor — a host
-    // assembles `focusedTarget` itself, so a stale value round-tripped through persistence can
-    // disagree with the `EnchantingOperationTarget` union it claims to satisfy at compile time.
+  it('returns a typed failure for an unrecognized focused target', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createEnchantingTableView(factory, host)
-    const root = fakeElement(view.root)
     const interaction: EnchantingInteractionView = {
       focusedTarget: JSON.parse('"stale-target"'),
       status: 'Recovered focus',
     }
-    view.render(
+    const result = view.render(
       enchantingTableViewModel({ item: undefined, lapis: undefined, offers: [undefined, undefined, undefined] }),
       interaction,
     )
 
-    expect(
-      root
-        .findAll('data-interaction-target', 'enchanting-operation')
-        .map((target) => target.attributes.get('tabindex')),
-    ).toStrictEqual(['0', '-1', '-1', '-1', '-1'])
+    expect(result).toStrictEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'interaction.focusedTarget' }),
+    )
   })
 
   it('REGRESSION: fewer slots and offers than the DOM leaves the surplus elements untouched', () => {

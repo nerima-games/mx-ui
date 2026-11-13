@@ -6,6 +6,7 @@ import {
   MAX_VISIBLE_CAPTIONS,
   visibleCaptions,
 } from '@nerima-games/mc-audio'
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { createCaptionView } from '../src/application/caption-view'
 import { captionLines } from '../src/domain/caption'
@@ -26,6 +27,37 @@ const visibleText = (root: FakeElement): ReadonlyArray<string> =>
     .map((line) => line.find('data-mx-ui', 'caption-text')?.textContent ?? '')
 
 describe('caption lines project mc-audio visibility', () => {
+  it('returns a typed failure for an explicitly null pan', () => {
+    const malformed = { ...captionEvent('Footsteps', 0, undefined, 'audible'), pan: null }
+
+    const result = Reflect.apply(captionLines, undefined, [[malformed], captionTime(0)])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCaptionLinesInput', field: 'events.pan' }))
+  })
+
+  it('returns typed failures or valid projections for arbitrary runtime event inputs', () => {
+    fc.assert(
+      fc.property(fc.anything(), (events) => {
+        const result: unknown = Reflect.apply(captionLines, undefined, [events, captionTime(0)])
+        if (Array.isArray(result)) {
+          for (const line of result) {
+            expect(typeof line.text).toBe('string')
+            expect(line.arrow === undefined || line.arrow === '←' || line.arrow === '→').toBe(true)
+            expect(Number.isFinite(line.freshness)).toBe(true)
+            expect(line.freshness).toBeGreaterThanOrEqual(0)
+            expect(line.freshness).toBeLessThanOrEqual(1)
+          }
+          return
+        }
+        expect(typeof result === 'object' && result !== null && Reflect.get(result, '_tag')).toBe('Failure')
+        if (typeof result === 'object' && result !== null) {
+          expect(Reflect.get(Reflect.get(result, 'failure'), '_tag')).toBe('InvalidCaptionLinesInput')
+        }
+      }),
+      { numRuns: 100 },
+    )
+  })
+
   it('preserves the owner order and maps pan and remaining display time', () => {
     const events = [
       captionEvent('Footsteps', 0, undefined, 'audible'),

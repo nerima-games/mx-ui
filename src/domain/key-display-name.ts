@@ -4,7 +4,12 @@ import {
   UiMessageTextSchema,
 } from './ui-language.js'
 import type { KeyCode } from '@nerima-games/mc-kernel/domain/settings'
-import { Schema } from 'effect'
+import { Result, Schema } from 'effect'
+
+type InvalidKeyDisplayNameInput = Readonly<{
+  readonly _tag: 'InvalidKeyDisplayNameInput'
+  readonly field: 'code' | 'language'
+}>
 
 const KEY_NAMES: Readonly<Record<string, Readonly<Record<UiLanguage, string>>>> = {
   AltLeft: { en: 'Left Alt', ja: '左Alt' },
@@ -72,7 +77,29 @@ const prefixedKeyName = (code: string, language: UiLanguage): string | null => {
 }
 
 /** Converts standard KeyboardEvent.code values to readable names, preserving unknown codes verbatim. */
-export const keyDisplayName = (code: KeyCode, language: UiLanguage): UiMessageText => {
+export function keyDisplayName(code: KeyCode, language: UiLanguage): UiMessageText
+export function keyDisplayName(
+  code: null,
+  language: unknown,
+): Result.Result<UiMessageText, InvalidKeyDisplayNameInput>
+export function keyDisplayName(
+  code: unknown,
+  language: null,
+): Result.Result<UiMessageText, InvalidKeyDisplayNameInput>
+export function keyDisplayName(
+  code: unknown,
+  language: unknown,
+): UiMessageText | Result.Result<UiMessageText, InvalidKeyDisplayNameInput>
+export function keyDisplayName(
+  code: unknown,
+  language: unknown,
+): UiMessageText | Result.Result<UiMessageText, InvalidKeyDisplayNameInput> {
+  if (typeof code !== 'string' || code.length === 0) {
+    return Result.fail({ _tag: 'InvalidKeyDisplayNameInput', field: 'code' })
+  }
+  if (language !== 'en' && language !== 'ja') {
+    return Result.fail({ _tag: 'InvalidKeyDisplayNameInput', field: 'language' })
+  }
   const displayName = namedKey(code, language) ?? prefixedKeyName(code, language) ?? code
   return uiMessageText(displayName)
 }

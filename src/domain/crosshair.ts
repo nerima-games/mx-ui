@@ -53,6 +53,7 @@
  * crosshair that has since been taken down.
  */
 import { type ModalStack, pointerLockReleased } from './modal-stack.js'
+import { Result } from 'effect'
 
 /**
  * How long a landed hit is marked.
@@ -88,6 +89,7 @@ export const IDLE_CROSSHAIR_STATUS: CrosshairStatus = {
 
 /**
  * What the crosshair shows right now, or `undefined` for nothing at all.
+ * Invalid input returns a typed failure.
  *
  * Named `CrosshairViewModel` rather than `CrosshairView` to leave the second name
  * to `application/crosshair-view.ts`, exactly as `HudViewModel` and
@@ -108,26 +110,49 @@ export type CrosshairViewModel = {
 const ZERO = 0
 const PROGRESS_UPPER_BOUND = 1
 
-/** Clamp a supplied break-progress value to 0-1, or report there is none. */
-const clampBreakProgress = (supplied: number | undefined): number | undefined => {
-  if (typeof supplied === 'undefined' || !Number.isFinite(supplied)) {
-    return
+type InvalidCrosshairViewModelInput = Readonly<{
+  readonly _tag: 'InvalidCrosshairViewModelInput'
+  readonly field: 'breakProgress' | 'status'
+}>
+
+const invalidCrosshairViewModelInput = (
+  field: InvalidCrosshairViewModelInput['field'],
+): Result.Result<never, InvalidCrosshairViewModelInput> => Result.fail({
+  _tag: 'InvalidCrosshairViewModelInput',
+  field,
+})
+
+/** Clamp finite progress to 0-1 and preserve undefined as the no-progress state. */
+const clampBreakProgress = (
+  supplied: unknown,
+): Result.Result<number | undefined, InvalidCrosshairViewModelInput> => {
+  if (typeof supplied === 'undefined') {
+    return Result.succeed(undefined)
   }
-  return Math.min(PROGRESS_UPPER_BOUND, Math.max(ZERO, supplied))
+  if (typeof supplied !== 'number' || !Number.isFinite(supplied)) {
+    return invalidCrosshairViewModelInput('breakProgress')
+  }
+  return Result.succeed(Math.min(PROGRESS_UPPER_BOUND, Math.max(ZERO, supplied)))
 }
 
 export const crosshairViewModel = (
   status: CrosshairStatus,
   nowSecs: number,
   pulseSecs: number = CROSSHAIR_PULSE_SECS,
-): CrosshairViewModel | undefined => {
-  if (pointerLockReleased(status.modals)) {
-    return
+): Result.Result<CrosshairViewModel | undefined, InvalidCrosshairViewModelInput> => {
+  if (status === null || typeof status !== 'object') {
+    return invalidCrosshairViewModelInput('status')
   }
-  const breakProgress = clampBreakProgress(status.breakProgress)
+  const breakProgress = clampBreakProgress(Reflect.get(status, 'breakProgress'))
+  if (Result.isFailure(breakProgress)) {
+    return Result.fail(breakProgress.failure)
+  }
+  if (pointerLockReleased(status.modals)) {
+    return Result.succeed(undefined)
+  }
   const at = status.lastHitAtSecs
   if (typeof at === 'undefined') {
-    return { breakProgress, hit: false }
+    return Result.succeed({ breakProgress: breakProgress.success, hit: false })
   }
   const since = nowSecs - at
   // A NaN or a backwards clock shows NO hit, which is the opposite call from
@@ -136,8 +161,8 @@ export const crosshairViewModel = (
   // Message up claims nothing new. Here, a hit marker IS the claim — 「you struck
   // Something」 — and one that stuck because of a bad subtraction would tell the
   // Player they connected when they missed.
-  return {
-    breakProgress,
+  return Result.succeed({
+    breakProgress: breakProgress.success,
     hit: Number.isFinite(since) && since >= ZERO && since < pulseSecs,
-  }
+  })
 }

@@ -1,9 +1,10 @@
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioCaptionText, AudioPan, SoundCueId } from '@nerima-games/mc-audio'
 import { EntityHealthPoints } from '@nerima-games/mc-sim'
-import { Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import { captionLines, type CaptionEvent } from '../../src/domain/caption'
 import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
+import type { CrosshairStatus, CrosshairViewModel } from '../../src/domain/crosshair'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../../src/domain/inventory-view-model'
 import { initialMainMenuState, mainMenuViewModel } from '../../src/domain/main-menu'
@@ -22,6 +23,18 @@ import { UiMessageTextSchema } from '../../src/domain/ui-language'
 const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 
 const captionTime = (seconds: number): CaptionEvent['atSecs'] => MonotonicTimeSecs(seconds)
+
+const crosshairModel = (
+  status: CrosshairStatus,
+  nowSecs: number,
+  context: ScenarioContext,
+): CrosshairViewModel | undefined => {
+  const result = crosshairViewModel(status, nowSecs)
+  if (Result.isFailure(result)) {
+    return context.runSync(Effect.fail(result.failure))
+  }
+  return result.success
+}
 
 export const SCREEN_NAMES = [
   'main-menu',
@@ -119,14 +132,16 @@ const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount 
     }
     case 'crosshair': {
       const crosshair = createCrosshairView(factory, host, environment.motion)
-      let model = crosshairViewModel(
+      let model = crosshairModel(
         { ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress },
         context.time,
+        context,
       )
       const setTime = (seconds: number): void => {
-        model = crosshairViewModel(
+        model = crosshairModel(
           { ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress },
           seconds,
+          context,
         )
         crosshair.render(model)
       }

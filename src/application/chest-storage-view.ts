@@ -62,6 +62,25 @@ const CURSOR_SLOT_INDEX = 0
 const SLOT_DISPLAY_OFFSET = 1
 const DEFAULT_FOCUSED_TARGET: ChestStorageSlotTarget = { region: 'chest', slot: 0 }
 const CHEST_STORAGE_FOCUS_GROUP = 'chest-storage-slots'
+const PLAYER_INVENTORY_SLOT_COUNT = HOTBAR_SLOT_COUNT + INVENTORY_MAIN_SLOT_COUNT
+
+const isChestStorageSlotTarget = (input: unknown): input is ChestStorageSlotTarget => {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return false
+  }
+  const region = Reflect.get(input, 'region')
+  const slot = Reflect.get(input, 'slot')
+  if (typeof slot !== 'number' || !Number.isSafeInteger(slot) || slot < 0) {
+    return false
+  }
+  if (region === 'chest') {
+    return slot < CHEST_STORAGE_SLOT_COUNT
+  }
+  if (region === 'player') {
+    return slot < PLAYER_INVENTORY_SLOT_COUNT
+  }
+  return false
+}
 
 const focusIndexForTarget = (target: ChestStorageSlotTarget, chestSlotCount: number): number => {
   const playerMainOffset = Math.ceil(chestSlotCount / CHEST_STORAGE_COLUMNS) * CHEST_STORAGE_COLUMNS
@@ -287,10 +306,14 @@ const invalidChestStorageCursorField = (model: ChestStorageViewModel): string | 
 const invalidChestStorageInteractionField = (
   interaction: ChestStorageInteractionView | undefined,
 ): string | undefined => {
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'focusedSlot') === null) {
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  const focusedSlot = Reflect.get(interaction, 'focusedSlot')
+  if (typeof focusedSlot !== 'undefined' && !isChestStorageSlotTarget(focusedSlot)) {
     return 'interaction.focusedSlot'
   }
-  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
+  if (Reflect.get(interaction, 'status') === null) {
     return 'interaction.status'
   }
   return

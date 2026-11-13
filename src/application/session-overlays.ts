@@ -380,7 +380,6 @@ type SettingsControllerState = {
   activeSettings: SettingsSnapshot
   activeLanguage: UiLanguage
   initialLanguageFailure: SettingsViewModelFailure | null
-  renderSettings: SettingsView<BindableAction>['render']
 }
 
 type SettingsSnapshotUpdater = (
@@ -611,7 +610,6 @@ const createSettingsControllerState = (
     activeLanguage: initialLanguage,
     activeSettings: DEFAULT_SETTINGS,
     initialLanguageFailure,
-    renderSettings: () => Result.void,
   }
 }
 
@@ -622,6 +620,9 @@ const createSettingsController = (
 ): SettingsController => {
   const state = createSettingsControllerState(dialog, options)
   const focusActions = createSettingsFocusActions(document, dialog)
+  // The updater and view actions close over one another during construction.
+  // eslint-disable-next-line init-declarations, prefer-const -- deferred assignment breaks that callback cycle.
+  let settingsView: SettingsView<BindableAction>
   const updateSettingsSnapshot: SettingsSnapshotUpdater = (input, language = state.activeLanguage) => {
     if (!isValidSettings(input)) {
       return Result.fail({ _tag: 'InvalidSettingsSnapshot' })
@@ -633,12 +634,12 @@ const createSettingsController = (
         state.activeLanguage = viewModel.language
         return state.activeSettings
       }
-      return Result.map(state.renderSettings(viewModel), saveSettings)
+      return Result.map(settingsView.render(viewModel), saveSettings)
     })
   }
   const renderCurrentSettings = (): Result.Result<SettingsSnapshot, SettingsViewModelFailure> =>
     updateSettingsSnapshot(state.activeSettings, state.activeLanguage)
-  const settingsView = createSettingsView(document, dialog, createSettingsActions({
+  settingsView = createSettingsView(document, dialog, createSettingsActions({
     closeSettings: focusActions.closeSettings,
     dialog,
     options,
@@ -646,8 +647,6 @@ const createSettingsController = (
     state,
     updateSettingsSnapshot,
   }))
-  // Actions are wired during view construction; controller updates can render after this assignment.
-  state.renderSettings = settingsView.render
   configurePauseSettingsScroller(settingsView.root)
   const initializationResult = initializeSettingsController(options, state, updateSettingsSnapshot)
   const updateSettings = (settings: UiSettings): Result.Result<SettingsSnapshot, SettingsViewModelFailure> =>

@@ -50,6 +50,7 @@
  * attribute is exactly what a fake document records.
  */
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
 import { EntityHealthPoints } from '@nerima-games/mc-kernel'
 import { captionLines } from '../src/domain/caption'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
@@ -168,7 +169,11 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   const crosshair = createCrosshairView(factory, parent, 'full')
   // Rendered mid-hit, so the heavier arms the hit marker uses are in the sweep
   // rather than only the resting weight.
-  crosshair.render(crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }, 0))
+  const crosshairModel = crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }, 0)
+  expect(Result.isSuccess(crosshairModel)).toBe(true)
+  if (Result.isSuccess(crosshairModel)) {
+    crosshair.render(crosshairModel.success)
+  }
 
   const hud = createHudView(factory, parent, 'full')
   // The death screen is a STATE of the HUD here rather than a screen of its own

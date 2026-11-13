@@ -99,6 +99,24 @@ describe('UI QA namespace', () => {
     })
   })
 
+  it('returns a typed snapshot failure when a getter changes during validation', () => {
+    let reads = 0
+    const unstableSnapshot = new Proxy({}, {
+      get: (_target, property) => {
+        if (property === 'debugOverlay') {
+          reads += 1
+          return reads === 1 ? null : undefined
+        }
+        return undefined
+      },
+    })
+
+    expect(uiQaStateFromSnapshot(unstableSnapshot)).toStrictEqual(Result.fail({
+      _tag: 'InvalidUiQaSnapshot',
+      field: 'snapshot',
+    }))
+  })
+
   it('rejects malformed toast and debug-overlay structures with typed failures', () => {
     const malformedToast = { ...toast, unexpected: true }
     const malformedDebugFields = { ...debugOverlay, unexpected: true }

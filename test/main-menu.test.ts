@@ -962,6 +962,18 @@ describe('createMainMenuView input guards', () => {
 })
 
 describe('mainMenuViewModel malformed nested inputs', () => {
+  it('returns a typed failure for an unlisted non-empty world type', () => {
+    const invalidState = {
+      ...initialMainMenuState,
+      draft: { ...initialMainMenuState.draft, worldType: asWorldTypeId('unavailable') },
+    }
+
+    expect(mainMenuViewModel(invalidState, [], WORLD_TYPES)).toStrictEqual(Result.fail({
+      _tag: 'InvalidMainMenuViewModelInput',
+      field: 'state.draft.worldType',
+    }))
+  })
+
   it('returns a typed failure when the draft is not a record', () => {
     const invalidState = { ...initialMainMenuState }
     expect(Reflect.set(invalidState, 'draft', null)).toBe(true)

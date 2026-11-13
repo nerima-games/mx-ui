@@ -15,7 +15,7 @@ import {
 import { captionEvent, captionTime } from '../helpers/caption-event'
 import {
   CROSSHAIR_PULSE_SECS,
-  crosshairViewModel,
+  crosshairViewModel as crosshairViewModelResult,
 } from '../../src/domain/crosshair'
 import {
   FramesPerSecondSchema,
@@ -62,6 +62,14 @@ const decodeVitals = Schema.decodeUnknownResult(VitalsSchema, { onExcessProperty
 const decodeFiniteFps = Schema.decodeUnknownResult(FramesPerSecondSchema)
 const decodeFiniteGpuTime = Schema.decodeUnknownResult(GpuTimeMillisecondsSchema)
 const decodeToast = Schema.decodeUnknownResult(AchievementToastSchema)
+const crosshairViewModel = (...args: Parameters<typeof crosshairViewModelResult>) => {
+  const result = crosshairViewModelResult(...args)
+  expect(Result.isFailure(result)).toBe(false)
+  if (Result.isFailure(result)) {
+    return undefined
+  }
+  return result.success
+}
 
 describe('overlay scenario catalog', () => {
   for (const definition of OVERLAY_SCENARIOS) {
@@ -246,7 +254,14 @@ describe('overlay scenario catalog', () => {
   it('normalizes crosshair extremes and expires hits at the pulse boundary', () => {
     expect(crosshairViewModel({ modals: [], breakProgress: -1 }, 0)?.breakProgress).toBe(0)
     expect(crosshairViewModel({ modals: [], breakProgress: 1.5 }, 0)?.breakProgress).toBe(1)
-    expect(crosshairViewModel({ modals: [], breakProgress: Number.NaN }, 0)?.breakProgress).toBeUndefined()
+    const invalidProgress = crosshairViewModelResult({ modals: [], breakProgress: Number.NaN }, 0)
+    expect(Result.isFailure(invalidProgress)).toBe(true)
+    if (Result.isFailure(invalidProgress)) {
+      expect(invalidProgress.failure).toStrictEqual({
+        _tag: 'InvalidCrosshairViewModelInput',
+        field: 'breakProgress',
+      })
+    }
     expect(crosshairViewModel({ modals: [], lastHitAtSecs: 0 }, CROSSHAIR_PULSE_SECS - 0.001)?.hit).toBe(true)
     expect(crosshairViewModel({ modals: [], lastHitAtSecs: 0 }, CROSSHAIR_PULSE_SECS)?.hit).toBe(false)
   })

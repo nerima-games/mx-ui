@@ -244,6 +244,53 @@ describe('createChestStorageView', () => {
     }))
   })
 
+  it.each([
+    { region: 'inventory', slot: 0 },
+    { region: 'chest', slot: -1 },
+    { region: 'chest', slot: CHEST_STORAGE_SLOT_COUNT },
+    { region: 'player', slot: 36 },
+    { region: 'player', slot: 1.5 },
+  ])('returns a typed failure for malformed focused slot targets: %o', (target) => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const model = chestStorageViewModel({
+      chest: [],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: undefined,
+      selectedSlot: undefined,
+    })
+    const interaction: ChestStorageInteractionView = {
+      focusedSlot: { region: 'chest', slot: 0 },
+      status: 'ready',
+    }
+    expect(Reflect.set(interaction, 'focusedSlot', target)).toBe(true)
+
+    expect(view.render(model, interaction)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'interaction.focusedSlot',
+    }))
+  })
+
+  it('uses the first chest slot as the tab stop when focus is omitted', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('main'))
+    const view = createChestStorageView(factory, parent)
+    const root = fakeElement(view.root)
+    const model = chestStorageViewModel({
+      chest: [{ item: 'minecraft:stone', count: 1, durability: undefined }],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: undefined,
+      selectedSlot: undefined,
+    }, fakeItemDisplayNameOptions())
+
+    expect(view.render(model)).toBe(Result.void)
+    expect(root.findAll('data-interaction-target', 'chest-storage-slot').map((slot) =>
+      slot.attributes.get('tabindex'),
+    )).toStrictEqual(['0'])
+  })
+
   it('mounts all regions and projects stacks, durability, selection, and cursor without listeners', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('main'))

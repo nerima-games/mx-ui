@@ -175,26 +175,22 @@ describe('createFurnaceView', () => {
     ])
   })
 
-  it('REGRESSION: an unrecognized focused slot falls back to the input slot instead of throwing', () => {
-    // `FurnaceInteractionView` is a published type with no canonical constructor — a host
-    // assembles `focusedSlot` itself, so a stale value round-tripped through persistence can
-    // disagree with the `FurnaceSlotId` union it claims to satisfy at compile time.
+  it('returns a typed failure for an unrecognized focused slot', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')
     const view = createFurnaceView(factory, host)
-    const root = fakeElement(view.root)
     const interaction: FurnaceInteractionView = {
       focusedSlot: JSON.parse('"stale-slot"'),
       status: 'Recovered focus',
     }
-    view.render(
+    const result = view.render(
       furnaceViewModel({ input: undefined, fuel: undefined, output: undefined, cookProgress: 0, burnProgress: 0 }),
       interaction,
     )
 
-    expect(
-      root.findAll('data-interaction-target', 'furnace-slot').map((slot) => slot.attributes.get('tabindex')),
-    ).toStrictEqual(['0', '-1', '-1'])
+    expect(result).toStrictEqual(
+      Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'interaction.focusedSlot' }),
+    )
   })
 
   it('REGRESSION: a shorter slots array than the DOM leaves the surplus slot elements untouched', () => {

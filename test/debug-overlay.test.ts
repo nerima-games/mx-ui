@@ -179,6 +179,23 @@ describe('debugOverlayModel', () => {
     )
   })
 
+  it('returns a typed snapshot failure when a getter changes during validation', () => {
+    let reads = 0
+    const unstableSnapshot = new Proxy(emptySnapshot(), {
+      get: (target, property, receiver) => {
+        if (property === 'cameraPose') {
+          reads += 1
+          return reads === 1 ? null : undefined
+        }
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    expect(debugOverlayModel(unstableSnapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'snapshot' }),
+    )
+  })
+
   it('rejects null nested frame values with typed failures', () => {
     const noCameraPosition: Record<string, unknown> = {
       ...emptySnapshot(),
