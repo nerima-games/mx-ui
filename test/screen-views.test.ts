@@ -170,13 +170,45 @@ describe('captions are rendered as TEXT', () => {
 })
 
 describe('the inventory renderer keeps `unknown` a different screen from `empty`', () => {
-  it('returns typed failures for null and non-record root models without rendering', () => {
+  it('rejects malformed root and nested model shapes without rendering', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
     const view = createInventoryView(factory, parent)
     const before = factory.mark()
 
-    for (const invalidModel of [null, 7, []]) {
+    const unknownCrafting = { kind: 'unknown' as const }
+    const unknownMergeTargets = { kind: 'unknown' as const }
+    expect(Reflect.apply(view.render, view, [{}])).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'model',
+    }))
+
+    for (const invalidModel of [
+      null,
+      7,
+      [],
+      { regions: [] },
+      { regions: [], carried: undefined },
+      { regions: [], carried: undefined, crafting: unknownCrafting },
+      { regions: [], carried: null, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      { regions: [], carried: {}, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      { regions: [], carried: undefined, crafting: null, mergeTargets: unknownMergeTargets },
+      { regions: [], carried: undefined, crafting: { kind: 'match', output: null }, mergeTargets: unknownMergeTargets },
+      { regions: [null], carried: undefined, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      {
+        regions: [{ kind: 'slots', id: 'hotbar', columns: 9, slots: null }],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: unknownMergeTargets,
+      },
+      { regions: [], carried: undefined, crafting: unknownCrafting, mergeTargets: null },
+      {
+        regions: [],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: { kind: 'known', indices: null },
+      },
+    ]) {
       expect(Reflect.apply(view.render, view, [invalidModel])).toStrictEqual(Result.fail({
         _tag: 'InvalidInventoryViewInput',
         field: 'model',

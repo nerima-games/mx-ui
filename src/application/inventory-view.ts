@@ -68,7 +68,7 @@ import {
   setSlotHidden,
   updateSlotElement,
 } from './slot-element.js'
-import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { UI_MESSAGES, type UiLanguage, type UiMessageKey, type UiMessageValues } from '../domain/ui-language.js'
 import { inheritUiLanguage, uiLanguageForElement, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
 import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
@@ -596,6 +596,89 @@ const isRecord = (input: unknown): input is Record<string, unknown> =>
 const isOptionalString = (input: unknown): boolean =>
   typeof input === 'undefined' || typeof input === 'string'
 
+const isOptionalNumber = (input: unknown): boolean =>
+  typeof input === 'undefined' || typeof input === 'number'
+
+const isSlotViewShape = (input: unknown): boolean =>
+  isRecord(input) &&
+  Object.hasOwn(input, 'index') && typeof Reflect.get(input, 'index') === 'number' &&
+  Object.hasOwn(input, 'itemId') && isOptionalString(Reflect.get(input, 'itemId')) &&
+  Object.hasOwn(input, 'countLabel') &&
+  Object.hasOwn(input, 'durabilityPercent') && isOptionalNumber(Reflect.get(input, 'durabilityPercent')) &&
+  Object.hasOwn(input, 'selected') && typeof Reflect.get(input, 'selected') === 'boolean' &&
+  Object.hasOwn(input, 'empty') && typeof Reflect.get(input, 'empty') === 'boolean'
+
+const isMessageKey = (input: unknown): input is UiMessageKey =>
+  typeof input === 'string' && Object.hasOwn(UI_MESSAGES, input)
+
+const isMessageValuesShape = (input: unknown): boolean =>
+  isRecord(input) && Object.values(input).every((value) =>
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ||
+    (isRecord(value) && isMessageKey(Reflect.get(value, 'key'))),
+  )
+
+const isUnknownRegionShape = (input: Record<string, unknown>): boolean => {
+  const whyMessage = Reflect.get(input, 'whyMessage')
+  return typeof Reflect.get(input, 'why') === 'string' &&
+    (typeof whyMessage === 'undefined' || (
+      isRecord(whyMessage) &&
+      isMessageKey(Reflect.get(whyMessage, 'key')) &&
+      (typeof Reflect.get(whyMessage, 'values') === 'undefined' ||
+        isMessageValuesShape(Reflect.get(whyMessage, 'values')))
+    ))
+}
+
+const isRegionId = (input: unknown): input is RegionId =>
+  input === 'armour' || input === 'crafting-grid' || input === 'hotbar' || input === 'main' || input === 'offhand'
+
+const isSlotRegionShape = (input: Record<string, unknown>): boolean =>
+  isRegionId(Reflect.get(input, 'id')) &&
+  typeof Reflect.get(input, 'columns') === 'number' &&
+  Array.isArray(Reflect.get(input, 'slots')) &&
+  Reflect.get(input, 'slots').every(isSlotViewShape)
+
+const isRegionShape = (input: unknown): boolean => {
+  if (!isRecord(input) || !isRegionId(Reflect.get(input, 'id'))) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  return kind === 'slots' ? isSlotRegionShape(input) : kind === 'unknown' && isUnknownRegionShape(input)
+}
+
+const isCraftingOutcomeShape = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  return kind === 'match'
+    ? isSlotViewShape(Reflect.get(input, 'output'))
+    : kind === 'no-match' || kind === 'unknown'
+}
+
+const isMergeTargetsShape = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  return kind === 'unknown' || (
+    kind === 'known' &&
+    isRecord(Reflect.get(input, 'indices')) &&
+    typeof Reflect.get(Reflect.get(input, 'indices'), 'has') === 'function'
+  )
+}
+
+const isInventoryViewModelShape = (input: unknown): boolean =>
+  isRecord(input) &&
+  Object.hasOwn(input, 'regions') &&
+  Array.isArray(Reflect.get(input, 'regions')) &&
+  Reflect.get(input, 'regions').every(isRegionShape) &&
+  Object.hasOwn(input, 'carried') &&
+  (typeof Reflect.get(input, 'carried') === 'undefined' || isSlotViewShape(Reflect.get(input, 'carried'))) &&
+  Object.hasOwn(input, 'crafting') &&
+  isCraftingOutcomeShape(Reflect.get(input, 'crafting')) &&
+  Object.hasOwn(input, 'mergeTargets') &&
+  isMergeTargetsShape(Reflect.get(input, 'mergeTargets'))
+
 const isItemDisplayNameView = (input: unknown): boolean => {
   if (typeof input === 'undefined') {
     return true
@@ -945,7 +1028,7 @@ export const createInventoryView = (
       model: InventoryViewModel,
       interaction?: InventoryInteractionView,
     ): Result.Result<void, InvalidInventoryViewInput> => {
-      if (!isRecord(model)) {
+      if (!isInventoryViewModelShape(model)) {
         return Result.fail({ _tag: 'InvalidInventoryViewInput', field: 'model' })
       }
       return renderInventoryView({ actions, elements, interaction, model })
