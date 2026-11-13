@@ -543,7 +543,7 @@ export const createEnchantingTableView = (
     render: (model: EnchantingTableViewModel | null, interaction?: EnchantingInteractionView | null) => {
       const prepared = prepareEnchantingRender(model, interaction)
       if (Result.isFailure(prepared)) {
-        return prepared
+        return Result.fail(prepared.failure)
       }
       renderSlots(prepared.success.model, prepared.success.focusedTarget, prepared.success.interaction)
       renderOffers(prepared.success.model, prepared.success.focusedTarget, prepared.success.interaction)
