@@ -58,21 +58,17 @@ type InteractiveSlotElement = {
 
 /** Cursor slot occupies index 0 of its own single-slot group — there is only one. */
 const CURSOR_SLOT_INDEX = 0
+const ZERO_INDEX = 0
 /** Players see slots numbered from 1, not from 0. */
 const SLOT_DISPLAY_OFFSET = 1
 const DEFAULT_FOCUSED_TARGET: ChestStorageSlotTarget = { region: 'chest', slot: 0 }
 const CHEST_STORAGE_FOCUS_GROUP = 'chest-storage-slots'
 const PLAYER_INVENTORY_SLOT_COUNT = HOTBAR_SLOT_COUNT + INVENTORY_MAIN_SLOT_COUNT
 
-const isChestStorageSlotTarget = (input: unknown): input is ChestStorageSlotTarget => {
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-    return false
-  }
-  const region = Reflect.get(input, 'region')
-  const slot = Reflect.get(input, 'slot')
-  if (typeof slot !== 'number' || !Number.isSafeInteger(slot) || slot < 0) {
-    return false
-  }
+const isValidSlotIndex = (slot: unknown): slot is number =>
+  typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= ZERO_INDEX
+
+const slotBelongsToRegion = (region: unknown, slot: number): boolean => {
   if (region === 'chest') {
     return slot < CHEST_STORAGE_SLOT_COUNT
   }
@@ -80,6 +76,18 @@ const isChestStorageSlotTarget = (input: unknown): input is ChestStorageSlotTarg
     return slot < PLAYER_INVENTORY_SLOT_COUNT
   }
   return false
+}
+
+const isChestStorageSlotTarget = (input: unknown): input is ChestStorageSlotTarget => {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return false
+  }
+  const region = Reflect.get(input, 'region')
+  const slot = Reflect.get(input, 'slot')
+  if (!isValidSlotIndex(slot)) {
+    return false
+  }
+  return slotBelongsToRegion(region, slot)
 }
 
 const focusIndexForTarget = (target: ChestStorageSlotTarget, chestSlotCount: number): number => {

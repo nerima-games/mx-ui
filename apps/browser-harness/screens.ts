@@ -3,8 +3,12 @@ import { AudioCaptionText, AudioPan, SoundCueId } from '@nerima-games/mc-audio'
 import { EntityHealthPoints } from '@nerima-games/mc-sim'
 import { Effect, Result, Schema } from 'effect'
 import { captionLines, type CaptionEvent } from '../../src/domain/caption'
-import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
-import type { CrosshairStatus, CrosshairViewModel } from '../../src/domain/crosshair'
+import {
+  crosshairViewModel,
+  IDLE_CROSSHAIR_STATUS,
+  type CrosshairStatus,
+  type CrosshairViewModel,
+} from '../../src/domain/crosshair'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../../src/domain/inventory-view-model'
 import { initialMainMenuState, mainMenuViewModel } from '../../src/domain/main-menu'

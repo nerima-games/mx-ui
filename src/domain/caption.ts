@@ -1,8 +1,8 @@
 /** Project owner caption events into UI-ready caption lines. */
 
 import {
-  CAPTION_REASONS,
   CAPTION_DISPLAY_SECS,
+  CAPTION_REASONS,
   type CaptionEvent,
   visibleCaptions,
 } from '@nerima-games/mc-audio'

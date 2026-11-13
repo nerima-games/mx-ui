@@ -1,10 +1,10 @@
+import { Result, Schema } from 'effect'
 import {
   type UiLanguage,
   type UiMessageText,
   UiMessageTextSchema,
 } from './ui-language.js'
 import type { KeyCode } from '@nerima-games/mc-kernel/domain/settings'
-import { Result, Schema } from 'effect'
 
 type InvalidKeyDisplayNameInput = Readonly<{
   readonly _tag: 'InvalidKeyDisplayNameInput'
@@ -45,6 +45,7 @@ const uiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 const LETTER_KEY_PATTERN = /^Key(?<key>[A-Z])$/u
 const DIGIT_KEY_PATTERN = /^Digit(?<key>[0-9])$/u
 const NUMPAD_KEY_PATTERN = /^Numpad(?<key>[0-9])$/u
+const EMPTY_KEY_CODE_LENGTH = 0
 
 const namedKey = (code: string, language: UiLanguage): string | null => KEY_NAMES[code]?.[language] ?? null
 
@@ -94,7 +95,7 @@ export function keyDisplayName(
   code: unknown,
   language: unknown,
 ): UiMessageText | Result.Result<UiMessageText, InvalidKeyDisplayNameInput> {
-  if (typeof code !== 'string' || code.length === 0) {
+  if (typeof code !== 'string' || code.length === EMPTY_KEY_CODE_LENGTH) {
     return Result.fail({ _tag: 'InvalidKeyDisplayNameInput', field: 'code' })
   }
   if (language !== 'en' && language !== 'ja') {

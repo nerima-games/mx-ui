@@ -127,12 +127,34 @@ const clampBreakProgress = (
   supplied: unknown,
 ): Result.Result<number | undefined, InvalidCrosshairViewModelInput> => {
   if (typeof supplied === 'undefined') {
+    // eslint-disable-next-line no-undefined -- Undefined represents the no-progress state.
     return Result.succeed(undefined)
   }
   if (typeof supplied !== 'number' || !Number.isFinite(supplied)) {
     return invalidCrosshairViewModelInput('breakProgress')
   }
   return Result.succeed(Math.min(PROGRESS_UPPER_BOUND, Math.max(ZERO, supplied)))
+}
+
+// eslint-disable-next-line no-undefined -- Undefined is the public no-view state.
+const noCrosshairView = (): Result.Result<undefined, never> => Result.succeed(undefined)
+
+const isRecentHit = (
+  lastHitAtSecs: number | undefined,
+  nowSecs: number,
+  pulseSecs: number,
+): boolean => {
+  if (typeof lastHitAtSecs === 'undefined') {
+    return false
+  }
+  const since = nowSecs - lastHitAtSecs
+  // A NaN or a backwards clock shows NO hit, which is the opposite call from
+  // `saveStatusMessage` and `loadingScreenView` and for the same underlying
+  // Rule: choose the outcome that does not invent a claim. There, keeping a
+  // Message up claims nothing new. Here, a hit marker IS the claim: a hit that
+  // Stuck because of a bad subtraction would tell the player they connected
+  // When they missed.
+  return Number.isFinite(since) && since >= ZERO && since < pulseSecs
 }
 
 export const crosshairViewModel = (
@@ -148,21 +170,10 @@ export const crosshairViewModel = (
     return Result.fail(breakProgress.failure)
   }
   if (pointerLockReleased(status.modals)) {
-    return Result.succeed(undefined)
+    return noCrosshairView()
   }
-  const at = status.lastHitAtSecs
-  if (typeof at === 'undefined') {
-    return Result.succeed({ breakProgress: breakProgress.success, hit: false })
-  }
-  const since = nowSecs - at
-  // A NaN or a backwards clock shows NO hit, which is the opposite call from
-  // `saveStatusMessage` and `loadingScreenView` and for the same underlying
-  // Rule: choose the outcome that does not invent a claim. There, keeping a
-  // Message up claims nothing new. Here, a hit marker IS the claim — 「you struck
-  // Something」 — and one that stuck because of a bad subtraction would tell the
-  // Player they connected when they missed.
   return Result.succeed({
     breakProgress: breakProgress.success,
-    hit: Number.isFinite(since) && since >= ZERO && since < pulseSecs,
+    hit: isRecentHit(status.lastHitAtSecs, nowSecs, pulseSecs),
   })
 }

@@ -463,8 +463,7 @@ const validateMainMenuViewModelArguments = (
     decodeMainMenuInput(decodeWorldTypeOptions(worldTypesInput), 'worldTypes'),
     decodeMainMenuInput(decodeMainMenuArray(unreadableSavesInput, UnreadableSaveSchema), 'unreadableSaves'),
   ]), (decoded) => {
-    const state = decoded[0]
-    const worldTypes = decoded[2]
+    const [state, , worldTypes] = decoded
     const hasSelectedWorldType = worldTypes.some((option) =>
       typeof option !== 'undefined' && option.value === state.draft.worldType,
     )
