@@ -1834,7 +1834,14 @@ describe('UiMount', () => {
     const failure = await Effect.runPromise(Effect.flip(runtime.stop))
 
     expect(failure).toMatchObject({ _tag: 'UiMountError', message: 'Failed to stop mx-ui' })
-    expect(failure.cause).toHaveProperty('message', 'destroy failed')
+    expect(failure.cause).toMatchObject({
+      cleanupErrors: [
+        {
+          operation: 'overlays',
+          error: { _tag: 'UiMountError', message: 'Failed to stop mx-ui', cause: { message: 'destroy failed' } },
+        },
+      ],
+    })
   })
 
   it('rejects start when tearing down the previous mount throws', async () => {
@@ -1857,7 +1864,18 @@ describe('UiMount', () => {
       _tag: 'UiMountError',
       message: 'Failed to unmount previous mx-ui views',
     })
-    expect(failure.cause).toHaveProperty('message', 'destroy failed')
+    expect(failure.cause).toMatchObject({
+      cleanupErrors: [
+        {
+          operation: 'overlays',
+          error: {
+            _tag: 'UiMountError',
+            message: 'Failed to unmount previous mx-ui views',
+            cause: { message: 'destroy failed' },
+          },
+        },
+      ],
+    })
     expect(runtime.current()).toBeUndefined()
   })
 
