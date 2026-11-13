@@ -104,6 +104,7 @@ export const MENU_ACTION_LABEL: Readonly<Record<MenuAction, string>> = {
 export const EMPTY_SAVE_LIST_NOTE: string = translateUiMessage(DEFAULT_UI_LANGUAGE, 'menu.worlds.empty')
 /** @deprecated Use `EMPTY_SAVE_LIST_NOTE`. */
 export const NO_SAVE_LIST_NOTE: string = EMPTY_SAVE_LIST_NOTE
+const NO_SAVED_WORLD_INDEX = -1
 
 export type MainMenuCallbacks = {
   readonly onStateChange?: (state: MainMenuState) => void
@@ -551,17 +552,24 @@ type BuildRootButtonsOptions = {
   readonly callbacks: MainMenuCallbacks
 }
 
+const callbackOrNull = (callback: (() => void) | undefined): (() => void) | null => {
+  if (typeof callback === 'undefined') {
+    return null
+  }
+  return callback
+}
+
 const externalRootCallback = (
   callbacks: MainMenuCallbacks,
   entry: Exclude<RootEntry, 'single-player'>,
 ): (() => void) | null => {
   if (entry === 'multiplayer') {
-    return typeof callbacks.onOpenMultiplayer === 'undefined' ? null : callbacks.onOpenMultiplayer
+    return callbackOrNull(callbacks.onOpenMultiplayer)
   }
   if (entry === 'settings') {
-    return typeof callbacks.onOpenSettings === 'undefined' ? null : callbacks.onOpenSettings
+    return callbackOrNull(callbacks.onOpenSettings)
   }
-  return typeof callbacks.onExit === 'undefined' ? null : callbacks.onExit
+  return callbackOrNull(callbacks.onExit)
 }
 
 type CreateRootEntryButtonOptions = BuildRootButtonsOptions & {
@@ -1057,8 +1065,12 @@ const ensureSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld):
 const renderSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld): void => {
   const row = ensureSavedWorldRow(context, world)
   writeHidden(row.rootHidden, false)
+  let name: UiMessageValues['name'] = world.name
+  if (world.name === '') {
+    name = { key: 'menu.worlds.unnamed' }
+  }
   const values: UiMessageValues = {
-    name: world.name === '' ? { key: 'menu.worlds.unnamed' } : world.name,
+    name,
     sessionId: world.sessionId,
   }
   writeLocalizedText(row.load.label, 'menu.world-row.aria', values)
@@ -1385,16 +1397,28 @@ const invalidExternalRootCallbackField = (callbacks: unknown): string | undefine
   return
 }
 
+const initializeMainMenuCallbacks = (
+  callbacks: MainMenuCallbacks,
+): Readonly<{
+  callbacks: MainMenuCallbacks
+  result: Result.Result<void, MainMenuViewInputFailure>
+}> => {
+  const invalidCallbackField = invalidExternalRootCallbackField(callbacks)
+  if (typeof invalidCallbackField === 'undefined') {
+    return { callbacks, result: Result.void }
+  }
+  return {
+    callbacks: {},
+    result: Result.fail({ _tag: 'InvalidMainMenuViewInput', field: invalidCallbackField }),
+  }
+}
+
 export const createMainMenuView = (
   factory: DomElementFactory,
   parent: DomElement,
   callbacks: MainMenuCallbacks = {},
 ): MainMenuView => {
-  const invalidCallbackField = invalidExternalRootCallbackField(callbacks)
-  const effectiveCallbacks = typeof invalidCallbackField === 'undefined' ? callbacks : {}
-  const initializationResult: Result.Result<void, MainMenuViewInputFailure> = typeof invalidCallbackField === 'undefined'
-    ? Result.succeed(undefined)
-    : Result.fail({ _tag: 'InvalidMainMenuViewInput', field: invalidCallbackField })
+  const { callbacks: effectiveCallbacks, result: initializationResult } = initializeMainMenuCallbacks(callbacks)
   const dom = buildMenuElements({ callbacks: effectiveCallbacks, factory, parent })
   const runtime = createRuntime()
   const context: MainMenuRenderContext = { callbacks: effectiveCallbacks, dom, factory, listeners: [], runtime }
@@ -1410,11 +1434,11 @@ export const createMainMenuView = (
     }
     if (model.savedWorlds.findIndex((world) =>
       world === null || typeof world === 'undefined' || typeof world.name !== 'string',
-    ) !== -1) {
+    ) !== NO_SAVED_WORLD_INDEX) {
       return Result.fail({ _tag: 'InvalidMainMenuViewInput', field: 'savedWorlds.name' })
     }
     renderMainMenu(context, model)
-    return Result.succeed(undefined)
+    return Result.void
   }
   bindMainMenuActions(context)
   return {

@@ -14,8 +14,8 @@ import {
   DEFAULT_DEBUG_HUD_SNAPSHOT,
   DEFAULT_UI_SETTINGS,
   type DebugHudSnapshot,
-  type SessionOverlays,
   type SessionOverlayInitializationFailure,
+  type SessionOverlays,
   type UiSettings,
   type UiSettingsCallbacks,
   createSessionOverlays,
@@ -74,12 +74,12 @@ import {
 } from './accessibility-dom.js'
 import { type MotionPreference, type UiScale, decodeUiScale } from '../domain/accessibility.js'
 import type { SettingsSnapshot, SettingsViewModelFailure } from '../domain/settings-view-model.js'
-import type { SettingsViewInputFailure } from './settings-view.js'
 import { finishToastSubscriptionClose, finishUiMountCleanup } from './ui-mount-cleanup.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import type { AchievementToast } from '../domain/achievement-toast.js'
 import { type CrosshairViewModel } from '../domain/crosshair.js'
 import type { FocusTarget } from '@nerima-games/mc-render'
+import type { SettingsViewInputFailure } from './settings-view.js'
 import { UiMountError } from './ui-mount-error.js'
 import type { UiQaSnapshot } from '../domain/ui-qa.js'
 import { applyUiLanguage } from './ui-localization.js'
@@ -91,6 +91,13 @@ export { UiMountError } from './ui-mount-error.js'
 
 const HOTBAR_START_INDEX = 0
 const INITIAL_SELECTED_HOTBAR_SLOT = 0
+
+const defaultWhenUndefined = <Value>(value: Value | undefined, fallback: Value): Value => {
+  if (typeof value !== 'undefined') {
+    return value
+  }
+  return fallback
+}
 
 export type UiMountedViews = {
   readonly root: HTMLElement
@@ -573,9 +580,7 @@ const createMountState = (options: UiMountOptions): Readonly<{
   const session: UiMountSession = {
     applySettingsPreferences: noSettingsPreferenceApplication,
     colorVisionController: null,
-    debugSnapshot: options.initialDebugSnapshot === undefined
-      ? DEFAULT_DEBUG_HUD_SNAPSHOT
-      : options.initialDebugSnapshot,
+    debugSnapshot: defaultWhenUndefined(options.initialDebugSnapshot, DEFAULT_DEBUG_HUD_SNAPSHOT),
     hudModel: hudViewModel(
       spawnSnapshot,
       emptyInventorySnapshot.inventory.slots.slice(HOTBAR_START_INDEX, HOTBAR_SLOT_COUNT),
@@ -586,9 +591,7 @@ const createMountState = (options: UiMountOptions): Readonly<{
     inventoryModel: inventoryViewModel(emptyInventorySnapshot),
     inventoryOpen: false,
     inventoryRestoreFocus: null,
-    language: options.initialLanguage === undefined
-      ? DEFAULT_UI_LANGUAGE
-      : options.initialLanguage,
+    language: defaultWhenUndefined(options.initialLanguage, DEFAULT_UI_LANGUAGE),
     motionController: null,
     mounted: null,
     settings: initialSettingsState.settings,
@@ -797,9 +800,7 @@ const configureMotionPreference = (
 const configureColorVision = (
   context: BaseViewsContext,
 ): Result.Result<ColorVisionFilterController | null, ColorVisionFilterFailure> => {
-  const target = context.options.colorVisionTarget === undefined
-    ? context.options.root.querySelector('canvas')
-    : context.options.colorVisionTarget
+  const target = defaultWhenUndefined(context.options.colorVisionTarget, context.options.root.querySelector('canvas'))
   if (target === null || typeof target === 'undefined') {
     return Result.succeed(null)
   }
@@ -892,7 +893,7 @@ const createBaseViews = (context: BaseViewsContext): Result.Result<Readonly<{
   inventory: InventoryView
   motionController: MotionPreferenceController
 }>, SettingsPreferenceFailure> => {
-  const initialMotion = context.options.motion === undefined ? 'full' : context.options.motion
+  const initialMotion = defaultWhenUndefined(context.options.motion, 'full')
   const hud = createHudView(context.document, context.ownedRoot, initialMotion, {
     onRespawn: context.options.onRespawn,
   })
@@ -1170,6 +1171,40 @@ const createInitialMainMenu = (context: CreateInitialMainMenuContext): MainMenuV
   return mainMenu
 }
 
+const invalidInitialSettings = (failure: InitialSettingsFailure | null): UiMountError | null => {
+  if (failure === null) {
+    return null
+  }
+  if ('tag' in failure && failure.tag === 'InvalidInitialUiScale') {
+    return new UiMountError('Invalid initial UI scale')
+  }
+  return new UiMountError('Invalid initial settings snapshot')
+}
+
+const invalidInitialMountOption = (options: UiMountOptions): UiMountError | null => {
+  const invalidMenuCallbackField = invalidExternalMenuCallbackField(options.menuCallbacks)
+  if (typeof invalidMenuCallbackField !== 'undefined') {
+    return new UiMountError('Invalid initial main-menu callbacks', {
+      cause: { _tag: 'InvalidMainMenuViewInput', field: invalidMenuCallbackField },
+    })
+  }
+  if (options.motion === null) {
+    return new UiMountError('Invalid initial motion preference')
+  }
+  if (options.colorVisionTarget === null) {
+    return new UiMountError('Invalid color-vision target')
+  }
+  return null
+}
+
+const invalidInitialMount = (options: UiMountOptions, session: UiMountSession): UiMountError | null => {
+  const invalidOption = invalidInitialMountOption(options)
+  if (invalidOption !== null) {
+    return invalidOption
+  }
+  return invalidInitialSettings(session.settingsFailure)
+}
+
 export const makeUiMount = (options: UiMountOptions): UiMount => {
   const { session, toastLifecycle } = createMountState(options)
   const settingsOperations = createSettingsOperations(session)
@@ -1178,23 +1213,9 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
 
   const buildMountedViews = (): Effect.Effect<ActiveUiMount, UiMountError> =>
     Effect.gen(function* run() {
-      const invalidMenuCallbackField = invalidExternalMenuCallbackField(options.menuCallbacks)
-      if (typeof invalidMenuCallbackField !== 'undefined') {
-        return yield* Effect.fail(new UiMountError('Invalid initial main-menu callbacks', {
-          cause: { _tag: 'InvalidMainMenuViewInput', field: invalidMenuCallbackField },
-        }))
-      }
-      if (options.motion === null) {
-        return yield* Effect.fail(new UiMountError('Invalid initial motion preference'))
-      }
-      if (options.colorVisionTarget === null) {
-        return yield* Effect.fail(new UiMountError('Invalid color-vision target'))
-      }
-      if (session.settingsFailure !== null && 'tag' in session.settingsFailure && session.settingsFailure.tag === 'InvalidInitialUiScale') {
-        return yield* Effect.fail(new UiMountError('Invalid initial UI scale'))
-      }
-      if (session.settingsFailure !== null) {
-        return yield* Effect.fail(new UiMountError('Invalid initial settings snapshot'))
+      const initialFailure = invalidInitialMount(options, session)
+      if (initialFailure !== null) {
+        return yield* Effect.fail(initialFailure)
       }
       const { document, ownedRoot } = yield* requireOwnedRoot(options.root)
       const partial: PartialMount = {

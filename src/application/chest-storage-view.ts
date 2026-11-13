@@ -1,4 +1,3 @@
-import { Result } from 'effect'
 import {
   CHEST_STORAGE_COLUMNS,
   CHEST_STORAGE_SLOT_COUNT,
@@ -25,6 +24,7 @@ import {
 import { type TextCell, textCell, writeText } from './dom-write.js'
 import { type UiLanguage, type UiMessageKey, type UiMessageValues } from '../domain/ui-language.js'
 import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
+import { Result } from 'effect'
 import { itemDisplayNameValue } from './item-display-name.js'
 
 export type ChestStorageInteractionView = {
@@ -249,6 +249,65 @@ const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | und
   })
 }
 
+const invalidGridCountLabelField = (model: ChestStorageViewModel): string | undefined => {
+  const regions = [
+    ['chest', model.chest],
+    ['playerMain', model.playerMain],
+    ['playerHotbar', model.playerHotbar],
+  ] as const
+  for (const [region, slots] of regions) {
+    for (const slot of slots) {
+      if (slot === null) {
+        return `${region}.slot`
+      }
+      if (typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null) {
+        return `${region}.countLabel`
+      }
+    }
+  }
+  return
+}
+
+const invalidChestStorageCursorField = (model: ChestStorageViewModel): string | undefined => {
+  if (Reflect.get(model, 'cursor') === null) {
+    return 'cursor'
+  }
+  if (typeof model.cursor !== 'undefined' && Reflect.get(model.cursor, 'countLabel') === null) {
+    return 'cursor.countLabel'
+  }
+  return
+}
+
+const invalidChestStorageInteractionField = (
+  interaction: ChestStorageInteractionView | undefined,
+): string | undefined => {
+  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'focusedSlot') === null) {
+    return 'interaction.focusedSlot'
+  }
+  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
+    return 'interaction.status'
+  }
+  return
+}
+
+const invalidChestStorageViewInputField = (
+  model: ChestStorageViewModel,
+  interaction: ChestStorageInteractionView | null | undefined,
+): string | undefined => {
+  const invalidCountLabelField = invalidGridCountLabelField(model)
+  if (typeof invalidCountLabelField !== 'undefined') {
+    return invalidCountLabelField
+  }
+  if (interaction === null) {
+    return 'interaction'
+  }
+  const invalidCursorField = invalidChestStorageCursorField(model)
+  if (typeof invalidCursorField !== 'undefined') {
+    return invalidCursorField
+  }
+  return invalidChestStorageInteractionField(interaction)
+}
+
 const createChestStorageRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('section')
   root.setAttribute('data-mx-ui', 'chest-storage')
@@ -367,6 +426,43 @@ const createChestStorageStatus = (factory: DomElementFactory, root: DomElement):
   return textCell(status)
 }
 
+type ChestStorageViewElements = Readonly<{
+  cursor: SlotElement
+  grids: ChestStorageGrids
+  statusText: TextCell
+}>
+
+const projectChestStorageView = (
+  elements: ChestStorageViewElements,
+  model: ChestStorageViewModel,
+  interaction: ChestStorageInteractionView | null | undefined,
+): void => {
+  const focused = interaction?.focusedSlot ?? DEFAULT_FOCUSED_TARGET
+  const active = typeof interaction !== 'undefined'
+  const chestSlotCount = model.chest.length
+  updateGrid(elements.grids.chest, model.chest, { active, chestSlotCount, target: focused })
+  updateGrid(elements.grids.playerMain, model.playerMain, { active, chestSlotCount, target: focused })
+  updateGrid(elements.grids.playerHotbar, model.playerHotbar, { active, chestSlotCount, target: focused })
+  updateCursor(elements.cursor, model.cursor)
+  writeText(elements.statusText, interaction?.status ?? '')
+}
+
+const renderChestStorageView = (
+  elements: ChestStorageViewElements,
+  model: ChestStorageViewModel | null,
+  interaction: ChestStorageInteractionView | null | undefined,
+): Result.Result<void, ChestStorageViewInputFailure> => {
+  if (model === null) {
+    return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'model' })
+  }
+  const invalidField = invalidChestStorageViewInputField(model, interaction)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: invalidField })
+  }
+  projectChestStorageView(elements, model, interaction)
+  return Result.void
+}
+
 /** Creates a listener-free chest projection. The host owns click and close dispatch. */
 export const createChestStorageView = (
   factory: DomElementFactory,
@@ -381,35 +477,7 @@ export const createChestStorageView = (
   const statusText = createChestStorageStatus(factory, root)
 
   return {
-    render: (model, interaction) => {
-      if (model === null) {
-        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'model' })
-      }
-      if (interaction === null) {
-        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'interaction' })
-      }
-      if (Reflect.get(model, 'cursor') === null) {
-        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'cursor' })
-      }
-      if (model.cursor !== undefined && Reflect.get(model.cursor, 'countLabel') === null) {
-        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'cursor.countLabel' })
-      }
-      if (interaction !== undefined && Reflect.get(interaction, 'focusedSlot') === null) {
-        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'interaction.focusedSlot' })
-      }
-      if (interaction !== undefined && Reflect.get(interaction, 'status') === null) {
-        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'interaction.status' })
-      }
-      const focused = interaction?.focusedSlot ?? DEFAULT_FOCUSED_TARGET
-      const active = typeof interaction !== 'undefined'
-      const chestSlotCount = model.chest.length
-      updateGrid(grids.chest, model.chest, { active, chestSlotCount, target: focused })
-      updateGrid(grids.playerMain, model.playerMain, { active, chestSlotCount, target: focused })
-      updateGrid(grids.playerHotbar, model.playerHotbar, { active, chestSlotCount, target: focused })
-      updateCursor(cursor, model.cursor)
-      writeText(statusText, interaction?.status ?? '')
-      return Result.succeed(undefined)
-    },
+    render: (model, interaction) => renderChestStorageView({ cursor, grids, statusText }, model, interaction),
     root,
   }
 }

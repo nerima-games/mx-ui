@@ -78,6 +78,41 @@ describe('createChestStorageView', () => {
     }))
   })
 
+  it('rejects null count labels in every grid region before projecting any slots', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const chest: Array<ChestStorageSlotSnapshot> = Array.from(
+      { length: CHEST_STORAGE_SLOT_COUNT },
+      () => undefined,
+    )
+    chest[0] = { item: 'minecraft:arrow', count: 1, durability: undefined }
+    const playerInventory: Array<ChestStorageSlotSnapshot> = Array.from({ length: 36 }, () => undefined)
+    playerInventory[0] = { item: 'minecraft:stone', count: 1, durability: undefined }
+    playerInventory[9] = { item: 'minecraft:apple', count: 1, durability: undefined }
+    const valid = chestStorageViewModel({
+      chest,
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory,
+      cursor: undefined,
+      selectedSlot: undefined,
+    })
+    view.render(valid)
+    const before = factory.mark()
+
+    for (const region of ['chest', 'playerMain', 'playerHotbar'] as const) {
+      const invalid = {
+        ...valid,
+        [region]: valid[region].map((slot, index) => index === 0 ? { ...slot, countLabel: null } : slot),
+      } as unknown as typeof valid
+
+      expect(view.render(invalid)).toStrictEqual(Result.fail({
+        _tag: 'InvalidChestStorageViewInput',
+        field: `${region}.countLabel`,
+      }))
+    }
+    expect(factory.since(before)).toStrictEqual([])
+  })
+
   it('returns typed failures for null interaction, status, and focus inputs', () => {
     const factory = fakeDocument()
     const view = createChestStorageView(factory, factory.createElement('main'))

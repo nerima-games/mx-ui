@@ -207,6 +207,15 @@ describe('settingsViewModel', () => {
     }
   })
 
+  it('rejects an explicit null key binding instead of using the default binding', () => {
+    const input = {
+      ...SNAPSHOT,
+      keyBindings: { ...SNAPSHOT.keyBindings, moveForward: null },
+    }
+
+    expect(makeModelResult(input)).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsSnapshot' }))
+  })
+
   it('projects render distance at the sim bounds and rejects the adjacent invalid values', () => {
     for (const value of [MIN_RENDER_DISTANCE, MAX_RENDER_DISTANCE]) {
       const result = makeModelResult({ ...SNAPSHOT, renderDistance: value })

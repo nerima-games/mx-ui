@@ -28,7 +28,6 @@
  * `domain/accessibility.ts` provides exactly that distinction: 「Whether a purely
  * decorative animation should run at all」.
  */
-import { Result } from 'effect'
 import {
   type AttributeCell,
   type StyleCell,
@@ -44,6 +43,7 @@ import { type CaptionLineView, MAX_VISIBLE_CAPTIONS } from '../domain/caption.js
 import type { DomElement, DomElementFactory } from './dom-surface.js'
 import { type MotionPreference, shouldAnimate } from '../domain/accessibility.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import { Result } from 'effect'
 
 /** Below this a line would be unreadable; the queue expires it before then anyway. */
 const MIN_OPACITY = 0.15
@@ -185,7 +185,7 @@ export const createCaptionView = (
       }
       latest = next
       project()
-      return Result.succeed(undefined)
+      return Result.void
     },
     root,
     setMotion: (next: MotionPreference): void => {

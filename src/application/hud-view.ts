@@ -59,7 +59,6 @@
  * moves and synchronize the ring after them; native Tab and host-managed moves
  * still need their input owner to call `setKeyboardFocus`.
  */
-import { Result } from 'effect'
 import {
   type AttributeCell,
   type PercentCell,
@@ -114,6 +113,7 @@ import {
   writeLocalizedTextUsing,
 } from './ui-localization.js'
 import { itemDisplayNameText, itemDisplayNameValue } from './item-display-name.js'
+import { Result } from 'effect'
 
 /**
  * How long the XP bar takes to slide, at full motion.
@@ -1077,7 +1077,7 @@ const renderHudFrame = (
   writePercent(cells.experienceWidth, model.experiencePercent)
   renderHotbarSlots(cells.hotbar, model.hotbar)
   renderHudDeathState(cells, model)
-  return Result.succeed(undefined)
+  return Result.void
 }
 
 /**
@@ -1129,7 +1129,7 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
       setSlotTabStop(slot, slotIndex === tabStopIndex)
       setSlotKeyboardFocus(slot, slotIndex === focusedIndex)
     }
-    return Result.succeed(undefined)
+    return Result.void
   }
 
   applyMotion(motion)

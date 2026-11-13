@@ -287,21 +287,38 @@ type MainMenuViewModelArguments = [
   worldTypes?: ReadonlyArray<WorldTypeOption>,
   unreadableSaves?: ReadonlyArray<UnreadableSave>,
 ]
+type MainMenuViewModelInputArguments = [
+  state: unknown,
+  savedWorlds?: unknown,
+  worldTypes?: unknown,
+  unreadableSaves?: unknown,
+]
+type MainMenuViewModelValidationArguments = readonly [unknown, unknown, unknown, unknown]
+type ValidMainMenuViewModelArguments = readonly [
+  MainMenuState,
+  ReadonlyArray<SavedWorld>,
+  ReadonlyArray<WorldTypeOption | undefined>,
+  ReadonlyArray<UnreadableSave>,
+]
 
 const isRecord = (input: unknown): input is Record<string, unknown> =>
   input !== null && typeof input === 'object' && !Array.isArray(input)
 
 const isMainMenuState = (input: unknown): input is MainMenuState => {
-  if (!isRecord(input) || !isRecord(input['draft'])) {
+  if (!isRecord(input)) {
     return false
   }
-  const draft = input['draft']
-  return MENU_PANELS.includes(input['panel'] as MenuPanel) &&
-    typeof draft['name'] === 'string' &&
-    typeof draft['seed'] === 'string' &&
-    GAME_MODES.includes(draft['mode'] as GameMode) &&
-    GAME_DIFFICULTIES.includes(draft['difficulty'] as GameDifficulty) &&
-    typeof draft['worldType'] === 'string'
+  const { draft, panel } = input
+  if (!isRecord(draft)) {
+    return false
+  }
+  const { name, seed, mode, difficulty, worldType } = draft
+  return MENU_PANELS.includes(panel as MenuPanel) &&
+    typeof name === 'string' &&
+    typeof seed === 'string' &&
+    GAME_MODES.includes(mode as GameMode) &&
+    GAME_DIFFICULTIES.includes(difficulty as GameDifficulty) &&
+    typeof worldType === 'string'
 }
 
 const invalidWorldTypeOption = (input: unknown): boolean =>
@@ -312,26 +329,10 @@ const invalidWorldTypeOption = (input: unknown): boolean =>
     typeof input['label']['en'] !== 'string' ||
     typeof input['label']['ja'] !== 'string')
 
-export function mainMenuViewModel(
-  state: null,
-  savedWorlds?: unknown,
-  worldTypes?: unknown,
-  unreadableSaves?: unknown,
-): Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput>
-export function mainMenuViewModel(...args: MainMenuViewModelArguments): MainMenuViewModel
-export function mainMenuViewModel(
-  state: unknown,
-  savedWorlds?: unknown,
-  worldTypes?: unknown,
-  unreadableSaves?: unknown,
-): MainMenuViewModel | Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput>
-export function mainMenuViewModel(...args: MainMenuViewModelArguments): MainMenuViewModel
-export function mainMenuViewModel(
-  state: unknown,
-  savedWorlds: unknown = [],
-  worldTypes: unknown = [],
-  unreadableSaves: unknown = [],
-): MainMenuViewModel | Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput> {
+const validateMainMenuViewModelArguments = (
+  args: MainMenuViewModelValidationArguments,
+): Result.Result<ValidMainMenuViewModelArguments, InvalidMainMenuViewModelInput> => {
+  const [state, savedWorlds, worldTypes, unreadableSaves] = args
   if (!isMainMenuState(state)) {
     return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'state' })
   }
@@ -344,7 +345,20 @@ export function mainMenuViewModel(
   if (!Array.isArray(unreadableSaves)) {
     return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'unreadableSaves' })
   }
-  const worldTypeOptions = worldTypes as ReadonlyArray<WorldTypeOption | undefined>
+  return Result.succeed([
+    state,
+    savedWorlds as ReadonlyArray<SavedWorld>,
+    worldTypes as ReadonlyArray<WorldTypeOption | undefined>,
+    unreadableSaves as ReadonlyArray<UnreadableSave>,
+  ])
+}
+
+const projectMainMenuViewModel = ([
+  state,
+  savedWorlds,
+  worldTypeOptions,
+  unreadableSaves,
+]: ValidMainMenuViewModelArguments): MainMenuViewModel => {
   const selectedWorldType = worldTypeOptions.find((option) =>
     typeof option !== 'undefined' && option.value === state.draft.worldType,
   )
@@ -354,12 +368,31 @@ export function mainMenuViewModel(
     difficulty: state.draft.difficulty,
     mode: state.draft.mode,
     panel: state.panel,
-    savedWorlds: savedWorlds as ReadonlyArray<SavedWorld>,
+    savedWorlds,
     seedInput: state.draft.seed,
-    unreadableSaves: unreadableSaves as ReadonlyArray<UnreadableSave>,
+    unreadableSaves,
     worldName: worldNameLabel(state.draft),
     worldNameInput: state.draft.name,
     worldType: worldTypeId(selectedWorldType?.value ?? firstAvailableWorldType?.value ?? defaultWorldType),
     worldTypes: worldTypeOptions as ReadonlyArray<WorldTypeOption>,
   }
+}
+
+export function mainMenuViewModel(
+  ...args: [state: null, savedWorlds?: unknown, worldTypes?: unknown, unreadableSaves?: unknown]
+): Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput>
+export function mainMenuViewModel(...args: MainMenuViewModelArguments): MainMenuViewModel
+export function mainMenuViewModel(
+  ...args: MainMenuViewModelInputArguments
+): MainMenuViewModel | Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput>
+export function mainMenuViewModel(...args: MainMenuViewModelArguments): MainMenuViewModel
+export function mainMenuViewModel(
+  ...args: MainMenuViewModelInputArguments
+): MainMenuViewModel | Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput> {
+  const [state, savedWorlds = [], worldTypes = [], unreadableSaves = []] = args
+  const validated = validateMainMenuViewModelArguments([state, savedWorlds, worldTypes, unreadableSaves])
+  if (Result.isFailure(validated)) {
+    return Result.fail(validated.failure)
+  }
+  return projectMainMenuViewModel(validated.success)
 }

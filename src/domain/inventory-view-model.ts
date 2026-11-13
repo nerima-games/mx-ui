@@ -33,7 +33,6 @@
  * it as its own field, and `slotSnapshotOf` remains the one place that
  * attaches it.
  */
-import { Result } from 'effect'
 import { DEFAULT_UI_LANGUAGE, type UiMessageKey, type UiMessageValues, translateUiMessage } from './ui-language.js'
 import {
   HOTBAR_SLOT_COUNT,
@@ -43,6 +42,7 @@ import {
 } from './hud-view-model.js'
 import { INVENTORY_SLOT_COUNT, type Inventory, type ItemStack, type Slot } from '@nerima-games/mc-sim'
 import type { ItemDisplayNameOptions } from './item-display-name.js'
+import { Result } from 'effect'
 
 export { INVENTORY_SLOT_COUNT }
 
@@ -167,14 +167,34 @@ type InvalidInventorySnapshot = Omit<InventorySnapshot, 'inventory'> & Readonly<
 }>
 type InvalidInventorySlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
 
+const isCraftingMatch = (
+  result: CraftingResultWithInvalidCount | undefined,
+): result is Extract<CraftingResultWithInvalidCount, { readonly _tag: 'Match' }> =>
+  typeof result !== 'undefined' && Reflect.get(result, '_tag') === 'Match'
+
+const craftingSlotsFrom = (
+  crafting: CraftingSnapshotWithInvalidCount | undefined,
+): ReadonlyArray<SlotWithInvalidCount> => {
+  if (typeof crafting === 'undefined') {
+    return []
+  }
+  const { grid, result } = crafting
+  if (isCraftingMatch(result)) {
+    return [...grid, result.output]
+  }
+  return grid
+}
+
+const armourSlotsFrom = (armour: ReadonlyArray<SlotWithInvalidCount> | undefined): ReadonlyArray<SlotWithInvalidCount> => {
+  if (typeof armour === 'undefined') {
+    return []
+  }
+  return armour
+}
+
 const hasInvalidInventorySlotCount = (snapshot: InventorySnapshotInputWithInvalidCount): boolean => {
-  const craftingSlots = typeof snapshot.crafting === 'undefined'
-    ? []
-    : [
-        ...snapshot.crafting.grid,
-        ...(snapshot.crafting.result?._tag === 'Match' ? [snapshot.crafting.result.output] : []),
-      ]
-  const armourSlots = typeof snapshot.armour === 'undefined' ? [] : snapshot.armour
+  const craftingSlots = craftingSlotsFrom(snapshot.crafting)
+  const armourSlots = armourSlotsFrom(snapshot.armour)
   const slots: ReadonlyArray<SlotWithInvalidCount | null> = [
     ...snapshot.inventory.slots,
     snapshot.carried,

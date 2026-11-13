@@ -69,6 +69,35 @@ const isBossHealthSnapshot = (input: unknown): input is BossHealthSnapshot => {
       snapshot['phase'] === 'dead')
 }
 
+const projectBossHealthBarViewModel = (
+  snapshot: BossHealthSnapshot,
+  language: UiLanguage,
+): BossHealthBarViewModel => {
+  const name = snapshot.name.trim() || translateUiMessage(language, 'end-hud.boss-default-name')
+  const max = Math.max(ZERO, finiteOrZero(snapshot.max))
+  const current = clamp(finiteOrZero(snapshot.current), ZERO, max)
+  const hidden = snapshot.phase === 'dead' || max === ZERO || current === ZERO
+  let progressPercent = ZERO
+  if (max > ZERO) {
+    progressPercent = Math.floor((current / max) * FULL_PERCENT)
+  }
+
+  return {
+    accessibleLabel: translateUiMessage(language, 'end-hud.boss-health', {
+      current,
+      max,
+      name,
+      phase: translateUiMessage(language, BOSS_PHASE_MESSAGE_KEY[snapshot.phase]),
+    }),
+    current,
+    hidden,
+    max,
+    name,
+    phase: snapshot.phase,
+    progressPercent,
+  }
+}
+
 export function bossHealthBarViewModel(
   snapshot: null,
   language?: unknown,
@@ -95,30 +124,7 @@ export function bossHealthBarViewModel(
   if (language !== 'en' && language !== 'ja') {
     return Result.fail({ _tag: 'InvalidBossHealthInput', field: 'language' })
   }
-  const uiLanguage = language
-  const name = snapshot.name.trim() || translateUiMessage(uiLanguage, 'end-hud.boss-default-name')
-  const max = Math.max(ZERO, finiteOrZero(snapshot.max))
-  const current = clamp(finiteOrZero(snapshot.current), ZERO, max)
-  const hidden = snapshot.phase === 'dead' || max === ZERO || current === ZERO
-  let progressPercent = ZERO
-  if (max > ZERO) {
-    progressPercent = Math.floor((current / max) * FULL_PERCENT)
-  }
-
-  return {
-    accessibleLabel: translateUiMessage(uiLanguage, 'end-hud.boss-health', {
-      current,
-      max,
-      name,
-      phase: translateUiMessage(uiLanguage, BOSS_PHASE_MESSAGE_KEY[snapshot.phase]),
-    }),
-    current,
-    hidden,
-    max,
-    name,
-    phase: snapshot.phase,
-    progressPercent,
-  }
+  return projectBossHealthBarViewModel(snapshot, language)
 }
 
 export type StrongholdLocatorSnapshot =

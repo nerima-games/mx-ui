@@ -1,6 +1,6 @@
-import { Result } from 'effect'
 import { type HotbarSlotSnapshot, type SlotView, slotView } from './hud-view-model.js'
 import type { ItemDisplayNameOptions } from './item-display-name.js'
+import { Result } from 'effect'
 
 export const ENCHANTING_SLOT_IDS = ['item', 'lapis'] as const
 export const ENCHANTING_OFFER_IDS = ['offer-1', 'offer-2', 'offer-3'] as const
@@ -87,9 +87,10 @@ const isSlotSnapshot = (input: unknown): input is EnchantingSlotSnapshot | undef
   if (!isRecord(input)) {
     return false
   }
-  return typeof input['itemId'] === 'string' &&
-    typeof input['count'] === 'number' &&
-    (typeof input['durability'] === 'undefined' || typeof input['durability'] === 'number')
+  const { itemId, count, durability } = input
+  return typeof itemId === 'string' &&
+    typeof count === 'number' &&
+    (typeof durability === 'undefined' || typeof durability === 'number')
 }
 
 const isEnchantingOfferSnapshot = (input: unknown): input is EnchantingOfferSnapshot | undefined => {
@@ -99,47 +100,67 @@ const isEnchantingOfferSnapshot = (input: unknown): input is EnchantingOfferSnap
   if (!isRecord(input)) {
     return false
   }
-  return typeof input['enchantmentId'] === 'string' &&
-    typeof input['enchantmentLevel'] === 'number' &&
-    typeof input['lapisCost'] === 'number' &&
-    typeof input['levelCost'] === 'number' &&
-    (typeof input['rejectionReason'] === 'undefined' || typeof input['rejectionReason'] === 'string')
+  const { enchantmentId, enchantmentLevel, lapisCost, levelCost, rejectionReason } = input
+  return typeof enchantmentId === 'string' &&
+    typeof enchantmentLevel === 'number' &&
+    typeof lapisCost === 'number' &&
+    typeof levelCost === 'number' &&
+    (typeof rejectionReason === 'undefined' || typeof rejectionReason === 'string')
 }
 
 const isEnchantingTableSnapshot = (input: unknown): input is EnchantingTableSnapshot => {
-  if (!isRecord(input) || !isSlotSnapshot(input['item']) || !isSlotSnapshot(input['lapis'])) {
+  if (!isRecord(input)) {
     return false
   }
-  const offers = input['offers']
+  const { item, lapis, offers } = input
+  if (!isSlotSnapshot(item) || !isSlotSnapshot(lapis)) {
+    return false
+  }
   return Array.isArray(offers) &&
     offers.length === ENCHANTING_OFFER_IDS.length &&
     offers.every(isEnchantingOfferSnapshot)
 }
 
-const nullOfferFailure = (
-  snapshot: unknown,
+const nullOfferValueFailure = (
+  offer: unknown,
+  offerId: EnchantingOfferId,
 ): EnchantingTableViewModelFailure | undefined => {
-  if (
-    !isRecord(snapshot) ||
-    !Array.isArray(snapshot['offers']) ||
-    snapshot['offers'].length !== ENCHANTING_OFFER_IDS.length
-  ) {
+  if (!isRecord(offer)) {
     return
   }
+  for (const field of ENCHANTING_OFFER_NUMERIC_FIELDS) {
+    if (offer[field] === null) {
+      return { _tag: 'NullEnchantingOfferValue', field, offerId }
+    }
+  }
+  return
+}
+
+const firstNullOfferFailure = (
+  offers: ReadonlyArray<unknown>,
+): EnchantingTableViewModelFailure | undefined => {
   for (const [index, offerId] of ENCHANTING_OFFER_IDS.entries()) {
-    const offer: unknown = snapshot['offers'][index]
+    const offer: unknown = offers[index]
     if (offer === null) {
       return { _tag: 'NullEnchantingOffer', offerId }
     }
-    if (isRecord(offer)) {
-      for (const field of ENCHANTING_OFFER_NUMERIC_FIELDS) {
-        if (offer[field] === null) {
-          return { _tag: 'NullEnchantingOfferValue', field, offerId }
-        }
-      }
+    const valueFailure = nullOfferValueFailure(offer, offerId)
+    if (typeof valueFailure !== 'undefined') {
+      return valueFailure
     }
   }
-  return undefined
+  return
+}
+
+const nullOfferFailure = (snapshot: unknown): EnchantingTableViewModelFailure | undefined => {
+  if (!isRecord(snapshot)) {
+    return
+  }
+  const { offers } = snapshot
+  if (!Array.isArray(offers) || offers.length !== ENCHANTING_OFFER_IDS.length) {
+    return
+  }
+  return firstNullOfferFailure(offers)
 }
 
 const safeWhole = (value: number): number => {

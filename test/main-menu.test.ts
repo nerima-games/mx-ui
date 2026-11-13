@@ -297,7 +297,7 @@ describe('main menu domain', () => {
   it('returns a typed failure or model for arbitrary main-menu state input', () => {
     fc.assert(fc.property(fc.anything(), (state) => {
       const output = mainMenuViewModel(state)
-      const isFailure = typeof output === 'object' && output !== null && '_tag' in output && output._tag === 'Failure'
+      const isFailure = typeof output === 'object' && output !== null && Reflect.get(output, '_tag') === 'Failure'
       expect(isFailure || 'panel' in output).toBe(true)
     }))
   })

@@ -38,7 +38,6 @@
  * fix belongs in `domain/inventory-view-model.ts` (publish `firstIndex` on a
  * `slots` region) rather than here.
  */
-import { Result } from 'effect'
 import {
   type AttributeCell,
   type StyleCell,
@@ -71,6 +70,7 @@ import {
 } from './slot-element.js'
 import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { inheritUiLanguage, uiLanguageForElement, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
+import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameValue } from './item-display-name.js'
 
@@ -588,8 +588,7 @@ type InvalidInventoryViewInput = Readonly<{
 const hasNullCountLabel = (slot: unknown): boolean =>
   typeof slot === 'object' && slot !== null && Reflect.get(slot, 'countLabel') === null
 
-const invalidInventoryViewInput = (
-  model: InventoryViewModel,
+const invalidInventoryInteractionField = (
   interaction: InventoryInteractionView | undefined,
 ): InvalidInventoryViewInput | undefined => {
   if ((interaction as unknown) === null) {
@@ -598,6 +597,10 @@ const invalidInventoryViewInput = (
   if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
     return { _tag: 'InvalidInventoryViewInput', field: 'interaction.status' }
   }
+  return
+}
+
+const invalidInventoryCountLabelField = (model: InventoryViewModel): InvalidInventoryViewInput | undefined => {
   if (hasNullCountLabel(model.carried)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'carried.countLabel' }
   }
@@ -609,7 +612,18 @@ const invalidInventoryViewInput = (
       return { _tag: 'InvalidInventoryViewInput', field: 'regions.countLabel' }
     }
   }
-  return undefined
+  return
+}
+
+const invalidInventoryViewInput = (
+  model: InventoryViewModel,
+  interaction: InventoryInteractionView | undefined,
+): InvalidInventoryViewInput | undefined => {
+  const interactionField = invalidInventoryInteractionField(interaction)
+  if (typeof interactionField !== 'undefined') {
+    return interactionField
+  }
+  return invalidInventoryCountLabelField(model)
 }
 
 type RegionSyncContext = Readonly<{
@@ -770,7 +784,7 @@ Result.Result<void, InvalidInventoryViewInput> => {
   renderCarriedSlot(elements.carried, context)
   writeText(elements.statusText, interaction?.status ?? '')
   renderCraftingOutput(elements, context)
-  return Result.succeed(undefined)
+  return Result.void
 }
 
 const wireCraftingOutput = (

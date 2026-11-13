@@ -188,7 +188,7 @@ describe('debugOverlayModel', () => {
   it('returns a typed failure rather than throwing for arbitrary snapshot input', () => {
     fc.assert(fc.property(fc.anything(), (snapshot) => {
       const output = debugOverlayModel(snapshot)
-      const isFailure = typeof output === 'object' && output !== null && '_tag' in output && output._tag === 'Failure'
+      const isFailure = typeof output === 'object' && output !== null && Reflect.get(output, '_tag') === 'Failure'
       expect(isFailure || 'coordinates' in output).toBe(true)
     }))
   })

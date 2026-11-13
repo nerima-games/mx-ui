@@ -76,60 +76,98 @@ const isRecord = (input: unknown): input is Record<string, unknown> =>
 const isFiniteNumber = (input: unknown): input is number =>
   typeof input === 'number' && Number.isFinite(input)
 
+const invalidCameraPoseField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined') {
+    return
+  }
+  if (!isRecord(input)) {
+    return 'cameraPose'
+  }
+  const { pitchRadians, yawRadians } = input
+  if (!isFiniteNumber(pitchRadians) || !isFiniteNumber(yawRadians)) {
+    return 'cameraPose'
+  }
+  return
+}
+
+const invalidDimensionField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || typeof input === 'string') {
+    return
+  }
+  return 'dimension'
+}
+
+const invalidWorldTimeField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || isRecord(input)) {
+    return
+  }
+  return 'worldTime'
+}
+
+const isValidFrameCameraPosition = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const { worldX, worldY, worldZ } = input
+  return isFiniteNumber(worldX) && isFiniteNumber(worldY) && isFiniteNumber(worldZ)
+}
+
+const invalidFrameField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined') {
+    return
+  }
+  if (!isRecord(input)) {
+    return 'frame'
+  }
+  const { cameraPosition, deltaSecs } = input
+  if (!isValidFrameCameraPosition(cameraPosition)) {
+    return 'frame.cameraPosition'
+  }
+  if (!isFiniteNumber(deltaSecs)) {
+    return 'frame.deltaSecs'
+  }
+  return
+}
+
+const invalidGpuTimingSupportedField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || typeof input === 'boolean') {
+    return
+  }
+  return 'gpuTimingSupported'
+}
+
+const invalidLatestGpuTimeField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || isFiniteNumber(input)) {
+    return
+  }
+  return 'latestGpuTimeMs'
+}
+
+const invalidQualityPresetField = (input: unknown): string | undefined => {
+  if (
+    typeof input === 'undefined' ||
+    input === 'low' ||
+    input === 'medium' ||
+    input === 'high' ||
+    input === 'ultra'
+  ) {
+    return
+  }
+  return 'qualityPreset'
+}
+
 const invalidSnapshotField = (snapshot: unknown): string | undefined => {
   if (!isRecord(snapshot)) {
     return 'snapshot'
   }
-  const cameraPose = snapshot['cameraPose']
-  if (typeof cameraPose !== 'undefined' && (
-    !isRecord(cameraPose) ||
-    !isFiniteNumber(cameraPose['pitchRadians']) ||
-    !isFiniteNumber(cameraPose['yawRadians'])
-  )) {
-    return 'cameraPose'
-  }
-  const dimension = snapshot['dimension']
-  if (typeof dimension !== 'undefined' && typeof dimension !== 'string') {
-    return 'dimension'
-  }
-  const worldTime = snapshot['worldTime']
-  if (typeof worldTime !== 'undefined' && !isRecord(worldTime)) {
-    return 'worldTime'
-  }
-  const frame = snapshot['frame']
-  if (typeof frame !== 'undefined') {
-    if (!isRecord(frame)) {
-      return 'frame'
-    }
-    const cameraPosition = frame['cameraPosition']
-    if (!isRecord(cameraPosition) ||
-      !isFiniteNumber(cameraPosition['worldX']) ||
-      !isFiniteNumber(cameraPosition['worldY']) ||
-      !isFiniteNumber(cameraPosition['worldZ'])) {
-      return 'frame.cameraPosition'
-    }
-    if (!isFiniteNumber(frame['deltaSecs'])) {
-      return 'frame.deltaSecs'
-    }
-  }
-  const gpuTimingSupported = snapshot['gpuTimingSupported']
-  if (typeof gpuTimingSupported !== 'undefined' && typeof gpuTimingSupported !== 'boolean') {
-    return 'gpuTimingSupported'
-  }
-  const latestGpuTimeMs = snapshot['latestGpuTimeMs']
-  if (typeof latestGpuTimeMs !== 'undefined' && !isFiniteNumber(latestGpuTimeMs)) {
-    return 'latestGpuTimeMs'
-  }
-  const qualityPreset = snapshot['qualityPreset']
-  if (typeof qualityPreset !== 'undefined' && !(
-    qualityPreset === 'low' ||
-    qualityPreset === 'medium' ||
-    qualityPreset === 'high' ||
-    qualityPreset === 'ultra'
-  )) {
-    return 'qualityPreset'
-  }
-  return undefined
+  const { cameraPose, dimension, worldTime, frame, gpuTimingSupported, latestGpuTimeMs, qualityPreset } = snapshot
+  return invalidCameraPoseField(cameraPose) ??
+    invalidDimensionField(dimension) ??
+    invalidWorldTimeField(worldTime) ??
+    invalidFrameField(frame) ??
+    invalidGpuTimingSupportedField(gpuTimingSupported) ??
+    invalidLatestGpuTimeField(latestGpuTimeMs) ??
+    invalidQualityPresetField(qualityPreset)
 }
 
 const isDebugOverlaySnapshot = (input: unknown): input is DebugOverlaySnapshot =>

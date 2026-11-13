@@ -726,7 +726,7 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
   it('returns typed failures for null render labels and keyboard focus indices', () => {
     const { view } = mount()
     const model = hudViewModel()
-    const firstSlot = model.hotbar[0]
+    const [firstSlot] = model.hotbar
     if (typeof firstSlot === 'undefined') {
       expect(firstSlot).not.toBeUndefined()
       return

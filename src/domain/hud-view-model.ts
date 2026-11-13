@@ -11,8 +11,8 @@ import {
   isDead,
   vitalsView,
 } from '@nerima-games/mc-sim'
-import { Result } from 'effect'
 import { type ItemDisplayNameOptions, type ItemDisplayNameView, itemDisplayNameView } from './item-display-name.js'
+import { Result } from 'effect'
 
 export {
   DEFAULT_MAX_HEALTH_POINTS,
@@ -165,6 +165,35 @@ type InvalidSlotCountInput = Readonly<{
 }>
 type InvalidSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
 
+const projectSlotView = (
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot,
+  index: number,
+  selection: number | SlotViewOptions,
+): SlotView => {
+  const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
+  const count = slot?.count ?? ZERO
+  const candidateItemId = itemIdOf(slot)
+  const empty =
+    typeof slot === 'undefined' ||
+    typeof candidateItemId === 'undefined' ||
+    !Number.isSafeInteger(count) ||
+    count <= ZERO
+
+  const itemId = visibleSlotValue(candidateItemId, empty)
+  const view: SlotView = {
+    countLabel: slotCountLabel(count, empty),
+    durabilityPercent: visibleSlotValue(slotDurabilityPercent(slot), empty),
+    empty,
+    index,
+    itemId,
+    selected: index === selectedIndex,
+  }
+  if (typeof itemId === 'undefined' || typeof itemDisplayNameOptions === 'undefined') {
+    return view
+  }
+  return { ...view, itemDisplayName: itemDisplayNameView(itemId, itemDisplayNameOptions) }
+}
+
 export function slotView(
   slot: InventoryCarriedSlot | HotbarSlotSnapshot,
   index: number,
@@ -196,29 +225,32 @@ export function slotView(
   if (typeof slot !== 'undefined' && typeof slot.count !== 'number') {
     return Result.fail({ _tag: 'InvalidSlotCount' })
   }
-  const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
+  return projectSlotView(slot, index, selection)
+}
 
-  const count = slot?.count ?? ZERO
-  const candidateItemId = itemIdOf(slot)
-  const empty =
-    typeof slot === 'undefined' ||
-    typeof candidateItemId === 'undefined' ||
-    !Number.isSafeInteger(count) ||
-    count <= ZERO
+const projectHudViewModel = (
+  vitals: Vitals,
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot>,
+  selection: number | HudViewModelOptions,
+): HudViewModel => {
+  const { itemDisplayNameOptions, presentation, selectedHotbarSlot } = hudOptionsOf(selection)
+  const view = vitalsView(vitals)
+  const selectedIndex = clampHotbarIndex(selectedHotbarSlot)
+  const slotOptions: SlotViewOptions = { itemDisplayNameOptions, selectedIndex }
 
-  const itemId = visibleSlotValue(candidateItemId, empty)
-  const view: SlotView = {
-    countLabel: slotCountLabel(count, empty),
-    durabilityPercent: visibleSlotValue(slotDurabilityPercent(slot), empty),
-    empty,
-    index,
-    itemId,
-    selected: index === selectedIndex,
+  const model: HudViewModel = {
+    dead: isDead(vitals),
+    experienceLevelLabel: String(view.experienceLevel),
+    experiencePercent: Math.floor(view.experienceProgress * FULL_PERCENT),
+    hearts: iconRow(view.healthPoints, view.maxHealthPoints),
+    hotbar: hotbarSlots.map((slot, index) => slotView(slot, index, slotOptions)),
+    shanks: iconRow(view.hungerPoints, view.maxHungerPoints),
   }
-  if (typeof itemId === 'undefined' || typeof itemDisplayNameOptions === 'undefined') {
-    return view
+
+  if (typeof presentation !== 'undefined') {
+    return { ...model, presentation: hudPresentationView(presentation) }
   }
-  return { ...view, itemDisplayName: itemDisplayNameView(itemId, itemDisplayNameOptions) }
+  return model
 }
 
 /** Derive the HUD from authoritative simulation state and inventory input. */
@@ -241,22 +273,5 @@ export function hudViewModel(
     return Result.fail({ _tag: 'InvalidSlotCount' })
   }
   const validHotbarSlots = hotbarSlots as ReadonlyArray<InventoryCarriedSlot>
-  const { itemDisplayNameOptions, presentation, selectedHotbarSlot } = hudOptionsOf(selection)
-  const view = vitalsView(vitals)
-  const selectedIndex = clampHotbarIndex(selectedHotbarSlot)
-  const slotOptions: SlotViewOptions = { itemDisplayNameOptions, selectedIndex }
-
-  const model: HudViewModel = {
-    dead: isDead(vitals),
-    experienceLevelLabel: String(view.experienceLevel),
-    experiencePercent: Math.floor(view.experienceProgress * FULL_PERCENT),
-    hearts: iconRow(view.healthPoints, view.maxHealthPoints),
-    hotbar: validHotbarSlots.map((slot, index) => slotView(slot, index, slotOptions)),
-    shanks: iconRow(view.hungerPoints, view.maxHungerPoints),
-  }
-
-  if (typeof presentation !== 'undefined') {
-    return { ...model, presentation: hudPresentationView(presentation) }
-  }
-  return model
+  return projectHudViewModel(vitals, validHotbarSlots, selection)
 }

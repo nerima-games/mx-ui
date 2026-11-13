@@ -19,6 +19,7 @@ import {
   type SettingsViewModel,
 } from '../domain/settings-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
+import { Effect, Result } from 'effect'
 import { KeyCode, type KeyCode as KeyCodeType, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import { type SettingsServiceApi, isValidSettings } from '@nerima-games/mc-sim'
@@ -31,7 +32,6 @@ import {
   writeLocalizedText,
   writeLocalizedTextUsing,
 } from './ui-localization.js'
-import { Effect, Result } from 'effect'
 import { keyDisplayName } from '../domain/key-display-name.js'
 
 export type SettingsView<Action extends string = string> = {
@@ -858,7 +858,7 @@ export const createSettingsView = <Action extends string = string>(
         return Result.fail({ _tag: 'InvalidSettingsViewInput', field })
       }
       renderSettingsModel({ actions, elements, factory, model, root })
-      return Result.succeed(undefined)
+      return Result.void
     },
     root,
   }

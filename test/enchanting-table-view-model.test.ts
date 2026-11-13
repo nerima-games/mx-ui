@@ -160,7 +160,7 @@ describe('enchantingTableViewModel', () => {
       fc.property(fc.anything(), (snapshot) => {
         const result = enchantingTableViewModel(snapshot)
         if (Result.isFailure(result)) {
-          expect(failureTags.has(result.failure._tag)).toBe(true)
+          expect(failureTags.has(Reflect.get(result.failure, '_tag'))).toBe(true)
           return
         }
 

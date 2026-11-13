@@ -68,6 +68,10 @@ const testItemStack = (
   }
   expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
 }
+
+const isTaggedResult = (input: unknown): input is Result.Result<unknown, unknown> =>
+  typeof input === 'object' && input !== null && Reflect.has(input, '_tag')
+
 describe('HUD projection from mc-sim state', () => {
   it.effect('hudViewModel rejects a null stack count instead of projecting an empty hotbar slot', () =>
     Effect.sync(() => {
@@ -978,8 +982,8 @@ describe('inventory and crafting project state without interpreting it', () => {
       fc.assert(
         fc.property(slots, (slot) => {
           const snapshot = slotSnapshotOf(slot)
-          if (typeof snapshot === 'object' && snapshot !== null && '_tag' in snapshot) {
-            if (snapshot._tag === 'Failure') {
+          if (isTaggedResult(snapshot)) {
+            if (Result.isFailure(snapshot)) {
               expect(snapshot.failure).toStrictEqual({ _tag: 'NullInventorySlot' })
               expect(slot).toBeNull()
               return
@@ -1028,16 +1032,16 @@ describe('inventory and crafting project state without interpreting it', () => {
         fc.property(slots, (slot) => {
           const view = slotView(slot, 0, 0)
           if (slot === null) {
-            expect('_tag' in view).toBe(true)
-            if ('_tag' in view) {
-              expect(view._tag).toBe('Failure')
-              if (view._tag === 'Failure') {
+            expect(isTaggedResult(view)).toBe(true)
+            if (isTaggedResult(view)) {
+              expect(Result.isFailure(view)).toBe(true)
+              if (Result.isFailure(view)) {
                 expect(view.failure).toStrictEqual({ _tag: 'NullSlotViewInput' })
               }
             }
             return
           }
-          if ('_tag' in view) {
+          if (isTaggedResult(view)) {
             throw new Error('a valid mc-sim slot must project directly')
           }
           expect(view.empty).toBe(typeof slot === 'undefined')

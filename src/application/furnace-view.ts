@@ -1,4 +1,3 @@
-import { Result } from 'effect'
 import {
   type AttributeCell,
   type PercentCell,
@@ -27,6 +26,7 @@ import {
 } from './slot-element.js'
 import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement } from './ui-localization.js'
+import { Result } from 'effect'
 import { itemDisplayNameValue } from './item-display-name.js'
 
 export type FurnaceInteractionView = {
@@ -46,6 +46,27 @@ type FurnaceViewInputFailure = Readonly<{
   readonly _tag: 'InvalidFurnaceViewInput'
   readonly field: string
 }>
+
+const invalidFurnaceViewInputField = (
+  model: FurnaceViewModel,
+  interaction: FurnaceInteractionView | null | undefined,
+): string | undefined => {
+  if (interaction === null) {
+    return 'interaction'
+  }
+  if (model.slots.some((slot) =>
+    typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null,
+  )) {
+    return 'slots[].countLabel'
+  }
+  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'focusedSlot') === null) {
+    return 'interaction.focusedSlot'
+  }
+  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
+    return 'interaction.status'
+  }
+  return
+}
 
 export type FurnaceViewActions = {
   readonly onActivate?: (target: FurnaceSlotId) => void
@@ -238,6 +259,67 @@ const resolveFocusedSlot = (requested: FurnaceSlotId): FurnaceSlotId => {
   return 'input'
 }
 
+type FurnaceSlotsProjection = Readonly<{
+  slots: ReadonlyArray<SlotElement>
+  slotViews: FurnaceViewModel['slots']
+  focusedSlot: FurnaceSlotId
+  interaction: FurnaceInteractionView | null | undefined
+}>
+
+const renderFurnaceSlots = ({ slots, slotViews, focusedSlot, interaction }: FurnaceSlotsProjection): void => {
+  for (const [index, slotElement] of slots.entries()) {
+    const slot = slotViews[index]
+    if (typeof slot !== 'undefined') {
+      updateSlotElement(slotElement, slot)
+      const focused = slot.id === focusedSlot
+      setSlotButtonView(slotElement, {
+        disabled: false,
+        focused: typeof interaction !== 'undefined' && focused,
+        label: '',
+        localizedLabel: slotAriaLabel(slot, uiLanguageForElement(slotElement.root)),
+        tabStop: focused,
+      })
+    }
+  }
+}
+
+type FurnaceViewElements = Readonly<{
+  slots: ReadonlyArray<SlotElement>
+  cook: ProgressElement
+  burn: ProgressElement
+  statusText: TextCell
+}>
+
+type FurnaceRenderInput = FurnaceViewElements & Readonly<{
+  model: FurnaceViewModel | null
+  interaction: FurnaceInteractionView | null | undefined
+}>
+
+const projectFurnaceModel = (
+  elements: FurnaceViewElements,
+  model: FurnaceViewModel,
+  interaction: FurnaceInteractionView | null | undefined,
+): void => {
+  const focusedSlot = resolveFocusedSlot(interaction?.focusedSlot ?? 'input')
+  renderFurnaceSlots({ focusedSlot, interaction, slotViews: model.slots, slots: elements.slots })
+  renderProgress(elements.cook, model.cookProgressPercent)
+  renderProgress(elements.burn, model.burnProgressPercent)
+  writeText(elements.statusText, interaction?.status ?? '')
+}
+
+const renderFurnaceModel = ({ slots, cook, burn, statusText, model, interaction }: FurnaceRenderInput):
+Result.Result<void, FurnaceViewInputFailure> => {
+  if (model === null) {
+    return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'model' })
+  }
+  const invalidField = invalidFurnaceViewInputField(model, interaction)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: invalidField })
+  }
+  projectFurnaceModel({ burn, cook, slots, statusText }, model, interaction)
+  return Result.void
+}
+
 /** Projects furnace state and wires optional native slot actions. */
 export const createFurnaceView = (
   factory: DomElementFactory,
@@ -255,50 +337,8 @@ export const createFurnaceView = (
   const statusText = createFurnaceStatus(factory, root)
 
   return {
-    render: (model: FurnaceViewModel | null, interaction?: FurnaceInteractionView | null) => {
-      if (model === null) {
-        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'model' })
-      }
-      if (interaction === null) {
-        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'interaction' })
-      }
-      if (model.slots.some((slot) =>
-        typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null,
-      )) {
-        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'slots[].countLabel' })
-      }
-      if (interaction !== undefined && Reflect.get(interaction, 'focusedSlot') === null) {
-        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'interaction.focusedSlot' })
-      }
-      if (interaction !== undefined && Reflect.get(interaction, 'status') === null) {
-        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'interaction.status' })
-      }
-      const focusedSlot = resolveFocusedSlot(interaction?.focusedSlot ?? 'input')
-
-      const renderFurnaceSlot = (slotElement: SlotElement, slot: FurnaceSlotView): void => {
-        updateSlotElement(slotElement, slot)
-        const focused = slot.id === focusedSlot
-        setSlotButtonView(slotElement, {
-          disabled: false,
-          focused: typeof interaction !== 'undefined' && focused,
-          label: '',
-          localizedLabel: slotAriaLabel(slot, uiLanguageForElement(slotElement.root)),
-          tabStop: focused,
-        })
-      }
-
-      for (const [index, slotElement] of slots.entries()) {
-        const slot = model.slots[index]
-        if (typeof slot !== 'undefined') {
-          renderFurnaceSlot(slotElement, slot)
-        }
-      }
-
-      renderProgress(cook, model.cookProgressPercent)
-      renderProgress(burn, model.burnProgressPercent)
-      writeText(statusText, interaction?.status ?? '')
-      return Result.succeed(undefined)
-    },
+    render: (model: FurnaceViewModel | null, interaction?: FurnaceInteractionView | null) =>
+      renderFurnaceModel({ burn, cook, interaction, model, slots, statusText }),
     root,
   }
 }

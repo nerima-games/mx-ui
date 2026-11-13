@@ -97,7 +97,6 @@
  * layout, and layout needs a browser. `docs/e2e-triage.md` keeps that half in
  * mc-compose, with the rest of `HUD remains usable at ${width}px`.
  */
-import { Result } from 'effect'
 import {
   type AttributeCell,
   type PercentCell,
@@ -116,6 +115,7 @@ import type { DomElement, DomElementFactory } from './dom-surface.js'
 import { type MotionPreference, shouldAnimate } from '../domain/accessibility.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import type { CrosshairViewModel } from '../domain/crosshair.js'
+import { Result } from 'effect'
 import { setLocalizedAttribute } from './ui-localization.js'
 
 /** The reticle's box, in CSS pixels. `crosshair.ts:15-16` (`width/height: 20px`). */
@@ -478,9 +478,13 @@ export const createCrosshairView = (
       if ((model as unknown) === null) {
         return Result.fail({ _tag: 'InvalidCrosshairViewInput', field: 'model' })
       }
-      latest = typeof model === 'undefined' ? null : model
+      if (typeof model === 'undefined') {
+        latest = null
+      } else {
+        latest = model
+      }
       project()
-      return Result.succeed(undefined)
+      return Result.void
     },
     root,
     setMotion: (next: MotionPreference): void => {

@@ -45,7 +45,7 @@ type InvalidItemDisplayNameOptionsView = Readonly<{
 }>
 
 const invalidItemDisplayNameOptionsView = (): InvalidItemDisplayNameOptionsView => ({
-  language: undefined,
+  language: Reflect.get({}, 'language'),
   result: Result.fail({ _tag: 'InvalidItemDisplayNameOptions' }),
 })
 

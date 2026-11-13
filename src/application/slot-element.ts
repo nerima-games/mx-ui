@@ -49,11 +49,11 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
-import { Result } from 'effect'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
 import { PALETTE_VAR } from './palette-css.js'
+import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameText } from './item-display-name.js'
 
@@ -428,6 +428,15 @@ export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
 /** Mark an interactive slot's DOM membership for the mc-render focus adapter. */
 type SlotFocusTarget = Readonly<{ group: string; index: number; columns?: number }>
 
+const validFocusColumns = (requestedColumns: number | undefined): number => {
+  if (typeof requestedColumns !== 'undefined' &&
+    Number.isSafeInteger(requestedColumns) &&
+    requestedColumns > FIRST_INDEX) {
+    return requestedColumns
+  }
+  return DEFAULT_FOCUS_COLUMNS
+}
+
 export const setSlotFocusTarget = (
   slot: SlotElement,
   target: SlotFocusTarget,
@@ -435,15 +444,11 @@ export const setSlotFocusTarget = (
   if (Reflect.get(target, 'columns') === null) {
     return Result.fail({ _tag: 'InvalidSlotFocusTarget', field: 'columns' })
   }
-  const requestedColumns = typeof target.columns === 'undefined' ? DEFAULT_FOCUS_COLUMNS : target.columns
-  let validColumns = DEFAULT_FOCUS_COLUMNS
-  if (Number.isSafeInteger(requestedColumns) && requestedColumns > FIRST_INDEX) {
-    validColumns = requestedColumns
-  }
+  const validColumns = validFocusColumns(target.columns)
   writeAttribute(slot.focusGroup, target.group)
   writeAttribute(slot.focusIndex, String(target.index))
   writeAttribute(slot.focusColumns, String(validColumns))
-  return Result.succeed(undefined)
+  return Result.void
 }
 
 const clearSlotFocusTarget = (slot: SlotElement): void => {
@@ -589,6 +594,18 @@ const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
   updateSlotText(slot.itemText, slot.itemTitle, itemDisplayNameText(view, language))
 }
 
+const projectSlotView = (slot: SlotElement, view: SlotView, mergeable: boolean | undefined): void => {
+  updateSlotItemText(slot, view)
+  updateSlotText(slot.countText, slot.countTitle, view.countLabel)
+  writeAttribute(slot.emptyFlag, presenceValue(view.empty))
+  writeAttribute(slot.selectedFlag, presenceValue(view.selected))
+  updateRadioState(slot, view.selected)
+  writeAttribute(slot.mergeableFlag, presenceValue(mergeable === true))
+  writeStyle(slot.borderColor, selectionColor(view.selected))
+  writeStyle(slot.borderWeight, selectionBorderWeight(view.selected))
+  updateSlotDurability(slot, view.durabilityPercent)
+}
+
 /**
  * Project a `SlotView` onto a built slot. Diffed field by field.
  *
@@ -606,16 +623,6 @@ export const updateSlotElement = (
   if (Reflect.get(view, 'countLabel') === null) {
     return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'countLabel' })
   }
-  updateSlotItemText(slot, view)
-  updateSlotText(slot.countText, slot.countTitle, view.countLabel)
-  writeAttribute(slot.emptyFlag, presenceValue(view.empty))
-  writeAttribute(slot.selectedFlag, presenceValue(view.selected))
-  updateRadioState(slot, view.selected)
-  writeAttribute(slot.mergeableFlag, presenceValue(mergeable === true))
-
-  writeStyle(slot.borderColor, selectionColor(view.selected))
-  writeStyle(slot.borderWeight, selectionBorderWeight(view.selected))
-
-  updateSlotDurability(slot, view.durabilityPercent)
-  return Result.succeed(undefined)
+  projectSlotView(slot, view, mergeable)
+  return Result.void
 }

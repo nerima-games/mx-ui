@@ -6,7 +6,8 @@ import {
   EntityIdSchema,
   SimulationTickSchema,
 } from '@nerima-games/mc-kernel'
-import { Effect, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
   AchievementToastIconSchema,
@@ -46,6 +47,17 @@ const debugOverlay: DebugOverlayModel = {
   worldTime: { dayLengthTicks: 24_000, ticks: 0 },
 }
 
+const projectionFailure = (projection: ReturnType<typeof uiQaStateFromSnapshot>) => {
+  if ('failure' in projection) {
+    return projection.failure
+  }
+  return null
+}
+
+const decodeUiQaState = Schema.decodeUnknownResult(UiQaStateSchema, {
+  onExcessProperty: 'error',
+})
+
 describe('UI QA namespace', () => {
   it('projects visible feature state and uses null only for unavailable values', () => {
     expect(
@@ -66,6 +78,37 @@ describe('UI QA namespace', () => {
         worldTime: { dayLengthTicks: 24_000, ticks: 0 },
       },
     })
+  })
+
+  it('rejects explicit null snapshot fields with typed failures', () => {
+    const nullSnapshot = uiQaStateFromSnapshot(null)
+    const nullAchievementToast = uiQaStateFromSnapshot({ achievementToast: null })
+    const nullDebugOverlay = uiQaStateFromSnapshot({ debugOverlay: null })
+
+    expect(projectionFailure(nullSnapshot)).toStrictEqual({
+      _tag: 'InvalidUiQaSnapshot',
+      field: 'snapshot',
+    })
+    expect(projectionFailure(nullAchievementToast)).toStrictEqual({
+      _tag: 'InvalidUiQaSnapshot',
+      field: 'achievementToast',
+    })
+    expect(projectionFailure(nullDebugOverlay)).toStrictEqual({
+      _tag: 'InvalidUiQaSnapshot',
+      field: 'debugOverlay',
+    })
+  })
+
+  it('returns a typed failure or schema-valid state for arbitrary snapshots', () => {
+    fc.assert(
+      fc.property(fc.anything(), (snapshot) => {
+        const state = uiQaStateFromSnapshot(snapshot)
+        if (projectionFailure(state) !== null) {
+          return true
+        }
+        return Result.isSuccess(decodeUiQaState(state))
+      }),
+    )
   })
 
   it('observes current state through a read-only ui namespace', async () => {
@@ -108,7 +151,7 @@ describe('UI QA namespace', () => {
     }))
     const failure = await Effect.runPromise(Effect.flip(namespace.observe.state.run({})))
 
-    expect(failure).toBeInstanceOf(Schema.SchemaError)
+    expect(failure).toMatchObject({ _tag: 'InvalidUiQaSnapshot', field: 'achievementToast' })
   })
 
   it('rejects malformed output when consumers decode the output codec', () => {

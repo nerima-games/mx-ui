@@ -49,7 +49,7 @@ describe('End HUD primitives', () => {
   it('returns a typed failure or model for arbitrary boss snapshot input', () => {
     fc.assert(fc.property(fc.anything(), (snapshot) => {
       const output = bossHealthBarViewModel(snapshot)
-      const isFailure = typeof output === 'object' && output !== null && '_tag' in output && output._tag === 'Failure'
+      const isFailure = typeof output === 'object' && output !== null && Reflect.get(output, '_tag') === 'Failure'
       expect(isFailure || 'accessibleLabel' in output).toBe(true)
     }))
   })
