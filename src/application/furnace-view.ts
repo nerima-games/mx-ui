@@ -79,6 +79,22 @@ const isValidItemDisplayNameView = (input: unknown): boolean =>
   (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
   isValidItemDisplayNameResult(Reflect.get(input, 'result'))
 
+const invalidFurnaceSlotItemDisplayNameField = (slot: Record<string, unknown>): string | undefined => {
+  const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+    return 'slots[].itemDisplayName'
+  }
+  return
+}
+
+const invalidFurnaceSlotCountLabelField = (slot: Record<string, unknown>): string | undefined => {
+  const countLabel = Reflect.get(slot, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return 'slots[].countLabel'
+  }
+  return
+}
+
 const invalidFurnaceSlotField = (slot: unknown): string | undefined => {
   if (typeof slot === 'undefined') {
     return
@@ -86,15 +102,7 @@ const invalidFurnaceSlotField = (slot: unknown): string | undefined => {
   if (!isRecord(slot)) {
     return 'slots[].slot'
   }
-  const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
-  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
-    return 'slots[].itemDisplayName'
-  }
-  const countLabel = Reflect.get(slot, 'countLabel')
-  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
-    return 'slots[].countLabel'
-  }
-  return
+  return invalidFurnaceSlotItemDisplayNameField(slot) ?? invalidFurnaceSlotCountLabelField(slot)
 }
 
 const invalidFurnaceModelSlotsField = (slots: ReadonlyArray<unknown>): string | undefined => {

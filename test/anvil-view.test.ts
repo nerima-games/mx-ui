@@ -74,6 +74,85 @@ describe('createAnvilView', () => {
     }))
   })
 
+  it.each([
+    { label: 'a missing Result record', value: { language: 'en', result: null } },
+    { label: 'a non-string success value', value: { language: 'en', result: Result.succeed(null) } },
+    { label: 'a non-record failure value', value: { language: 'en', result: Result.fail(null) } },
+    { label: 'an unknown failure tag', value: { language: 'en', result: Result.fail({ _tag: 'UnknownFailure' }) } },
+    { label: 'a non-string failure tag', value: { language: 'en', result: Result.fail({ _tag: 7 }) } },
+  ])('returns a typed failure for $label in a slot item display name', ({ value }) => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const valid = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: { count: 1, itemId: 'iron_sword' },
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    }, fakeItemDisplayNameOptions())
+    const primaryInput = valid.slots.find((slot) => slot.id === 'primary-input')
+    expect(primaryInput).toBeDefined()
+    if (typeof primaryInput === 'undefined') {
+      return
+    }
+    const invalidPrimaryInput = { ...primaryInput }
+    expect(Reflect.set(invalidPrimaryInput, 'itemDisplayName', value)).toBe(true)
+    const invalid = { ...valid }
+    const invalidSlots = valid.slots.map((slot) =>
+      slot.id === 'primary-input' ? invalidPrimaryInput : slot,
+    )
+    expect(Reflect.set(invalid, 'slots', invalidSlots)).toBe(true)
+
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'slots[].itemDisplayName',
+    }))
+  })
+
+  it('accepts an omitted slot entry and rejects a non-record slot through render', () => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const sparseSlots = { levelCost: 0, name: '', rejectionReason: undefined, slots: [undefined] }
+    const invalidSlots = { levelCost: 0, name: '', rejectionReason: undefined, slots: [null] }
+
+    expect(Reflect.apply(view.render, view, [sparseSlots])).toStrictEqual(Result.void)
+    expect(Reflect.apply(view.render, view, [invalidSlots])).toStrictEqual(
+      Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'slots[].slot' }),
+    )
+  })
+
+  it('accepts a recognized item display name failure from the host', () => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const model = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: { count: 1, itemId: 'iron_sword' },
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    }, fakeItemDisplayNameOptions())
+    const primaryInput = model.slots.find((slot) => slot.id === 'primary-input')
+    expect(primaryInput).toBeDefined()
+    if (typeof primaryInput === 'undefined') {
+      return
+    }
+    const unavailableName = {
+      language: 'en',
+      result: Result.fail({ _tag: 'ItemDisplayNameUnavailable' }),
+    }
+    const unavailableNameSlot = { ...primaryInput }
+    expect(Reflect.set(unavailableNameSlot, 'itemDisplayName', unavailableName)).toBe(true)
+    const unavailableNameModel = { ...model }
+    const slots = model.slots.map((slot) =>
+      slot.id === 'primary-input' ? unavailableNameSlot : slot,
+    )
+    expect(Reflect.set(unavailableNameModel, 'slots', slots)).toBe(true)
+
+    expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
+  })
+
   it('returns typed failures instead of stringifying malformed slot, rejection, and interaction text', () => {
     const factory = fakeDocument()
     const view = createAnvilView(factory, factory.createElement('main'))

@@ -795,7 +795,7 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       0,
       fakeItemDisplayNameOptions(),
     )
-    const firstSlot = model.hotbar[0]
+    const [firstSlot] = model.hotbar
     expect(firstSlot).toBeDefined()
     if (typeof firstSlot === 'undefined') {
       return
@@ -815,7 +815,7 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       0,
       fakeItemDisplayNameOptions(),
     )
-    const itemNameSlot = itemNameModel.hotbar[0]
+    const [itemNameSlot] = itemNameModel.hotbar
     expect(itemNameSlot).toBeDefined()
     if (typeof itemNameSlot === 'undefined') {
       return
@@ -926,6 +926,27 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     const before = factory.mark()
     view.setKeyboardFocus(4)
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('returns a typed failure for an unsupported item display name result tag', () => {
+    const { view } = mount()
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [firstSlot] = model.hotbar
+    expect(firstSlot).toBeDefined()
+    if (typeof firstSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(firstSlot, 'itemDisplayName', { language: 'en', result: { _tag: 'Unexpected' } })).toBe(true)
+
+    expect(view.render(model)).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar.itemDisplayName',
+    }))
   })
 
   it('exposes named native hotbar radios without renderer-owned listeners', () => {

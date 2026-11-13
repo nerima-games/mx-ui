@@ -8,14 +8,15 @@ const furnaceViewModule = `/@fs${fileURLToPath(
 const furnaceViewModelModule = `/@fs${fileURLToPath(
   new URL('../src/domain/furnace-view-model.ts', import.meta.url),
 )}`
+const effectModule = '/@id/effect'
 test('furnace controls preserve their host boundary in a real document', async ({ page }) => {
   await openHarness(page, { screen: 'crosshair' })
 
   await page.evaluate(
-    async ({ viewPath, modelPath }) => {
+    async ({ viewPath, modelPath, effectPath }) => {
       const { createFurnaceView } = await import(viewPath) as typeof import('../src/application/furnace-view')
       const { furnaceViewModel } = await import(modelPath) as typeof import('../src/domain/furnace-view-model')
-      const { Result } = await import('effect')
+      const { Result: BrowserResult } = await import(effectPath) as typeof import('effect')
       const furnaceModel = furnaceViewModel({
         input: { itemId: 'minecraft:raw_iron', count: 4 },
         fuel: { itemId: 'minecraft:coal', count: 2 },
@@ -24,7 +25,7 @@ test('furnace controls preserve their host boundary in a real document', async (
         burnProgress: 0.35,
       }, {
         language: 'en',
-        resolver: (itemType) => Result.succeed(itemType.replaceAll('_', ' ')),
+        resolver: (itemType) => BrowserResult.succeed(itemType.replaceAll('_', ' ')),
       })
       const host = document.createElement('main')
       host.setAttribute('data-furnace-browser-host', '')
@@ -33,7 +34,7 @@ test('furnace controls preserve their host boundary in a real document', async (
       const view = createFurnaceView(document, host)
       view.render(furnaceModel, { focusedSlot: 'fuel', status: 'Furnace fuel selected' })
     },
-    { modelPath: furnaceViewModelModule, viewPath: furnaceViewModule },
+    { effectPath: effectModule, modelPath: furnaceViewModelModule, viewPath: furnaceViewModule },
   )
 
   const furnace = page.locator('[data-furnace-browser-host] [data-mx-ui="furnace"]')

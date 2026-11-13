@@ -67,10 +67,11 @@ const isValidItemDisplayNameResult = (input: unknown): boolean => {
   if (!isRecord(input)) {
     return false
   }
-  if (Reflect.get(input, '_tag') === 'Success') {
+  const tag = Reflect.get(input, '_tag')
+  if (tag === 'Success') {
     return typeof Reflect.get(input, 'success') === 'string'
   }
-  return Reflect.get(input, '_tag') === 'Failure' &&
+  return tag === 'Failure' &&
     isValidItemDisplayNameFailure(Reflect.get(input, 'failure'))
 }
 

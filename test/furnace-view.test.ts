@@ -62,6 +62,81 @@ describe('createFurnaceView', () => {
     }))
   })
 
+  it.each([
+    { label: 'a missing Result record', value: { language: 'en', result: null } },
+    { label: 'a non-string success value', value: { language: 'en', result: Result.succeed(null) } },
+    { label: 'a non-record failure value', value: { language: 'en', result: Result.fail(null) } },
+    { label: 'an unknown failure tag', value: { language: 'en', result: Result.fail({ _tag: 'UnknownFailure' }) } },
+    { label: 'a non-string failure tag', value: { language: 'en', result: Result.fail({ _tag: 7 }) } },
+  ])('returns a typed failure for $label in a slot item display name', ({ value }) => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const valid = furnaceViewModel({
+      input: { itemId: 'sand', count: 1 },
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    }, fakeItemDisplayNameOptions())
+    const input = valid.slots.find((slot) => slot.id === 'input')
+    expect(input).toBeDefined()
+    if (typeof input === 'undefined') {
+      return
+    }
+    const invalidInput = { ...input }
+    expect(Reflect.set(invalidInput, 'itemDisplayName', value)).toBe(true)
+    const invalid = { ...valid }
+    const invalidSlots = valid.slots.map((slot) =>
+      slot.id === 'input' ? invalidInput : slot,
+    )
+    expect(Reflect.set(invalid, 'slots', invalidSlots)).toBe(true)
+
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'slots[].itemDisplayName',
+    }))
+  })
+
+  it('accepts an omitted slot entry and rejects a non-record slot through render', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const sparseSlots = { burnProgressPercent: 0, cookProgressPercent: 0, slots: [undefined] }
+    const invalidSlots = { burnProgressPercent: 0, cookProgressPercent: 0, slots: [null] }
+
+    expect(Reflect.apply(view.render, view, [sparseSlots])).toStrictEqual(Result.void)
+    expect(Reflect.apply(view.render, view, [invalidSlots])).toStrictEqual(
+      Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'slots[].slot' }),
+    )
+  })
+
+  it('accepts a recognized item display name failure from the host', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const model = furnaceViewModel({
+      input: { itemId: 'sand', count: 1 },
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    }, fakeItemDisplayNameOptions())
+    const input = model.slots.find((slot) => slot.id === 'input')
+    expect(input).toBeDefined()
+    if (typeof input === 'undefined') {
+      return
+    }
+    const unavailableName = {
+      language: 'en',
+      result: Result.fail({ _tag: 'ItemDisplayNameUnavailable' }),
+    }
+    const unavailableNameSlot = { ...input }
+    expect(Reflect.set(unavailableNameSlot, 'itemDisplayName', unavailableName)).toBe(true)
+    const unavailableNameModel = { ...model }
+    const slots = model.slots.map((slot) => slot.id === 'input' ? unavailableNameSlot : slot)
+    expect(Reflect.set(unavailableNameModel, 'slots', slots)).toBe(true)
+
+    expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
+  })
+
   it('returns typed failures instead of stringifying malformed slot and interaction text', () => {
     const factory = fakeDocument()
     const view = createFurnaceView(factory, factory.createElement('main'))

@@ -308,22 +308,36 @@ const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | und
   })
 }
 
-const invalidGridSlotValueField = (region: string, slot: unknown): string | undefined => {
-  if (slot === null || (typeof slot !== 'undefined' && !isRecord(slot))) {
-    return `${region}.slot`
-  }
-  if (typeof slot === 'undefined') {
-    return
-  }
+const invalidGridSlotItemDisplayNameField = (
+  region: string,
+  slot: Record<string, unknown>,
+): string | undefined => {
   const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
   if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
     return `${region}.itemDisplayName`
   }
+  return
+}
+
+const invalidGridSlotCountLabelField = (region: string, slot: Record<string, unknown>): string | undefined => {
   const countLabel = Reflect.get(slot, 'countLabel')
   if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
     return `${region}.countLabel`
   }
   return
+}
+
+const invalidGridSlotValueField = (region: string, slot: unknown): string | undefined => {
+  if (slot === null) {
+    return `${region}.slot`
+  }
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if (!isRecord(slot)) {
+    return `${region}.slot`
+  }
+  return invalidGridSlotItemDisplayNameField(region, slot) ?? invalidGridSlotCountLabelField(region, slot)
 }
 
 const invalidGridRegionField = (region: string, slots: unknown): string | undefined => {
@@ -357,17 +371,7 @@ const invalidGridSlotField = (model: unknown): string | undefined => {
   return
 }
 
-const invalidChestStorageCursorField = (model: unknown): string | undefined => {
-  if (!isRecord(model)) {
-    return 'model'
-  }
-  const cursor = Reflect.get(model, 'cursor')
-  if (typeof cursor === 'undefined') {
-    return
-  }
-  if (!isRecord(cursor)) {
-    return 'cursor'
-  }
+const invalidChestStorageCursorStackField = (cursor: Record<string, unknown>): string | undefined => {
   const stack = Reflect.get(cursor, 'stack')
   if (!isRecord(stack)) {
     return 'cursor'
@@ -379,6 +383,10 @@ const invalidChestStorageCursorField = (model: unknown): string | undefined => {
   if (typeof stackDurability !== 'undefined' && typeof stackDurability !== 'number') {
     return 'cursor.stack.durability'
   }
+  return
+}
+
+const invalidChestStorageCursorDisplayField = (cursor: Record<string, unknown>): string | undefined => {
   const countLabel = Reflect.get(cursor, 'countLabel')
   if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
     return 'cursor.countLabel'
@@ -391,10 +399,18 @@ const invalidChestStorageCursorField = (model: unknown): string | undefined => {
   if (typeof itemId !== 'undefined' && typeof itemId !== 'string') {
     return 'cursor.itemId'
   }
+  return
+}
+
+const invalidChestStorageCursorDurabilityField = (cursor: Record<string, unknown>): string | undefined => {
   const durabilityPercent = Reflect.get(cursor, 'durabilityPercent')
   if (typeof durabilityPercent !== 'undefined' && (typeof durabilityPercent !== 'number' || !Number.isFinite(durabilityPercent))) {
     return 'cursor.durabilityPercent'
   }
+  return
+}
+
+const invalidChestStorageCursorStateField = (cursor: Record<string, unknown>): string | undefined => {
   if (typeof Reflect.get(cursor, 'empty') !== 'boolean') {
     return 'cursor.empty'
   }
@@ -403,6 +419,39 @@ const invalidChestStorageCursorField = (model: unknown): string | undefined => {
   }
   if (typeof Reflect.get(cursor, 'selected') !== 'boolean') {
     return 'cursor.selected'
+  }
+  return
+}
+
+const invalidChestStorageCursorField = (model: unknown): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const cursor = Reflect.get(model, 'cursor')
+  if (typeof cursor === 'undefined') {
+    return
+  }
+  if (!isRecord(cursor)) {
+    return 'cursor'
+  }
+  return (
+    invalidChestStorageCursorStackField(cursor) ??
+    invalidChestStorageCursorDisplayField(cursor) ??
+    invalidChestStorageCursorDurabilityField(cursor) ??
+    invalidChestStorageCursorStateField(cursor)
+  )
+}
+
+const invalidChestStorageInteractionRecordField = (
+  interaction: Record<string, unknown>,
+): string | undefined => {
+  const focusedSlot = Reflect.get(interaction, 'focusedSlot')
+  if (typeof focusedSlot !== 'undefined' && !isChestStorageSlotTarget(focusedSlot)) {
+    return 'interaction.focusedSlot'
+  }
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
+    return 'interaction.status'
   }
   return
 }
@@ -416,15 +465,7 @@ const invalidChestStorageInteractionField = (
   if (!isRecord(interaction)) {
     return 'interaction'
   }
-  const focusedSlot = Reflect.get(interaction, 'focusedSlot')
-  if (typeof focusedSlot !== 'undefined' && !isChestStorageSlotTarget(focusedSlot)) {
-    return 'interaction.focusedSlot'
-  }
-  const status = Reflect.get(interaction, 'status')
-  if (typeof status !== 'undefined' && typeof status !== 'string') {
-    return 'interaction.status'
-  }
-  return
+  return invalidChestStorageInteractionRecordField(interaction)
 }
 
 const invalidChestStorageViewInputField = (

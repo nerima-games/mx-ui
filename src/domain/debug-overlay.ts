@@ -1,5 +1,5 @@
 import { type Brand, type Effect, Result, Schema } from 'effect'
-import { TimeStateSchema, type PlayerServiceApi, type TimeServiceApi } from '@nerima-games/mc-sim'
+import { type PlayerServiceApi, type TimeServiceApi, TimeStateSchema } from '@nerima-games/mc-sim'
 import type { DeltaTimeSecs as DeltaTimeSecsType } from '@nerima-games/mc-kernel'
 
 export type FramesPerSecond = number & Brand.Brand<'FramesPerSecond'>

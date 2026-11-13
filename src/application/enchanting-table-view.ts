@@ -298,14 +298,10 @@ const invalidEnchantingCollectionField = (model: unknown): string | undefined =>
   return
 }
 
-const prepareEnchantingRender = (
+const prepareEnchantingRenderAfterCollectionCheck = (
   model: EnchantingTableViewModel | null,
   interaction: EnchantingInteractionView | null | undefined,
 ): Result.Result<PreparedEnchantingRender, EnchantingTableViewInputFailure> => {
-  const collectionField = invalidEnchantingCollectionField(model)
-  if (typeof collectionField !== 'undefined') {
-    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: collectionField })
-  }
   if (interaction === null) {
     return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'interaction' })
   }
@@ -321,6 +317,17 @@ const prepareEnchantingRender = (
     interaction,
     model,
   })
+}
+
+const prepareEnchantingRender = (
+  model: EnchantingTableViewModel | null,
+  interaction: EnchantingInteractionView | null | undefined,
+): Result.Result<PreparedEnchantingRender, EnchantingTableViewInputFailure> => {
+  const collectionField = invalidEnchantingCollectionField(model)
+  if (typeof collectionField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: collectionField })
+  }
+  return prepareEnchantingRenderAfterCollectionCheck(model, interaction)
 }
 
 const tabStopValue = (tabbable: boolean): string => {

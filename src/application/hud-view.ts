@@ -241,18 +241,7 @@ const isRecord = (input: unknown): input is Record<string, unknown> =>
 const isOptionalString = (input: unknown): boolean =>
   typeof input === 'undefined' || typeof input === 'string'
 
-const isItemDisplayNameView = (input: unknown): boolean => {
-  if (typeof input === 'undefined') {
-    return true
-  }
-  if (!isRecord(input)) {
-    return false
-  }
-  const language = Reflect.get(input, 'language')
-  const result = Reflect.get(input, 'result')
-  if ((language !== 'en' && language !== 'ja') || !isRecord(result)) {
-    return false
-  }
+const isItemDisplayNameResult = (result: Record<string, unknown>): boolean => {
   const tag = Reflect.get(result, '_tag')
   if (tag === 'Success') {
     return typeof Reflect.get(result, 'success') === 'string'
@@ -267,6 +256,20 @@ const isItemDisplayNameView = (input: unknown): boolean => {
     ].some((failureTag) => Reflect.get(failure, '_tag') === failureTag)
   }
   return false
+}
+
+const isItemDisplayNameView = (input: unknown): boolean => {
+  if (typeof input === 'undefined') {
+    return true
+  }
+  if (!isRecord(input)) {
+    return false
+  }
+  const language = Reflect.get(input, 'language')
+  const result = Reflect.get(input, 'result')
+  return (language === 'en' || language === 'ja') &&
+    isRecord(result) &&
+    isItemDisplayNameResult(result)
 }
 
 type HudStatusEffectItem = {
@@ -1103,6 +1106,19 @@ const renderHudDeathState = (cells: HudCells, model: HudViewModel): void => {
   renderDeathDetails(cells, model)
 }
 
+const invalidHudHotbarSlotField = (slot: unknown): InvalidHudViewField | undefined => {
+  if (!isRecord(slot)) {
+    return 'hotbar'
+  }
+  if (!isOptionalString(Reflect.get(slot, 'countLabel'))) {
+    return 'hotbar.countLabel'
+  }
+  if (!isItemDisplayNameView(Reflect.get(slot, 'itemDisplayName'))) {
+    return 'hotbar.itemDisplayName'
+  }
+  return
+}
+
 const invalidHudFrameField = (model: unknown): InvalidHudViewField | undefined => {
   if (!isRecord(model)) {
     return 'model'
@@ -1112,14 +1128,9 @@ const invalidHudFrameField = (model: unknown): InvalidHudViewField | undefined =
     return 'hotbar'
   }
   for (const slot of hotbar) {
-    if (!isRecord(slot)) {
-      return 'hotbar'
-    }
-    if (!isOptionalString(Reflect.get(slot, 'countLabel'))) {
-      return 'hotbar.countLabel'
-    }
-    if (!isItemDisplayNameView(Reflect.get(slot, 'itemDisplayName'))) {
-      return 'hotbar.itemDisplayName'
+    const invalidSlotField = invalidHudHotbarSlotField(slot)
+    if (typeof invalidSlotField !== 'undefined') {
+      return invalidSlotField
     }
   }
   return

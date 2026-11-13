@@ -29,6 +29,7 @@ const furnaceViewModule = `/@fs${fileURLToPath(
 const furnaceViewModelModule = `/@fs${fileURLToPath(
   new URL('../src/domain/furnace-view-model.ts', import.meta.url),
 )}`
+const effectModule = '/@id/effect'
 const onboardingViewModule = `/@fs${fileURLToPath(
   new URL('../src/application/onboarding-view.ts', import.meta.url),
 )}`
@@ -329,10 +330,10 @@ test.describe('exact screen baselines', () => {
       width: '640px',
     })
     await page.evaluate(
-      async ({ modulePath, modelPath }) => {
+      async ({ modulePath, modelPath, effectPath }) => {
         const { createFurnaceView } = (await import(modulePath)) as typeof import('../src/application/furnace-view')
         const { furnaceViewModel } = (await import(modelPath)) as typeof import('../src/domain/furnace-view-model')
-        const { Result } = await import('effect')
+        const { Result: BrowserResult } = await import(effectPath) as typeof import('effect')
         const model = furnaceViewModel({
           burnProgress: 0.4,
           cookProgress: 0.65,
@@ -341,7 +342,7 @@ test.describe('exact screen baselines', () => {
           output: { count: 2, itemId: 'minecraft:iron_ingot' },
         }, {
           language: 'en',
-          resolver: (itemType) => Result.succeed(itemType.replaceAll('_', ' ')),
+          resolver: (itemType) => BrowserResult.succeed(itemType.replaceAll('_', ' ')),
         })
         const host = document.querySelector<HTMLElement>('[data-d-baseline="furnace-station"]')
         if (host === null) {
@@ -354,7 +355,7 @@ test.describe('exact screen baselines', () => {
         const view = createFurnaceView(document, host)
         view.render(model, { focusedSlot: 'input', status: 'Smelting iron ore' })
       },
-      { modelPath: furnaceViewModelModule, modulePath: furnaceViewModule },
+      { effectPath: effectModule, modelPath: furnaceViewModelModule, modulePath: furnaceViewModule },
     )
     await page.evaluate(async () => {
       await document.fonts.ready

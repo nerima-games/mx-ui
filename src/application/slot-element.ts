@@ -52,11 +52,11 @@ import {
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
+import type { ItemDisplayNameView } from '../domain/item-display-name.js'
 import { PALETTE_VAR } from './palette-css.js'
 import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameText } from './item-display-name.js'
-import type { ItemDisplayNameView } from '../domain/item-display-name.js'
 
 /**
  * Below this, a durability bar turns from `DURABILITY_HIGH` to `DURABILITY_LOW`.
@@ -589,11 +589,20 @@ const updateSlotText = (
 const isRecord = (input: unknown): input is Record<string, unknown> =>
   input !== null && typeof input === 'object' && !Array.isArray(input)
 
-const isItemDisplayNameView = (input: unknown): input is ItemDisplayNameView => {
-  if (!isRecord(input) || (Reflect.get(input, 'language') !== 'en' && Reflect.get(input, 'language') !== 'ja')) {
+const isItemDisplayNameFailure = (input: unknown): boolean => {
+  if (!isRecord(input)) {
     return false
   }
-  const result = Reflect.get(input, 'result')
+  const failureTag = Reflect.get(input, '_tag')
+  return typeof failureTag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(failureTag)
+}
+
+const isItemDisplayNameResult = (result: unknown): result is ItemDisplayNameView['result'] => {
   if (!isRecord(result)) {
     return false
   }
@@ -601,20 +610,18 @@ const isItemDisplayNameView = (input: unknown): input is ItemDisplayNameView => 
   if (tag === 'Success') {
     return typeof Reflect.get(result, 'success') === 'string'
   }
-  if (tag !== 'Failure') {
+  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(result, 'failure'))
+}
+
+const isItemDisplayNameView = (input: unknown): input is ItemDisplayNameView => {
+  if (!isRecord(input)) {
     return false
   }
-  const failure = Reflect.get(result, 'failure')
-  if (!isRecord(failure)) {
+  const language = Reflect.get(input, 'language')
+  if (language !== 'en' && language !== 'ja') {
     return false
   }
-  const failureTag = Reflect.get(failure, '_tag')
-  return typeof failureTag === 'string' && [
-    'ItemDisplayNameUnavailable',
-    'InvalidItemId',
-    'MissingItemDisplayNameResolver',
-    'InvalidItemDisplayName',
-  ].includes(failureTag)
+  return isItemDisplayNameResult(Reflect.get(input, 'result'))
 }
 
 const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {

@@ -58,6 +58,23 @@ describe('createSlotElement', () => {
   })
 
   it.each([
+    { label: 'a non-record result', value: { language: 'en', result: null } },
+    { label: 'a non-string success', value: { language: 'en', result: Result.succeed(null) } },
+    { label: 'a non-record failure', value: { language: 'en', result: Result.fail(null) } },
+    { label: 'an unknown failure tag', value: { language: 'en', result: Result.fail({ _tag: 'UnknownFailure' }) } },
+    { label: 'an unsupported language', value: { language: 'fr', result: Result.succeed('stone') } },
+  ])('returns a typed failure for $label in an item display name', ({ value }) => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView({ itemId: 'stone', count: 2 }, 0, 0)
+    expect(Reflect.set(view, 'itemDisplayName', value)).toBe(true)
+
+    expect(updateSlotElement(slot, view)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' }),
+    )
+  })
+
+  it.each([
     { field: 'countLabel', value: 7 },
     { field: 'itemDisplayName', value: 7 },
   ])('returns a typed failure for a non-string $field value', ({ field, value }) => {
