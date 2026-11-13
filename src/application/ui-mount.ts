@@ -4,12 +4,12 @@ import {
   startAchievementToastSubscriber,
 } from './achievement-toast-subscriber.js'
 import { type AchievementToastView, createAchievementToastView } from './achievement-toast-view.js'
-import { type CrosshairView, createCrosshairView } from './crosshair-view.js'
 import {
   type ColorVisionFilterController,
   type ColorVisionFilterFailure,
   createColorVisionFilterController,
 } from './color-vision-filters.js'
+import { type CrosshairView, createCrosshairView } from './crosshair-view.js'
 import {
   DEFAULT_DEBUG_HUD_SNAPSHOT,
   DEFAULT_UI_SETTINGS,
@@ -64,7 +64,6 @@ import {
   type MainMenuView,
   createMainMenuView,
 } from './main-menu-view.js'
-import { type MotionPreference, type UiScale, decodeUiScale } from '../domain/accessibility.js'
 import {
   type MotionMediaQuery,
   type MotionPreferenceController,
@@ -72,6 +71,7 @@ import {
   REDUCED_MOTION_MEDIA_QUERY,
   createMotionPreferenceController,
 } from './accessibility-dom.js'
+import { type MotionPreference, type UiScale, decodeUiScale } from '../domain/accessibility.js'
 import type { SettingsSnapshot, SettingsViewModelFailure } from '../domain/settings-view-model.js'
 import { finishToastSubscriptionClose, finishUiMountCleanup } from './ui-mount-cleanup.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
@@ -102,6 +102,7 @@ export type UiMountedViews = {
 
 type SettingsPreferenceFailure = Schema.SchemaError | ColorVisionFilterFailure | MotionPreferenceControllerFailure
 type SettingsOperationFailure = SettingsViewModelFailure | SettingsPreferenceFailure
+type InitialSettingsFailure = SettingsOperationFailure | { readonly tag: 'InvalidInitialUiScale' }
 type SettingsLanguageFailure = UiLanguageFailure | SettingsViewModelFailure
 type MountInitializationFailure = SettingsPreferenceFailure | SettingsViewModelFailure
 
@@ -182,7 +183,7 @@ type UiMountSession = {
   colorVisionController: ColorVisionFilterController | null
   applySettingsPreferences: (settings: SettingsSnapshot) => Result.Result<boolean, SettingsPreferenceFailure>
   settings: SettingsSnapshot
-  settingsFailure: SettingsOperationFailure | null
+  settingsFailure: InitialSettingsFailure | null
   language: UiLanguage
   debugSnapshot: DebugHudSnapshot
   inventoryModel: InventoryViewModel
@@ -470,7 +471,16 @@ const createAchievementToastLifecycle = (session: UiMountSession) => {
 
 const validatedInitialSettingsState = (
   input: unknown,
-): Readonly<{ failure: SettingsViewModelFailure | null; settings: SettingsSnapshot }> => {
+): Readonly<{ failure: InitialSettingsFailure | null; settings: SettingsSnapshot }> => {
+  if (
+    input !== null &&
+    typeof input === 'object' &&
+    Object.hasOwn(input, 'uiScale') &&
+    'uiScale' in input &&
+    Result.isFailure(decodeUiScale(input.uiScale))
+  ) {
+    return { failure: { tag: 'InvalidInitialUiScale' }, settings: DEFAULT_SETTINGS }
+  }
   if (isValidSettings(input)) {
     return { failure: null, settings: input }
   }
@@ -1083,6 +1093,9 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
 
   const buildMountedViews = (): Effect.Effect<ActiveUiMount, UiMountError> =>
     Effect.gen(function* run() {
+      if (session.settingsFailure !== null && 'tag' in session.settingsFailure && session.settingsFailure.tag === 'InvalidInitialUiScale') {
+        return yield* Effect.fail(new UiMountError('Invalid initial UI scale'))
+      }
       if (session.settingsFailure !== null) {
         return yield* Effect.fail(new UiMountError('Invalid initial settings snapshot'))
       }

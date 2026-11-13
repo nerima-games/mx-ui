@@ -1527,7 +1527,7 @@ describe('UiMount', () => {
       fieldOfView: 90,
       masterVolume: 0.5,
       mouseSensitivity: 2,
-      renderDistance: 20,
+      renderDistance: MAX_RENDER_DISTANCE,
       uiScale: 1.25,
     })
     expect(Result.isSuccess(settings)).toBe(true)

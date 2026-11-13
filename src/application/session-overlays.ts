@@ -16,7 +16,6 @@ import {
   settingsViewModel,
 } from '../domain/settings-view-model.js'
 import { type TextCell, textCell } from './dom-write.js'
-import type { UiScale } from '../domain/accessibility.js'
 import {
   type UiLanguage,
   type UiLanguageFailure,
@@ -33,6 +32,7 @@ import {
 import type { DomElement } from './dom-surface.js'
 import type { InputAction as RenderInputAction } from '@nerima-games/mc-render'
 import { Result } from 'effect'
+import type { UiScale } from '../domain/accessibility.js'
 import { KeyCode as kernelKeyCode } from '@nerima-games/mc-kernel/domain/settings'
 
 export type DebugHudSnapshot = {

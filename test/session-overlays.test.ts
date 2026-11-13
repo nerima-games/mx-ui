@@ -47,6 +47,7 @@ describe('session overlays', () => {
         masterVolume: 0.4,
         mouseSensitivity: 1.5,
         renderDistance: 8,
+        uiScale: 1,
       },
     })
 
@@ -62,6 +63,7 @@ describe('session overlays', () => {
     expect(overlays.settingsDialog.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.value).toBe(
       '8',
     )
+    expect(overlays.settingsDialog.querySelector<HTMLInputElement>('[data-setting="uiScale"]')?.value).toBe('1')
   })
 
   it('applies a language choice locally when no host language coordinator is supplied', () => {
@@ -158,6 +160,7 @@ describe('session overlays', () => {
       masterVolume: 0.4,
       mouseSensitivity: 1.5,
       renderDistance: 8,
+      uiScale: 1,
     })
 
     expect(Result.isSuccess(result)).toBe(true)
@@ -167,12 +170,14 @@ describe('session overlays', () => {
         masterVolume: 0.4,
         mouseSensitivity: 1.5,
         renderDistance: 8,
+        uiScale: 1,
       })
     }
     expect(overlays.settingsDialog.querySelector<HTMLInputElement>('[data-setting="fieldOfView"]')?.value).toBe('91')
     expect(overlays.settingsDialog.querySelector<HTMLInputElement>('[data-setting="masterVolume"]')?.value).toBe('0.4')
     expect(overlays.settingsDialog.querySelector<HTMLInputElement>('[data-setting="mouseSensitivity"]')?.value).toBe('1.5')
     expect(overlays.settingsDialog.querySelector<HTMLInputElement>('[data-setting="renderDistance"]')?.value).toBe('8')
+    expect(overlays.settingsDialog.querySelector<HTMLInputElement>('[data-setting="uiScale"]')?.value).toBe('1')
   })
 
   it('rejects an invalid host snapshot without replacing the displayed settings', () => {

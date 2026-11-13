@@ -174,7 +174,7 @@ describe('public API surface', () => {
       expect(ui.UI_LANGUAGES).toStrictEqual(['en', 'ja'])
       expect(ui.UI_SCALE_MIN).toBe(0.75)
       expect(ui.UI_SCALE_MAX).toBe(1.5)
-      expect(ui.UI_TRANSLATION_KEY_COUNT).toBe(441)
+      expect(ui.UI_TRANSLATION_KEY_COUNT).toBe(442)
     }),
   )
 

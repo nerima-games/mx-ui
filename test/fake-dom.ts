@@ -238,7 +238,7 @@ export const fakeElement = (element: unknown): FakeElement => {
 }
 
 export class FakeInteractiveElement extends FakeElement implements DomInteractiveElement {
-  removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
+  override removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
     if (callback === null) {
       return
     }
