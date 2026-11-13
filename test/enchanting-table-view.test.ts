@@ -1,3 +1,4 @@
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { createEnchantingTableView, type EnchantingInteractionView } from '../src/application/enchanting-table-view'
 import { enchantingTableViewModel } from '../src/domain/enchanting-table-view-model'
@@ -5,6 +6,60 @@ import { fakeDocument, fakeElement } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createEnchantingTableView', () => {
+  it('returns typed failures for null slot labels and offer rejection reasons', () => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+    const valid = enchantingTableViewModel({
+      item: { itemId: 'diamond_sword', count: 1 },
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    })
+    const invalidSlot = {
+      ...valid,
+      slots: valid.slots.map((slot) => ({ ...slot, countLabel: null })),
+    } as unknown as typeof valid
+    const invalidRejection = {
+      ...valid,
+      offers: valid.offers.map((offer) => ({ ...offer, rejectionReason: null })),
+    } as unknown as typeof valid
+
+    expect(view.render(invalidSlot)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'slots[].countLabel',
+    }))
+    expect(view.render(invalidRejection)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'offers[].rejectionReason',
+    }))
+  })
+
+  it('returns typed failures for null interaction, status, and focus inputs', () => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+    const model = enchantingTableViewModel({
+      item: undefined,
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    })
+    const invalidStatus: EnchantingInteractionView = { focusedTarget: 'item', status: 'ready' }
+    Reflect.set(invalidStatus, 'status', null)
+    const invalidFocus: EnchantingInteractionView = { focusedTarget: 'item', status: 'ready' }
+    Reflect.set(invalidFocus, 'focusedTarget', null)
+
+    expect(view.render(model, null)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'interaction',
+    }))
+    expect(view.render(model, invalidStatus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'interaction.status',
+    }))
+    expect(view.render(model, invalidFocus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'interaction.focusedTarget',
+    }))
+  })
+
   it('projects five operation targets, costs, rejection, and accessibility without listeners', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')

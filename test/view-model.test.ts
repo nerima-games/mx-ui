@@ -69,6 +69,26 @@ const testItemStack = (
   expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
 }
 describe('HUD projection from mc-sim state', () => {
+  it.effect('hudViewModel rejects a null stack count instead of projecting an empty hotbar slot', () =>
+    Effect.sync(() => {
+      const nullCount = hudViewModel(spawnSnapshot, [{ item: 'stone', count: null }], 0)
+      expect(Result.isFailure(nullCount)).toBe(true)
+      if (Result.isFailure(nullCount)) {
+        expect(nullCount.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+      }
+
+      fc.assert(
+        fc.property(fc.string(), (item) => {
+          const result = hudViewModel(spawnSnapshot, [{ item, count: null }], 0)
+          expect(Result.isFailure(result)).toBe(true)
+          if (Result.isFailure(result)) {
+            expect(result.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+          }
+        }),
+      )
+    }),
+  )
+
   it.effect('projects owner vitals into icon rows and selects the supplied hotbar slot', () =>
     Effect.sync(() => {
       expect(iconRow(20, 20)).toStrictEqual(Array.from({ length: 10 }, () => 'full'))
@@ -571,6 +591,32 @@ describe('inventory and crafting project state without interpreting it', () => {
       slot === index ? testItemStack(item, count) : undefined,
     ),
   })
+
+  it.effect('inventoryViewModel rejects explicit null stack counts across the snapshot', () =>
+    Effect.sync(() => {
+      const result = inventoryViewModel({
+        ...emptyInventorySnapshot,
+        inventory: { ...emptyInventorySnapshot.inventory, slots: [{ item: 'stone', count: null }] },
+      })
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isFailure(result)) {
+        expect(result.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+      }
+
+      fc.assert(
+        fc.property(fc.string(), (item) => {
+          const invalid = inventoryViewModel({
+            ...emptyInventorySnapshot,
+            inventory: { ...emptyInventorySnapshot.inventory, slots: [{ item, count: null }] },
+          })
+          expect(Result.isFailure(invalid)).toBe(true)
+          if (Result.isFailure(invalid)) {
+            expect(invalid.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+          }
+        }),
+      )
+    }),
+  )
 
   it.effect('the projection is pure, total and the same for the same input', () =>
     Effect.sync(() => {

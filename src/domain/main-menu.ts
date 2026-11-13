@@ -276,33 +276,90 @@ export type MainMenuViewModel = {
   readonly unreadableSaves: ReadonlyArray<UnreadableSave>
 }
 
-export const mainMenuViewModel = (
-  ...[
-    state,
-    savedWorlds = [],
-    worldTypes = [],
-    unreadableSaves = [],
-  ]: [
-    state: MainMenuState,
-    savedWorlds?: ReadonlyArray<SavedWorld>,
-    worldTypes?: ReadonlyArray<WorldTypeOption>,
-    unreadableSaves?: ReadonlyArray<UnreadableSave>,
-  ]
-): MainMenuViewModel => {
-  const selectedWorldType = worldTypes.find((option) =>
+type InvalidMainMenuViewModelInput = Readonly<{
+  readonly _tag: 'InvalidMainMenuViewModelInput'
+  readonly field: string
+}>
+
+type MainMenuViewModelArguments = [
+  state: MainMenuState,
+  savedWorlds?: ReadonlyArray<SavedWorld>,
+  worldTypes?: ReadonlyArray<WorldTypeOption>,
+  unreadableSaves?: ReadonlyArray<UnreadableSave>,
+]
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isMainMenuState = (input: unknown): input is MainMenuState => {
+  if (!isRecord(input) || !isRecord(input['draft'])) {
+    return false
+  }
+  const draft = input['draft']
+  return MENU_PANELS.includes(input['panel'] as MenuPanel) &&
+    typeof draft['name'] === 'string' &&
+    typeof draft['seed'] === 'string' &&
+    GAME_MODES.includes(draft['mode'] as GameMode) &&
+    GAME_DIFFICULTIES.includes(draft['difficulty'] as GameDifficulty) &&
+    typeof draft['worldType'] === 'string'
+}
+
+const invalidWorldTypeOption = (input: unknown): boolean =>
+  typeof input !== 'undefined' &&
+  (!isRecord(input) ||
+    typeof input['value'] !== 'string' ||
+    !isRecord(input['label']) ||
+    typeof input['label']['en'] !== 'string' ||
+    typeof input['label']['ja'] !== 'string')
+
+export function mainMenuViewModel(
+  state: null,
+  savedWorlds?: unknown,
+  worldTypes?: unknown,
+  unreadableSaves?: unknown,
+): Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput>
+export function mainMenuViewModel(...args: MainMenuViewModelArguments): MainMenuViewModel
+export function mainMenuViewModel(
+  state: unknown,
+  savedWorlds?: unknown,
+  worldTypes?: unknown,
+  unreadableSaves?: unknown,
+): MainMenuViewModel | Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput>
+export function mainMenuViewModel(...args: MainMenuViewModelArguments): MainMenuViewModel
+export function mainMenuViewModel(
+  state: unknown,
+  savedWorlds: unknown = [],
+  worldTypes: unknown = [],
+  unreadableSaves: unknown = [],
+): MainMenuViewModel | Result.Result<MainMenuViewModel, InvalidMainMenuViewModelInput> {
+  if (!isMainMenuState(state)) {
+    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'state' })
+  }
+  if (!Array.isArray(savedWorlds)) {
+    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'savedWorlds' })
+  }
+  if (!Array.isArray(worldTypes) || worldTypes.some(invalidWorldTypeOption)) {
+    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'worldTypes' })
+  }
+  if (!Array.isArray(unreadableSaves)) {
+    return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'unreadableSaves' })
+  }
+  const worldTypeOptions = worldTypes as ReadonlyArray<WorldTypeOption | undefined>
+  const selectedWorldType = worldTypeOptions.find((option) =>
     typeof option !== 'undefined' && option.value === state.draft.worldType,
   )
-  const firstAvailableWorldType = worldTypes.find((option) => typeof option !== 'undefined')
+  const firstAvailableWorldType = worldTypeOptions.find((option) => typeof option !== 'undefined')
+  const defaultWorldType = ''
   return {
     difficulty: state.draft.difficulty,
     mode: state.draft.mode,
     panel: state.panel,
-    savedWorlds,
+    savedWorlds: savedWorlds as ReadonlyArray<SavedWorld>,
     seedInput: state.draft.seed,
-    unreadableSaves,
+    unreadableSaves: unreadableSaves as ReadonlyArray<UnreadableSave>,
     worldName: worldNameLabel(state.draft),
     worldNameInput: state.draft.name,
-    worldType: worldTypeId(selectedWorldType?.value ?? firstAvailableWorldType?.value ?? ''),
-    worldTypes,
+    worldType: worldTypeId(selectedWorldType?.value ?? firstAvailableWorldType?.value ?? defaultWorldType),
+    worldTypes: worldTypeOptions as ReadonlyArray<WorldTypeOption>,
   }
 }

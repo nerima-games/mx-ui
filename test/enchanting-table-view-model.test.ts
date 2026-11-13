@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
+import * as fc from 'fast-check'
 import {
+  ENCHANTING_OFFER_IDS,
   ENCHANTING_OPERATION_TARGETS,
   type EnchantingTableSnapshot,
   enchantingTableViewModel,
@@ -113,5 +116,63 @@ describe('enchantingTableViewModel', () => {
     expect(model.slots.every(Object.isFrozen)).toBe(true)
     expect(model.offers.every(Object.isFrozen)).toBe(true)
     expect(snapshot.offers[0]?.lapisCost).toBe(-2.7)
+  })
+
+  it('returns a typed failure for a null offer', () => {
+    const snapshot = {
+      ...SNAPSHOT,
+      offers: [SNAPSHOT.offers[0], null, SNAPSHOT.offers[2]] as const,
+    }
+
+    expect(enchantingTableViewModel(snapshot)).toEqual(
+      Result.fail({ _tag: 'NullEnchantingOffer', offerId: 'offer-2' }),
+    )
+  })
+
+  it.each(['enchantmentLevel', 'lapisCost', 'levelCost'] as const)(
+    'returns a typed failure for a null %s',
+    (field) => {
+      const snapshot = {
+        ...SNAPSHOT,
+        offers: [
+          {
+            ...SNAPSHOT.offers[0],
+            [field]: null,
+          },
+          SNAPSHOT.offers[1],
+          SNAPSHOT.offers[2],
+        ] as const,
+      }
+
+      expect(enchantingTableViewModel(snapshot)).toEqual(
+        Result.fail({ _tag: 'NullEnchantingOfferValue', field, offerId: 'offer-1' }),
+      )
+    },
+  )
+
+  it('property: arbitrary snapshots return a typed failure or a valid immutable view without throwing', () => {
+    const failureTags = new Set([
+      'InvalidEnchantingTableSnapshot',
+      'NullEnchantingOffer',
+      'NullEnchantingOfferValue',
+    ])
+    fc.assert(
+      fc.property(fc.anything(), (snapshot) => {
+        const result = enchantingTableViewModel(snapshot)
+        if (Result.isFailure(result)) {
+          expect(failureTags.has(result.failure._tag)).toBe(true)
+          return
+        }
+
+        expect(Object.isFrozen(result.success)).toBe(true)
+        expect(result.success.slots).toHaveLength(2)
+        expect(result.success.offers.map(({ id }) => id)).toEqual(ENCHANTING_OFFER_IDS)
+        expect(result.success.offers.every(({ enchantmentLevel, lapisCost, levelCost }) =>
+          [enchantmentLevel, lapisCost, levelCost].every((cost) =>
+            Number.isFinite(cost) && Number.isInteger(cost) && cost >= 0,
+          ),
+        )).toBe(true)
+      }),
+    )
   })
 })

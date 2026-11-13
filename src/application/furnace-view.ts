@@ -1,3 +1,4 @@
+import { Result } from 'effect'
 import {
   type AttributeCell,
   type PercentCell,
@@ -35,8 +36,16 @@ export type FurnaceInteractionView = {
 
 export type FurnaceView = {
   readonly root: DomElement
-  readonly render: (model: FurnaceViewModel, interaction?: FurnaceInteractionView) => void
+  readonly render: (
+    model: FurnaceViewModel | null,
+    interaction?: FurnaceInteractionView | null,
+  ) => Result.Result<void, FurnaceViewInputFailure>
 }
+
+type FurnaceViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidFurnaceViewInput'
+  readonly field: string
+}>
 
 export type FurnaceViewActions = {
   readonly onActivate?: (target: FurnaceSlotId) => void
@@ -246,7 +255,24 @@ export const createFurnaceView = (
   const statusText = createFurnaceStatus(factory, root)
 
   return {
-    render: (model: FurnaceViewModel, interaction?: FurnaceInteractionView): void => {
+    render: (model: FurnaceViewModel | null, interaction?: FurnaceInteractionView | null) => {
+      if (model === null) {
+        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'model' })
+      }
+      if (interaction === null) {
+        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'interaction' })
+      }
+      if (model.slots.some((slot) =>
+        typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null,
+      )) {
+        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'slots[].countLabel' })
+      }
+      if (interaction !== undefined && Reflect.get(interaction, 'focusedSlot') === null) {
+        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'interaction.focusedSlot' })
+      }
+      if (interaction !== undefined && Reflect.get(interaction, 'status') === null) {
+        return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'interaction.status' })
+      }
       const focusedSlot = resolveFocusedSlot(interaction?.focusedSlot ?? 'input')
 
       const renderFurnaceSlot = (slotElement: SlotElement, slot: FurnaceSlotView): void => {
@@ -271,6 +297,7 @@ export const createFurnaceView = (
       renderProgress(cook, model.cookProgressPercent)
       renderProgress(burn, model.burnProgressPercent)
       writeText(statusText, interaction?.status ?? '')
+      return Result.succeed(undefined)
     },
     root,
   }

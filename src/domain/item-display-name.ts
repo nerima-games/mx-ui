@@ -49,6 +49,14 @@ const invalidItemDisplayNameOptionsView = (): InvalidItemDisplayNameOptionsView 
   result: Result.fail({ _tag: 'InvalidItemDisplayNameOptions' }),
 })
 
+const isItemDisplayNameOptions = (input: unknown): input is ItemDisplayNameOptions =>
+  typeof input === 'object' &&
+  input !== null &&
+  'language' in input &&
+  (input.language === 'en' || input.language === 'ja') &&
+  'resolver' in input &&
+  typeof input.resolver === 'function'
+
 const itemTypeFromId = (input: unknown): ItemType | undefined => {
   if (typeof input !== 'string') {
     return
@@ -121,15 +129,18 @@ export function itemDisplayNameView(
   itemId: unknown,
   options?: ItemDisplayNameOptions | InvalidItemDisplayNameOptions,
 ): ItemDisplayNameView | InvalidItemDisplayNameOptionsView {
-  if (options === null || (
-    typeof options === 'object' &&
-    (options.language === null || typeof options.language === 'undefined' || typeof options.resolver !== 'function')
-  )) {
+  if (typeof options === 'undefined') {
+    const language: UiLanguage = 'en'
+    return {
+      language,
+      result: resolveItemDisplayName(itemId, language),
+    }
+  }
+  if (!isItemDisplayNameOptions(options)) {
     return invalidItemDisplayNameOptionsView()
   }
-  const language = typeof options === 'undefined' ? 'en' : options.language
   return {
-    language,
-    result: resolveItemDisplayName(itemId, language, options?.resolver),
+    language: options.language,
+    result: resolveItemDisplayName(itemId, options.language, options.resolver),
   }
 }

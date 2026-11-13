@@ -170,6 +170,71 @@ describe('captions are rendered as TEXT', () => {
 })
 
 describe('the inventory renderer keeps `unknown` a different screen from `empty`', () => {
+  it('returns typed failures for null slot labels and interaction inputs', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel(emptyInventorySnapshot)
+    const hotbar = base.regions.find((region) => region.id === 'hotbar')
+    if (typeof hotbar === 'undefined' || hotbar.kind !== 'slots' || typeof hotbar.slots[0] === 'undefined') {
+      expect(hotbar).toBeDefined()
+      return
+    }
+
+    Reflect.set(hotbar.slots[0], 'countLabel', null)
+    const regionResult = view.render(base)
+    expect(Result.isFailure(regionResult)).toBe(true)
+    if (Result.isFailure(regionResult)) {
+      expect(regionResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'regions.countLabel',
+      })
+    }
+
+    const carried = { ...hotbar.slots[0] }
+    Reflect.set(carried, 'countLabel', null)
+    const carriedResult = view.render({ ...base, carried })
+    expect(Result.isFailure(carriedResult)).toBe(true)
+    if (Result.isFailure(carriedResult)) {
+      expect(carriedResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'carried.countLabel',
+      })
+    }
+
+    const output = { ...hotbar.slots[0] }
+    Reflect.set(output, 'countLabel', null)
+    const craftingResult = view.render({ ...base, crafting: { kind: 'match', output } })
+    expect(Result.isFailure(craftingResult)).toBe(true)
+    if (Result.isFailure(craftingResult)) {
+      expect(craftingResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'crafting.output.countLabel',
+      })
+    }
+
+    const nullStatusResult = view.render(base, {
+      focused: { kind: 'crafting-output' },
+      status: null as unknown as string,
+    })
+    expect(Result.isFailure(nullStatusResult)).toBe(true)
+    if (Result.isFailure(nullStatusResult)) {
+      expect(nullStatusResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'interaction.status',
+      })
+    }
+
+    const nullInteractionResult = view.render(base, null as unknown as Parameters<typeof view.render>[1])
+    expect(Result.isFailure(nullInteractionResult)).toBe(true)
+    if (Result.isFailure(nullInteractionResult)) {
+      expect(nullInteractionResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'interaction',
+      })
+    }
+  })
+
   it('REGRESSION: an unknown region draws NO slots — it draws the reason', () => {
     // `domain/inventory-view-model.ts`: 「An armour rack drawn as four empty
     // squares tells the player they are wearing nothing; mc-sim has not said

@@ -31,13 +31,18 @@ import {
   writeLocalizedText,
   writeLocalizedTextUsing,
 } from './ui-localization.js'
-import { Effect } from 'effect'
+import { Effect, Result } from 'effect'
 import { keyDisplayName } from '../domain/key-display-name.js'
 
 export type SettingsView<Action extends string = string> = {
   readonly root: DomElement
-  readonly render: (model: SettingsViewModel<Action>) => void
+  readonly render: (model: SettingsViewModel<Action>) => Result.Result<void, SettingsViewInputFailure>
 }
+
+export type SettingsViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidSettingsViewInput'
+  readonly field: 'model' | 'bindingRows' | 'bindingRows.action'
+}>
 
 export type SettingsSliderField =
   | 'mouseSensitivity'
@@ -522,6 +527,20 @@ const createToggleControls = (
 
 const actionMessageKey = (action: string): UiMessageKey => ACTION_MESSAGE_KEY[action] ?? 'settings.action.unknown'
 
+const invalidSettingsViewField = (model: unknown): SettingsViewInputFailure['field'] | undefined => {
+  if (model === null || typeof model !== 'object') {
+    return 'model'
+  }
+  const rows = Reflect.get(model, 'bindingRows')
+  if (!Array.isArray(rows)) {
+    return 'bindingRows'
+  }
+  if (rows.some((row) => row === null || typeof row !== 'object' || typeof Reflect.get(row, 'action') !== 'string')) {
+    return 'bindingRows.action'
+  }
+  return
+}
+
 const configureBindingButton = (button: DomInteractiveElement, action: string): void => {
   button.setAttribute('type', 'button')
   button.setAttribute('data-interaction-target', 'settings-binding')
@@ -833,7 +852,14 @@ export const createSettingsView = <Action extends string = string>(
   }
 
   return {
-    render: (model: SettingsViewModel<Action>): void => renderSettingsModel({ actions, elements, factory, model, root }),
+    render: (model: SettingsViewModel<Action>): Result.Result<void, SettingsViewInputFailure> => {
+      const field = invalidSettingsViewField(model)
+      if (typeof field !== 'undefined') {
+        return Result.fail({ _tag: 'InvalidSettingsViewInput', field })
+      }
+      renderSettingsModel({ actions, elements, factory, model, root })
+      return Result.succeed(undefined)
+    },
     root,
   }
 }

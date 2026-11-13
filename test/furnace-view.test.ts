@@ -1,3 +1,4 @@
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { createFurnaceView, type FurnaceInteractionView } from '../src/application/furnace-view'
 import { furnaceViewModel } from '../src/domain/furnace-view-model'
@@ -5,6 +6,56 @@ import { fakeDocument, fakeElement } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createFurnaceView', () => {
+  it('returns typed failures for null slot labels', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const valid = furnaceViewModel({
+      input: { itemId: 'sand', count: 1 },
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    })
+    const invalid = {
+      ...valid,
+      slots: valid.slots.map((slot) => ({ ...slot, countLabel: null })),
+    } as unknown as typeof valid
+
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'slots[].countLabel',
+    }))
+  })
+
+  it('returns typed failures for null interaction, status, and focus inputs', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const model = furnaceViewModel({
+      input: undefined,
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    })
+    const invalidStatus: FurnaceInteractionView = { focusedSlot: 'input', status: 'ready' }
+    Reflect.set(invalidStatus, 'status', null)
+    const invalidFocus: FurnaceInteractionView = { focusedSlot: 'input', status: 'ready' }
+    Reflect.set(invalidFocus, 'focusedSlot', null)
+
+    expect(view.render(model, null)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'interaction',
+    }))
+    expect(view.render(model, invalidStatus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'interaction.status',
+    }))
+    expect(view.render(model, invalidFocus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'interaction.focusedSlot',
+    }))
+  })
+
   it('projects host interaction attributes, accessibility, and progress without listeners', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')

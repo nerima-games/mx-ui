@@ -28,6 +28,7 @@
  * `domain/accessibility.ts` provides exactly that distinction: 「Whether a purely
  * decorative animation should run at all」.
  */
+import { Result } from 'effect'
 import {
   type AttributeCell,
   type StyleCell,
@@ -60,7 +61,9 @@ type CaptionLineElement = {
 
 export type CaptionView = {
   readonly root: DomElement
-  readonly render: (lines: ReadonlyArray<CaptionLineView>) => void
+  readonly render: (
+    lines: ReadonlyArray<CaptionLineView>,
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' }>>
   readonly setMotion: (motion: MotionPreference) => void
 }
 
@@ -174,9 +177,15 @@ export const createCaptionView = (
   }
 
   return {
-    render: (next: ReadonlyArray<CaptionLineView>): void => {
+    render: (
+      next: ReadonlyArray<CaptionLineView>,
+    ): Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' }>> => {
+      if (next.some((line) => Reflect.get(line, 'arrow') === null)) {
+        return Result.fail({ _tag: 'InvalidCaptionViewInput', field: 'arrow' })
+      }
       latest = next
       project()
+      return Result.succeed(undefined)
     },
     root,
     setMotion: (next: MotionPreference): void => {

@@ -276,6 +276,32 @@ describe('main menu domain', () => {
     expect(viewModel.worldTypes.at(1)).toEqual(laterWorldType)
   })
 
+  it('returns typed failures for explicit null world-type inputs', () => {
+    const invalidState = {
+      ...initialMainMenuState,
+      draft: { ...initialMainMenuState.draft, worldType: null },
+    }
+    const invalidWorldTypes: ReadonlyArray<unknown> = [{
+      value: null,
+      label: { en: asUiMessageText('Standard'), ja: asUiMessageText('標準') },
+    }]
+
+    expect(mainMenuViewModel(invalidState)).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'state' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [], invalidWorldTypes)).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'worldTypes' }),
+    )
+  })
+
+  it('returns a typed failure or model for arbitrary main-menu state input', () => {
+    fc.assert(fc.property(fc.anything(), (state) => {
+      const output = mainMenuViewModel(state)
+      const isFailure = typeof output === 'object' && output !== null && '_tag' in output && output._tag === 'Failure'
+      expect(isFailure || 'panel' in output).toBe(true)
+    }))
+  })
+
   it('resolves buttons only for the declared root entries', () => {
     const factory = fakeDocument()
     const buttons = {
@@ -494,6 +520,34 @@ describe('operable main menu', () => {
     expect(loadButton.attributes.get('data-session-id')).toBe('unnamed-world')
     loadButton.dispatch('click')
     expect(mounted.loads).toEqual([world])
+  })
+
+  it('returns a typed failure when a saved-world name is null', () => {
+    const mounted = mount()
+    const invalidWorld = {
+      sessionId: asWorldId('null-name-world'),
+      name: null,
+    } as unknown as SavedWorld
+
+    expect(
+      mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), [invalidWorld])),
+    ).toEqual(Result.fail({ _tag: 'InvalidMainMenuViewInput', field: 'savedWorlds.name' }))
+    expect(mounted.root.findAll('data-mx-ui', 'menu-world-row')).toHaveLength(0)
+  })
+
+  it('returns a typed initialization failure for an explicit null external root callback', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const callbacks: MainMenuCallbacks = {}
+    Reflect.set(callbacks, 'onOpenSettings', null)
+    const view = createMainMenuView(factory, parent, callbacks)
+    const failure = Result.fail({
+      _tag: 'InvalidMainMenuViewInput',
+      field: 'callbacks.onOpenSettings',
+    })
+
+    expect(view.initializationResult).toStrictEqual(failure)
+    expect(view.render(model())).toStrictEqual(failure)
   })
 
   it('cancels a pending saved-world deletion without sending a host intent', () => {

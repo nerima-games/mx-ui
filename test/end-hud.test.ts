@@ -5,6 +5,7 @@ import {
   portalEyeProgressViewModel,
   strongholdLocatorViewModel,
 } from '../src/domain/end-hud'
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
 
@@ -32,6 +33,25 @@ describe('End HUD primitives', () => {
       accessibleLabel: 'エンダードラゴンの体力: 200/200。状態: 突進中。',
       name: 'エンダードラゴン',
     })
+  })
+
+  it('returns typed failures for explicit null boss-name and language inputs', () => {
+    const snapshot = { current: 10, max: 20, name: null, phase: 'charging' }
+
+    expect(bossHealthBarViewModel(snapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidBossHealthInput', field: 'snapshot' }),
+    )
+    expect(bossHealthBarViewModel({ current: 10, max: 20, name: 'Dragon', phase: 'charging' }, null)).toEqual(
+      Result.fail({ _tag: 'InvalidBossHealthInput', field: 'language' }),
+    )
+  })
+
+  it('returns a typed failure or model for arbitrary boss snapshot input', () => {
+    fc.assert(fc.property(fc.anything(), (snapshot) => {
+      const output = bossHealthBarViewModel(snapshot)
+      const isFailure = typeof output === 'object' && output !== null && '_tag' in output && output._tag === 'Failure'
+      expect(isFailure || 'accessibleLabel' in output).toBe(true)
+    }))
   })
 
   it('normalizes stronghold bearings and supplies accessible unknown and lost states', () => {

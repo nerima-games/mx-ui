@@ -49,6 +49,7 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
+import { Result } from 'effect'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
@@ -427,8 +428,14 @@ export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
 /** Mark an interactive slot's DOM membership for the mc-render focus adapter. */
 type SlotFocusTarget = Readonly<{ group: string; index: number; columns?: number }>
 
-export const setSlotFocusTarget = (slot: SlotElement, target: SlotFocusTarget): void => {
-  const requestedColumns = target.columns ?? DEFAULT_FOCUS_COLUMNS
+export const setSlotFocusTarget = (
+  slot: SlotElement,
+  target: SlotFocusTarget,
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotFocusTarget'; field: 'columns' }>> => {
+  if (Reflect.get(target, 'columns') === null) {
+    return Result.fail({ _tag: 'InvalidSlotFocusTarget', field: 'columns' })
+  }
+  const requestedColumns = typeof target.columns === 'undefined' ? DEFAULT_FOCUS_COLUMNS : target.columns
   let validColumns = DEFAULT_FOCUS_COLUMNS
   if (Number.isSafeInteger(requestedColumns) && requestedColumns > FIRST_INDEX) {
     validColumns = requestedColumns
@@ -436,6 +443,7 @@ export const setSlotFocusTarget = (slot: SlotElement, target: SlotFocusTarget): 
   writeAttribute(slot.focusGroup, target.group)
   writeAttribute(slot.focusIndex, String(target.index))
   writeAttribute(slot.focusColumns, String(validColumns))
+  return Result.succeed(undefined)
 }
 
 const clearSlotFocusTarget = (slot: SlotElement): void => {
@@ -594,7 +602,10 @@ export const updateSlotElement = (
   slot: SlotElement,
   view: SlotView,
   mergeable?: boolean,
-): void => {
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: 'countLabel' }>> => {
+  if (Reflect.get(view, 'countLabel') === null) {
+    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'countLabel' })
+  }
   updateSlotItemText(slot, view)
   updateSlotText(slot.countText, slot.countTitle, view.countLabel)
   writeAttribute(slot.emptyFlag, presenceValue(view.empty))
@@ -606,4 +617,5 @@ export const updateSlotElement = (
   writeStyle(slot.borderWeight, selectionBorderWeight(view.selected))
 
   updateSlotDurability(slot, view.durabilityPercent)
+  return Result.succeed(undefined)
 }

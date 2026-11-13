@@ -1,3 +1,4 @@
+import { Result } from 'effect'
 import {
   CHEST_STORAGE_COLUMNS,
   CHEST_STORAGE_SLOT_COUNT,
@@ -40,10 +41,15 @@ export type ChestStorageViewActions = {
 export type ChestStorageView = {
   readonly root: DomElement
   readonly render: (
-    model: ChestStorageViewModel,
-    interaction?: ChestStorageInteractionView,
-  ) => void
+    model: ChestStorageViewModel | null,
+    interaction?: ChestStorageInteractionView | null,
+  ) => Result.Result<void, ChestStorageViewInputFailure>
 }
+
+type ChestStorageViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidChestStorageViewInput'
+  readonly field: string
+}>
 
 type InteractiveSlotElement = {
   readonly slot: SlotElement
@@ -375,7 +381,25 @@ export const createChestStorageView = (
   const statusText = createChestStorageStatus(factory, root)
 
   return {
-    render: (model, interaction): void => {
+    render: (model, interaction) => {
+      if (model === null) {
+        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'model' })
+      }
+      if (interaction === null) {
+        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'interaction' })
+      }
+      if (Reflect.get(model, 'cursor') === null) {
+        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'cursor' })
+      }
+      if (model.cursor !== undefined && Reflect.get(model.cursor, 'countLabel') === null) {
+        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'cursor.countLabel' })
+      }
+      if (interaction !== undefined && Reflect.get(interaction, 'focusedSlot') === null) {
+        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'interaction.focusedSlot' })
+      }
+      if (interaction !== undefined && Reflect.get(interaction, 'status') === null) {
+        return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'interaction.status' })
+      }
       const focused = interaction?.focusedSlot ?? DEFAULT_FOCUSED_TARGET
       const active = typeof interaction !== 'undefined'
       const chestSlotCount = model.chest.length
@@ -384,6 +408,7 @@ export const createChestStorageView = (
       updateGrid(grids.playerHotbar, model.playerHotbar, { active, chestSlotCount, target: focused })
       updateCursor(cursor, model.cursor)
       writeText(statusText, interaction?.status ?? '')
+      return Result.succeed(undefined)
     },
     root,
   }

@@ -59,6 +59,7 @@
  * moves and synchronize the ring after them; native Tab and host-managed moves
  * still need their input owner to call `setKeyboardFocus`.
  */
+import { Result } from 'effect'
 import {
   type AttributeCell,
   type PercentCell,
@@ -152,7 +153,9 @@ export type HudView = {
   /** The element the host appended us to a parent as. Exposed for tests and previews. */
   readonly root: DomElement
   /** Project a model. Idempotent: the same model twice mutates nothing the second time. */
-  readonly render: (model: HudViewModel) => void
+  readonly render: (
+    model: HudViewModel,
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' }>>
   /** Remove the optional host respawn listener when this view leaves its mount. */
   readonly dispose: () => void
   /**
@@ -185,7 +188,9 @@ export type HudView = {
    * Native Tab focus still needs the input owner to call this, since the view
    * cannot observe that key or focus event itself.
    */
-  readonly setKeyboardFocus: (index?: number) => void
+  readonly setKeyboardFocus: (
+    index?: number,
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidHudFocusInput'; field: 'index' }>>
 }
 
 type HudCells = {
@@ -1058,13 +1063,21 @@ const renderHudDeathState = (cells: HudCells, model: HudViewModel): void => {
   renderDeathDetails(cells, model)
 }
 
-const renderHudFrame = (factory: DomElementFactory, cells: HudCells, model: HudViewModel): void => {
+const renderHudFrame = (
+  factory: DomElementFactory,
+  cells: HudCells,
+  model: HudViewModel,
+): Result.Result<void, Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' }>> => {
+  if (model.hotbar.some((slot) => Reflect.get(slot, 'countLabel') === null)) {
+    return Result.fail({ _tag: 'InvalidHudViewInput', field: 'hotbar.countLabel' })
+  }
   renderHudVitals(factory, cells, model)
   renderHudSupplements(factory, cells, model)
   writeText(cells.levelText, model.experienceLevelLabel)
   writePercent(cells.experienceWidth, model.experiencePercent)
   renderHotbarSlots(cells.hotbar, model.hotbar)
   renderHudDeathState(cells, model)
+  return Result.succeed(undefined)
 }
 
 /**
@@ -1102,7 +1115,12 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
    * the browser's native Tab agree with what mx-ui painted without anybody
    * listening for a key.
    */
-  const applyKeyboardFocus = (index?: number): void => {
+  const applyKeyboardFocus = (
+    index?: number,
+  ): Result.Result<void, Readonly<{ _tag: 'InvalidHudFocusInput'; field: 'index' }>> => {
+    if ((index as unknown) === null) {
+      return Result.fail({ _tag: 'InvalidHudFocusInput', field: 'index' })
+    }
     const focusedIndex = focusedIndexFor(index)
     const tabStopIndex = focusedIndex ?? DEFAULT_TAB_STOP_INDEX
     for (const [slotIndex, slot] of cells.hotbar.entries()) {
@@ -1111,6 +1129,7 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
       setSlotTabStop(slot, slotIndex === tabStopIndex)
       setSlotKeyboardFocus(slot, slotIndex === focusedIndex)
     }
+    return Result.succeed(undefined)
   }
 
   applyMotion(motion)
@@ -1127,7 +1146,8 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
 
   return {
     dispose,
-    render: (model: HudViewModel): void => renderHudFrame(factory, cells, model),
+    render: (model: HudViewModel): Result.Result<void, Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' }>> =>
+      renderHudFrame(factory, cells, model),
     root,
     setKeyboardFocus: applyKeyboardFocus,
     setMotion: applyMotion,

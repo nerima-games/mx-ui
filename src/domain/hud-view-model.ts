@@ -59,6 +59,13 @@ type HudViewModelOptions = Readonly<{
   readonly presentation?: HudPresentationSnapshot | undefined
 }>
 
+type InvalidCountCarriedSlot = Readonly<{
+  readonly count: null | undefined
+  readonly item?: unknown
+  readonly itemId?: unknown
+}>
+type InvalidHudSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
 export type HudViewModel = {
   readonly hearts: ReadonlyArray<IconState>
   readonly shanks: ReadonlyArray<IconState>
@@ -215,11 +222,25 @@ export function slotView(
 }
 
 /** Derive the HUD from authoritative simulation state and inventory input. */
-export const hudViewModel = (
+export function hudViewModel(
+  vitals: Vitals,
+  hotbarSlots: readonly [InvalidCountCarriedSlot, ...InvalidCountCarriedSlot[]],
+  selection: number | HudViewModelOptions,
+): Result.Result<HudViewModel, InvalidHudSlotCountFailure>
+export function hudViewModel(
   vitals: Vitals,
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot>,
   selection: number | HudViewModelOptions,
-): HudViewModel => {
+): HudViewModel
+export function hudViewModel(
+  vitals: Vitals,
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot | InvalidCountCarriedSlot>,
+  selection: number | HudViewModelOptions,
+): HudViewModel | Result.Result<HudViewModel, InvalidHudSlotCountFailure> {
+  if (hotbarSlots.some((slot) => typeof slot !== 'undefined' && typeof slot.count !== 'number')) {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
+  const validHotbarSlots = hotbarSlots as ReadonlyArray<InventoryCarriedSlot>
   const { itemDisplayNameOptions, presentation, selectedHotbarSlot } = hudOptionsOf(selection)
   const view = vitalsView(vitals)
   const selectedIndex = clampHotbarIndex(selectedHotbarSlot)
@@ -230,7 +251,7 @@ export const hudViewModel = (
     experienceLevelLabel: String(view.experienceLevel),
     experiencePercent: Math.floor(view.experienceProgress * FULL_PERCENT),
     hearts: iconRow(view.healthPoints, view.maxHealthPoints),
-    hotbar: hotbarSlots.map((slot, index) => slotView(slot, index, slotOptions)),
+    hotbar: validHotbarSlots.map((slot, index) => slotView(slot, index, slotOptions)),
     shanks: iconRow(view.hungerPoints, view.maxHungerPoints),
   }
 

@@ -196,6 +196,60 @@ describe('session overlays', () => {
     expect(onSettingsChange).not.toHaveBeenCalled()
   })
 
+  it('returns typed failures for null debug facing values at initialization and update', () => {
+    const parent = document.createElement('main')
+    document.body.appendChild(parent)
+    const initialDebug = {
+      chunk: { chunkX: 0, chunkZ: 0 },
+      coordinates: { worldX: 0, worldY: 0, worldZ: 0 },
+      fps: 60,
+    }
+    Reflect.set(initialDebug, 'facing', null)
+    const initialOverlays = mountOverlays(parent, { initialDebug })
+    expect(initialOverlays.initializationResult).toEqual(
+      Result.fail({ _tag: 'InvalidInitialDebugSnapshot' }),
+    )
+
+    const updatedDebug = {
+      chunk: { chunkX: 1, chunkZ: 2 },
+      coordinates: { worldX: 1, worldY: 2, worldZ: 3 },
+      fps: 60,
+    }
+    Reflect.set(updatedDebug, 'facing', null)
+    expect(initialOverlays.updateDebug(updatedDebug)).toEqual(
+      Result.fail({ _tag: 'InvalidSessionOverlayInput', field: 'facing' }),
+    )
+  })
+
+  it.each([
+    ['null callback', (options: NonNullable<Parameters<typeof createSessionOverlays>[2]>): boolean =>
+      Reflect.set(options, 'onLanguageChange', null)],
+    ['null callback result', (options: NonNullable<Parameters<typeof createSessionOverlays>[2]>): boolean => {
+      Reflect.set(options, 'onLanguageChange', () => null)
+      return true
+    }],
+  ] as const)('does not apply a language after an explicit null %s', (_name, configureOptions) => {
+    const parent = document.createElement('main')
+    document.body.appendChild(parent)
+    const options: NonNullable<Parameters<typeof createSessionOverlays>[2]> = {}
+    expect(configureOptions(options)).toBe(true)
+    const overlays = mountOverlays(parent, options)
+    overlays.openSettings()
+
+    overlays.settingsDialog.querySelector<HTMLButtonElement>(
+      '[data-settings-field="language"][data-setting-value="ja"]',
+    )?.click()
+
+    expect(
+      overlays.settingsDialog.querySelector('[data-settings-field="language"][data-setting-value="en"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(
+      overlays.settingsDialog.querySelector('[data-settings-field="language"][data-setting-value="ja"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('false')
+  })
+
   it.each([
     ['initialDebug', { _tag: 'InvalidInitialDebugSnapshot' }],
     ['initialLanguage', { _tag: 'InvalidSettingsLanguage' }],

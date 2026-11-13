@@ -28,6 +28,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
+import { Result } from 'effect'
 import {
   CROSSHAIR_PULSE_SECS,
   crosshairViewModel,
@@ -89,6 +90,29 @@ const thicknessOf = (root: FakeElement): ReadonlyArray<string | undefined> =>
   )
 
 describe('when the crosshair is drawn, and when it is not', () => {
+  it('returns a typed failure for a null model without clearing the current reticle', () => {
+    const { root, view } = mount()
+    const model = crosshairViewModel(aiming, 0)
+    expect(model).toBeDefined()
+    if (typeof model === 'undefined') {
+      return
+    }
+    view.render(model)
+
+    const omittedResult = view.render(undefined)
+    expect(Result.isSuccess(omittedResult)).toBe(true)
+    expect(root.attributes.has('hidden')).toBe(true)
+    view.render(model)
+
+    const result = view.render(null as unknown as CrosshairViewModel)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewInput', field: 'model' })
+    }
+    expect(root.attributes.has('hidden')).toBe(false)
+  })
+
   it('REGRESSION: is built at mount and shown once the player is aiming', () => {
     // The reference asked 「attached」 because attachment WAS its visibility
     // model — `show()` appends to `document.body`, `hide()` removes. Here the

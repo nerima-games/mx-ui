@@ -28,4 +28,19 @@ describe('createSlotElement', () => {
     expect(count?.textContent).toBe(view.countLabel)
     expect(count?.attributes.get('title')).toBe(view.countLabel)
   })
+
+  it('returns a typed failure for an explicitly null slot count label', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView({ itemId: 'stone', count: 2 }, 0, 0)
+    Reflect.set(view, 'countLabel', null)
+
+    const result = updateSlotElement(slot, view)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({ _tag: 'InvalidSlotViewInput', field: 'countLabel' })
+    }
+    expect(fakeElement(slot.root).find('data-mx-ui', 'slot-count')?.textContent).toBe('')
+  })
 })

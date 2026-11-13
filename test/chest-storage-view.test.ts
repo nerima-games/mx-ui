@@ -1,5 +1,6 @@
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { createChestStorageView } from '../src/application/chest-storage-view'
+import { createChestStorageView, type ChestStorageInteractionView } from '../src/application/chest-storage-view'
 import {
   CHEST_STORAGE_SLOT_COUNT,
   chestStorageViewModel,
@@ -51,6 +52,67 @@ const expectStatusAndCloseButton = (root: FakeElement): void => {
 }
 
 describe('createChestStorageView', () => {
+  it('returns typed failures for null cursor and cursor count label', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const valid = chestStorageViewModel({
+      chest: [],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: { item: 'minecraft:arrow', count: 1, durability: undefined },
+      selectedSlot: undefined,
+    })
+    const invalidCursor = { ...valid, cursor: null } as unknown as typeof valid
+    const invalidCount = {
+      ...valid,
+      cursor: valid.cursor === undefined ? undefined : { ...valid.cursor, countLabel: null },
+    } as unknown as typeof valid
+
+    expect(view.render(invalidCursor)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'cursor',
+    }))
+    expect(view.render(invalidCount)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'cursor.countLabel',
+    }))
+  })
+
+  it('returns typed failures for null interaction, status, and focus inputs', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const model = chestStorageViewModel({
+      chest: [],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: undefined,
+      selectedSlot: undefined,
+    })
+    const invalidStatus: ChestStorageInteractionView = {
+      focusedSlot: { region: 'player', slot: 0 },
+      status: 'ready',
+    }
+    Reflect.set(invalidStatus, 'status', null)
+    const invalidFocus: ChestStorageInteractionView = {
+      focusedSlot: { region: 'player', slot: 0 },
+      status: 'ready',
+    }
+    Reflect.set(invalidFocus, 'focusedSlot', null)
+
+    expect(view.render(model, null)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'interaction',
+    }))
+    expect(view.render(model, invalidStatus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'interaction.status',
+    }))
+    expect(view.render(model, invalidFocus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'interaction.focusedSlot',
+    }))
+  })
+
   it('mounts all regions and projects stacks, durability, selection, and cursor without listeners', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('main'))

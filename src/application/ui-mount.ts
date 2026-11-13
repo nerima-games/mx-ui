@@ -74,6 +74,7 @@ import {
 } from './accessibility-dom.js'
 import { type MotionPreference, type UiScale, decodeUiScale } from '../domain/accessibility.js'
 import type { SettingsSnapshot, SettingsViewModelFailure } from '../domain/settings-view-model.js'
+import type { SettingsViewInputFailure } from './settings-view.js'
 import { finishToastSubscriptionClose, finishUiMountCleanup } from './ui-mount-cleanup.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import type { AchievementToast } from '../domain/achievement-toast.js'
@@ -102,9 +103,9 @@ export type UiMountedViews = {
 }
 
 type SettingsPreferenceFailure = Schema.SchemaError | ColorVisionFilterFailure | MotionPreferenceControllerFailure
-type SettingsOperationFailure = SettingsViewModelFailure | SettingsPreferenceFailure
+type SettingsOperationFailure = SettingsViewModelFailure | SettingsViewInputFailure | SettingsPreferenceFailure
 type InitialSettingsFailure = SettingsOperationFailure | { readonly tag: 'InvalidInitialUiScale' }
-type SettingsLanguageFailure = UiLanguageFailure | SettingsViewModelFailure
+type SettingsLanguageFailure = UiLanguageFailure | SettingsViewModelFailure | SettingsViewInputFailure
 type MountInitializationFailure = SettingsPreferenceFailure | SessionOverlayInitializationFailure
 
 const noSettingsPreferenceApplication = (): Result.Result<boolean, SettingsPreferenceFailure> => Result.succeed(true)
@@ -435,6 +436,21 @@ const buildMenuCallbacks = (
       callbacks?.onOpenSettings?.()
   }
   return result
+}
+
+const invalidExternalMenuCallbackField = (callbacks: unknown): string | undefined => {
+  if (typeof callbacks === 'undefined') {
+    return
+  }
+  if (callbacks === null || typeof callbacks !== 'object') {
+    return 'callbacks'
+  }
+  for (const field of ['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const) {
+    if (Reflect.get(callbacks, field) === null) {
+      return `callbacks.${field}`
+    }
+  }
+  return
 }
 
 const removeUiMountedViews = (
@@ -979,7 +995,7 @@ const createSettingsOperations = (
 
   const updateMountedSettingsLanguage = (
     language: UiLanguage,
-  ): Result.Result<SettingsSnapshot, SettingsViewModelFailure> => {
+  ): Result.Result<SettingsSnapshot, SettingsViewModelFailure | SettingsViewInputFailure> => {
     const { mounted } = session
     if (mounted === null) {
       return Result.succeed(session.settings)
@@ -1162,6 +1178,12 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
 
   const buildMountedViews = (): Effect.Effect<ActiveUiMount, UiMountError> =>
     Effect.gen(function* run() {
+      const invalidMenuCallbackField = invalidExternalMenuCallbackField(options.menuCallbacks)
+      if (typeof invalidMenuCallbackField !== 'undefined') {
+        return yield* Effect.fail(new UiMountError('Invalid initial main-menu callbacks', {
+          cause: { _tag: 'InvalidMainMenuViewInput', field: invalidMenuCallbackField },
+        }))
+      }
       if (options.motion === null) {
         return yield* Effect.fail(new UiMountError('Invalid initial motion preference'))
       }
@@ -1220,6 +1242,12 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       const mountResult = Effect.flatMap(mount, (result) => {
         if (Result.isFailure(result)) {
           return Effect.fail(new UiMountError('Could not initialize mx-ui views', { cause: result.failure }))
+        }
+        const mainMenuInitialization = result.success.views.mainMenu.initializationResult
+        if (Result.isFailure(mainMenuInitialization)) {
+          return Effect.fail(new UiMountError('Invalid initial main-menu callbacks', {
+            cause: mainMenuInitialization.failure,
+          }))
         }
         return Effect.succeed(result.success)
       })

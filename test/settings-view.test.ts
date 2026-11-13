@@ -141,6 +141,23 @@ describe('createSettingsView', () => {
     )
   })
 
+  it('returns a typed failure for a null binding action before changing the view', () => {
+    const factory = fakeDocument()
+    const host = factory.createElement('main')
+    const view = createSettingsView(factory, host)
+    const viewModel = model()
+    view.render(viewModel)
+    const before = factory.mark()
+
+    const result = view.render({
+      ...viewModel,
+      bindingRows: [...viewModel.bindingRows, { action: null, code: undefined }],
+    } as typeof viewModel)
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsViewInput', field: 'bindingRows.action' }))
+    expect(factory.since(before)).toStrictEqual([])
+  })
+
   it('re-renders without redundant writes when the model is unchanged', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')

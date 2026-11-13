@@ -38,6 +38,7 @@
  * fix belongs in `domain/inventory-view-model.ts` (publish `firstIndex` on a
  * `slots` region) rather than here.
  */
+import { Result } from 'effect'
 import {
   type AttributeCell,
   type StyleCell,
@@ -91,7 +92,7 @@ export type InventoryView = {
   readonly render: (
     model: InventoryViewModel,
     interaction?: InventoryInteractionView,
-  ) => void
+  ) => Result.Result<void, InvalidInventoryViewInput>
 }
 
 export type InventoryInteractionTarget =
@@ -574,6 +575,43 @@ type RenderContext = {
 
 type InventoryRenderInput = Omit<RenderContext, 'focused'>
 
+type InvalidInventoryViewInput = Readonly<{
+  _tag: 'InvalidInventoryViewInput'
+  field:
+    | 'carried.countLabel'
+    | 'crafting.output.countLabel'
+    | 'interaction'
+    | 'interaction.status'
+    | 'regions.countLabel'
+}>
+
+const hasNullCountLabel = (slot: unknown): boolean =>
+  typeof slot === 'object' && slot !== null && Reflect.get(slot, 'countLabel') === null
+
+const invalidInventoryViewInput = (
+  model: InventoryViewModel,
+  interaction: InventoryInteractionView | undefined,
+): InvalidInventoryViewInput | undefined => {
+  if ((interaction as unknown) === null) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction' }
+  }
+  if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.status' }
+  }
+  if (hasNullCountLabel(model.carried)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'carried.countLabel' }
+  }
+  if (model.crafting.kind === 'match' && hasNullCountLabel(model.crafting.output)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'crafting.output.countLabel' }
+  }
+  for (const region of model.regions) {
+    if (region.kind === 'slots' && region.slots.some(hasNullCountLabel)) {
+      return { _tag: 'InvalidInventoryViewInput', field: 'regions.countLabel' }
+    }
+  }
+  return undefined
+}
+
 type RegionSyncContext = Readonly<{
   elements: Pick<InventoryViewElements, 'factory' | 'root' | 'regions'>
   model: InventoryViewModel
@@ -720,13 +758,19 @@ const renderCraftingOutput = (elements: CraftingElements, context: RenderContext
   applyCraftingOutputButtonView(elements.output, context)
 }
 
-const renderInventoryView = ({ elements, model, interaction, actions }: InventoryRenderInput): void => {
+const renderInventoryView = ({ elements, model, interaction, actions }: InventoryRenderInput):
+Result.Result<void, InvalidInventoryViewInput> => {
+  const invalidInput = invalidInventoryViewInput(model, interaction)
+  if (typeof invalidInput !== 'undefined') {
+    return Result.fail(invalidInput)
+  }
   const focused = resolveFocusedTarget(model, interaction)
   const context: RenderContext = { actions, elements, focused, interaction, model }
   renderRegions(elements, context)
   renderCarriedSlot(elements.carried, context)
   writeText(elements.statusText, interaction?.status ?? '')
   renderCraftingOutput(elements, context)
+  return Result.succeed(undefined)
 }
 
 const wireCraftingOutput = (
@@ -786,7 +830,7 @@ export const createInventoryView = (
 ): InventoryView => {
   const elements = buildInventoryViewElements(factory, parent, actions)
   return {
-    render: (model: InventoryViewModel, interaction?: InventoryInteractionView): void =>
+    render: (model: InventoryViewModel, interaction?: InventoryInteractionView) =>
       renderInventoryView({ actions, elements, interaction, model }),
     root: elements.root,
   }

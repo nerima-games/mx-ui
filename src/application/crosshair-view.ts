@@ -97,6 +97,7 @@
  * layout, and layout needs a browser. `docs/e2e-triage.md` keeps that half in
  * mc-compose, with the rest of `HUD remains usable at ${width}px`.
  */
+import { Result } from 'effect'
 import {
   type AttributeCell,
   type PercentCell,
@@ -151,7 +152,9 @@ export type CrosshairView = {
   /** The element the host appended us to a parent as. Exposed for tests and previews. */
   readonly root: DomElement
   /** Project a model, or `undefined` for 「not aiming」. Idempotent. */
-  readonly render: (model: CrosshairViewModel | undefined) => void
+  readonly render: (
+    model: CrosshairViewModel | undefined,
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidCrosshairViewInput'; field: 'model' }>>
   /** Mark the currently visible reticle as hit; the next frame render owns expiry. */
   readonly notifyHit: () => void
   /**
@@ -469,9 +472,15 @@ export const createCrosshairView = (
       latest = { ...latest, hit: true }
       project()
     },
-    render: (model: CrosshairViewModel | undefined): void => {
-      latest = model ?? null
+    render: (
+      model: CrosshairViewModel | undefined,
+    ): Result.Result<void, Readonly<{ _tag: 'InvalidCrosshairViewInput'; field: 'model' }>> => {
+      if ((model as unknown) === null) {
+        return Result.fail({ _tag: 'InvalidCrosshairViewInput', field: 'model' })
+      }
+      latest = typeof model === 'undefined' ? null : model
       project()
+      return Result.succeed(undefined)
     },
     root,
     setMotion: (next: MotionPreference): void => {

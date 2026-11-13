@@ -134,6 +134,57 @@ export type InventorySnapshot = {
   readonly mergeableSlotIndices: ReadonlySet<number> | undefined
 }
 
+type InvalidCountSlot = Readonly<{
+  readonly count: null | undefined
+  readonly item?: unknown
+  readonly itemId?: unknown
+}>
+type SlotWithInvalidCount = Slot | InvalidCountSlot
+type InventoryWithInvalidCount = Omit<Inventory, 'slots'> & Readonly<{
+  readonly slots: ReadonlyArray<SlotWithInvalidCount>
+}>
+type CraftingResultWithInvalidCount =
+  | { readonly _tag: 'Match'; readonly output: ItemStack | InvalidCountSlot }
+  | { readonly _tag: 'NoMatch' }
+type CraftingSnapshotWithInvalidCount = Omit<CraftingSnapshot, 'grid' | 'result'> & Readonly<{
+  readonly grid: ReadonlyArray<SlotWithInvalidCount>
+  readonly result: CraftingResultWithInvalidCount | undefined
+}>
+type InventorySnapshotInputWithInvalidCount = Omit<
+  InventorySnapshot,
+  'inventory' | 'carried' | 'armour' | 'offhand' | 'crafting'
+> & Readonly<{
+  readonly inventory: InventoryWithInvalidCount
+  readonly carried: SlotWithInvalidCount
+  readonly armour: ReadonlyArray<SlotWithInvalidCount> | undefined
+  readonly offhand: SlotWithInvalidCount | null
+  readonly crafting: CraftingSnapshotWithInvalidCount | undefined
+}>
+type InvalidInventorySnapshot = Omit<InventorySnapshot, 'inventory'> & Readonly<{
+  readonly inventory: Omit<Inventory, 'slots'> & Readonly<{
+    readonly slots: readonly [InvalidCountSlot, ...InvalidCountSlot[]]
+  }>
+}>
+type InvalidInventorySlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
+const hasInvalidInventorySlotCount = (snapshot: InventorySnapshotInputWithInvalidCount): boolean => {
+  const craftingSlots = typeof snapshot.crafting === 'undefined'
+    ? []
+    : [
+        ...snapshot.crafting.grid,
+        ...(snapshot.crafting.result?._tag === 'Match' ? [snapshot.crafting.result.output] : []),
+      ]
+  const armourSlots = typeof snapshot.armour === 'undefined' ? [] : snapshot.armour
+  const slots: ReadonlyArray<SlotWithInvalidCount | null> = [
+    ...snapshot.inventory.slots,
+    snapshot.carried,
+    ...armourSlots,
+    snapshot.offhand,
+    ...craftingSlots,
+  ]
+  return slots.some((slot) => slot !== null && typeof slot !== 'undefined' && typeof slot.count !== 'number')
+}
+
 // ---------------------------------------------------------------------------
 // The projection
 // ---------------------------------------------------------------------------
@@ -435,16 +486,28 @@ const mergeTargetsOf = (indices: ReadonlySet<number> | undefined): MergeTargets 
  * because on this screen the plausible answer and the true one differ in
  * exactly the cases a player would notice.
  */
-export const inventoryViewModel = (
+export function inventoryViewModel(
+  snapshot: InvalidInventorySnapshot,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): Result.Result<InventoryViewModel, InvalidInventorySlotCountFailure>
+export function inventoryViewModel(
   snapshot: InventorySnapshot,
   itemDisplayNameOptions?: ItemDisplayNameOptions,
-): InventoryViewModel => {
-  const { slots } = snapshot.inventory
+): InventoryViewModel
+export function inventoryViewModel(
+  snapshot: InventorySnapshot | InventorySnapshotInputWithInvalidCount,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): InventoryViewModel | Result.Result<InventoryViewModel, InvalidInventorySlotCountFailure> {
+  if (hasInvalidInventorySlotCount(snapshot)) {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
+  const validSnapshot = snapshot as InventorySnapshot
+  const { slots } = validSnapshot.inventory
   const selectedHotbarIndex = clampIndex(
-    snapshot.selectedHotbarIndex,
+    validSnapshot.selectedHotbarIndex,
     HOTBAR_SLOT_COUNT - LAST_INDEX_OFFSET,
   )
-  const durability = snapshot.durabilityBySlot
+  const durability = validSnapshot.durabilityBySlot
 
   const regions: Array<SlotRegion> = [
     projectRegion({
@@ -465,15 +528,15 @@ export const inventoryViewModel = (
       selectedIndex: NO_SELECTION,
       slots: fixedSlots(slots, HOTBAR_SLOT_COUNT, INVENTORY_MAIN_SLOT_COUNT),
     }),
-    armourRegion(snapshot.armour, itemDisplayNameOptions),
-    offhandRegion(snapshot.offhand, itemDisplayNameOptions),
-    craftingRegion(snapshot.crafting, itemDisplayNameOptions),
+    armourRegion(validSnapshot.armour, itemDisplayNameOptions),
+    offhandRegion(validSnapshot.offhand, itemDisplayNameOptions),
+    craftingRegion(validSnapshot.crafting, itemDisplayNameOptions),
   ]
 
   return {
-    carried: carriedView(snapshot.carried, itemDisplayNameOptions),
-    crafting: craftingOutcome(snapshot.crafting, itemDisplayNameOptions),
-    mergeTargets: mergeTargetsOf(snapshot.mergeableSlotIndices),
+    carried: carriedView(validSnapshot.carried, itemDisplayNameOptions),
+    crafting: craftingOutcome(validSnapshot.crafting, itemDisplayNameOptions),
+    mergeTargets: mergeTargetsOf(validSnapshot.mergeableSlotIndices),
     regions,
   }
 }

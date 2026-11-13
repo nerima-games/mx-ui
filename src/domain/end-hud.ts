@@ -6,6 +6,7 @@ import {
   type UiMessageKey,
   translateUiMessage,
 } from './ui-language.js'
+import { Result } from 'effect'
 
 export const ENDER_DRAGON_DEFAULT_NAME = 'Ender Dragon'
 
@@ -49,11 +50,53 @@ const finiteOrZero = (value: number): number => {
   return ZERO
 }
 
-export const bossHealthBarViewModel = (
+type InvalidBossHealthInput = Readonly<{
+  readonly _tag: 'InvalidBossHealthInput'
+  readonly field: string
+}>
+
+const isBossHealthSnapshot = (input: unknown): input is BossHealthSnapshot => {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return false
+  }
+  const snapshot = input as Record<string, unknown>
+  return typeof snapshot['name'] === 'string' &&
+    typeof snapshot['current'] === 'number' &&
+    typeof snapshot['max'] === 'number' &&
+    (snapshot['phase'] === 'circling' ||
+      snapshot['phase'] === 'perching' ||
+      snapshot['phase'] === 'charging' ||
+      snapshot['phase'] === 'dead')
+}
+
+export function bossHealthBarViewModel(
+  snapshot: null,
+  language?: unknown,
+): Result.Result<BossHealthBarViewModel, InvalidBossHealthInput>
+export function bossHealthBarViewModel(
   snapshot: BossHealthSnapshot,
-  language: UiLanguage = DEFAULT_UI_LANGUAGE,
-): BossHealthBarViewModel => {
-  const name = snapshot.name.trim() || translateUiMessage(language, 'end-hud.boss-default-name')
+  language?: UiLanguage,
+): BossHealthBarViewModel
+export function bossHealthBarViewModel(
+  snapshot: unknown,
+  language?: unknown,
+): BossHealthBarViewModel | Result.Result<BossHealthBarViewModel, InvalidBossHealthInput>
+export function bossHealthBarViewModel(
+  snapshot: BossHealthSnapshot,
+  language?: UiLanguage,
+): BossHealthBarViewModel
+export function bossHealthBarViewModel(
+  snapshot: unknown,
+  language: unknown = DEFAULT_UI_LANGUAGE,
+): BossHealthBarViewModel | Result.Result<BossHealthBarViewModel, InvalidBossHealthInput> {
+  if (!isBossHealthSnapshot(snapshot)) {
+    return Result.fail({ _tag: 'InvalidBossHealthInput', field: 'snapshot' })
+  }
+  if (language !== 'en' && language !== 'ja') {
+    return Result.fail({ _tag: 'InvalidBossHealthInput', field: 'language' })
+  }
+  const uiLanguage = language
+  const name = snapshot.name.trim() || translateUiMessage(uiLanguage, 'end-hud.boss-default-name')
   const max = Math.max(ZERO, finiteOrZero(snapshot.max))
   const current = clamp(finiteOrZero(snapshot.current), ZERO, max)
   const hidden = snapshot.phase === 'dead' || max === ZERO || current === ZERO
@@ -63,11 +106,11 @@ export const bossHealthBarViewModel = (
   }
 
   return {
-    accessibleLabel: translateUiMessage(language, 'end-hud.boss-health', {
+    accessibleLabel: translateUiMessage(uiLanguage, 'end-hud.boss-health', {
       current,
       max,
       name,
-      phase: translateUiMessage(language, BOSS_PHASE_MESSAGE_KEY[snapshot.phase]),
+      phase: translateUiMessage(uiLanguage, BOSS_PHASE_MESSAGE_KEY[snapshot.phase]),
     }),
     current,
     hidden,

@@ -1,3 +1,4 @@
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { createAnvilView, type AnvilInteractionView } from '../src/application/anvil-view'
 import { anvilViewModel } from '../src/domain/anvil-view-model'
@@ -5,6 +6,65 @@ import { fakeDocument, fakeElement } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createAnvilView', () => {
+  it('returns typed failures for null slot labels and rejection reasons', () => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const valid = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: { count: 1, itemId: 'iron_sword' },
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    })
+    const invalidSlot = {
+      ...valid,
+      slots: valid.slots.map((slot) =>
+        slot?.id === 'primary-input' ? { ...slot, countLabel: null } : slot,
+      ),
+    } as unknown as typeof valid
+    const invalidRejection = { ...valid, rejectionReason: null } as unknown as typeof valid
+
+    expect(view.render(invalidSlot)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'slots[].countLabel',
+    }))
+    expect(view.render(invalidRejection)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'rejectionReason',
+    }))
+  })
+
+  it('returns typed failures for null interaction, status, and focus inputs', () => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const valid = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: undefined,
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    })
+    const invalidStatus: AnvilInteractionView = { focusedTarget: 'name', status: 'ready' }
+    Reflect.set(invalidStatus, 'status', null)
+    const invalidFocus: AnvilInteractionView = { focusedTarget: 'name', status: 'ready' }
+    Reflect.set(invalidFocus, 'focusedTarget', null)
+
+    expect(view.render(valid, null)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'interaction',
+    }))
+    expect(view.render(valid, invalidStatus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'interaction.status',
+    }))
+    expect(view.render(valid, invalidFocus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'interaction.focusedTarget',
+    }))
+  })
+
   it('projects every operation target, cost, rejection, and accessibility without listeners', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')

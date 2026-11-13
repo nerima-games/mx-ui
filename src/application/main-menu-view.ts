@@ -118,10 +118,16 @@ export type MainMenuCallbacks = {
 }
 
 export type MainMenuView = {
+  readonly initializationResult: Result.Result<void, MainMenuViewInputFailure>
   readonly root: DomElement
-  readonly render: (model: MainMenuViewModel) => void
+  readonly render: (model: MainMenuViewModel) => Result.Result<void, MainMenuViewInputFailure>
   readonly destroy: () => void
 }
+
+type MainMenuViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidMainMenuViewInput'
+  readonly field: string
+}>
 
 type Button = {
   readonly element: DomInteractiveElement
@@ -550,12 +556,12 @@ const externalRootCallback = (
   entry: Exclude<RootEntry, 'single-player'>,
 ): (() => void) | null => {
   if (entry === 'multiplayer') {
-    return callbacks.onOpenMultiplayer ?? null
+    return typeof callbacks.onOpenMultiplayer === 'undefined' ? null : callbacks.onOpenMultiplayer
   }
   if (entry === 'settings') {
-    return callbacks.onOpenSettings ?? null
+    return typeof callbacks.onOpenSettings === 'undefined' ? null : callbacks.onOpenSettings
   }
-  return callbacks.onExit ?? null
+  return typeof callbacks.onExit === 'undefined' ? null : callbacks.onExit
 }
 
 type CreateRootEntryButtonOptions = BuildRootButtonsOptions & {
@@ -1052,7 +1058,7 @@ const renderSavedWorldRow = (context: MainMenuRenderContext, world: SavedWorld):
   const row = ensureSavedWorldRow(context, world)
   writeHidden(row.rootHidden, false)
   const values: UiMessageValues = {
-    name: world.name || { key: 'menu.worlds.unnamed' },
+    name: world.name === '' ? { key: 'menu.worlds.unnamed' } : world.name,
     sessionId: world.sessionId,
   }
   writeLocalizedText(row.load.label, 'menu.world-row.aria', values)
@@ -1364,15 +1370,52 @@ const bindMainMenuActions = (context: MainMenuRenderContext): void => {
   bindWorldListActions(context)
 }
 
+const invalidExternalRootCallbackField = (callbacks: unknown): string | undefined => {
+  if (typeof callbacks === 'undefined') {
+    return
+  }
+  if (callbacks === null || typeof callbacks !== 'object') {
+    return 'callbacks'
+  }
+  for (const field of ['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const) {
+    if (Reflect.get(callbacks, field) === null) {
+      return `callbacks.${field}`
+    }
+  }
+  return
+}
+
 export const createMainMenuView = (
   factory: DomElementFactory,
   parent: DomElement,
   callbacks: MainMenuCallbacks = {},
 ): MainMenuView => {
-  const dom = buildMenuElements({ callbacks, factory, parent })
+  const invalidCallbackField = invalidExternalRootCallbackField(callbacks)
+  const effectiveCallbacks = typeof invalidCallbackField === 'undefined' ? callbacks : {}
+  const initializationResult: Result.Result<void, MainMenuViewInputFailure> = typeof invalidCallbackField === 'undefined'
+    ? Result.succeed(undefined)
+    : Result.fail({ _tag: 'InvalidMainMenuViewInput', field: invalidCallbackField })
+  const dom = buildMenuElements({ callbacks: effectiveCallbacks, factory, parent })
   const runtime = createRuntime()
-  const context: MainMenuRenderContext = { callbacks, dom, factory, listeners: [], runtime }
-  const render = (model: MainMenuViewModel): void => renderMainMenu(context, model)
+  const context: MainMenuRenderContext = { callbacks: effectiveCallbacks, dom, factory, listeners: [], runtime }
+  const render = (model: MainMenuViewModel): Result.Result<void, MainMenuViewInputFailure> => {
+    if (Result.isFailure(initializationResult)) {
+      return initializationResult
+    }
+    if (model === null || typeof model !== 'object') {
+      return Result.fail({ _tag: 'InvalidMainMenuViewInput', field: 'model' })
+    }
+    if (!Array.isArray(model.savedWorlds)) {
+      return Result.fail({ _tag: 'InvalidMainMenuViewInput', field: 'savedWorlds' })
+    }
+    if (model.savedWorlds.findIndex((world) =>
+      world === null || typeof world === 'undefined' || typeof world.name !== 'string',
+    ) !== -1) {
+      return Result.fail({ _tag: 'InvalidMainMenuViewInput', field: 'savedWorlds.name' })
+    }
+    renderMainMenu(context, model)
+    return Result.succeed(undefined)
+  }
   bindMainMenuActions(context)
   return {
     destroy: (): void => {
@@ -1382,6 +1425,7 @@ export const createMainMenuView = (
       writeHidden(dom.rootHidden, true)
       dom.root.style.setProperty('display', 'none')
     },
+    initializationResult,
     render,
     root: dom.root,
   }

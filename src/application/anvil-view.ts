@@ -1,3 +1,4 @@
+import { Result } from 'effect'
 import {
   ANVIL_OPERATION_TARGETS,
   ANVIL_SLOT_IDS,
@@ -35,8 +36,16 @@ export type AnvilInteractionView = {
 
 export type AnvilView = {
   readonly root: DomElement
-  readonly render: (model: AnvilViewModel, interaction?: AnvilInteractionView) => void
+  readonly render: (
+    model: AnvilViewModel | null,
+    interaction?: AnvilInteractionView | null,
+  ) => Result.Result<void, AnvilViewInputFailure>
 }
+
+type AnvilViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidAnvilViewInput'
+  readonly field: string
+}>
 
 export type AnvilViewActions = {
   readonly onActivate?: (target: AnvilOperationTarget) => void
@@ -341,10 +350,31 @@ export const createAnvilView = (
   }
 
   return {
-    render: (model: AnvilViewModel, interaction?: AnvilInteractionView): void => {
+    render: (model: AnvilViewModel | null, interaction?: AnvilInteractionView | null) => {
+      if (model === null) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'model' })
+      }
+      if (interaction === null) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'interaction' })
+      }
+      if (Reflect.get(model, 'rejectionReason') === null) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'rejectionReason' })
+      }
+      if (model.slots.some((slot) =>
+        typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null,
+      )) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'slots[].countLabel' })
+      }
+      if (interaction !== undefined && Reflect.get(interaction, 'status') === null) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'interaction.status' })
+      }
+      if (interaction !== undefined && Reflect.get(interaction, 'focusedTarget') === null) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'interaction.focusedTarget' })
+      }
       const focusedTarget = resolveFocusedTarget(interaction?.focusedTarget ?? 'primary-input')
       renderSlots(model, focusedTarget, interaction)
       renderAnvilDetails(model, focusedTarget, interaction)
+      return Result.succeed(undefined)
     },
     root,
   }

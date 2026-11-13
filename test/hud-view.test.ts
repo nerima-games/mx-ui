@@ -37,6 +37,7 @@ import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../src/domain/p
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
 import { itemDisplayNameValue } from '../src/application/item-display-name.js'
 import { writeAttribute } from '../src/application/dom-write'
+import { createIconElement, updateIconElement } from '../src/application/icon-element'
 import {
   createSlotElement,
   FOCUS_RING_SHADOW_WIDTH,
@@ -682,6 +683,27 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     expect(root.attributes.get('tabindex')).toBe('0')
   })
 
+  it('returns a typed failure for an explicitly null focus-column count', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+
+    const result = setSlotFocusTarget(slot, {
+      columns: null as unknown as number,
+      group: 'test-slots',
+      index: 0,
+    })
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({ _tag: 'InvalidSlotFocusTarget', field: 'columns' })
+    }
+    expect(fakeElement(slot.root).attributes.has('data-focus-columns')).toBe(false)
+
+    const omittedColumnsResult = setSlotFocusTarget(slot, { group: 'test-slots', index: 0 })
+    expect(Result.isSuccess(omittedColumnsResult)).toBe(true)
+    expect(fakeElement(slot.root).attributes.get('data-focus-columns')).toBe('1')
+  })
+
   it('draws NO ring until somebody says where the keyboard is', () => {
     // A ring means "the keyboard is here". Drawing one at mount would make it
     // decoration, which is the 「後ろに何も無いフック」 DN-UI-1a rejects from the
@@ -699,6 +721,46 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     // The tab stop goes home rather than disappearing: the hotbar stays
     // reachable, it just is not where the keyboard currently is.
     expect(slots[0]?.attributes.get('tabindex')).toBe('0')
+  })
+
+  it('returns typed failures for null render labels and keyboard focus indices', () => {
+    const { view } = mount()
+    const model = hudViewModel()
+    const firstSlot = model.hotbar[0]
+    if (typeof firstSlot === 'undefined') {
+      expect(firstSlot).not.toBeUndefined()
+      return
+    }
+    Reflect.set(firstSlot, 'countLabel', null)
+
+    const renderResult = view.render(model)
+    expect(Result.isFailure(renderResult)).toBe(true)
+    if (Result.isFailure(renderResult)) {
+      expect(renderResult.failure).toStrictEqual({
+        _tag: 'InvalidHudViewInput',
+        field: 'hotbar.countLabel',
+      })
+    }
+
+    const focusResult = view.setKeyboardFocus(null as unknown as number)
+    expect(Result.isFailure(focusResult)).toBe(true)
+    if (Result.isFailure(focusResult)) {
+      expect(focusResult.failure).toStrictEqual({ _tag: 'InvalidHudFocusInput', field: 'index' })
+    }
+  })
+
+  it('returns a typed failure when a public icon update receives a null health condition', () => {
+    const icon = createIconElement(fakeDocument(), 'shank')
+
+    const result = updateIconElement(icon, 'full', null as unknown as 'poison')
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({
+        _tag: 'InvalidIconElementInput',
+        field: 'healthCondition',
+      })
+    }
   })
 
   it('REGRESSION: the ring and the SELECTION are different questions on different slots', () => {

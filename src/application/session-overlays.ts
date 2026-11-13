@@ -8,11 +8,12 @@ import {
   type SettingsToggleField,
   type SettingsView,
   type SettingsViewActions,
+  type SettingsViewInputFailure,
   createSettingsView,
 } from './settings-view.js'
 import {
   type SettingsSnapshot,
-  type SettingsViewModelFailure,
+  type SettingsViewModelFailure as DomainSettingsViewModelFailure,
   settingsViewModel,
 } from '../domain/settings-view-model.js'
 import { type TextCell, textCell } from './dom-write.js'
@@ -67,6 +68,9 @@ export type SessionKeyDelegate = (event: KeyboardEvent) => boolean
 export type SessionOverlayInitializationFailure =
   | SettingsViewModelFailure
   | { readonly _tag: 'InvalidInitialDebugSnapshot' }
+  | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }
+
+type SettingsViewModelFailure = DomainSettingsViewModelFailure | SettingsViewInputFailure
 
 export const DEFAULT_UI_SETTINGS: UiSettings = {
   fieldOfView: 70,
@@ -138,7 +142,9 @@ export type SessionOverlays = {
   readonly debugHud: HTMLElement
   readonly settingsDialog: HTMLElement
   readonly initializationResult: Result.Result<SettingsSnapshot, SessionOverlayInitializationFailure>
-  readonly updateDebug: (snapshot: DebugHudSnapshot) => void
+  readonly updateDebug: (
+    snapshot: DebugHudSnapshot,
+  ) => Result.Result<void, { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }>
   readonly updateSettings: (settings: UiSettings) => Result.Result<SettingsSnapshot, SettingsViewModelFailure>
   readonly updateSettingsSnapshot: (
     settings: unknown,
@@ -171,6 +177,41 @@ const debugHudMessageKey = (facing: string | undefined): UiMessageKey => {
     return 'debug.session'
   }
   return 'debug.session-facing'
+}
+
+const invalidDebugHudField = (snapshot: unknown): string | undefined => {
+  if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+    return 'snapshot'
+  }
+  const facing = Reflect.get(snapshot, 'facing') as unknown
+  if (typeof facing !== 'undefined' && typeof facing !== 'string') {
+    return 'facing'
+  }
+  if (typeof Reflect.get(snapshot, 'fps') !== 'number') {
+    return 'fps'
+  }
+  const coordinates = Reflect.get(snapshot, 'coordinates') as unknown
+  if (coordinates === null || typeof coordinates !== 'object' || Array.isArray(coordinates)) {
+    return 'coordinates'
+  }
+  if (
+    typeof Reflect.get(coordinates, 'worldX') !== 'number' ||
+    typeof Reflect.get(coordinates, 'worldY') !== 'number' ||
+    typeof Reflect.get(coordinates, 'worldZ') !== 'number'
+  ) {
+    return 'coordinates'
+  }
+  const chunk = Reflect.get(snapshot, 'chunk') as unknown
+  if (chunk === null || typeof chunk !== 'object' || Array.isArray(chunk)) {
+    return 'chunk'
+  }
+  if (
+    typeof Reflect.get(chunk, 'chunkX') !== 'number' ||
+    typeof Reflect.get(chunk, 'chunkZ') !== 'number'
+  ) {
+    return 'chunk'
+  }
+  return undefined
 }
 
 const debugHudMessage = (
@@ -344,11 +385,41 @@ const applySettingsLanguage = (context: SettingsActionsContext, language: UiLang
   context.renderCurrentSettings()
 }
 
+const isUiLanguageResult = (
+  input: unknown,
+): input is Result.Result<UiLanguage, UiLanguageFailure | SettingsViewModelFailure> => {
+  if (input === null || typeof input !== 'object') {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag') as unknown
+  if (tag === 'Failure') {
+    const failure = Reflect.get(input, 'failure') as unknown
+    return failure !== null && typeof failure === 'object' && typeof Reflect.get(failure, '_tag') === 'string'
+  }
+  if (tag !== 'Success') {
+    return false
+  }
+  const language = Reflect.get(input, 'success') as unknown
+  return language === 'en' || language === 'ja'
+}
+
 const handleLanguageChoice = (
   value: UiLanguage,
   context: SettingsActionsContext,
-): Result.Result<void, UiLanguageFailure | SettingsViewModelFailure> => {
-  const languageResult = context.options.onLanguageChange?.(value) ?? Result.succeed(value)
+): Result.Result<
+  void,
+  UiLanguageFailure | SettingsViewModelFailure | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }
+> => {
+  const onLanguageChange = context.options.onLanguageChange
+  if (onLanguageChange === null) {
+    return Result.fail({ _tag: 'InvalidSessionOverlayInput', field: 'onLanguageChange' })
+  }
+  const languageResult: unknown = typeof onLanguageChange === 'undefined'
+    ? Result.succeed(value)
+    : onLanguageChange(value)
+  if (!isUiLanguageResult(languageResult)) {
+    return Result.fail({ _tag: 'InvalidSessionOverlayInput', field: 'onLanguageChange.result' })
+  }
   return Result.map(languageResult, (language) => {
     applySettingsLanguage(context, language)
   })
@@ -358,7 +429,10 @@ const handleChoiceChange = (
   field: SettingsChoiceField,
   value: SettingsChoiceValue,
   context: SettingsActionsContext,
-): Result.Result<void, UiLanguageFailure | SettingsViewModelFailure> => {
+): Result.Result<
+  void,
+  UiLanguageFailure | SettingsViewModelFailure | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }
+> => {
   if (field === 'language') {
     return Result.flatMap(decodeUiLanguage(value), (language) => handleLanguageChoice(language, context))
   }
@@ -521,11 +595,13 @@ const createSettingsController = (
       return Result.fail({ _tag: 'InvalidSettingsSnapshot' })
     }
     const model = settingsViewModel(input, DEFAULT_SETTINGS_BINDINGS, BINDABLE_ACTIONS, language)
-    return Result.map(model, (viewModel) => {
-      state.activeSettings = input
-      state.activeLanguage = viewModel.language
-      state.view?.render(viewModel)
-      return state.activeSettings
+    return Result.flatMap(model, (viewModel) => {
+      const rendered = state.view?.render(viewModel) ?? Result.succeed(undefined)
+      return Result.map(rendered, () => {
+        state.activeSettings = input
+        state.activeLanguage = viewModel.language
+        return state.activeSettings
+      })
     })
   }
   const renderCurrentSettings = (): Result.Result<SettingsSnapshot, SettingsViewModelFailure> =>
@@ -628,9 +704,17 @@ const handleOverlayKeyDown = (
   }
 }
 
-const updateDebugHud = (debugHudText: TextCell, snapshot: DebugHudSnapshot): void => {
+const updateDebugHud = (
+  debugHudText: TextCell,
+  snapshot: DebugHudSnapshot,
+): Result.Result<void, { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }> => {
+  const invalidField = invalidDebugHudField(snapshot)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidSessionOverlayInput', field: invalidField })
+  }
   const message = debugHudMessage(snapshot)
   writeLocalizedText(debugHudText, message.key, message.values)
+  return Result.succeed(undefined)
 }
 
 export const createSessionOverlays = (
@@ -639,11 +723,12 @@ export const createSessionOverlays = (
   options: CreateSessionOverlaysOptions = {},
 ): SessionOverlays => {
   const elements = createOverlayElements(document, parent)
-  const initialDebugResult = options.initialDebug === undefined
-    ? Result.succeed(DEFAULT_DEBUG_HUD_SNAPSHOT)
-    : options.initialDebug === null
-      ? Result.fail({ _tag: 'InvalidInitialDebugSnapshot' as const })
-      : Result.succeed(options.initialDebug)
+  const initialDebugSnapshot = options.initialDebug === undefined
+    ? DEFAULT_DEBUG_HUD_SNAPSHOT
+    : options.initialDebug
+  const initialDebugResult = invalidDebugHudField(initialDebugSnapshot) === undefined
+    ? Result.succeed(initialDebugSnapshot)
+    : Result.fail({ _tag: 'InvalidInitialDebugSnapshot' as const })
   if (Result.isSuccess(initialDebugResult)) {
     updateDebugHud(elements.debugHudText, initialDebugResult.success)
   }

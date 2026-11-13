@@ -529,7 +529,7 @@ describe('UiMount', () => {
       host.appendChild(canvas)
       document.body.appendChild(host)
       const options = {
-        initialSettingsSnapshot: { ...DEFAULT_SETTINGS, colorVisionCorrection: 'protanopia' },
+        initialSettingsSnapshot: { ...DEFAULT_SETTINGS, colorVisionCorrection: 'protanopia' as const },
         root: host,
       }
       expect(Reflect.set(options, optionKey, null)).toBe(true)
@@ -561,6 +561,24 @@ describe('UiMount', () => {
       expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
     },
   )
+
+  it('returns a typed mount failure for a null main-menu callback and removes the owned root', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const menuCallbacks = {}
+    expect(Reflect.set(menuCallbacks, 'onOpenSettings', null)).toBe(true)
+    const runtime = makeUiMount({ menuCallbacks, root: host })
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'Invalid initial main-menu callbacks',
+      cause: { _tag: 'InvalidMainMenuViewInput', field: 'callbacks.onOpenSettings' },
+    })
+    expect(runtime.current()).toBeUndefined()
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
 
   it('returns a typed initialization failure and cleans up when host settings change before start', async () => {
     const host = document.createElement('main')

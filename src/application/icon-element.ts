@@ -1,5 +1,6 @@
 /** A health or hunger icon backed by the generated HUD asset set. */
 
+import { Result } from 'effect'
 import {
   type AttributeCell,
   type StyleCell,
@@ -328,18 +329,22 @@ export const updateIconElement = (
   icon: IconElement,
   state: IconState,
   healthCondition?: HealthCondition,
-): void => {
+): Result.Result<void, Readonly<{ _tag: 'InvalidIconElementInput'; field: 'healthCondition' }>> => {
+  if ((healthCondition as unknown) === null) {
+    return Result.fail({ _tag: 'InvalidIconElementInput', field: 'healthCondition' })
+  }
+  const previousCondition = typeof healthCondition === 'undefined' ? null : healthCondition
   writeHidden(icon.hiddenFlag, false)
   const name = iconName(icon.kind, state, healthCondition)
   if (
     icon.previous === state &&
-    icon.previousCondition === (healthCondition ?? null) &&
+    icon.previousCondition === previousCondition &&
     icon.previousArt === name
   ) {
-    return
+    return Result.succeed(undefined)
   }
   icon.previous = state
-  icon.previousCondition = healthCondition ?? null
+  icon.previousCondition = previousCondition
   writeAttribute(icon.stateFlag, state)
   updateIconArt({
     icon,
@@ -348,4 +353,5 @@ export const updateIconElement = (
     paletteToken: iconPaletteToken(icon.kind, state, healthCondition),
     state,
   })
+  return Result.succeed(undefined)
 }

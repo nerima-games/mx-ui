@@ -1,4 +1,5 @@
 import { Result, Schema } from 'effect'
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
@@ -147,5 +148,48 @@ describe('debugOverlayModel', () => {
       gpuTimingSupported: true,
       qualityPreset: 'medium',
     })
+  })
+
+  it.each([
+    ['cameraPose', 'cameraPose'],
+    ['dimension', 'dimension'],
+    ['worldTime', 'worldTime'],
+    ['frame', 'frame'],
+    ['gpuTimingSupported', 'gpuTimingSupported'],
+    ['qualityPreset', 'qualityPreset'],
+    ['latestGpuTimeMs', 'latestGpuTimeMs'],
+  ] as const)('rejects explicit null for %s with a typed failure', (property, field) => {
+    const snapshot: Record<string, unknown> = { ...emptySnapshot() }
+    Reflect.set(snapshot, property, null)
+
+    expect(debugOverlayModel(snapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field }),
+    )
+  })
+
+  it('rejects null nested frame values with typed failures', () => {
+    const noCameraPosition: Record<string, unknown> = {
+      ...emptySnapshot(),
+      frame: { deltaSecs: 0.5, cameraPosition: null },
+    }
+    const noDelta: Record<string, unknown> = {
+      ...emptySnapshot(),
+      frame: { deltaSecs: null, cameraPosition: { worldX: 0, worldY: 64, worldZ: -0.5 } },
+    }
+
+    expect(debugOverlayModel(noCameraPosition)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'frame.cameraPosition' }),
+    )
+    expect(debugOverlayModel(noDelta)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'frame.deltaSecs' }),
+    )
+  })
+
+  it('returns a typed failure rather than throwing for arbitrary snapshot input', () => {
+    fc.assert(fc.property(fc.anything(), (snapshot) => {
+      const output = debugOverlayModel(snapshot)
+      const isFailure = typeof output === 'object' && output !== null && '_tag' in output && output._tag === 'Failure'
+      expect(isFailure || 'coordinates' in output).toBe(true)
+    }))
   })
 })
