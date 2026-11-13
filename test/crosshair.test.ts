@@ -100,6 +100,128 @@ const thicknessOf = (root: FakeElement): ReadonlyArray<string | undefined> =>
       : arm.style.properties.get('height'),
   )
 
+type CrosshairFailureField = 'breakProgress' | 'lastHitAtSecs' | 'modals' | 'nowSecs' | 'pulseSecs' | 'status'
+type CrosshairPropertyFailure = Readonly<{
+  readonly _tag: 'InvalidCrosshairViewModelInput'
+  readonly field: CrosshairFailureField
+}>
+type ExpectedCrosshairStatus = Readonly<{
+  readonly modals: ReadonlyArray<ScreenId>
+  readonly breakProgress: number | undefined
+  readonly lastHitAtSecs: number | undefined
+}>
+type ExpectedCrosshairTimes = Readonly<{ readonly nowSecs: number; readonly pulseSecs: number }>
+
+const INVALID_MODAL_STACK = Symbol('invalid-modal-stack')
+const TEST_SCREEN_IDS: ReadonlyArray<ScreenId> = [
+  'pause',
+  'settings',
+  'inventory',
+  'crafting',
+  'chat',
+  'achievements',
+  'statistics',
+]
+
+const propertyFailure = (field: CrosshairFailureField): Result.Result<never, CrosshairPropertyFailure> =>
+  Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field })
+
+const isPropertyRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isPropertyScreenId = (input: unknown): input is ScreenId =>
+  typeof input === 'string' && TEST_SCREEN_IDS.some((known) => known === input)
+
+const readPropertyModalStack = (
+  input: unknown,
+): Result.Result<ReadonlyArray<ScreenId>, typeof INVALID_MODAL_STACK> => {
+  if (!Array.isArray(input)) {
+    return Result.fail(INVALID_MODAL_STACK)
+  }
+  const modalStack: Array<ScreenId> = []
+  for (const screen of input) {
+    if (!isPropertyScreenId(screen)) {
+      return Result.fail(INVALID_MODAL_STACK)
+    }
+    modalStack.push(screen)
+  }
+  return Result.succeed(modalStack)
+}
+
+const readExpectedCrosshairStatus = (
+  input: unknown,
+): Result.Result<ExpectedCrosshairStatus, CrosshairPropertyFailure> => {
+  if (!isPropertyRecord(input)) {
+    return propertyFailure('status')
+  }
+  const modals = readPropertyModalStack(input['modals'])
+  if (Result.isFailure(modals)) {
+    return propertyFailure('modals')
+  }
+  const breakProgressInput = input['breakProgress']
+  if (typeof breakProgressInput !== 'undefined' &&
+    (typeof breakProgressInput !== 'number' || !Number.isFinite(breakProgressInput))) {
+    return propertyFailure('breakProgress')
+  }
+  const lastHitAtSecsInput = input['lastHitAtSecs']
+  if (typeof lastHitAtSecsInput !== 'undefined' &&
+    (typeof lastHitAtSecsInput !== 'number' || !Number.isFinite(lastHitAtSecsInput))) {
+    return propertyFailure('lastHitAtSecs')
+  }
+  return Result.succeed({
+    breakProgress: typeof breakProgressInput === 'undefined'
+      ? undefined
+      : breakProgressInput,
+    lastHitAtSecs: typeof lastHitAtSecsInput === 'undefined'
+      ? undefined
+      : lastHitAtSecsInput,
+    modals: modals.success,
+  })
+}
+
+const readExpectedCrosshairTimes = (
+  nowSecsInput: unknown,
+  pulseSecsInput: unknown,
+): Result.Result<ExpectedCrosshairTimes, CrosshairPropertyFailure> => {
+  if (typeof nowSecsInput !== 'number' || !Number.isFinite(nowSecsInput)) {
+    return propertyFailure('nowSecs')
+  }
+  const pulseSecs = typeof pulseSecsInput === 'undefined'
+    ? CROSSHAIR_PULSE_SECS
+    : pulseSecsInput
+  if (typeof pulseSecs !== 'number' || !Number.isFinite(pulseSecs) || pulseSecs < 0) {
+    return propertyFailure('pulseSecs')
+  }
+  return Result.succeed({ nowSecs: nowSecsInput, pulseSecs })
+}
+
+const expectedCrosshairResult = (
+  statusInput: unknown,
+  nowSecsInput: unknown,
+  pulseSecsInput: unknown,
+): Result.Result<CrosshairViewModel | undefined, CrosshairPropertyFailure> => {
+  const status = readExpectedCrosshairStatus(statusInput)
+  if (Result.isFailure(status)) {
+    return Result.fail(status.failure)
+  }
+  const times = readExpectedCrosshairTimes(nowSecsInput, pulseSecsInput)
+  if (Result.isFailure(times)) {
+    return Result.fail(times.failure)
+  }
+  if (status.success.modals.length > 0) {
+    return Result.succeed(undefined)
+  }
+  const since = typeof status.success.lastHitAtSecs === 'undefined'
+    ? undefined
+    : times.success.nowSecs - status.success.lastHitAtSecs
+  return Result.succeed({
+    breakProgress: typeof status.success.breakProgress === 'undefined'
+      ? undefined
+      : Math.min(1, Math.max(0, status.success.breakProgress)),
+    hit: typeof since === 'number' && Number.isFinite(since) && since >= 0 && since < times.success.pulseSecs,
+  })
+}
+
 describe('when the crosshair is drawn, and when it is not', () => {
   it('returns a typed failure for a null model without clearing the current reticle', () => {
     const { root, view } = mount()
@@ -359,70 +481,13 @@ describe('crosshairViewModel input guards', () => {
   })
 
   it('property: arbitrary public inputs return a typed failure or a valid view model', () => {
-    const screenIds: ReadonlyArray<ScreenId> = [
-      'pause',
-      'settings',
-      'inventory',
-      'crafting',
-      'chat',
-      'achievements',
-      'statistics',
-    ]
-    const isRecord = (input: unknown): input is Record<string, unknown> =>
-      input !== null && typeof input === 'object' && !Array.isArray(input)
-    const isFiniteNumber = (input: unknown): input is number =>
-      typeof input === 'number' && Number.isFinite(input)
-
     fc.assert(
       fc.property(fc.anything(), fc.anything(), fc.anything(), (status, nowSecs, pulseSecs) => {
-        const result = Reflect.apply(crosshairViewModelResult, undefined, [status, nowSecs, pulseSecs])
-        const pulseDuration = typeof pulseSecs === 'undefined' ? CROSSHAIR_PULSE_SECS : pulseSecs
-        const record = isRecord(status) ? status : undefined
-        const modals: unknown = typeof record === 'undefined' ? undefined : Reflect.get(record, 'modals')
-        const progress: unknown = typeof record === 'undefined' ? undefined : Reflect.get(record, 'breakProgress')
-        const lastHitAtSecs: unknown = typeof record === 'undefined' ? undefined : Reflect.get(record, 'lastHitAtSecs')
-        const validModals = Array.isArray(modals) && Array.from(modals).every((screen) =>
-          typeof screen === 'string' && screenIds.some((knownScreen) => knownScreen === screen),
-        )
-        const validProgress = typeof progress === 'undefined' || isFiniteNumber(progress)
-        const validLastHit = typeof lastHitAtSecs === 'undefined' || isFiniteNumber(lastHitAtSecs)
-        const validNow = isFiniteNumber(nowSecs)
-        const validPulse = isFiniteNumber(pulseDuration) && pulseDuration >= 0
-        const expectedSuccess = record !== undefined && validModals && validProgress && validLastHit && validNow && validPulse
+        const actual = Reflect.apply(crosshairViewModelResult, undefined, [status, nowSecs, pulseSecs])
+        const expected = expectedCrosshairResult(status, nowSecs, pulseSecs)
 
-        expect(Result.isSuccess(result)).toBe(expectedSuccess)
-        if (Result.isFailure(result)) {
-          const failure: unknown = result.failure
-          expect(isRecord(failure)).toBe(true)
-          if (!isRecord(failure)) {
-            return
-          }
-          expect(failure['_tag']).toBe('InvalidCrosshairViewModelInput')
-          expect([
-            'breakProgress',
-            'lastHitAtSecs',
-            'modals',
-            'nowSecs',
-            'pulseSecs',
-            'status',
-          ]).toContain(failure['field'])
-          return
-        }
-
-        if (!Array.isArray(modals)) {
-          return
-        }
-        if (modals.length > 0) {
-          expect(result.success).toBeUndefined()
-          return
-        }
-        const since = isFiniteNumber(nowSecs) && isFiniteNumber(lastHitAtSecs)
-          ? nowSecs - lastHitAtSecs
-          : undefined
-        expect(result.success).toStrictEqual({
-          breakProgress: isFiniteNumber(progress) ? Math.min(1, Math.max(0, progress)) : undefined,
-          hit: typeof since === 'number' && isFiniteNumber(pulseDuration) && since >= 0 && since < pulseDuration,
-        })
+        expect(Result.isFailure(actual) || Result.isSuccess(actual)).toBe(true)
+        expect(actual).toStrictEqual(expected)
       }),
       { numRuns: 100 },
     )

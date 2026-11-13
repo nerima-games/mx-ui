@@ -619,7 +619,7 @@ describe('operable main menu', () => {
       'onOpenSettings',
       'onExit',
     ] as const
-    const callbackValues = fc.oneof(fc.anything(), fc.constant(() => {}))
+    const callbackValues = fc.oneof(fc.anything(), fc.constant(() => 0))
 
     for (const field of fields) {
       fc.assert(
@@ -656,8 +656,7 @@ describe('operable main menu', () => {
           expect(Result.isFailure(view.initializationResult)).toBe(true)
           expect(view.initializationResult).toStrictEqual(expectedFailure)
 
-          let renderResult: unknown
-          expect(() => { renderResult = view.render(model()) }).not.toThrow()
+          const renderResult = view.render(model())
           expect(renderResult).toStrictEqual(expectedFailure)
           expect(callbackInvocations).toBe(0)
           view.destroy()
