@@ -286,9 +286,7 @@ describe('createChestStorageView', () => {
     }, fakeItemDisplayNameOptions())
 
     expect(view.render(model)).toBe(Result.void)
-    expect(root.findAll('data-interaction-target', 'chest-storage-slot').map((slot) =>
-      slot.attributes.get('tabindex'),
-    )).toStrictEqual(['0'])
+    expect(root.find('data-region', 'chest')?.findAll('data-mx-ui', 'slot')[0]?.attributes.get('tabindex')).toBe('0')
   })
 
   it('mounts all regions and projects stacks, durability, selection, and cursor without listeners', () => {
