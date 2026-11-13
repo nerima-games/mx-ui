@@ -2,7 +2,7 @@
 
 import { Result } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSessionOverlays } from '../src/application/session-overlays'
+import { DEFAULT_DEBUG_HUD_SNAPSHOT, createSessionOverlays } from '../src/application/session-overlays'
 
 const activeOverlays = new Set<ReturnType<typeof createSessionOverlays>>()
 
@@ -222,13 +222,38 @@ describe('session overlays', () => {
   })
 
   it.each([
+    { field: 'snapshot', snapshot: null },
+    { field: 'fps', snapshot: { ...DEFAULT_DEBUG_HUD_SNAPSHOT, fps: null } },
+    { field: 'coordinates', snapshot: { ...DEFAULT_DEBUG_HUD_SNAPSHOT, coordinates: null } },
+    { field: 'coordinates', snapshot: { ...DEFAULT_DEBUG_HUD_SNAPSHOT, coordinates: { worldX: 0, worldY: null, worldZ: 0 } } },
+    { field: 'chunk', snapshot: { ...DEFAULT_DEBUG_HUD_SNAPSHOT, chunk: null } },
+  ] as const)('returns a typed update failure for malformed debug HUD input $field', ({ field, snapshot }) => {
+    const parent = document.createElement('main')
+    document.body.appendChild(parent)
+    const overlays = mountOverlays(parent)
+
+    expect(Reflect.apply(overlays.updateDebug, overlays, [snapshot])).toStrictEqual(Result.fail({
+      _tag: 'InvalidSessionOverlayInput',
+      field,
+    }))
+  })
+
+  it.each([
     ['null callback', (options: NonNullable<Parameters<typeof createSessionOverlays>[2]>): boolean =>
       Reflect.set(options, 'onLanguageChange', null)],
     ['null callback result', (options: NonNullable<Parameters<typeof createSessionOverlays>[2]>): boolean => {
       Reflect.set(options, 'onLanguageChange', () => null)
       return true
     }],
-  ] as const)('does not apply a language after an explicit null %s', (_name, configureOptions) => {
+    ['non-record failure payload', (options: NonNullable<Parameters<typeof createSessionOverlays>[2]>): boolean => {
+      Reflect.set(options, 'onLanguageChange', () => Reflect.apply(Result.fail, Result, [null]))
+      return true
+    }],
+    ['unknown result tag', (options: NonNullable<Parameters<typeof createSessionOverlays>[2]>): boolean => {
+      Reflect.set(options, 'onLanguageChange', () => ({ _tag: 'OtherResult' }))
+      return true
+    }],
+  ] as const)('does not apply a language after an invalid host result %s', (_name, configureOptions) => {
     const parent = document.createElement('main')
     document.body.appendChild(parent)
     const options: NonNullable<Parameters<typeof createSessionOverlays>[2]> = {}

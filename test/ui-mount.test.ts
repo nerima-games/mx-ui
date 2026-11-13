@@ -580,6 +580,24 @@ describe('UiMount', () => {
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
+  it.each([null, 7])('returns a typed initialization failure for malformed menu callback containers (%s)', async (menuCallbacks) => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const options = { root: host }
+    expect(Reflect.set(options, 'menuCallbacks', menuCallbacks)).toBe(true)
+    const runtime = makeUiMount(options)
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+    expect(failure).toMatchObject({
+      _tag: 'UiMountError',
+      message: 'Invalid initial main-menu callbacks',
+      cause: { _tag: 'InvalidMainMenuViewInput', field: 'callbacks' },
+    })
+    expect(runtime.current()).toBeUndefined()
+    expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+  })
+
   it('returns a typed initialization failure and cleans up when host settings change before start', async () => {
     const host = document.createElement('main')
     const unrelated = document.createElement('p')

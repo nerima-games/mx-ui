@@ -218,8 +218,8 @@ export function debugOverlayModel(snapshot: DebugOverlaySnapshot): DebugOverlayM
 export function debugOverlayModel(
   snapshot: unknown,
 ): DebugOverlayModel | Result.Result<DebugOverlayModel, InvalidDebugOverlaySnapshot> {
-  const invalidField = invalidSnapshotField(snapshot)
-  if (typeof invalidField !== 'undefined' || !isDebugOverlaySnapshot(snapshot)) {
+  if (!isDebugOverlaySnapshot(snapshot)) {
+    const invalidField = invalidSnapshotField(snapshot)
     return Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: invalidField ?? 'snapshot' })
   }
   return {

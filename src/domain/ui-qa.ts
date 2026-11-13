@@ -228,12 +228,8 @@ export function uiQaStateFromSnapshot(
 export function uiQaStateFromSnapshot(
   snapshot: unknown,
 ): UiQaState | Result.Result<UiQaState, InvalidUiQaSnapshot> {
-  const invalidField = invalidUiQaSnapshotField(snapshot)
-  if (typeof invalidField !== 'undefined') {
-    return invalidUiQaSnapshot(invalidField)
-  }
   if (!isUiQaSnapshot(snapshot)) {
-    return invalidUiQaSnapshot('snapshot')
+    return invalidUiQaSnapshot(invalidUiQaSnapshotField(snapshot) ?? 'snapshot')
   }
 
   return {

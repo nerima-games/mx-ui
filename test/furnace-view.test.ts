@@ -6,6 +6,13 @@ import { fakeDocument, fakeElement } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createFurnaceView', () => {
+  it('returns a typed failure for a null model', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+
+    expect(view.render(null)).toStrictEqual(Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'model' }))
+  })
+
   it('returns typed failures for null slot labels', () => {
     const factory = fakeDocument()
     const view = createFurnaceView(factory, factory.createElement('main'))

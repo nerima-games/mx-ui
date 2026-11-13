@@ -1383,9 +1383,6 @@ const bindMainMenuActions = (context: MainMenuRenderContext): void => {
 }
 
 const invalidExternalRootCallbackField = (callbacks: unknown): string | undefined => {
-  if (typeof callbacks === 'undefined') {
-    return
-  }
   if (callbacks === null || typeof callbacks !== 'object') {
     return 'callbacks'
   }

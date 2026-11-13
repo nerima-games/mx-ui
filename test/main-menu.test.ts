@@ -907,3 +907,86 @@ describe('operable main menu', () => {
     expect(writeNames(mounted.factory.since(before))).toEqual([])
   })
 })
+
+describe('createMainMenuView input guards', () => {
+  it.each([
+    { callbacks: null, label: 'null' },
+    { callbacks: 7, label: 'non-object' },
+  ])('returns a typed initialization failure for $label callback containers', ({ callbacks }) => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = Reflect.apply(createMainMenuView, undefined, [factory, parent, callbacks])
+
+    expect(Reflect.get(view, 'initializationResult')).toStrictEqual(Result.fail({
+      _tag: 'InvalidMainMenuViewInput',
+      field: 'callbacks',
+    }))
+  })
+
+  it.each([
+    { label: 'null', modelValue: null },
+    { label: 'non-object', modelValue: 7 },
+  ])('returns a typed render failure for a $label model', ({ modelValue }) => {
+    const mounted = mount()
+
+    expect(Reflect.apply(mounted.view.render, mounted.view, [modelValue])).toStrictEqual(Result.fail({
+      _tag: 'InvalidMainMenuViewInput',
+      field: 'model',
+    }))
+  })
+
+  it('returns a typed render failure when savedWorlds is not an array', () => {
+    const mounted = mount()
+    const invalidModel = { ...model() }
+    expect(Reflect.set(invalidModel, 'savedWorlds', null)).toBe(true)
+
+    expect(mounted.view.render(invalidModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidMainMenuViewInput',
+      field: 'savedWorlds',
+    }))
+  })
+
+  it.each([
+    { label: 'null', world: null },
+    { label: 'undefined', world: undefined },
+  ])('returns a typed render failure for a $label saved-world entry', ({ world }) => {
+    const mounted = mount()
+    const invalidModel = { ...model() }
+    expect(Reflect.set(invalidModel, 'savedWorlds', [world])).toBe(true)
+
+    expect(mounted.view.render(invalidModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidMainMenuViewInput',
+      field: 'savedWorlds.name',
+    }))
+  })
+})
+
+describe('mainMenuViewModel malformed nested inputs', () => {
+  it('returns a typed failure when the draft is not a record', () => {
+    const invalidState = { ...initialMainMenuState }
+    expect(Reflect.set(invalidState, 'draft', null)).toBe(true)
+
+    expect(mainMenuViewModel(invalidState)).toStrictEqual(Result.fail({
+      _tag: 'InvalidMainMenuViewModelInput',
+      field: 'state',
+    }))
+  })
+
+  it('preserves an explicit undefined world-type entry as a sparse projection', () => {
+    const [firstWorldType] = WORLD_TYPES
+    if (typeof firstWorldType === 'undefined') {
+      expect(WORLD_TYPES).not.toHaveLength(0)
+      return
+    }
+    const worldTypes = [undefined, firstWorldType]
+
+    const viewModel = mainMenuViewModel(initialMainMenuState, [], worldTypes)
+    const projection = '_tag' in viewModel ? undefined : viewModel
+
+    expect('_tag' in viewModel).toBe(false)
+    expect(projection?.worldType).toBe(firstWorldType.value)
+    expect(projection?.worldTypes).toHaveLength(2)
+    expect(projection !== undefined && 0 in projection.worldTypes).toBe(false)
+    expect(projection?.worldTypes.at(1)).toStrictEqual(firstWorldType)
+  })
+})

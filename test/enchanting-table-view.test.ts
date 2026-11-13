@@ -6,6 +6,13 @@ import { fakeDocument, fakeElement } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 describe('createEnchantingTableView', () => {
+  it('returns a typed failure for a null model', () => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+
+    expect(view.render(null)).toStrictEqual(Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'model' }))
+  })
+
   it('returns typed failures for null slot labels and offer rejection reasons', () => {
     const factory = fakeDocument()
     const view = createEnchantingTableView(factory, factory.createElement('main'))

@@ -52,6 +52,32 @@ const expectStatusAndCloseButton = (root: FakeElement): void => {
 }
 
 describe('createChestStorageView', () => {
+  it('returns a typed failure for a null model', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+
+    expect(view.render(null)).toStrictEqual(Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'model' }))
+  })
+
+  it('returns a typed failure for a null grid slot', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const valid = chestStorageViewModel({
+      chest: [],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: undefined,
+      selectedSlot: undefined,
+    })
+    const invalid = { ...valid }
+    expect(Reflect.set(invalid, 'chest', [null])).toBe(true)
+
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'chest.slot',
+    }))
+  })
+
   it('returns typed failures for null cursor and cursor count label', () => {
     const factory = fakeDocument()
     const view = createChestStorageView(factory, factory.createElement('main'))

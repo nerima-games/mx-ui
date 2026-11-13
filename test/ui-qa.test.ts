@@ -99,6 +99,48 @@ describe('UI QA namespace', () => {
     })
   })
 
+  it('rejects malformed toast and debug-overlay structures with typed failures', () => {
+    const malformedToast = { ...toast, unexpected: true }
+    const malformedDebugFields = { ...debugOverlay, unexpected: true }
+    const malformedDebugSchema = { ...debugOverlay, fps: 'fast' }
+    const malformedCoordinates = {
+      ...debugOverlay,
+      coordinates: { worldX: 0, worldY: 64, worldZ: 0, unexpected: true },
+    }
+    const malformedFacing = {
+      ...debugOverlay,
+      facing: { pitchRadians: 0, yawRadians: -1.25, unexpected: true },
+    }
+    const malformedWorldTime = {
+      ...debugOverlay,
+      worldTime: { dayLengthTicks: 24_000, ticks: 0, unexpected: true },
+    }
+
+    expect(projectionFailure(uiQaStateFromSnapshot({ achievementToast: malformedToast }))).toStrictEqual({
+      _tag: 'InvalidUiQaSnapshot',
+      field: 'achievementToast',
+    })
+    for (const malformedState of [
+      malformedDebugFields,
+      malformedDebugSchema,
+      malformedCoordinates,
+      malformedFacing,
+      malformedWorldTime,
+    ]) {
+      expect(projectionFailure(uiQaStateFromSnapshot({ debugOverlay: malformedState }))).toStrictEqual({
+        _tag: 'InvalidUiQaSnapshot',
+        field: 'debugOverlay',
+      })
+    }
+  })
+
+  it('rejects unexpected snapshot keys with a typed failure', () => {
+    expect(projectionFailure(uiQaStateFromSnapshot({ unexpected: true }))).toStrictEqual({
+      _tag: 'InvalidUiQaSnapshot',
+      field: 'snapshot',
+    })
+  })
+
   it('returns a typed failure or schema-valid state for arbitrary snapshots', () => {
     fc.assert(
       fc.property(fc.anything(), (snapshot) => {

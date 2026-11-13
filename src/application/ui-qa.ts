@@ -26,27 +26,26 @@ export type UiQaStateOperation = QaOperation<
 
 type UiQaSnapshotFailure = Readonly<{ readonly _tag: 'InvalidUiQaSnapshot'; readonly field: string }>
 
-const projectUiQaSnapshot = (snapshot: unknown): Effect.Effect<UiQaState, UiQaSnapshotFailure> => {
+const decodeStrict = <CodecType extends Schema.Codec<unknown>>(
+  schema: CodecType,
+  input: unknown,
+): Effect.Effect<CodecType['Type'], Schema.SchemaError, CodecType['DecodingServices']> =>
+  Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })(input)
+
+const projectUiQaSnapshot = (
+  snapshot: unknown,
+): Effect.Effect<UiQaState, Schema.SchemaError | UiQaSnapshotFailure> => {
   const projection = uiQaStateFromSnapshot(snapshot)
   if ('failure' in projection) {
     return Effect.fail({ _tag: 'InvalidUiQaSnapshot', field: projection.failure.field })
   }
-  if ('success' in projection) {
-    return Effect.succeed(projection.success)
-  }
-  return Effect.succeed(projection)
+  return decodeStrict(UiQaStateSchema, projection)
 }
 
 export type UiQaNamespace = QaNamespace<
   Readonly<{ state: UiQaStateOperation }>,
   Readonly<Record<never, never>>
 >
-
-const decodeStrict = <CodecType extends Schema.Codec<unknown>>(
-  schema: CodecType,
-  input: unknown,
-): Effect.Effect<CodecType['Type'], Schema.SchemaError, CodecType['DecodingServices']> =>
-  Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })(input)
 
 export const createUiQaNamespace = (read: () => UiQaSnapshot): UiQaNamespace => {
   const state: UiQaStateOperation = {
@@ -57,7 +56,6 @@ export const createUiQaNamespace = (read: () => UiQaSnapshot): UiQaNamespace => 
       decodeStrict(UiQaStateInputSchema, input).pipe(
         Effect.flatMap(() => Effect.sync(read)),
         Effect.flatMap(projectUiQaSnapshot),
-        Effect.flatMap((projectedState) => decodeStrict(UiQaStateSchema, projectedState)),
       ),
   }
 

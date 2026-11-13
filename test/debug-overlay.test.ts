@@ -167,6 +167,18 @@ describe('debugOverlayModel', () => {
     )
   })
 
+  it('returns a typed failure for non-finite camera pose angles', () => {
+    const invalidPitch = { ...emptySnapshot(), cameraPose: { pitchRadians: Number.NaN, yawRadians: 0 } }
+    const invalidYaw = { ...emptySnapshot(), cameraPose: { pitchRadians: 0, yawRadians: Number.POSITIVE_INFINITY } }
+
+    expect(debugOverlayModel(invalidPitch)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'cameraPose' }),
+    )
+    expect(debugOverlayModel(invalidYaw)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'cameraPose' }),
+    )
+  })
+
   it('rejects null nested frame values with typed failures', () => {
     const noCameraPosition: Record<string, unknown> = {
       ...emptySnapshot(),

@@ -29,6 +29,24 @@ const model = (language: 'en' | 'ja' = 'en') => {
 }
 
 describe('createSettingsView', () => {
+  it('returns typed failures for a null model and non-array binding rows', () => {
+    const factory = fakeDocument()
+    const host = factory.createElement('main')
+    const view = createSettingsView(factory, host)
+
+    expect(Reflect.apply(view.render, view, [null])).toStrictEqual(Result.fail({
+      _tag: 'InvalidSettingsViewInput',
+      field: 'model',
+    }))
+
+    const invalid = { ...model() }
+    expect(Reflect.set(invalid, 'bindingRows', null)).toBe(true)
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidSettingsViewInput',
+      field: 'bindingRows',
+    }))
+  })
+
   it('projects numeric and binding controls from the settings model', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')

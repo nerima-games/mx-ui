@@ -129,6 +129,25 @@ describe('enchantingTableViewModel', () => {
     )
   })
 
+  it('returns typed failures for non-record slots and a malformed offer', () => {
+    const invalidItemSlot = { ...SNAPSHOT, item: null }
+    const invalidLapisSlot = { ...SNAPSHOT, lapis: null }
+    const invalidOffer = {
+      ...SNAPSHOT,
+      offers: [42, SNAPSHOT.offers[1], SNAPSHOT.offers[2]] as const,
+    }
+
+    expect(enchantingTableViewModel(invalidItemSlot)).toEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableSnapshot' }),
+    )
+    expect(enchantingTableViewModel(invalidLapisSlot)).toEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableSnapshot' }),
+    )
+    expect(enchantingTableViewModel(invalidOffer)).toEqual(
+      Result.fail({ _tag: 'InvalidEnchantingTableSnapshot' }),
+    )
+  })
+
   it.each(['enchantmentLevel', 'lapisCost', 'levelCost'] as const)(
     'returns a typed failure for a null %s',
     (field) => {

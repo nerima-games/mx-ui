@@ -1264,12 +1264,6 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
         if (Result.isFailure(result)) {
           return Effect.fail(new UiMountError('Could not initialize mx-ui views', { cause: result.failure }))
         }
-        const mainMenuInitialization = result.success.views.mainMenu.initializationResult
-        if (Result.isFailure(mainMenuInitialization)) {
-          return Effect.fail(new UiMountError('Invalid initial main-menu callbacks', {
-            cause: mainMenuInitialization.failure,
-          }))
-        }
         return Effect.succeed(result.success)
       })
       return yield* Effect.catch(mountResult, (mountError) =>
