@@ -50,30 +50,37 @@ const finiteOrZero = (value: number): number => {
   return ZERO
 }
 
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
 type InvalidBossHealthInput = Readonly<{
   readonly _tag: 'InvalidBossHealthInput'
   readonly field: string
 }>
 
 const isBossHealthSnapshot = (input: unknown): input is BossHealthSnapshot => {
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+  if (!isRecord(input)) {
     return false
   }
-  const snapshot = input as Record<string, unknown>
-  return typeof snapshot['name'] === 'string' &&
-    typeof snapshot['current'] === 'number' &&
-    typeof snapshot['max'] === 'number' &&
-    (snapshot['phase'] === 'circling' ||
-      snapshot['phase'] === 'perching' ||
-      snapshot['phase'] === 'charging' ||
-      snapshot['phase'] === 'dead')
+  return typeof input['name'] === 'string' &&
+    typeof input['current'] === 'number' &&
+    typeof input['max'] === 'number' &&
+    (input['phase'] === 'circling' ||
+      input['phase'] === 'perching' ||
+      input['phase'] === 'charging' ||
+      input['phase'] === 'dead')
 }
 
 const projectBossHealthBarViewModel = (
   snapshot: BossHealthSnapshot,
   language: UiLanguage,
 ): BossHealthBarViewModel => {
-  const name = snapshot.name.trim() || translateUiMessage(language, 'end-hud.boss-default-name')
+  const trimmedName = snapshot.name.trim()
+  const omittedBossName = trimmedName.length === ZERO
+  // Vanilla treats a whitespace-only boss name as omitted and uses the default name.
+  const name = omittedBossName
+    ? translateUiMessage(language, 'end-hud.boss-default-name')
+    : trimmedName
   const max = Math.max(ZERO, finiteOrZero(snapshot.max))
   const current = clamp(finiteOrZero(snapshot.current), ZERO, max)
   const hidden = snapshot.phase === 'dead' || max === ZERO || current === ZERO

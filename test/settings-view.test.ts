@@ -149,10 +149,18 @@ describe('createSettingsView', () => {
     view.render(viewModel)
     const before = factory.mark()
 
-    const result = view.render({
+    const [firstBindingRow] = viewModel.bindingRows
+    if (typeof firstBindingRow === 'undefined') {
+      expect(viewModel.bindingRows).not.toHaveLength(0)
+      return
+    }
+    const invalidBindingRow = { ...firstBindingRow }
+    expect(Reflect.set(invalidBindingRow, 'action', null)).toBe(true)
+    const invalidViewModel = {
       ...viewModel,
-      bindingRows: [...viewModel.bindingRows, { action: null, code: undefined }],
-    } as typeof viewModel)
+      bindingRows: [...viewModel.bindingRows, invalidBindingRow],
+    }
+    const result = view.render(invalidViewModel)
 
     expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsViewInput', field: 'bindingRows.action' }))
     expect(factory.since(before)).toStrictEqual([])

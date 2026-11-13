@@ -358,7 +358,7 @@ export const updateIconElement = (
   state: IconState,
   healthCondition?: HealthCondition,
 ): Result.Result<void, Readonly<{ _tag: 'InvalidIconElementInput'; field: 'healthCondition' }>> => {
-  if ((healthCondition as unknown) === null) {
+  if (Object.is(healthCondition, null)) {
     return Result.fail({ _tag: 'InvalidIconElementInput', field: 'healthCondition' })
   }
   const previousCondition = previousConditionFor(healthCondition)

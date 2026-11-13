@@ -687,11 +687,13 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     const factory = fakeDocument()
     const slot = createSlotElement(factory, 0)
 
-    const result = setSlotFocusTarget(slot, {
-      columns: null as unknown as number,
+    const focusTarget = {
+      columns: 1,
       group: 'test-slots',
       index: 0,
-    })
+    }
+    expect(Reflect.set(focusTarget, 'columns', null)).toBe(true)
+    const result = setSlotFocusTarget(slot, focusTarget)
 
     expect(Result.isFailure(result)).toBe(true)
     if (Result.isFailure(result)) {
@@ -742,17 +744,45 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       })
     }
 
-    const focusResult = view.setKeyboardFocus(null as unknown as number)
+    const focusResult = Reflect.apply(view.setKeyboardFocus, view, [null])
     expect(Result.isFailure(focusResult)).toBe(true)
     if (Result.isFailure(focusResult)) {
       expect(focusResult.failure).toStrictEqual({ _tag: 'InvalidHudFocusInput', field: 'index' })
     }
   })
 
+  it('returns a typed failure when a hotbar item display name is null', () => {
+    const { view } = mount()
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [firstSlot] = model.hotbar
+    if (typeof firstSlot === 'undefined') {
+      expect(firstSlot).not.toBeUndefined()
+      return
+    }
+    expect(firstSlot.itemId).toBe('stone')
+    expect(firstSlot.itemDisplayName).toBeDefined()
+    expect(Reflect.set(firstSlot, 'itemDisplayName', null)).toBe(true)
+
+    const result = view.render(model)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({
+        _tag: 'InvalidHudViewInput',
+        field: 'hotbar.itemDisplayName',
+      })
+    }
+  })
+
   it('returns a typed failure when a public icon update receives a null health condition', () => {
     const icon = createIconElement(fakeDocument(), 'shank')
 
-    const result = updateIconElement(icon, 'full', null as unknown as 'poison')
+    const result = Reflect.apply(updateIconElement, undefined, [icon, 'full', null])
 
     expect(Result.isFailure(result)).toBe(true)
     if (Result.isFailure(result)) {

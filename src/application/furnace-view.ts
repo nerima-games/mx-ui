@@ -55,6 +55,11 @@ const invalidFurnaceViewInputField = (
     return 'interaction'
   }
   if (model.slots.some((slot) =>
+    typeof slot !== 'undefined' && Reflect.get(slot, 'itemDisplayName') === null,
+  )) {
+    return 'slots[].itemDisplayName'
+  }
+  if (model.slots.some((slot) =>
     typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null,
   )) {
     return 'slots[].countLabel'

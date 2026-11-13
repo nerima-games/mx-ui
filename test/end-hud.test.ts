@@ -35,6 +35,13 @@ describe('End HUD primitives', () => {
     })
   })
 
+  it('uses the vanilla default boss name for a whitespace-only name', () => {
+    expect(bossHealthBarViewModel({ current: 10, max: 20, name: ' \t\n ', phase: 'charging' })).toMatchObject({
+      accessibleLabel: 'Ender Dragon: 10 of 20 health, charging.',
+      name: 'Ender Dragon',
+    })
+  })
+
   it('returns typed failures for explicit null boss-name and language inputs', () => {
     const snapshot = { current: 10, max: 20, name: null, phase: 'charging' }
 

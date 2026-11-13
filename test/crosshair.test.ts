@@ -104,7 +104,7 @@ describe('when the crosshair is drawn, and when it is not', () => {
     expect(root.attributes.has('hidden')).toBe(true)
     view.render(model)
 
-    const result = view.render(null as unknown as CrosshairViewModel)
+    const result = Reflect.apply(view.render, view, [null])
 
     expect(Result.isFailure(result)).toBe(true)
     if (Result.isFailure(result)) {

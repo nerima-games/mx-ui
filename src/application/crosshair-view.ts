@@ -475,7 +475,7 @@ export const createCrosshairView = (
     render: (
       model: CrosshairViewModel | undefined,
     ): Result.Result<void, Readonly<{ _tag: 'InvalidCrosshairViewInput'; field: 'model' }>> => {
-      if ((model as unknown) === null) {
+      if (Object.is(model, null)) {
         return Result.fail({ _tag: 'InvalidCrosshairViewInput', field: 'model' })
       }
       if (typeof model === 'undefined') {

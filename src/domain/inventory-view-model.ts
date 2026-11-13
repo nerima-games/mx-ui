@@ -192,7 +192,9 @@ const armourSlotsFrom = (armour: ReadonlyArray<SlotWithInvalidCount> | undefined
   return armour
 }
 
-const hasInvalidInventorySlotCount = (snapshot: InventorySnapshotInputWithInvalidCount): boolean => {
+const hasValidInventorySlotCounts = (
+  snapshot: InventorySnapshotInputWithInvalidCount,
+): snapshot is InventorySnapshot => {
   const craftingSlots = craftingSlotsFrom(snapshot.crafting)
   const armourSlots = armourSlotsFrom(snapshot.armour)
   const slots: ReadonlyArray<SlotWithInvalidCount | null> = [
@@ -202,7 +204,7 @@ const hasInvalidInventorySlotCount = (snapshot: InventorySnapshotInputWithInvali
     snapshot.offhand,
     ...craftingSlots,
   ]
-  return slots.some((slot) => slot !== null && typeof slot !== 'undefined' && typeof slot.count !== 'number')
+  return !slots.some((slot) => slot !== null && typeof slot !== 'undefined' && typeof slot.count !== 'number')
 }
 
 // ---------------------------------------------------------------------------
@@ -518,16 +520,15 @@ export function inventoryViewModel(
   snapshot: InventorySnapshot | InventorySnapshotInputWithInvalidCount,
   itemDisplayNameOptions?: ItemDisplayNameOptions,
 ): InventoryViewModel | Result.Result<InventoryViewModel, InvalidInventorySlotCountFailure> {
-  if (hasInvalidInventorySlotCount(snapshot)) {
+  if (!hasValidInventorySlotCounts(snapshot)) {
     return Result.fail({ _tag: 'InvalidSlotCount' })
   }
-  const validSnapshot = snapshot as InventorySnapshot
-  const { slots } = validSnapshot.inventory
+  const { slots } = snapshot.inventory
   const selectedHotbarIndex = clampIndex(
-    validSnapshot.selectedHotbarIndex,
+    snapshot.selectedHotbarIndex,
     HOTBAR_SLOT_COUNT - LAST_INDEX_OFFSET,
   )
-  const durability = validSnapshot.durabilityBySlot
+  const durability = snapshot.durabilityBySlot
 
   const regions: Array<SlotRegion> = [
     projectRegion({
@@ -548,15 +549,15 @@ export function inventoryViewModel(
       selectedIndex: NO_SELECTION,
       slots: fixedSlots(slots, HOTBAR_SLOT_COUNT, INVENTORY_MAIN_SLOT_COUNT),
     }),
-    armourRegion(validSnapshot.armour, itemDisplayNameOptions),
-    offhandRegion(validSnapshot.offhand, itemDisplayNameOptions),
-    craftingRegion(validSnapshot.crafting, itemDisplayNameOptions),
+    armourRegion(snapshot.armour, itemDisplayNameOptions),
+    offhandRegion(snapshot.offhand, itemDisplayNameOptions),
+    craftingRegion(snapshot.crafting, itemDisplayNameOptions),
   ]
 
   return {
-    carried: carriedView(validSnapshot.carried, itemDisplayNameOptions),
-    crafting: craftingOutcome(validSnapshot.crafting, itemDisplayNameOptions),
-    mergeTargets: mergeTargetsOf(validSnapshot.mergeableSlotIndices),
+    carried: carriedView(snapshot.carried, itemDisplayNameOptions),
+    crafting: craftingOutcome(snapshot.crafting, itemDisplayNameOptions),
+    mergeTargets: mergeTargetsOf(snapshot.mergeableSlotIndices),
     regions,
   }
 }

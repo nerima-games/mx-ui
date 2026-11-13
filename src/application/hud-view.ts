@@ -155,7 +155,11 @@ export type HudView = {
   /** Project a model. Idempotent: the same model twice mutates nothing the second time. */
   readonly render: (
     model: HudViewModel,
-  ) => Result.Result<void, Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' }>>
+  ) =>
+    Result.Result<
+      void,
+      Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' | 'hotbar.itemDisplayName' }>
+    >
   /** Remove the optional host respawn listener when this view leaves its mount. */
   readonly dispose: () => void
   /**
@@ -1067,9 +1071,15 @@ const renderHudFrame = (
   factory: DomElementFactory,
   cells: HudCells,
   model: HudViewModel,
-): Result.Result<void, Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' }>> => {
+): Result.Result<
+  void,
+  Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' | 'hotbar.itemDisplayName' }>
+> => {
   if (model.hotbar.some((slot) => Reflect.get(slot, 'countLabel') === null)) {
     return Result.fail({ _tag: 'InvalidHudViewInput', field: 'hotbar.countLabel' })
+  }
+  if (model.hotbar.some((slot) => Reflect.get(slot, 'itemDisplayName') === null)) {
+    return Result.fail({ _tag: 'InvalidHudViewInput', field: 'hotbar.itemDisplayName' })
   }
   renderHudVitals(factory, cells, model)
   renderHudSupplements(factory, cells, model)
@@ -1118,7 +1128,7 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
   const applyKeyboardFocus = (
     index?: number,
   ): Result.Result<void, Readonly<{ _tag: 'InvalidHudFocusInput'; field: 'index' }>> => {
-    if ((index as unknown) === null) {
+    if (Object.is(index, null)) {
       return Result.fail({ _tag: 'InvalidHudFocusInput', field: 'index' })
     }
     const focusedIndex = focusedIndexFor(index)
@@ -1146,8 +1156,10 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
 
   return {
     dispose,
-    render: (model: HudViewModel): Result.Result<void, Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' }>> =>
-      renderHudFrame(factory, cells, model),
+    render: (model: HudViewModel): Result.Result<
+      void,
+      Readonly<{ _tag: 'InvalidHudViewInput'; field: 'hotbar.countLabel' | 'hotbar.itemDisplayName' }>
+    > => renderHudFrame(factory, cells, model),
     root,
     setKeyboardFocus: applyKeyboardFocus,
     setMotion: applyMotion,

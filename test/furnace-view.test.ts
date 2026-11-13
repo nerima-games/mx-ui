@@ -16,14 +16,42 @@ describe('createFurnaceView', () => {
       cookProgress: 0,
       burnProgress: 0,
     })
-    const invalid = {
-      ...valid,
-      slots: valid.slots.map((slot) => ({ ...slot, countLabel: null })),
-    } as unknown as typeof valid
+    const invalid = { ...valid }
+    const invalidSlots = valid.slots.map((slot) => ({ ...slot, countLabel: null }))
+    expect(Reflect.set(invalid, 'slots', invalidSlots)).toBe(true)
 
     expect(view.render(invalid)).toStrictEqual(Result.fail({
       _tag: 'InvalidFurnaceViewInput',
       field: 'slots[].countLabel',
+    }))
+  })
+
+  it('returns a typed failure when a nonempty slot item display name is null', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const valid = furnaceViewModel({
+      input: { itemId: 'sand', count: 1 },
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    }, fakeItemDisplayNameOptions())
+    const input = valid.slots.find((slot) => slot.id === 'input')
+    if (typeof input === 'undefined') {
+      expect(input).toBeDefined()
+      return
+    }
+    expect(input.itemId).toBe('sand')
+    expect(input.itemDisplayName).toBeDefined()
+    const invalidInput = { ...input }
+    expect(Reflect.set(invalidInput, 'itemDisplayName', null)).toBe(true)
+    const invalid = { ...valid }
+    const invalidSlots = valid.slots.map((slot) => slot.id === 'input' ? invalidInput : slot)
+    expect(Reflect.set(invalid, 'slots', invalidSlots)).toBe(true)
+
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidFurnaceViewInput',
+      field: 'slots[].itemDisplayName',
     }))
   })
 

@@ -249,7 +249,7 @@ const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | und
   })
 }
 
-const invalidGridCountLabelField = (model: ChestStorageViewModel): string | undefined => {
+const invalidGridSlotField = (model: ChestStorageViewModel): string | undefined => {
   const regions = [
     ['chest', model.chest],
     ['playerMain', model.playerMain],
@@ -259,6 +259,9 @@ const invalidGridCountLabelField = (model: ChestStorageViewModel): string | unde
     for (const slot of slots) {
       if (slot === null) {
         return `${region}.slot`
+      }
+      if (typeof slot !== 'undefined' && Reflect.get(slot, 'itemDisplayName') === null) {
+        return `${region}.itemDisplayName`
       }
       if (typeof slot !== 'undefined' && Reflect.get(slot, 'countLabel') === null) {
         return `${region}.countLabel`
@@ -274,6 +277,9 @@ const invalidChestStorageCursorField = (model: ChestStorageViewModel): string | 
   }
   if (typeof model.cursor !== 'undefined' && Reflect.get(model.cursor, 'countLabel') === null) {
     return 'cursor.countLabel'
+  }
+  if (typeof model.cursor !== 'undefined' && Reflect.get(model.cursor, 'itemDisplayName') === null) {
+    return 'cursor.itemDisplayName'
   }
   return
 }
@@ -294,9 +300,9 @@ const invalidChestStorageViewInputField = (
   model: ChestStorageViewModel,
   interaction: ChestStorageInteractionView | null | undefined,
 ): string | undefined => {
-  const invalidCountLabelField = invalidGridCountLabelField(model)
-  if (typeof invalidCountLabelField !== 'undefined') {
-    return invalidCountLabelField
+  const invalidSlotField = invalidGridSlotField(model)
+  if (typeof invalidSlotField !== 'undefined') {
+    return invalidSlotField
   }
   if (interaction === null) {
     return 'interaction'

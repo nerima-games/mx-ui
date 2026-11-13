@@ -273,24 +273,58 @@ describe('main menu domain', () => {
     const viewModel = mainMenuViewModel(initialMainMenuState, [], sparseWorldTypes)
 
     expect(viewModel.worldType).toBe(laterWorldType.value)
+    expect(viewModel.worldTypes).toHaveLength(2)
+    expect(0 in viewModel.worldTypes).toBe(false)
     expect(viewModel.worldTypes.at(1)).toEqual(laterWorldType)
   })
 
-  it('returns typed failures for explicit null world-type inputs', () => {
+  it('returns typed failures for null and malformed host list entries', () => {
     const invalidState = {
       ...initialMainMenuState,
       draft: { ...initialMainMenuState.draft, worldType: null },
     }
-    const invalidWorldTypes: ReadonlyArray<unknown> = [{
+    const invalidSavedWorld = {
+      sessionId: asWorldId('invalid-world'),
+      name: null,
+    }
+    const invalidWorldType = {
       value: null,
       label: { en: asUiMessageText('Standard'), ja: asUiMessageText('標準') },
-    }]
+    }
+    const invalidUnreadableSave = { ...UNREADABLE_SAVE, repair: null }
 
     expect(mainMenuViewModel(invalidState)).toEqual(
       Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'state' }),
     )
-    expect(mainMenuViewModel(initialMainMenuState, [], invalidWorldTypes)).toEqual(
+    expect(mainMenuViewModel(initialMainMenuState, [null])).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'savedWorlds' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [invalidSavedWorld])).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'savedWorlds' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [], [null])).toEqual(
       Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'worldTypes' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [], [invalidWorldType])).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'worldTypes' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [], WORLD_TYPES, [null])).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'unreadableSaves' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [], WORLD_TYPES, [invalidUnreadableSave])).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'unreadableSaves' }),
+    )
+  })
+
+  it('returns typed failures for explicit null in each host list option', () => {
+    expect(mainMenuViewModel(initialMainMenuState, null)).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'savedWorlds' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [], null)).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'worldTypes' }),
+    )
+    expect(mainMenuViewModel(initialMainMenuState, [], WORLD_TYPES, null)).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'unreadableSaves' }),
     )
   })
 
@@ -524,14 +558,19 @@ describe('operable main menu', () => {
 
   it('returns a typed failure when a saved-world name is null', () => {
     const mounted = mount()
-    const invalidWorld = {
+    const invalidWorld: SavedWorld = {
       sessionId: asWorldId('null-name-world'),
-      name: null,
-    } as unknown as SavedWorld
+      name: asWorldNameText('valid-name'),
+    }
+    expect(Reflect.set(invalidWorld, 'name', null)).toBe(true)
+    const invalidModel = {
+      ...model(openPanel(initialMainMenuState, 'load-world')),
+      savedWorlds: [invalidWorld],
+    }
 
-    expect(
-      mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), [invalidWorld])),
-    ).toEqual(Result.fail({ _tag: 'InvalidMainMenuViewInput', field: 'savedWorlds.name' }))
+    expect(mounted.view.render(invalidModel)).toEqual(
+      Result.fail({ _tag: 'InvalidMainMenuViewInput', field: 'savedWorlds.name' }),
+    )
     expect(mounted.root.findAll('data-mx-ui', 'menu-world-row')).toHaveLength(0)
   })
 

@@ -17,13 +17,13 @@ describe('createAnvilView', () => {
       rejectionReason: undefined,
       secondaryInput: undefined,
     })
-    const invalidSlot = {
-      ...valid,
-      slots: valid.slots.map((slot) =>
-        slot?.id === 'primary-input' ? { ...slot, countLabel: null } : slot,
-      ),
-    } as unknown as typeof valid
-    const invalidRejection = { ...valid, rejectionReason: null } as unknown as typeof valid
+    const invalidSlot = { ...valid }
+    const invalidSlots = valid.slots.map((slot) =>
+      slot?.id === 'primary-input' ? { ...slot, countLabel: null } : slot,
+    )
+    expect(Reflect.set(invalidSlot, 'slots', invalidSlots)).toBe(true)
+    const invalidRejection = { ...valid }
+    expect(Reflect.set(invalidRejection, 'rejectionReason', null)).toBe(true)
 
     expect(view.render(invalidSlot)).toStrictEqual(Result.fail({
       _tag: 'InvalidAnvilViewInput',
@@ -32,6 +32,38 @@ describe('createAnvilView', () => {
     expect(view.render(invalidRejection)).toStrictEqual(Result.fail({
       _tag: 'InvalidAnvilViewInput',
       field: 'rejectionReason',
+    }))
+  })
+
+  it('returns a typed failure when a nonempty slot item display name is null', () => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const valid = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: { count: 1, itemId: 'iron_sword' },
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    }, fakeItemDisplayNameOptions())
+    const primaryInput = valid.slots.find((slot) => slot.id === 'primary-input')
+    if (typeof primaryInput === 'undefined') {
+      expect(primaryInput).toBeDefined()
+      return
+    }
+    expect(primaryInput.itemId).toBe('iron_sword')
+    expect(primaryInput.itemDisplayName).toBeDefined()
+    const invalidPrimaryInput = { ...primaryInput }
+    expect(Reflect.set(invalidPrimaryInput, 'itemDisplayName', null)).toBe(true)
+    const invalid = { ...valid }
+    const invalidSlots = valid.slots.map((slot) =>
+      slot.id === 'primary-input' ? invalidPrimaryInput : slot,
+    )
+    expect(Reflect.set(invalid, 'slots', invalidSlots)).toBe(true)
+
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidAnvilViewInput',
+      field: 'slots[].itemDisplayName',
     }))
   })
 

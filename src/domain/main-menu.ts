@@ -1,4 +1,10 @@
-import { DEFAULT_UI_LANGUAGE, type UiLanguage, type UiMessageText, translateUiMessage } from './ui-language.js'
+import {
+  DEFAULT_UI_LANGUAGE,
+  type UiLanguage,
+  type UiMessageText,
+  UiMessageTextSchema,
+  translateUiMessage,
+} from './ui-language.js'
 import { Result, Schema } from 'effect'
 import { SaveSliceIdSchema, SaveVersionSchema, WorldIdSchema } from '@nerima-games/mc-kernel'
 import {
@@ -43,6 +49,11 @@ export type WorldTypeOption = {
   readonly value: WorldTypeId
   readonly label: Readonly<Record<UiLanguage, UiMessageText>>
 }
+
+const WorldTypeOptionSchema = Schema.Struct({
+  value: WorldTypeIdSchema,
+  label: Schema.Struct({ en: UiMessageTextSchema, ja: UiMessageTextSchema }),
+})
 
 export type WorldSeed = { readonly kind: 'random' } | { readonly kind: 'fixed'; readonly value: WorldSeedValue }
 
@@ -195,6 +206,11 @@ export type SavedWorld = {
   readonly name: WorldNameText
 }
 
+const SavedWorldSchema = Schema.Struct({
+  sessionId: WorldIdSchema,
+  name: WorldNameTextSchema,
+})
+
 /** Local structural mirror of mc-save 0.8.0 until L5 aligns on kernel 0.17.0. */
 export type UnreadableSave = {
   readonly _tag: 'SaveDecodeError'
@@ -215,6 +231,27 @@ type UnreadableSaveRepair = {
   readonly lastHealthyRevisionAvailable: boolean
   readonly discardableChunkKeys: ReadonlyArray<WorldId>
 }
+
+const UnreadableSaveRecordSchema = Schema.Union([
+  Schema.Struct({ _tag: Schema.Literals(['Save']), key: WorldIdSchema }),
+  Schema.Struct({ _tag: Schema.Literals(['Head']), key: WorldIdSchema }),
+  Schema.Struct({ _tag: Schema.Literals(['Chunk']), key: WorldIdSchema }),
+])
+
+const UnreadableSaveRepairSchema = Schema.Struct({
+  lastHealthyRevisionAvailable: Schema.Boolean,
+  discardableChunkKeys: Schema.Array(WorldIdSchema),
+})
+
+const UnreadableSaveSchema = Schema.Struct({
+  _tag: Schema.Literals(['SaveDecodeError']),
+  key: WorldIdSchema,
+  format: SaveSliceIdSchema,
+  version: SaveVersionSchema,
+  reason: UiMessageTextSchema,
+  record: UnreadableSaveRecordSchema,
+  repair: UnreadableSaveRepairSchema,
+})
 
 export type CreateWorldRequest = {
   readonly name: WorldNameText | UiMessageText
@@ -297,59 +334,123 @@ type MainMenuViewModelValidationArguments = readonly [unknown, unknown, unknown,
 type ValidMainMenuViewModelArguments = readonly [
   MainMenuState,
   ReadonlyArray<SavedWorld>,
-  ReadonlyArray<WorldTypeOption | undefined>,
+  ReadonlyArray<WorldTypeOption>,
   ReadonlyArray<UnreadableSave>,
 ]
 
 const isRecord = (input: unknown): input is Record<string, unknown> =>
   input !== null && typeof input === 'object' && !Array.isArray(input)
 
-const isMainMenuState = (input: unknown): input is MainMenuState => {
+const isMenuPanel = (input: unknown): input is MenuPanel => MENU_PANELS.some((panel) => panel === input)
+
+const isGameMode = (input: unknown): input is GameMode => GAME_MODES.some((mode) => mode === input)
+
+const isGameDifficulty = (input: unknown): input is GameDifficulty =>
+  GAME_DIFFICULTIES.some((difficulty) => difficulty === input)
+
+const decodeMainMenuState = (
+  input: unknown,
+): Result.Result<MainMenuState, Readonly<{ _tag: 'InvalidMainMenuState' }>> => {
   if (!isRecord(input)) {
-    return false
+    return Result.fail({ _tag: 'InvalidMainMenuState' })
   }
   const { draft, panel } = input
   if (!isRecord(draft)) {
-    return false
+    return Result.fail({ _tag: 'InvalidMainMenuState' })
   }
-  const { name, seed, mode, difficulty, worldType } = draft
-  return MENU_PANELS.includes(panel as MenuPanel) &&
-    typeof name === 'string' &&
-    typeof seed === 'string' &&
-    GAME_MODES.includes(mode as GameMode) &&
-    GAME_DIFFICULTIES.includes(difficulty as GameDifficulty) &&
-    typeof worldType === 'string'
+  const name = decodeWorldNameText(draft['name'])
+  const seed = decodeWorldSeedText(draft['seed'])
+  const worldType = decodeWorldTypeId(draft['worldType'])
+  const mode = draft['mode']
+  const difficulty = draft['difficulty']
+  if (
+    !isMenuPanel(panel) ||
+    Result.isFailure(name) ||
+    Result.isFailure(seed) ||
+    !isGameMode(mode) ||
+    !isGameDifficulty(difficulty) ||
+    Result.isFailure(worldType)
+  ) {
+    return Result.fail({ _tag: 'InvalidMainMenuState' })
+  }
+  return Result.succeed({
+    panel,
+    draft: {
+      name: name.success,
+      seed: seed.success,
+      mode,
+      difficulty,
+      worldType: worldType.success,
+    },
+  })
 }
 
-const invalidWorldTypeOption = (input: unknown): boolean =>
-  typeof input !== 'undefined' &&
-  (!isRecord(input) ||
-    typeof input['value'] !== 'string' ||
-    !isRecord(input['label']) ||
-    typeof input['label']['en'] !== 'string' ||
-    typeof input['label']['ja'] !== 'string')
+type InvalidMainMenuArrayInput = Readonly<{ _tag: 'InvalidMainMenuArrayInput' }>
+
+const decodeMainMenuArray = <Source extends Schema.Codec<unknown>>(
+  input: unknown,
+  schema: Source,
+): Result.Result<ReadonlyArray<Source['Type']>, InvalidMainMenuArrayInput> => {
+  if (!Array.isArray(input)) {
+    return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
+  }
+  const values: Array<Source['Type']> = []
+  for (let index = 0; index < input.length; index += 1) {
+    const decoded = Schema.decodeUnknownResult(schema)(input[index])
+    if (Result.isFailure(decoded)) {
+      return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
+    }
+    values.push(decoded.success)
+  }
+  return Result.succeed(values)
+}
+
+const decodeWorldTypeOptions = (
+  input: unknown,
+): Result.Result<ReadonlyArray<WorldTypeOption>, InvalidMainMenuArrayInput> => {
+  if (!Array.isArray(input)) {
+    return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
+  }
+  const options = new Array<WorldTypeOption>(input.length)
+  for (let index = 0; index < input.length; index += 1) {
+    const option: unknown = input[index]
+    if (typeof option === 'undefined') {
+      continue
+    }
+    const decoded = Schema.decodeUnknownResult(WorldTypeOptionSchema)(option)
+    if (Result.isFailure(decoded)) {
+      return Result.fail({ _tag: 'InvalidMainMenuArrayInput' })
+    }
+    options[index] = decoded.success
+  }
+  return Result.succeed(options)
+}
 
 const validateMainMenuViewModelArguments = (
   args: MainMenuViewModelValidationArguments,
 ): Result.Result<ValidMainMenuViewModelArguments, InvalidMainMenuViewModelInput> => {
-  const [state, savedWorlds, worldTypes, unreadableSaves] = args
-  if (!isMainMenuState(state)) {
+  const [stateInput, savedWorldsInput, worldTypesInput, unreadableSavesInput] = args
+  const state = decodeMainMenuState(stateInput)
+  if (Result.isFailure(state)) {
     return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'state' })
   }
-  if (!Array.isArray(savedWorlds)) {
+  const savedWorlds = decodeMainMenuArray(savedWorldsInput, SavedWorldSchema)
+  if (Result.isFailure(savedWorlds)) {
     return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'savedWorlds' })
   }
-  if (!Array.isArray(worldTypes) || worldTypes.some(invalidWorldTypeOption)) {
+  const worldTypes = decodeWorldTypeOptions(worldTypesInput)
+  if (Result.isFailure(worldTypes)) {
     return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'worldTypes' })
   }
-  if (!Array.isArray(unreadableSaves)) {
+  const unreadableSaves = decodeMainMenuArray(unreadableSavesInput, UnreadableSaveSchema)
+  if (Result.isFailure(unreadableSaves)) {
     return Result.fail({ _tag: 'InvalidMainMenuViewModelInput', field: 'unreadableSaves' })
   }
   return Result.succeed([
-    state,
-    savedWorlds as ReadonlyArray<SavedWorld>,
-    worldTypes as ReadonlyArray<WorldTypeOption | undefined>,
-    unreadableSaves as ReadonlyArray<UnreadableSave>,
+    state.success,
+    savedWorlds.success,
+    worldTypes.success,
+    unreadableSaves.success,
   ])
 }
 
@@ -374,7 +475,7 @@ const projectMainMenuViewModel = ([
     worldName: worldNameLabel(state.draft),
     worldNameInput: state.draft.name,
     worldType: worldTypeId(selectedWorldType?.value ?? firstAvailableWorldType?.value ?? defaultWorldType),
-    worldTypes: worldTypeOptions as ReadonlyArray<WorldTypeOption>,
+    worldTypes: worldTypeOptions,
   }
 }
 

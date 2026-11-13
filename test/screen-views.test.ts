@@ -213,10 +213,12 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       })
     }
 
-    const nullStatusResult = view.render(base, {
+    const nullStatusInteraction: NonNullable<Parameters<typeof view.render>[1]> = {
       focused: { kind: 'crafting-output' },
-      status: null as unknown as string,
-    })
+      status: '',
+    }
+    expect(Reflect.set(nullStatusInteraction, 'status', null)).toBe(true)
+    const nullStatusResult = view.render(base, nullStatusInteraction)
     expect(Result.isFailure(nullStatusResult)).toBe(true)
     if (Result.isFailure(nullStatusResult)) {
       expect(nullStatusResult.failure).toStrictEqual({
@@ -225,7 +227,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       })
     }
 
-    const nullInteractionResult = view.render(base, null as unknown as Parameters<typeof view.render>[1])
+    const nullInteractionResult = Reflect.apply(view.render, view, [base, null])
     expect(Result.isFailure(nullInteractionResult)).toBe(true)
     if (Result.isFailure(nullInteractionResult)) {
       expect(nullInteractionResult.failure).toStrictEqual({
@@ -233,6 +235,63 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         field: 'interaction',
       })
     }
+  })
+
+  it('returns typed failures when carried, output, or region item display names are null', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const options = fakeItemDisplayNameOptions()
+
+    const carriedModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 12),
+    }, options)
+    const carried = carriedModel.carried
+    if (typeof carried === 'undefined') {
+      expect(carried).toBeDefined()
+      return
+    }
+    expect(Reflect.set(carried, 'itemDisplayName', null)).toBe(true)
+    expect(view.render(carriedModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.itemDisplayName',
+    }))
+
+    const outputModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      crafting: {
+        gridWidth: 2,
+        grid: [undefined, undefined, undefined, undefined],
+        result: { _tag: 'Match', output: testItemStack('stick', 4) },
+      },
+    }, options)
+    if (outputModel.crafting.kind !== 'match') {
+      expect(outputModel.crafting.kind).toBe('match')
+      return
+    }
+    expect(Reflect.set(outputModel.crafting.output, 'itemDisplayName', null)).toBe(true)
+    expect(view.render(outputModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'crafting.output.itemDisplayName',
+    }))
+
+    const inventorySlots = [...emptyInventorySnapshot.inventory.slots]
+    inventorySlots[0] = testItemStack('iron_helmet', 1)
+    const regionModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      inventory: { ...emptyInventorySnapshot.inventory, slots: inventorySlots },
+    }, options)
+    const hotbar = regionModel.regions.find((region) => region.id === 'hotbar')
+    if (typeof hotbar === 'undefined' || hotbar.kind !== 'slots' || typeof hotbar.slots[0] === 'undefined') {
+      expect(hotbar).toBeDefined()
+      return
+    }
+    expect(Reflect.set(hotbar.slots[0], 'itemDisplayName', null)).toBe(true)
+    expect(view.render(regionModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'regions.itemDisplayName',
+    }))
   })
 
   it('REGRESSION: an unknown region draws NO slots — it draws the reason', () => {

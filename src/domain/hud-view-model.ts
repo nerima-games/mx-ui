@@ -66,6 +66,20 @@ type InvalidCountCarriedSlot = Readonly<{
 }>
 type InvalidHudSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
 
+const hasValidHotbarSlotCounts = (
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot | InvalidCountCarriedSlot>,
+): hotbarSlots is ReadonlyArray<InventoryCarriedSlot> => {
+  for (const slot of hotbarSlots) {
+    if (typeof slot === 'undefined') {
+      continue
+    }
+    if (Object.is(slot, null) || typeof slot !== 'object' || typeof slot.count !== 'number') {
+      return false
+    }
+  }
+  return true
+}
+
 export type HudViewModel = {
   readonly hearts: ReadonlyArray<IconState>
   readonly shanks: ReadonlyArray<IconState>
@@ -269,9 +283,8 @@ export function hudViewModel(
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot | InvalidCountCarriedSlot>,
   selection: number | HudViewModelOptions,
 ): HudViewModel | Result.Result<HudViewModel, InvalidHudSlotCountFailure> {
-  if (hotbarSlots.some((slot) => typeof slot !== 'undefined' && typeof slot.count !== 'number')) {
+  if (!hasValidHotbarSlotCounts(hotbarSlots)) {
     return Result.fail({ _tag: 'InvalidSlotCount' })
   }
-  const validHotbarSlots = hotbarSlots as ReadonlyArray<InventoryCarriedSlot>
-  return projectHudViewModel(vitals, validHotbarSlots, selection)
+  return projectHudViewModel(vitals, hotbarSlots, selection)
 }

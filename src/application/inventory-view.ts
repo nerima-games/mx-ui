@@ -579,19 +579,25 @@ type InvalidInventoryViewInput = Readonly<{
   _tag: 'InvalidInventoryViewInput'
   field:
     | 'carried.countLabel'
+    | 'carried.itemDisplayName'
     | 'crafting.output.countLabel'
+    | 'crafting.output.itemDisplayName'
     | 'interaction'
     | 'interaction.status'
     | 'regions.countLabel'
+    | 'regions.itemDisplayName'
 }>
 
 const hasNullCountLabel = (slot: unknown): boolean =>
   typeof slot === 'object' && slot !== null && Reflect.get(slot, 'countLabel') === null
 
+const hasNullItemDisplayName = (slot: unknown): boolean =>
+  typeof slot === 'object' && slot !== null && Reflect.get(slot, 'itemDisplayName') === null
+
 const invalidInventoryInteractionField = (
   interaction: InventoryInteractionView | undefined,
 ): InvalidInventoryViewInput | undefined => {
-  if ((interaction as unknown) === null) {
+  if (Object.is(interaction, null)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'interaction' }
   }
   if (typeof interaction !== 'undefined' && Reflect.get(interaction, 'status') === null) {
@@ -615,6 +621,23 @@ const invalidInventoryCountLabelField = (model: InventoryViewModel): InvalidInve
   return
 }
 
+const invalidInventoryItemDisplayNameField = (
+  model: InventoryViewModel,
+): InvalidInventoryViewInput | undefined => {
+  if (hasNullItemDisplayName(model.carried)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'carried.itemDisplayName' }
+  }
+  if (model.crafting.kind === 'match' && hasNullItemDisplayName(model.crafting.output)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'crafting.output.itemDisplayName' }
+  }
+  for (const region of model.regions) {
+    if (region.kind === 'slots' && region.slots.some(hasNullItemDisplayName)) {
+      return { _tag: 'InvalidInventoryViewInput', field: 'regions.itemDisplayName' }
+    }
+  }
+  return
+}
+
 const invalidInventoryViewInput = (
   model: InventoryViewModel,
   interaction: InventoryInteractionView | undefined,
@@ -622,6 +645,10 @@ const invalidInventoryViewInput = (
   const interactionField = invalidInventoryInteractionField(interaction)
   if (typeof interactionField !== 'undefined') {
     return interactionField
+  }
+  const itemDisplayNameField = invalidInventoryItemDisplayNameField(model)
+  if (typeof itemDisplayNameField !== 'undefined') {
+    return itemDisplayNameField
   }
   return invalidInventoryCountLabelField(model)
 }

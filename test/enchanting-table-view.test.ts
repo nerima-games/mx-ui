@@ -14,14 +14,12 @@ describe('createEnchantingTableView', () => {
       lapis: undefined,
       offers: [undefined, undefined, undefined],
     })
-    const invalidSlot = {
-      ...valid,
-      slots: valid.slots.map((slot) => ({ ...slot, countLabel: null })),
-    } as unknown as typeof valid
-    const invalidRejection = {
-      ...valid,
-      offers: valid.offers.map((offer) => ({ ...offer, rejectionReason: null })),
-    } as unknown as typeof valid
+    const invalidSlot = { ...valid }
+    const invalidSlots = valid.slots.map((slot) => ({ ...slot, countLabel: null }))
+    expect(Reflect.set(invalidSlot, 'slots', invalidSlots)).toBe(true)
+    const invalidRejection = { ...valid }
+    const invalidOffers = valid.offers.map((offer) => ({ ...offer, rejectionReason: null }))
+    expect(Reflect.set(invalidRejection, 'offers', invalidOffers)).toBe(true)
 
     expect(view.render(invalidSlot)).toStrictEqual(Result.fail({
       _tag: 'InvalidEnchantingTableViewInput',
@@ -30,6 +28,33 @@ describe('createEnchantingTableView', () => {
     expect(view.render(invalidRejection)).toStrictEqual(Result.fail({
       _tag: 'InvalidEnchantingTableViewInput',
       field: 'offers[].rejectionReason',
+    }))
+  })
+
+  it('returns a typed failure when a nonempty slot item display name is null', () => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+    const valid = enchantingTableViewModel({
+      item: { itemId: 'diamond_sword', count: 1 },
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    }, fakeItemDisplayNameOptions())
+    const itemSlot = valid.slots.find((slot) => slot.id === 'item')
+    if (typeof itemSlot === 'undefined') {
+      expect(itemSlot).toBeDefined()
+      return
+    }
+    expect(itemSlot.itemId).toBe('diamond_sword')
+    expect(itemSlot.itemDisplayName).toBeDefined()
+    const invalidItemSlot = { ...itemSlot }
+    expect(Reflect.set(invalidItemSlot, 'itemDisplayName', null)).toBe(true)
+    const invalid = { ...valid }
+    const invalidSlots = valid.slots.map((slot) => slot.id === 'item' ? invalidItemSlot : slot)
+    expect(Reflect.set(invalid, 'slots', invalidSlots)).toBe(true)
+
+    expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'slots[].itemDisplayName',
     }))
   })
 
