@@ -585,6 +585,7 @@ type InvalidInventoryViewInput = Readonly<{
     | 'interaction'
     | 'interaction.focused'
     | 'interaction.status'
+    | 'model'
     | 'regions.countLabel'
     | 'regions.itemDisplayName'
 }>
@@ -940,8 +941,15 @@ export const createInventoryView = (
 ): InventoryView => {
   const elements = buildInventoryViewElements(factory, parent, actions)
   return {
-    render: (model: InventoryViewModel, interaction?: InventoryInteractionView) =>
-      renderInventoryView({ actions, elements, interaction, model }),
+    render: (
+      model: InventoryViewModel,
+      interaction?: InventoryInteractionView,
+    ): Result.Result<void, InvalidInventoryViewInput> => {
+      if (!isRecord(model)) {
+        return Result.fail({ _tag: 'InvalidInventoryViewInput', field: 'model' })
+      }
+      return renderInventoryView({ actions, elements, interaction, model })
+    },
     root: elements.root,
   }
 }

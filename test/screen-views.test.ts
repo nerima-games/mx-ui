@@ -170,6 +170,21 @@ describe('captions are rendered as TEXT', () => {
 })
 
 describe('the inventory renderer keeps `unknown` a different screen from `empty`', () => {
+  it('returns typed failures for null and non-record root models without rendering', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const before = factory.mark()
+
+    for (const invalidModel of [null, 7, []]) {
+      expect(Reflect.apply(view.render, view, [invalidModel])).toStrictEqual(Result.fail({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'model',
+      }))
+    }
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
   it('returns typed failures for null slot labels and interaction inputs', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
