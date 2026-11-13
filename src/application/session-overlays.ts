@@ -17,6 +17,7 @@ import {
 } from '../domain/settings-view-model.js'
 import { type TextCell, textCell } from './dom-write.js'
 import {
+  DEFAULT_UI_LANGUAGE,
   type UiLanguage,
   type UiLanguageFailure,
   type UiMessageKey,
@@ -62,6 +63,10 @@ export type UiSettingsCallbacks = {
 }
 
 export type SessionKeyDelegate = (event: KeyboardEvent) => boolean
+
+export type SessionOverlayInitializationFailure =
+  | SettingsViewModelFailure
+  | { readonly _tag: 'InvalidInitialDebugSnapshot' }
 
 export const DEFAULT_UI_SETTINGS: UiSettings = {
   fieldOfView: 70,
@@ -132,7 +137,7 @@ export type SessionOverlays = {
   readonly root: HTMLElement
   readonly debugHud: HTMLElement
   readonly settingsDialog: HTMLElement
-  readonly initializationResult: Result.Result<SettingsSnapshot, SettingsViewModelFailure>
+  readonly initializationResult: Result.Result<SettingsSnapshot, SessionOverlayInitializationFailure>
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
   readonly updateSettings: (settings: UiSettings) => Result.Result<SettingsSnapshot, SettingsViewModelFailure>
   readonly updateSettingsSnapshot: (
@@ -314,6 +319,7 @@ const createOverlayElements = (document: Document, parent: HTMLElement): Overlay
 type SettingsControllerState = {
   activeSettings: SettingsSnapshot
   activeLanguage: UiLanguage
+  initialLanguageFailure: SettingsViewModelFailure | null
   view: SettingsView<BindableAction> | null
 }
 
@@ -466,8 +472,12 @@ const initializeSettingsController = (
   options: CreateSessionOverlaysOptions,
   state: SettingsControllerState,
   updateSettingsSnapshot: SettingsSnapshotUpdater,
-): Result.Result<SettingsSnapshot, SettingsViewModelFailure> =>
-  updateSettingsSnapshot(initialSettingsSnapshot(options), state.activeLanguage)
+): Result.Result<SettingsSnapshot, SettingsViewModelFailure> => {
+  if (state.initialLanguageFailure !== null) {
+    return Result.fail(state.initialLanguageFailure)
+  }
+  return updateSettingsSnapshot(initialSettingsSnapshot(options), state.activeLanguage)
+}
 
 type SettingsController = {
   readonly view: SettingsView<BindableAction>
@@ -482,11 +492,19 @@ const createSettingsControllerState = (
   dialog: HTMLElement,
   options: CreateSessionOverlaysOptions,
 ): SettingsControllerState => {
-  const initialLanguage = options.initialLanguage ?? 'en'
+  const initialLanguageResult = options.initialLanguage === undefined
+    ? Result.succeed(DEFAULT_UI_LANGUAGE)
+    : decodeUiLanguage(options.initialLanguage)
+  const initialLanguage = Result.isFailure(initialLanguageResult)
+    ? DEFAULT_UI_LANGUAGE
+    : initialLanguageResult.success
   applyValidatedUiLanguage(dialog, initialLanguage)
   return {
     activeLanguage: initialLanguage,
     activeSettings: DEFAULT_SETTINGS,
+    initialLanguageFailure: Result.isFailure(initialLanguageResult)
+      ? { _tag: 'InvalidSettingsLanguage' }
+      : null,
     view: null,
   }
 }
@@ -621,7 +639,14 @@ export const createSessionOverlays = (
   options: CreateSessionOverlaysOptions = {},
 ): SessionOverlays => {
   const elements = createOverlayElements(document, parent)
-  updateDebugHud(elements.debugHudText, options.initialDebug ?? DEFAULT_DEBUG_HUD_SNAPSHOT)
+  const initialDebugResult = options.initialDebug === undefined
+    ? Result.succeed(DEFAULT_DEBUG_HUD_SNAPSHOT)
+    : options.initialDebug === null
+      ? Result.fail({ _tag: 'InvalidInitialDebugSnapshot' as const })
+      : Result.succeed(options.initialDebug)
+  if (Result.isSuccess(initialDebugResult)) {
+    updateDebugHud(elements.debugHudText, initialDebugResult.success)
+  }
   const settings = createSettingsController(document, elements.dialog, options)
   const toggleDebug = (): void => {
     elements.debugHud.hidden = !elements.debugHud.hidden
@@ -643,7 +668,7 @@ export const createSessionOverlays = (
       document.removeEventListener('keydown', onKeyDown)
       elements.root.remove()
     },
-    initializationResult: settings.initializationResult,
+    initializationResult: Result.flatMap(initialDebugResult, () => settings.initializationResult),
     openSettings: settings.openSettings,
     root: elements.root,
     settingsDialog: elements.dialog,

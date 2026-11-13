@@ -493,6 +493,30 @@ describe('UiMount', () => {
     expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
   })
 
+  it.each([
+    ['initialDebugSnapshot', { _tag: 'InvalidInitialDebugSnapshot' }],
+    ['initialLanguage', { _tag: 'InvalidSettingsLanguage' }],
+  ] as const)(
+    'returns a typed initialization failure for explicit null in %s',
+    async (optionKey, typedFailure) => {
+      const host = document.createElement('main')
+      document.body.appendChild(host)
+      const options = { root: host }
+      expect(Reflect.set(options, optionKey, null)).toBe(true)
+      const runtime = makeUiMount(options)
+
+      const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+      expect(failure).toMatchObject({
+        _tag: 'UiMountError',
+        message: 'Could not initialize mx-ui views',
+        cause: typedFailure,
+      })
+      expect(runtime.current()).toBeUndefined()
+      expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+    },
+  )
+
   it.each(['initialSettings', 'initialSettingsSnapshot'] as const)(
     'rejects explicit null in %s instead of substituting defaults',
     async (settingKey) => {

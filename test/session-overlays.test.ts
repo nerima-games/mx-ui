@@ -196,6 +196,25 @@ describe('session overlays', () => {
     expect(onSettingsChange).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['initialDebug', { _tag: 'InvalidInitialDebugSnapshot' }],
+    ['initialLanguage', { _tag: 'InvalidSettingsLanguage' }],
+  ] as const)(
+    'returns a typed failure for explicit null in %s',
+    (optionKey, failure) => {
+      const parent = document.createElement('main')
+      document.body.appendChild(parent)
+      const options: Parameters<typeof createSessionOverlays>[2] = {}
+      expect(Reflect.set(options, optionKey, null)).toBe(true)
+      const overlays = mountOverlays(parent, options)
+
+      expect(overlays.initializationResult).toEqual(Result.fail(failure))
+      if (optionKey === 'initialDebug') {
+        expect(overlays.debugHud.textContent).toBe('')
+      }
+    },
+  )
+
   it('does not restore focus to a host control removed while settings were open', () => {
     const parent = document.createElement('main')
     document.body.appendChild(parent)

@@ -15,6 +15,7 @@ import {
   DEFAULT_UI_SETTINGS,
   type DebugHudSnapshot,
   type SessionOverlays,
+  type SessionOverlayInitializationFailure,
   type UiSettings,
   type UiSettingsCallbacks,
   createSessionOverlays,
@@ -104,7 +105,7 @@ type SettingsPreferenceFailure = Schema.SchemaError | ColorVisionFilterFailure |
 type SettingsOperationFailure = SettingsViewModelFailure | SettingsPreferenceFailure
 type InitialSettingsFailure = SettingsOperationFailure | { readonly tag: 'InvalidInitialUiScale' }
 type SettingsLanguageFailure = UiLanguageFailure | SettingsViewModelFailure
-type MountInitializationFailure = SettingsPreferenceFailure | SettingsViewModelFailure
+type MountInitializationFailure = SettingsPreferenceFailure | SessionOverlayInitializationFailure
 
 const noSettingsPreferenceApplication = (): Result.Result<boolean, SettingsPreferenceFailure> => Result.succeed(true)
 
@@ -556,7 +557,9 @@ const createMountState = (options: UiMountOptions): Readonly<{
   const session: UiMountSession = {
     applySettingsPreferences: noSettingsPreferenceApplication,
     colorVisionController: null,
-    debugSnapshot: options.initialDebugSnapshot ?? DEFAULT_DEBUG_HUD_SNAPSHOT,
+    debugSnapshot: options.initialDebugSnapshot === undefined
+      ? DEFAULT_DEBUG_HUD_SNAPSHOT
+      : options.initialDebugSnapshot,
     hudModel: hudViewModel(
       spawnSnapshot,
       emptyInventorySnapshot.inventory.slots.slice(HOTBAR_START_INDEX, HOTBAR_SLOT_COUNT),
@@ -567,7 +570,9 @@ const createMountState = (options: UiMountOptions): Readonly<{
     inventoryModel: inventoryViewModel(emptyInventorySnapshot),
     inventoryOpen: false,
     inventoryRestoreFocus: null,
-    language: options.initialLanguage ?? DEFAULT_UI_LANGUAGE,
+    language: options.initialLanguage === undefined
+      ? DEFAULT_UI_LANGUAGE
+      : options.initialLanguage,
     motionController: null,
     mounted: null,
     settings: initialSettingsState.settings,
@@ -1089,7 +1094,7 @@ const createInitialAchievementToast = (document: Document, ownedRoot: HTMLElemen
 
 const createInitializedSessionOverlays = (
   context: CreateInitialOverlaysContext,
-): Result.Result<SessionOverlays, SettingsViewModelFailure> => {
+): Result.Result<SessionOverlays, SessionOverlayInitializationFailure> => {
   const overlays = createSessionOverlays(context.document, context.ownedRoot, {
     callbacks: createMountedSettingsCallbacks(context.session, context.settingsOperations, context.options.settingsCallbacks),
     delegateKeyDown: context.handleInventoryKey,
