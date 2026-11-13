@@ -328,7 +328,6 @@ type UiCleanupFailure = {
 }
 
 const NO_CLEANUP_FAILURES = 0
-const SINGLE_CLEANUP_FAILURE = 1
 
 type UiCleanupOperation = {
   readonly name: string
@@ -359,12 +358,6 @@ const finishUiCleanup = (
 ): Result.Result<void, UiMountError> => {
   if (failures.length === NO_CLEANUP_FAILURES) {
     return Result.void
-  }
-  if (failures.length === SINGLE_CLEANUP_FAILURE) {
-    const firstFailure = failures.at(NO_CLEANUP_FAILURES)
-    if (typeof firstFailure !== 'undefined') {
-      return Result.fail(firstFailure.error)
-    }
   }
   return Result.fail(new UiMountError(message, { cause: { cleanupErrors: failures } }))
 }

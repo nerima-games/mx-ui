@@ -643,7 +643,11 @@ describe('UiMount', () => {
 
       expect(failure).toBeInstanceOf(UiMountError)
       expect(failure['_tag']).toBe('UiMountError')
-      expect(failure.cause).toBe(cleanupError)
+      expect(failure.cause).toMatchObject({
+        cleanupErrors: [
+          { operation: 'motionController', error: { _tag: 'UiMountError', cause: cleanupError } },
+        ],
+      })
       expect(runtime.current()).toBeUndefined()
       expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
       expect(host.contains(unrelated)).toBe(true)
