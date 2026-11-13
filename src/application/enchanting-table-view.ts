@@ -285,10 +285,7 @@ type PreparedEnchantingRender = Readonly<{
   focusedTarget: EnchantingOperationTarget
 }>
 
-const invalidEnchantingCollectionField = (model: unknown): string | undefined => {
-  if (!isRecord(model)) {
-    return 'model'
-  }
+const invalidEnchantingCollectionField = (model: Record<string, unknown>): string | undefined => {
   if (!Array.isArray(Reflect.get(model, 'slots'))) {
     return 'slots'
   }
@@ -299,14 +296,11 @@ const invalidEnchantingCollectionField = (model: unknown): string | undefined =>
 }
 
 const prepareEnchantingRenderAfterCollectionCheck = (
-  model: EnchantingTableViewModel | null,
+  model: EnchantingTableViewModel,
   interaction: EnchantingInteractionView | null | undefined,
 ): Result.Result<PreparedEnchantingRender, EnchantingTableViewInputFailure> => {
   if (interaction === null) {
     return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'interaction' })
-  }
-  if (model === null || typeof model !== 'object' || Array.isArray(model)) {
-    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'model' })
   }
   const invalidField = invalidEnchantingTableViewInputField(model, interaction)
   if (typeof invalidField !== 'undefined') {
@@ -323,6 +317,9 @@ const prepareEnchantingRender = (
   model: EnchantingTableViewModel | null,
   interaction: EnchantingInteractionView | null | undefined,
 ): Result.Result<PreparedEnchantingRender, EnchantingTableViewInputFailure> => {
+  if (!isRecord(model)) {
+    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'model' })
+  }
   const collectionField = invalidEnchantingCollectionField(model)
   if (typeof collectionField !== 'undefined') {
     return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: collectionField })

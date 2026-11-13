@@ -34,7 +34,12 @@ import { describe, expect, it } from 'vitest'
 import type { CaptionEvent } from '@nerima-games/mc-audio'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
 import { captionLines, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
-import { emptyInventorySnapshot, inventoryViewModel, type SlotRegion } from '../src/domain/inventory-view-model'
+import {
+  emptyInventorySnapshot,
+  inventoryViewModel,
+  type InventoryViewModel,
+  type SlotRegion,
+} from '../src/domain/inventory-view-model'
 import { itemStack as makeItemStack } from '@nerima-games/mc-sim'
 import { Result } from 'effect'
 import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
@@ -201,6 +206,17 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       { regions: sparseRegions, carried: undefined, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
       { regions: [null], carried: undefined, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
       {
+        regions: [{
+          id: 'main',
+          kind: 'unknown',
+          why: 'inventory projection unavailable',
+          whyMessage: { key: 'inventory.empty', values: { invalid: null } },
+        }],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: unknownMergeTargets,
+      },
+      {
         regions: [{ kind: 'slots', id: 'hotbar', columns: 9, slots: sparseSlots }],
         carried: undefined,
         crafting: unknownCrafting,
@@ -213,6 +229,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
         mergeTargets: unknownMergeTargets,
       },
       { regions: [], carried: undefined, crafting: unknownCrafting, mergeTargets: null },
+      { regions: [], carried: undefined, crafting: unknownCrafting, mergeTargets: { kind: 'unrecognized' } },
       {
         regions: [],
         carried: undefined,
@@ -366,7 +383,35 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       _tag: 'InvalidInventoryViewInput',
       field: 'interaction.focused',
     }))
+    expect(Reflect.apply(view.render, view, [base, { status: '', focused: { kind: 'unrecognized' } }])).toStrictEqual(
+      Result.fail({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'interaction.focused',
+      }),
+    )
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('renders a host-provided numeric durability value in a public inventory model', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const model = inventoryViewModel(emptyInventorySnapshot)
+    const slot: SlotView = {
+      countLabel: '1',
+      durabilityPercent: 0.25,
+      empty: false,
+      index: 0,
+      itemId: 'iron_pickaxe',
+      selected: false,
+    }
+    const validModel = {
+      ...model,
+      regions: [{ columns: 9, id: 'hotbar', kind: 'slots', slots: [slot] }],
+    } satisfies InventoryViewModel
+
+    expect(view.render(validModel)).toBe(Result.void)
+    expect(fakeElement(view.root).find('data-mx-ui', 'slot-durability')?.attributes.has('hidden')).toBe(false)
   })
 
   it('returns typed failures when carried, output, or region item display names are null', () => {
@@ -424,6 +469,45 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       _tag: 'InvalidInventoryViewInput',
       field: 'regions.itemDisplayName',
     }))
+  })
+
+  it('rejects malformed item-display Results and accepts supported unknown-region message values', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 1),
+    }, fakeItemDisplayNameOptions())
+    if (typeof base.carried === 'undefined') {
+      expect(base.carried).toBeDefined()
+      return
+    }
+
+    const invalidCarried = { ...base.carried }
+    expect(Reflect.set(invalidCarried, 'itemDisplayName', { language: 'en', result: null })).toBe(true)
+    const invalidModel = { ...base, carried: invalidCarried }
+    const before = factory.mark()
+    expect(view.render(invalidModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.itemDisplayName',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    const messageValues = {
+      text: 'unavailable',
+      count: 2,
+      active: true,
+      nested: { key: 'inventory.empty' },
+    }
+    const unknownRegion = {
+      id: 'main',
+      kind: 'unknown',
+      why: 'inventory projection unavailable',
+      whyMessage: { key: 'inventory.empty', values: messageValues },
+    }
+    const validMessageModel = { ...base, regions: [unknownRegion] }
+    expect(Reflect.apply(view.render, view, [validMessageModel])).toBe(Result.void)
   })
 
   it('REGRESSION: an unknown region draws NO slots — it draws the reason', () => {

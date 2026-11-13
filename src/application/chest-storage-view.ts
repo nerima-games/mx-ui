@@ -353,10 +353,7 @@ const invalidGridRegionField = (region: string, slots: unknown): string | undefi
   return
 }
 
-const invalidGridSlotField = (model: unknown): string | undefined => {
-  if (!isRecord(model)) {
-    return 'model'
-  }
+const invalidGridSlotField = (model: Record<string, unknown>): string | undefined => {
   const regions = [
     ['chest', Reflect.get(model, 'chest')],
     ['playerMain', Reflect.get(model, 'playerMain')],
@@ -423,10 +420,7 @@ const invalidChestStorageCursorStateField = (cursor: Record<string, unknown>): s
   return
 }
 
-const invalidChestStorageCursorField = (model: unknown): string | undefined => {
-  if (!isRecord(model)) {
-    return 'model'
-  }
+const invalidChestStorageCursorField = (model: Record<string, unknown>): string | undefined => {
   const cursor = Reflect.get(model, 'cursor')
   if (typeof cursor === 'undefined') {
     return
@@ -472,6 +466,9 @@ const invalidChestStorageViewInputField = (
   model: unknown,
   interaction: unknown,
 ): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
   const invalidSlotField = invalidGridSlotField(model)
   if (typeof invalidSlotField !== 'undefined') {
     return invalidSlotField

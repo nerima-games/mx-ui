@@ -113,21 +113,21 @@ describe('createEnchantingTableView', () => {
       offers: [undefined, undefined, undefined],
     })
     const invalidCountLabel = { ...valid, slots: valid.slots.map((slot) => ({ ...slot })) }
-    const firstSlot = invalidCountLabel.slots[0]
+    const [firstSlot] = invalidCountLabel.slots
     expect(firstSlot).toBeDefined()
     if (typeof firstSlot === 'undefined') {
       return
     }
     expect(Reflect.set(firstSlot, 'countLabel', 7)).toBe(true)
     const invalidItemDisplayName = { ...valid, slots: valid.slots.map((slot) => ({ ...slot })) }
-    const firstDisplayNameSlot = invalidItemDisplayName.slots[0]
+    const [firstDisplayNameSlot] = invalidItemDisplayName.slots
     expect(firstDisplayNameSlot).toBeDefined()
     if (typeof firstDisplayNameSlot === 'undefined') {
       return
     }
     expect(Reflect.set(firstDisplayNameSlot, 'itemDisplayName', 7)).toBe(true)
     const invalidRejectionReason = { ...valid, offers: valid.offers.map((offer) => ({ ...offer })) }
-    const firstOffer = invalidRejectionReason.offers[0]
+    const [firstOffer] = invalidRejectionReason.offers
     expect(firstOffer).toBeDefined()
     if (typeof firstOffer === 'undefined') {
       return
@@ -167,6 +167,58 @@ describe('createEnchantingTableView', () => {
       field: 'interaction',
     }))
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('returns a typed failure for a malformed nested item-display Result and skips absent slots and offers', () => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+    const valid = enchantingTableViewModel({
+      item: { itemId: 'diamond_sword', count: 1 },
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    }, fakeItemDisplayNameOptions())
+    const [itemSlot] = valid.slots
+    if (typeof itemSlot === 'undefined') {
+      expect(itemSlot).toBeDefined()
+      return
+    }
+
+    const invalidItemSlot = { ...itemSlot }
+    expect(Reflect.set(invalidItemSlot, 'itemDisplayName', { language: 'en', result: null })).toBe(true)
+    const invalidModel = { ...valid }
+    expect(Reflect.set(invalidModel, 'slots', [invalidItemSlot, ...valid.slots.slice(1)])).toBe(true)
+    expect(view.render(invalidModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidEnchantingTableViewInput',
+      field: 'slots[].itemDisplayName',
+    }))
+
+    expect(Reflect.apply(view.render, view, [{ slots: [undefined], offers: [undefined] }])).toBe(Result.void)
+  })
+
+  it.each([
+    { language: 'ja', expected: Result.void },
+    { language: 'fr', expected: Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'slots[].itemDisplayName' }) },
+  ])('accepts Japanese and rejects unsupported item display languages: $language', ({ language, expected }) => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+    const model = enchantingTableViewModel({
+      item: { itemId: 'diamond_sword', count: 1 },
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    }, fakeItemDisplayNameOptions())
+    const itemSlot = model.slots.find((slot) => slot.id === 'item')
+    expect(itemSlot).toBeDefined()
+    if (typeof itemSlot === 'undefined') {
+      return
+    }
+    const localizedItemSlot = { ...itemSlot }
+    expect(Reflect.set(localizedItemSlot, 'itemDisplayName', { language, result: Result.succeed('sword') })).toBe(true)
+    const localizedModel = { ...model }
+    expect(Reflect.set(localizedModel, 'slots', model.slots.map((slot) =>
+      slot.id === 'item' ? localizedItemSlot : slot,
+    ))).toBe(true)
+
+    expect(view.render(localizedModel)).toStrictEqual(expected)
   })
 
   it('projects five operation targets, costs, rejection, and accessibility without listeners', () => {

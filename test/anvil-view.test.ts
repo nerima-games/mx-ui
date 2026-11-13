@@ -153,6 +153,35 @@ describe('createAnvilView', () => {
     expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
   })
 
+  it.each([
+    { language: 'ja', expected: Result.void },
+    { language: 'fr', expected: Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'slots[].itemDisplayName' }) },
+  ])('accepts Japanese and rejects unsupported item display languages: $language', ({ language, expected }) => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const model = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: { count: 1, itemId: 'iron_sword' },
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    }, fakeItemDisplayNameOptions())
+    const slot = model.slots.find((candidate) => candidate.id === 'primary-input')
+    expect(slot).toBeDefined()
+    if (typeof slot === 'undefined') {
+      return
+    }
+    const localizedSlot = { ...slot }
+    expect(Reflect.set(localizedSlot, 'itemDisplayName', { language, result: Result.succeed('sword') })).toBe(true)
+    const localizedModel = { ...model }
+    expect(Reflect.set(localizedModel, 'slots', model.slots.map((candidate) =>
+      candidate.id === 'primary-input' ? localizedSlot : candidate,
+    ))).toBe(true)
+
+    expect(view.render(localizedModel)).toStrictEqual(expected)
+  })
+
   it('returns typed failures instead of stringifying malformed slot, rejection, and interaction text', () => {
     const factory = fakeDocument()
     const view = createAnvilView(factory, factory.createElement('main'))

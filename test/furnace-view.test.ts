@@ -137,6 +137,34 @@ describe('createFurnaceView', () => {
     expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
   })
 
+  it.each([
+    { language: 'ja', expected: Result.void },
+    { language: 'fr', expected: Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'slots[].itemDisplayName' }) },
+  ])('accepts Japanese and rejects unsupported item display languages: $language', ({ language, expected }) => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const model = furnaceViewModel({
+      input: { itemId: 'sand', count: 1 },
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    }, fakeItemDisplayNameOptions())
+    const slot = model.slots.find((candidate) => candidate.id === 'input')
+    expect(slot).toBeDefined()
+    if (typeof slot === 'undefined') {
+      return
+    }
+    const localizedSlot = { ...slot }
+    expect(Reflect.set(localizedSlot, 'itemDisplayName', { language, result: Result.succeed('sand') })).toBe(true)
+    const localizedModel = { ...model }
+    expect(Reflect.set(localizedModel, 'slots', model.slots.map((candidate) =>
+      candidate.id === 'input' ? localizedSlot : candidate,
+    ))).toBe(true)
+
+    expect(view.render(localizedModel)).toStrictEqual(expected)
+  })
+
   it('returns typed failures instead of stringifying malformed slot and interaction text', () => {
     const factory = fakeDocument()
     const view = createFurnaceView(factory, factory.createElement('main'))

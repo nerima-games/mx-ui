@@ -949,6 +949,32 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     }))
   })
 
+  it.each([
+    { language: 'ja', expected: Result.void },
+    { language: 'fr', expected: Result.fail({ _tag: 'InvalidHudViewInput', field: 'hotbar.itemDisplayName' }) },
+  ])('accepts Japanese and rejects unsupported item display languages: $language', ({ language, expected }) => {
+    const { view } = mount()
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [firstSlot] = model.hotbar
+    expect(firstSlot).toBeDefined()
+    if (typeof firstSlot === 'undefined') {
+      return
+    }
+    const localizedSlot = { ...firstSlot }
+    expect(Reflect.set(localizedSlot, 'itemDisplayName', { language, result: Result.succeed('stone') })).toBe(true)
+    const localizedModel = { ...model }
+    expect(Reflect.set(localizedModel, 'hotbar', model.hotbar.map((slot) =>
+      slot === firstSlot ? localizedSlot : slot,
+    ))).toBe(true)
+
+    expect(view.render(localizedModel)).toStrictEqual(expected)
+  })
+
   it('exposes named native hotbar radios without renderer-owned listeners', () => {
     const { view, root, parent } = mount()
     view.render(hudViewModel(SPAWN_VITALS))

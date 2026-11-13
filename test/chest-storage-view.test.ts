@@ -6,7 +6,7 @@ import {
   chestStorageViewModel,
   type ChestStorageSlotSnapshot,
 } from '../src/domain/chest-storage-view-model'
-import { fakeDocument, fakeElement, type FakeElement } from './fake-dom'
+import { fakeDocument, fakeElement, type FakeElement, writeNames } from './fake-dom'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 
 /**
@@ -73,6 +73,28 @@ describe('createChestStorageView', () => {
     expect(Reflect.set(invalid, 'chest', [null])).toBe(true)
 
     expect(view.render(invalid)).toStrictEqual(Result.fail({
+      _tag: 'InvalidChestStorageViewInput',
+      field: 'chest.slot',
+    }))
+  })
+
+  it('treats an omitted grid slot as absent and rejects a non-record slot', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const valid = chestStorageViewModel({
+      chest: [],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: undefined,
+      selectedSlot: undefined,
+    })
+    const omittedSlot = { ...valid }
+    expect(Reflect.set(omittedSlot, 'chest', [undefined])).toBe(true)
+    const malformedSlot = { ...valid }
+    expect(Reflect.set(malformedSlot, 'chest', [7])).toBe(true)
+
+    expect(view.render(omittedSlot)).toBe(Result.void)
+    expect(view.render(malformedSlot)).toStrictEqual(Result.fail({
       _tag: 'InvalidChestStorageViewInput',
       field: 'chest.slot',
     }))
@@ -300,6 +322,76 @@ describe('createChestStorageView', () => {
       _tag: 'InvalidChestStorageViewInput',
       field: 'chest',
     }))
+  })
+
+  it('returns exact typed failures for malformed display-name Results and cursor fields', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const valid = chestStorageViewModel({
+      chest: [{ item: 'minecraft:arrow', count: 1, durability: undefined }],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: { item: 'minecraft:iron_pickaxe', count: 1, durability: 0.38 },
+      selectedSlot: undefined,
+    }, fakeItemDisplayNameOptions())
+    const [slot] = valid.chest
+    const { cursor } = valid
+    if (typeof slot === 'undefined' || typeof cursor === 'undefined') {
+      expect(slot).toBeDefined()
+      expect(cursor).toBeDefined()
+      return
+    }
+
+    const acceptedFailureSlot = { ...slot }
+    expect(Reflect.set(acceptedFailureSlot, 'itemDisplayName', {
+      language: 'en',
+      result: Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
+    })).toBe(true)
+    const acceptedFailureModel = { ...valid }
+    expect(Reflect.set(acceptedFailureModel, 'chest', [acceptedFailureSlot])).toBe(true)
+    expect(view.render(acceptedFailureModel)).toBe(Result.void)
+
+    const before = factory.mark()
+    const invalidDisplayNames: ReadonlyArray<unknown> = [
+      7,
+      { language: 'en', result: null },
+      { language: 'en', result: { _tag: 'Failure', failure: 7 } },
+      { language: 'en', result: { _tag: 'Failure', failure: { _tag: 7 } } },
+      { language: 'en', result: { _tag: 'Failure', failure: { _tag: 'UnknownFailure' } } },
+      { language: 'en', result: { _tag: 'Success', success: 7 } },
+      { language: 'en', result: { _tag: 'Unknown' } },
+      { language: 'fr', result: Result.succeed('arrow') },
+    ]
+    for (const itemDisplayName of invalidDisplayNames) {
+      const invalidSlot = { ...slot }
+      expect(Reflect.set(invalidSlot, 'itemDisplayName', itemDisplayName)).toBe(true)
+      const invalidModel = { ...valid }
+      expect(Reflect.set(invalidModel, 'chest', [invalidSlot])).toBe(true)
+      expect(view.render(invalidModel)).toStrictEqual(Result.fail({
+        _tag: 'InvalidChestStorageViewInput',
+        field: 'chest.itemDisplayName',
+      }))
+    }
+
+    const assertCursorFailure = (invalidCursor: unknown, field: string): void => {
+      const invalidModel = { ...valid }
+      expect(Reflect.set(invalidModel, 'cursor', invalidCursor)).toBe(true)
+      expect(view.render(invalidModel)).toStrictEqual(Result.fail({
+        _tag: 'InvalidChestStorageViewInput',
+        field,
+      }))
+    }
+    assertCursorFailure({ ...cursor, stack: null }, 'cursor')
+    assertCursorFailure({ ...cursor, stack: { ...cursor.stack, item: null } }, 'cursor.stack')
+    assertCursorFailure({ ...cursor, stack: { ...cursor.stack, count: null } }, 'cursor.stack')
+    assertCursorFailure({ ...cursor, stack: { ...cursor.stack, durability: null } }, 'cursor.stack.durability')
+    assertCursorFailure({ ...cursor, itemId: null }, 'cursor.itemId')
+    assertCursorFailure({ ...cursor, durabilityPercent: null }, 'cursor.durabilityPercent')
+    assertCursorFailure({ ...cursor, durabilityPercent: Number.POSITIVE_INFINITY }, 'cursor.durabilityPercent')
+    assertCursorFailure({ ...cursor, empty: null }, 'cursor.empty')
+    assertCursorFailure({ ...cursor, index: null }, 'cursor.index')
+    assertCursorFailure({ ...cursor, selected: null }, 'cursor.selected')
+    expect(writeNames(factory.since(before))).toStrictEqual([])
   })
 
   it.each([
