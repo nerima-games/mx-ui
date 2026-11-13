@@ -599,6 +599,18 @@ const isOptionalString = (input: unknown): boolean =>
 const isOptionalNumber = (input: unknown): boolean =>
   typeof input === 'undefined' || typeof input === 'number'
 
+const isDenseArray = (input: unknown, isElement: (value: unknown) => boolean): boolean => {
+  if (!Array.isArray(input)) {
+    return false
+  }
+  for (let index = 0; index < input.length; index += ONE) {
+    if (!Object.hasOwn(input, index) || !isElement(input[index])) {
+      return false
+    }
+  }
+  return true
+}
+
 const isSlotViewShape = (input: unknown): boolean =>
   isRecord(input) &&
   Object.hasOwn(input, 'index') && typeof Reflect.get(input, 'index') === 'number' &&
@@ -634,15 +646,17 @@ const isRegionId = (input: unknown): input is RegionId =>
 const isSlotRegionShape = (input: Record<string, unknown>): boolean =>
   isRegionId(Reflect.get(input, 'id')) &&
   typeof Reflect.get(input, 'columns') === 'number' &&
-  Array.isArray(Reflect.get(input, 'slots')) &&
-  Reflect.get(input, 'slots').every(isSlotViewShape)
+  isDenseArray(Reflect.get(input, 'slots'), isSlotViewShape)
 
 const isRegionShape = (input: unknown): boolean => {
   if (!isRecord(input) || !isRegionId(Reflect.get(input, 'id'))) {
     return false
   }
   const kind = Reflect.get(input, 'kind')
-  return kind === 'slots' ? isSlotRegionShape(input) : kind === 'unknown' && isUnknownRegionShape(input)
+  if (kind === 'slots') {
+    return isSlotRegionShape(input)
+  }
+  return kind === 'unknown' && isUnknownRegionShape(input)
 }
 
 const isCraftingOutcomeShape = (input: unknown): boolean => {
@@ -650,9 +664,10 @@ const isCraftingOutcomeShape = (input: unknown): boolean => {
     return false
   }
   const kind = Reflect.get(input, 'kind')
-  return kind === 'match'
-    ? isSlotViewShape(Reflect.get(input, 'output'))
-    : kind === 'no-match' || kind === 'unknown'
+  if (kind === 'match') {
+    return isSlotViewShape(Reflect.get(input, 'output'))
+  }
+  return kind === 'no-match' || kind === 'unknown'
 }
 
 const isMergeTargetsShape = (input: unknown): boolean => {
@@ -670,8 +685,7 @@ const isMergeTargetsShape = (input: unknown): boolean => {
 const isInventoryViewModelShape = (input: unknown): boolean =>
   isRecord(input) &&
   Object.hasOwn(input, 'regions') &&
-  Array.isArray(Reflect.get(input, 'regions')) &&
-  Reflect.get(input, 'regions').every(isRegionShape) &&
+  isDenseArray(Reflect.get(input, 'regions'), isRegionShape) &&
   Object.hasOwn(input, 'carried') &&
   (typeof Reflect.get(input, 'carried') === 'undefined' || isSlotViewShape(Reflect.get(input, 'carried'))) &&
   Object.hasOwn(input, 'crafting') &&
@@ -679,33 +693,31 @@ const isInventoryViewModelShape = (input: unknown): boolean =>
   Object.hasOwn(input, 'mergeTargets') &&
   isMergeTargetsShape(Reflect.get(input, 'mergeTargets'))
 
-const isItemDisplayNameView = (input: unknown): boolean => {
-  if (typeof input === 'undefined') {
-    return true
-  }
+const isItemDisplayNameFailure = (input: unknown): boolean =>
+  isRecord(input) && [
+    'InvalidItemDisplayName',
+    'InvalidItemId',
+    'ItemDisplayNameUnavailable',
+    'MissingItemDisplayNameResolver',
+  ].some((failureTag) => Reflect.get(input, '_tag') === failureTag)
+
+const isItemDisplayNameResult = (input: unknown): boolean => {
   if (!isRecord(input)) {
     return false
   }
-  const language = Reflect.get(input, 'language')
-  const result = Reflect.get(input, 'result')
-  if ((language !== 'en' && language !== 'ja') || !isRecord(result)) {
-    return false
-  }
-  const tag = Reflect.get(result, '_tag')
+  const tag = Reflect.get(input, '_tag')
   if (tag === 'Success') {
-    return typeof Reflect.get(result, 'success') === 'string'
+    return typeof Reflect.get(input, 'success') === 'string'
   }
-  if (tag === 'Failure') {
-    const failure = Reflect.get(result, 'failure')
-    return isRecord(failure) && [
-      'InvalidItemDisplayName',
-      'InvalidItemId',
-      'ItemDisplayNameUnavailable',
-      'MissingItemDisplayNameResolver',
-    ].some((failureTag) => Reflect.get(failure, '_tag') === failureTag)
-  }
-  return false
+  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(input, 'failure'))
 }
+
+const isItemDisplayNameView = (input: unknown): boolean =>
+  typeof input === 'undefined' || (
+    isRecord(input) &&
+    (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
+    isItemDisplayNameResult(Reflect.get(input, 'result'))
+  )
 
 const hasInvalidCountLabel = (slot: unknown): boolean => {
   if (typeof slot === 'undefined') {
@@ -738,6 +750,18 @@ const isInventoryInteractionTarget = (input: unknown): input is InventoryInterac
     typeof index === 'number' && Number.isSafeInteger(index) && index >= ZERO
 }
 
+const invalidInventoryInteractionRecordField = (
+  interaction: Record<string, unknown>,
+): InvalidInventoryViewInput | undefined => {
+  if (!isInventoryInteractionTarget(Reflect.get(interaction, 'focused'))) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.focused' }
+  }
+  if (!isOptionalString(Reflect.get(interaction, 'status'))) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.status' }
+  }
+  return
+}
+
 const invalidInventoryInteractionField = (
   interaction: InventoryInteractionView | undefined,
 ): InvalidInventoryViewInput | undefined => {
@@ -750,13 +774,7 @@ const invalidInventoryInteractionField = (
   if (!isRecord(interaction)) {
     return { _tag: 'InvalidInventoryViewInput', field: 'interaction' }
   }
-  if (!isInventoryInteractionTarget(Reflect.get(interaction, 'focused'))) {
-    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.focused' }
-  }
-  if (!isOptionalString(Reflect.get(interaction, 'status'))) {
-    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.status' }
-  }
-  return
+  return invalidInventoryInteractionRecordField(interaction)
 }
 
 const invalidInventoryCountLabelField = (model: InventoryViewModel): InvalidInventoryViewInput | undefined => {

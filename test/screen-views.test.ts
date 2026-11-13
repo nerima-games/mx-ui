@@ -178,6 +178,10 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
 
     const unknownCrafting = { kind: 'unknown' as const }
     const unknownMergeTargets = { kind: 'unknown' as const }
+    const sparseRegions: Array<unknown> = []
+    sparseRegions.length = 1
+    const sparseSlots: Array<unknown> = []
+    sparseSlots.length = 1
     expect(Reflect.apply(view.render, view, [{}])).toStrictEqual(Result.fail({
       _tag: 'InvalidInventoryViewInput',
       field: 'model',
@@ -194,7 +198,14 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
       { regions: [], carried: {}, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
       { regions: [], carried: undefined, crafting: null, mergeTargets: unknownMergeTargets },
       { regions: [], carried: undefined, crafting: { kind: 'match', output: null }, mergeTargets: unknownMergeTargets },
+      { regions: sparseRegions, carried: undefined, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
       { regions: [null], carried: undefined, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      {
+        regions: [{ kind: 'slots', id: 'hotbar', columns: 9, slots: sparseSlots }],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: unknownMergeTargets,
+      },
       {
         regions: [{ kind: 'slots', id: 'hotbar', columns: 9, slots: null }],
         carried: undefined,
@@ -296,7 +307,7 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     }
 
     const invalidHotbar = { ...hotbar, slots: hotbar.slots.map((slot) => ({ ...slot })) }
-    const invalidHotbarSlot = invalidHotbar.slots[0]
+    const [invalidHotbarSlot] = invalidHotbar.slots
     expect(invalidHotbarSlot).toBeDefined()
     if (typeof invalidHotbarSlot === 'undefined') {
       return
