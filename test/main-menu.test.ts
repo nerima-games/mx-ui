@@ -60,6 +60,11 @@ const UNREADABLE_SAVE: UnreadableSave = {
   format: asSaveSliceId('sv1'),
   version: asSaveVersion(1),
   reason: asUiMessageText('invalid header'),
+  record: { _tag: 'Chunk', key: asWorldId('chunk:broken') },
+  repair: {
+    lastHealthyRevisionAvailable: true,
+    discardableChunkKeys: [asWorldId('chunk:discardable')],
+  },
 }
 
 const mount = (overrides: Partial<MainMenuCallbacks> = {}) => {
@@ -241,7 +246,6 @@ describe('main menu domain', () => {
       },
     })
     expect(worldNameLabel(creative.draft)).toBe('Ravine')
-    expect(worldNameLabel({ name: asWorldNameText('   ') })).toBe(DEFAULT_WORLD_NAME)
     expect(openPanel(creative, 'new-world')).toBe(creative)
     expect(cycleWorldMode(creative).draft.mode).toBe('survival')
     expect(mainMenuViewModel(creative, SAVED_WORLDS)).toMatchObject({
@@ -251,6 +255,11 @@ describe('main menu domain', () => {
       mode: 'creative',
       savedWorlds: SAVED_WORLDS,
     })
+  })
+
+  it('uses the vanilla default world name when the name is omitted or only whitespace', () => {
+    expect(worldNameLabel(initialMainMenuState.draft)).toBe(DEFAULT_WORLD_NAME)
+    expect(worldNameLabel({ name: asWorldNameText(' \t\n ') })).toBe(DEFAULT_WORLD_NAME)
   })
 
   it('selects an available world type after sparse host entries', () => {
@@ -301,6 +310,21 @@ describe('main menu domain', () => {
 
   it('returns a typed failure for a non-string seed input', () => {
     expect(parseWorldSeed(null)).toEqual(Result.fail({ _tag: 'InvalidWorldSeedInput', reason: 'not-string' }))
+  })
+
+  it('matches fixed FNV-1a 32-bit reference vectors over the original UTF-8 bytes', () => {
+    // `a` is lcn2/fnv's 32-bit test vector; the other literals use RFC 9923 over UTF-8 bytes.
+    const vectors = [
+      { input: 'a', expected: 0xe40c292c },
+      { input: 'é', expected: 0x1e9de8c1 },
+      { input: '  hi  ', expected: 0x179432f2 },
+    ] as const
+
+    for (const vector of vectors) {
+      expect(parseWorldSeed(vector.input)).toEqual(
+        Result.succeed({ kind: 'fixed', value: asWorldSeedValue(vector.expected) }),
+      )
+    }
   })
 
   it('hashes non-integer Unicode seeds with an independently calculated UTF-8 FNV-1a value', () => {
@@ -550,9 +574,10 @@ describe('operable main menu', () => {
     expect(mounted.deletes).toEqual([])
   })
 
-  it('renders unreadable save details and only delegates deletion after confirmation', () => {
+  it('retains all listed save failure fields through the confirmed deletion callback', () => {
     const mounted = mount()
     mounted.view.render(model(openPanel(initialMainMenuState, 'load-world'), [], WORLD_TYPES, [UNREADABLE_SAVE]))
+    expect(Object.keys(UNREADABLE_SAVE).sort()).toEqual(['_tag', 'format', 'key', 'reason', 'record', 'repair', 'version'])
     expect(mounted.root.find('data-mx-ui', 'menu-unreadable-summary')?.textContent).toBe('1 unreadable save(s)')
     expect(mounted.root.find('data-mx-ui', 'menu-unreadable-detail')?.textContent).toContain('invalid header')
     mounted.root.find('data-mx-ui', 'menu-unreadable-delete')?.dispatch('click')

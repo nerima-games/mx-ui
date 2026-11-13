@@ -177,10 +177,12 @@ export const worldNameLabel = (
   defaultName: UiMessageText = DEFAULT_WORLD_NAME,
 ): WorldNameText | UiMessageText => {
   const trimmed = draft.name.trim()
-  if (trimmed.length > EMPTY_NAME_LENGTH) {
-    return worldNameText(trimmed)
+  const omittedWorldName = trimmed.length === EMPTY_NAME_LENGTH
+  if (omittedWorldName) {
+    // Vanilla treats an omitted world name, including whitespace-only input, as the default name.
+    return defaultName
   }
-  return defaultName
+  return worldNameText(trimmed)
 }
 
 export type MainMenuState = {
@@ -193,13 +195,25 @@ export type SavedWorld = {
   readonly name: WorldNameText
 }
 
-/** Structurally compatible with mc-save's `ListedSaveFailure` on main. */
+/** Local structural mirror of mc-save 0.8.0 until L5 aligns on kernel 0.17.0. */
 export type UnreadableSave = {
   readonly _tag: 'SaveDecodeError'
   readonly key: WorldId
   readonly format: SaveSliceId
   readonly version: SaveVersion
   readonly reason: UiMessageText
+  readonly record: UnreadableSaveRecord
+  readonly repair: UnreadableSaveRepair
+}
+
+type UnreadableSaveRecord =
+  | { readonly _tag: 'Save'; readonly key: WorldId }
+  | { readonly _tag: 'Head'; readonly key: WorldId }
+  | { readonly _tag: 'Chunk'; readonly key: WorldId }
+
+type UnreadableSaveRepair = {
+  readonly lastHealthyRevisionAvailable: boolean
+  readonly discardableChunkKeys: ReadonlyArray<WorldId>
 }
 
 export type CreateWorldRequest = {

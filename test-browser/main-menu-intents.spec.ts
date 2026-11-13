@@ -1,5 +1,26 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openHarness } from './harness'
+
+const tabUntilFocused = async (
+  page: Page,
+  target: Locator,
+  maxTabs = 32,
+): Promise<void> => {
+  const focusByTab = async (remainingTabs: number): Promise<void> => {
+    const focused = await target.evaluate((element) => element === document.activeElement)
+    if (focused) {
+      return
+    }
+    if (remainingTabs === 0) {
+      await expect(target).toBeFocused()
+      return
+    }
+    await page.keyboard.press('Tab')
+    await focusByTab(remainingTabs - 1)
+  }
+
+  await focusByTab(maxTabs)
+}
 
 test('main-menu world actions emit host intents with their typed payloads', async ({ page }) => {
   await openHarness(page, { screen: 'main-menu', scenario: 'host-intents', panel: true })
@@ -75,6 +96,8 @@ test('main-menu world actions emit host intents with their typed payloads', asyn
         format: 'mc-save',
         version: 4,
         reason: 'unsupported header',
+        record: { _tag: 'Save', key: 'broken-save' },
+        repair: { lastHealthyRevisionAvailable: false, discardableChunkKeys: [] },
       },
     },
     { sequence: 5, intent: { _tag: 'OpenSettings' } },
@@ -117,4 +140,35 @@ test('hides world-type controls when the host provides no choices', async ({ pag
     })
   }))
   expect(fitsInMenu).toEqual([true, true])
+})
+
+test('restores keyboard focus when returning from world creation and the world list', async ({ page }) => {
+  await openHarness(page, { screen: 'main-menu', scenario: 'host-intents', panel: true })
+
+  const host = page.locator('[data-harness-host="main-menu"][data-harness-scenario="host-intents"]')
+  const singlePlayer = host.locator('[data-menu-entry="single-player"]')
+  const newWorld = host.locator('[data-mx-ui="menu-new-world"]')
+  const createWorld = host.locator('input[data-mx-ui="menu-world-name"]')
+  const backToWorlds = host.locator('[data-mx-ui="menu-back-worlds"]')
+  const backToRoot = host.locator('[data-mx-ui="menu-back"]')
+
+  await expect(singlePlayer).not.toBeFocused()
+  await tabUntilFocused(page, singlePlayer)
+  await page.keyboard.press('Enter')
+  await expect(host.locator('[data-menu-panel="load-world"]')).toBeVisible()
+  await expect(newWorld).toBeFocused()
+
+  await page.keyboard.press('Enter')
+  await expect(host.locator('[data-menu-panel="new-world"]')).toBeVisible()
+  await expect(createWorld).toBeFocused()
+
+  await tabUntilFocused(page, backToWorlds)
+  await page.keyboard.press('Enter')
+  await expect(host.locator('[data-menu-panel="load-world"]')).toBeVisible()
+  await expect(newWorld).toBeFocused()
+
+  await tabUntilFocused(page, backToRoot)
+  await page.keyboard.press('Enter')
+  await expect(host.locator('[data-menu-panel="root"]')).toBeVisible()
+  await expect(singlePlayer).toBeFocused()
 })

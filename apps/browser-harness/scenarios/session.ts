@@ -82,6 +82,8 @@ const intentUnreadableSaves: ReadonlyArray<UnreadableSave> = [
     format: decodeSaveSliceId('mc-save'),
     version: decodeSaveVersion(4),
     reason: decodeUiMessageText('unsupported header'),
+    record: { _tag: 'Save', key: decodeWorldId('broken-save') },
+    repair: { lastHealthyRevisionAvailable: false, discardableChunkKeys: [] },
   },
 ]
 
