@@ -65,10 +65,19 @@ export type UiSettingsCallbacks = {
 
 export type SessionKeyDelegate = (event: KeyboardEvent) => boolean
 
+type SessionOverlayInvalidField =
+  | 'snapshot'
+  | 'facing'
+  | 'fps'
+  | 'coordinates'
+  | 'chunk'
+  | 'onLanguageChange'
+  | 'onLanguageChange.result'
+
 export type SessionOverlayInitializationFailure =
   | SettingsViewModelFailure
   | { readonly _tag: 'InvalidInitialDebugSnapshot' }
-  | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }
+  | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: SessionOverlayInvalidField }
 
 type SettingsViewModelFailure = DomainSettingsViewModelFailure | SettingsViewInputFailure
 
@@ -144,7 +153,7 @@ export type SessionOverlays = {
   readonly initializationResult: Result.Result<SettingsSnapshot, SessionOverlayInitializationFailure>
   readonly updateDebug: (
     snapshot: DebugHudSnapshot,
-  ) => Result.Result<void, { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }>
+  ) => Result.Result<void, { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: SessionOverlayInvalidField }>
   readonly updateSettings: (settings: UiSettings) => Result.Result<SettingsSnapshot, SettingsViewModelFailure>
   readonly updateSettingsSnapshot: (
     settings: unknown,
@@ -189,7 +198,7 @@ const hasNumberFields = (input: unknown, fields: ReadonlyArray<string>): boolean
   return fields.every((field) => typeof Reflect.get(input, field) === 'number')
 }
 
-const invalidDebugHudScalarField = (facing: unknown, fps: unknown): string | undefined => {
+const invalidDebugHudScalarField = (facing: unknown, fps: unknown): SessionOverlayInvalidField | undefined => {
   if (typeof facing !== 'undefined' && typeof facing !== 'string') {
     return 'facing'
   }
@@ -199,7 +208,10 @@ const invalidDebugHudScalarField = (facing: unknown, fps: unknown): string | und
   return
 }
 
-const invalidDebugHudPositionField = (coordinates: unknown, chunk: unknown): string | undefined => {
+const invalidDebugHudPositionField = (
+  coordinates: unknown,
+  chunk: unknown,
+): SessionOverlayInvalidField | undefined => {
   if (!hasNumberFields(coordinates, ['worldX', 'worldY', 'worldZ'])) {
     return 'coordinates'
   }
@@ -209,7 +221,7 @@ const invalidDebugHudPositionField = (coordinates: unknown, chunk: unknown): str
   return
 }
 
-const invalidDebugHudField = (snapshot: unknown): string | undefined => {
+const invalidDebugHudField = (snapshot: unknown): SessionOverlayInvalidField | undefined => {
   if (!isRecord(snapshot)) {
     return 'snapshot'
   }
@@ -421,7 +433,7 @@ const handleLanguageChoice = (
   context: SettingsActionsContext,
 ): Result.Result<
   void,
-  UiLanguageFailure | SettingsViewModelFailure | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }
+  UiLanguageFailure | SettingsViewModelFailure | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: SessionOverlayInvalidField }
 > => {
   const {onLanguageChange} = context.options
   if (onLanguageChange === null) {
@@ -445,7 +457,7 @@ const handleChoiceChange = (
   context: SettingsActionsContext,
 ): Result.Result<
   void,
-  UiLanguageFailure | SettingsViewModelFailure | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }
+  UiLanguageFailure | SettingsViewModelFailure | { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: SessionOverlayInvalidField }
 > => {
   if (field === 'language') {
     return Result.flatMap(decodeUiLanguage(value), (language) => handleLanguageChoice(language, context))
@@ -727,7 +739,7 @@ const handleOverlayKeyDown = (
 const updateDebugHud = (
   debugHudText: TextCell,
   snapshot: DebugHudSnapshot,
-): Result.Result<void, { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: string }> => {
+): Result.Result<void, { readonly _tag: 'InvalidSessionOverlayInput'; readonly field: SessionOverlayInvalidField }> => {
   const invalidField = invalidDebugHudField(snapshot)
   if (typeof invalidField !== 'undefined') {
     return Result.fail({ _tag: 'InvalidSessionOverlayInput', field: invalidField })
