@@ -565,6 +565,9 @@ const initialSettingsSnapshot = (options: CreateSessionOverlaysOptions): unknown
   if (typeof options.initialSettings === 'undefined') {
     return DEFAULT_SETTINGS
   }
+  if (options.initialSettings === null) {
+    return null
+  }
   return mergeLegacySettings(options.initialSettings, DEFAULT_SETTINGS)
 }
 

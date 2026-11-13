@@ -253,6 +253,8 @@ describe('session overlays', () => {
   it.each([
     ['initialDebug', { _tag: 'InvalidInitialDebugSnapshot' }],
     ['initialLanguage', { _tag: 'InvalidSettingsLanguage' }],
+    ['initialSettings', { _tag: 'InvalidSettingsSnapshot' }],
+    ['initialSettingsSnapshot', { _tag: 'InvalidSettingsSnapshot' }],
   ] as const)(
     'returns a typed failure for explicit null in %s',
     (optionKey, failure) => {
