@@ -781,7 +781,9 @@ const configureMotionPreference = (
 const configureColorVision = (
   context: BaseViewsContext,
 ): Result.Result<ColorVisionFilterController | null, ColorVisionFilterFailure> => {
-  const target = context.options.colorVisionTarget ?? context.options.root.querySelector('canvas')
+  const target = context.options.colorVisionTarget === undefined
+    ? context.options.root.querySelector('canvas')
+    : context.options.colorVisionTarget
   if (target === null || typeof target === 'undefined') {
     return Result.succeed(null)
   }
@@ -874,11 +876,12 @@ const createBaseViews = (context: BaseViewsContext): Result.Result<Readonly<{
   inventory: InventoryView
   motionController: MotionPreferenceController
 }>, SettingsPreferenceFailure> => {
-  const hud = createHudView(context.document, context.ownedRoot, context.options.motion ?? 'full', {
+  const initialMotion = context.options.motion === undefined ? 'full' : context.options.motion
+  const hud = createHudView(context.document, context.ownedRoot, initialMotion, {
     onRespawn: context.options.onRespawn,
   })
   context.partial.hud = hud
-  const crosshair = createCrosshairView(context.document, context.ownedRoot, context.options.motion ?? 'full')
+  const crosshair = createCrosshairView(context.document, context.ownedRoot, initialMotion)
   crosshair.render(context.session.crosshairModel)
   const preferences = configureBasePreferences(context, hud, crosshair)
   return Result.map(preferences, ({ colorVisionController, motionController }) => {
@@ -1159,6 +1162,12 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
 
   const buildMountedViews = (): Effect.Effect<ActiveUiMount, UiMountError> =>
     Effect.gen(function* run() {
+      if (options.motion === null) {
+        return yield* Effect.fail(new UiMountError('Invalid initial motion preference'))
+      }
+      if (options.colorVisionTarget === null) {
+        return yield* Effect.fail(new UiMountError('Invalid color-vision target'))
+      }
       if (session.settingsFailure !== null && 'tag' in session.settingsFailure && session.settingsFailure.tag === 'InvalidInitialUiScale') {
         return yield* Effect.fail(new UiMountError('Invalid initial UI scale'))
       }

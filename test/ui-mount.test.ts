@@ -517,6 +517,34 @@ describe('UiMount', () => {
     },
   )
 
+  it.each([
+    ['motion', 'Invalid initial motion preference'],
+    ['colorVisionTarget', 'Invalid color-vision target'],
+  ] as const)(
+    'returns a typed mount failure for explicit null in %s instead of using its default',
+    async (optionKey, message) => {
+      const host = document.createElement('main')
+      const canvas = document.createElement('canvas')
+      canvas.style.setProperty('filter', 'contrast(0.8)')
+      host.appendChild(canvas)
+      document.body.appendChild(host)
+      const options = {
+        initialSettingsSnapshot: { ...DEFAULT_SETTINGS, colorVisionCorrection: 'protanopia' },
+        root: host,
+      }
+      expect(Reflect.set(options, optionKey, null)).toBe(true)
+      const runtime = makeUiMount(options)
+
+      const failure = await Effect.runPromise(Effect.flip(runtime.start))
+
+      expect(failure).toMatchObject({ _tag: 'UiMountError', message })
+      expect(runtime.current()).toBeUndefined()
+      expect(host.querySelector('[data-mx-ui="mount-root"]')).toBeNull()
+      expect(canvas.getAttribute('data-color-vision')).toBeNull()
+      expect(canvas.style.getPropertyValue('filter')).toBe('contrast(0.8)')
+    },
+  )
+
   it.each(['initialSettings', 'initialSettingsSnapshot'] as const)(
     'rejects explicit null in %s instead of substituting defaults',
     async (settingKey) => {
