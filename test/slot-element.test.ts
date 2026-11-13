@@ -49,10 +49,11 @@ describe('createSlotElement', () => {
     const slot = createSlotElement(factory, 0)
     const view = slotView({ itemId: 'stone', count: 2 }, 0, 0)
     Reflect.set(view, 'itemDisplayName', null)
+    const before = factory.mark()
 
     const result = updateSlotElement(slot, view)
 
     expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' }))
-    expect(factory.writes).toStrictEqual([])
+    expect(factory.since(before)).toStrictEqual([])
   })
 })
