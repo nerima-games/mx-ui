@@ -46,6 +46,17 @@ const achievementToastSubscriberModule = `/@fs${fileURLToPath(
   new URL('../src/application/achievement-toast-subscriber.ts', import.meta.url),
 )}`
 const browserEffectsModule = '/test-effects.ts'
+const tabUntilFocused = async (page: Page, target: Locator, remainingTabs: number): Promise<void> => {
+  if (remainingTabs <= 0) {
+    return
+  }
+  const focused = await target.evaluate((element) => element === document.activeElement)
+  if (focused) {
+    return
+  }
+  await page.keyboard.press('Tab')
+  await tabUntilFocused(page, target, remainingTabs - 1)
+}
 const settingsSnapshot = {
   ...DEFAULT_SETTINGS,
   difficulty: 'hard' as const,
@@ -172,23 +183,22 @@ test.describe('W4-C pause menu accessibility', () => {
     await expect(settings).toHaveAttribute('role', 'dialog')
     await expect(settings).toHaveAttribute('aria-modal', 'true')
     const sliderValues = [
-      ['Look sensitivity', settingsSnapshot.mouseSensitivity],
-      ['Render distance', settingsSnapshot.renderDistance],
-      ['Master volume', settingsSnapshot.masterVolume],
-      ['Music volume', settingsSnapshot.musicVolume],
-      ['SFX volume', settingsSnapshot.sfxVolume],
-      ['Field of view', settingsSnapshot.fovDegrees],
-      ['UI scale', settingsSnapshot.uiScale],
+      ['Look sensitivity', settingsSnapshot.mouseSensitivity, '0.1', '3', '0.1'],
+      ['Render distance', settingsSnapshot.renderDistance, '2', '16', '1'],
+      ['Master volume', settingsSnapshot.masterVolume, '0', '1', '0.01'],
+      ['Music volume', settingsSnapshot.musicVolume, '0', '1', '0.01'],
+      ['SFX volume', settingsSnapshot.sfxVolume, '0', '1', '0.01'],
+      ['Field of view', settingsSnapshot.fovDegrees, '30', '110', '1'],
+      ['UI scale', settingsSnapshot.uiScale, '0.75', '1.5', '0.05'],
     ] as const
-    await Promise.all(sliderValues.map(async ([name, value]) => {
+    await Promise.all(sliderValues.map(async ([name, value, min, max, step]) => {
       const slider = settings.getByRole('slider', { name })
       await expect(slider).toHaveValue(String(value))
-      await expect(slider).toHaveAttribute('min', /.+/)
-      await expect(slider).toHaveAttribute('max', /.+/)
-      await expect(slider).toHaveAttribute('step', /.+/)
+      await expect(slider).toHaveAttribute('min', min)
+      await expect(slider).toHaveAttribute('max', max)
+      await expect(slider).toHaveAttribute('step', step)
     }))
     const renderDistance = settings.getByRole('slider', { name: 'Render distance' })
-    await expect(renderDistance).toHaveAttribute('max', '16')
 
     const difficultyGroup = settings.getByRole('group', { name: 'Difficulty' })
     const graphicsGroup = settings.getByRole('group', { name: 'Graphics preset' })
@@ -230,7 +240,16 @@ test.describe('W4-C pause menu accessibility', () => {
     await expect(captionsSwitch).toHaveAttribute('data-interaction-target', 'settings-toggle')
 
     const sensitivity = settings.getByRole('slider', { name: 'Look sensitivity' })
+    const focusableElements = page.locator('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    const focusableCount = await focusableElements.count()
+    await settings.getByRole('button', { name: 'Close' }).focus()
+    await tabUntilFocused(page, sensitivity, focusableCount)
     await expect(sensitivity).toBeFocused()
+    const previousSensitivity = await sensitivity.inputValue()
+    await page.keyboard.press('ArrowRight')
+    await expect(sensitivity).not.toHaveValue(previousSensitivity)
+    await expect(sensitivity).toHaveValue('1.1')
+    await expect.poll(async () => (await readbackSnapshot())?.['mouseSensitivity']).toBe(1.1)
     await renderDistance.focus()
     await page.keyboard.press('End')
     await expect(renderDistance).toHaveValue('16')
@@ -252,7 +271,8 @@ test.describe('W4-C pause menu accessibility', () => {
     await expect(moveForwardBinding).not.toHaveAccessibleName(/KeyW/i)
     await expect(moveForwardBinding).toHaveAttribute('type', 'button')
     await expect(moveForwardBinding).toHaveAttribute('data-interaction-target', 'settings-binding')
-    await moveForwardBinding.focus()
+    await tabUntilFocused(page, moveForwardBinding, focusableCount)
+    await expect(moveForwardBinding).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(intentOutput).toContainText('SettingsBindingActivated')
 

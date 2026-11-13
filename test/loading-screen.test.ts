@@ -21,7 +21,7 @@ import {
 import { PALETTE_PROPERTY, PALETTE_VAR } from '../src/application/palette-css'
 import { translateUiMessage } from '../src/domain/ui-language'
 import { fakeDocument, fakeElement, writeNames } from './fake-dom'
-import { asLoadingProgressValue, asMonotonicTimeSecs, asUiMessageText } from './helpers/ui3-brand-values'
+import { asDeltaTimeSecs, asLoadingProgressValue, asMonotonicTimeSecs, asUiMessageText } from './helpers/ui3-brand-values'
 
 const mount = () => {
   const factory = fakeDocument()
@@ -119,6 +119,26 @@ describe('loading progress domain', () => {
     })
     expect(loadingScreenView(failed('disk full'), time(100))).toEqual({ kind: 'failed', reason: 'disk full' })
     expect(loadingScreenView(IDLE_LOADING_STATUS, time(3))).toBeUndefined()
+  })
+
+  it('respects a caller-provided minimum-visible duration', () => {
+    const minimumVisibleSecs = asDeltaTimeSecs(0.25)
+    expect(loadingScreenView(ready, time(0.249), minimumVisibleSecs)).toMatchObject({
+      kind: 'preparing',
+      held: true,
+    })
+    expect(loadingScreenView(ready, time(0.25), minimumVisibleSecs)).toBeUndefined()
+  })
+
+  it('holds the loading screen when current time is invalid or precedes its start time', () => {
+    expect(Reflect.apply(loadingScreenView, undefined, [ready, Number.NaN])).toMatchObject({
+      kind: 'preparing',
+      held: true,
+    })
+    expect(loadingScreenView(status({ kind: 'ready' }, 100), time(0))).toMatchObject({
+      kind: 'preparing',
+      held: true,
+    })
   })
 
   it('keeps existing indeterminate host calls usable as generation at zero', () => {

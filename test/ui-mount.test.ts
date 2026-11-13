@@ -1360,6 +1360,27 @@ describe('UiMount', () => {
     expect(document.activeElement).not.toBe(mouseSensitivityInput)
   })
 
+  it('opens settings without capturing a focus target when the document reports none', async () => {
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const runtime = makeUiMount({ root: host })
+    await Effect.runPromise(runtime.start)
+    const original = Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement')
+    Object.defineProperty(document, 'activeElement', { configurable: true, value: null })
+    try {
+      runtime.openSettings()
+    } finally {
+      if (typeof original !== 'undefined') {
+        Object.defineProperty(Document.prototype, 'activeElement', original)
+      }
+      Reflect.deleteProperty(document, 'activeElement')
+    }
+    const dialog = host.querySelector<HTMLElement>('[data-mx-ui="settings"]')
+    expect(dialog?.hidden).toBe(false)
+    runtime.closeSettings()
+    expect(dialog?.hidden).toBe(true)
+  })
+
   it('forwards every host-owned menu callback through UiMount', async () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
