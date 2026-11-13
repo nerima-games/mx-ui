@@ -27,6 +27,12 @@ const visibleText = (root: FakeElement): ReadonlyArray<string> =>
     .map((line) => line.find('data-mx-ui', 'caption-text')?.textContent ?? '')
 
 describe('caption lines project mc-audio visibility', () => {
+  it('returns a typed failure for an explicitly null timestamp', () => {
+    const result = Reflect.apply(captionLines, undefined, [[], null])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCaptionLinesInput', field: 'nowSecs' }))
+  })
+
   it('returns a typed failure for an explicitly null pan', () => {
     const malformed = { ...captionEvent('Footsteps', 0, undefined, 'audible'), pan: null }
 
