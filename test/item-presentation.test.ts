@@ -251,6 +251,7 @@ describe('item presentation', () => {
         selectedIndex: 0,
         itemDisplayNameOptions: {
           language: 'en',
+          resolver: defaultItemDisplayNameResolver,
           iconResolver: () => Result.fail({ _tag: 'ItemIconUnavailable' }),
         },
       },
@@ -285,6 +286,7 @@ describe('item presentation', () => {
         selectedIndex: 0,
         itemDisplayNameOptions: {
           language: 'en',
+          resolver: defaultItemDisplayNameResolver,
           iconResolver: () => Result.succeed({ kind: 'url', url: 'https://assets.example/stone.png' }),
         },
       },
