@@ -38,10 +38,9 @@ const isSuccessEnvelope = (
   return (hasUntaggedSuccess || hasTaggedSuccess) && isDataDescriptor(success)
 }
 
-const serializedSuccessDescriptor = (input: unknown): PropertyDescriptor | undefined => {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    return
-  }
+type DisplayNameResult = ItemDisplayNameView['result']
+
+const serializedSuccessDescriptor = (input: DisplayNameResult): PropertyDescriptor | undefined => {
   const descriptors = Object.getOwnPropertyDescriptors(input)
   const keys = Reflect.ownKeys(descriptors)
   const { success } = descriptors
@@ -51,7 +50,7 @@ const serializedSuccessDescriptor = (input: unknown): PropertyDescriptor | undef
   return success
 }
 
-const serializedDisplayNameSuccess = (input: unknown): unknown | undefined => {
+const serializedDisplayNameSuccess = (input: DisplayNameResult): unknown | undefined => {
   const descriptor = serializedSuccessDescriptor(input)
   if (!isDataDescriptor(descriptor)) {
     return
@@ -59,7 +58,7 @@ const serializedDisplayNameSuccess = (input: unknown): unknown | undefined => {
   return descriptor.value
 }
 
-const serializedSuccessValue = (input: unknown): Result.Result<unknown, ItemDisplayNameFailure> => Result.try({
+const serializedSuccessValue = (input: DisplayNameResult): Result.Result<unknown, ItemDisplayNameFailure> => Result.try({
   catch: () => INVALID_ITEM_DISPLAY_NAME,
   try: () => serializedDisplayNameSuccess(input),
 })
@@ -75,7 +74,7 @@ const decodeDisplayName = (input: unknown): Result.Result<ItemDisplayName, ItemD
   return Result.succeed(decoded.success)
 }
 
-const displayNameResultOf = (input: unknown): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
+const displayNameResultOf = (input: DisplayNameResult): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
   const serializedSuccess = serializedSuccessValue(input)
   if (Result.isFailure(serializedSuccess)) {
     return Result.fail(serializedSuccess.failure)
@@ -87,11 +86,8 @@ const displayNameResultOf = (input: unknown): Result.Result<ItemDisplayName, Ite
   return decodeDisplayName(success)
 }
 
-const displayNameText = (slot: SlotView['itemDisplayName'], language: UiLanguage): ItemDisplayName | undefined => {
-  if (typeof slot === 'undefined' || slot.language !== language) {
-    return
-  }
-  const name = displayNameResultOf(slot.result)
+const displayNameText = (view: ItemDisplayNameView): ItemDisplayName | undefined => {
+  const name = displayNameResultOf(view.result)
   if (Result.isFailure(name)) {
     return
   }
@@ -106,7 +102,7 @@ const suppliedDisplayNameText = (
   if (typeof view === 'undefined' || view.language !== language) {
     return
   }
-  const supplied = displayNameText(view, language)
+  const supplied = displayNameText(view)
   if (typeof supplied !== 'undefined') {
     return supplied
   }
@@ -131,11 +127,11 @@ export const itemDisplayNameText = (
   return translateUiMessage(language, 'item.unknown')
 }
 
-const displayNameValue = (result: ItemDisplayNameView['result']): UiMessageValue => {
-  if (Result.isFailure(result) || result.success.includes(MINECRAFT_NAMESPACE_PREFIX)) {
-    return { key: 'item.unknown' }
+const displayNameValue = (name: Result.Result<ItemDisplayName, ItemDisplayNameFailure>): UiMessageValue => {
+  if (Result.isSuccess(name)) {
+    return name.success
   }
-  return result.success
+  return { key: 'item.unknown' }
 }
 
 export const itemDisplayNameValue = (
@@ -147,12 +143,7 @@ export const itemDisplayNameValue = (
   }
   const currentView = slot.itemDisplayName
   if (typeof currentView !== 'undefined' && currentView.language === language) {
-    const name = displayNameResultOf(currentView.result)
-    if (Result.isSuccess(name)) {
-      return displayNameValue(name)
-    }
-    return { key: 'item.unknown' }
+    return displayNameValue(displayNameResultOf(currentView.result))
   }
-  const displayName = resolveItemDisplayName(slot.itemId, language, defaultItemDisplayNameResolver)
-  return displayNameValue(displayName)
+  return displayNameValue(resolveItemDisplayName(slot.itemId, language, defaultItemDisplayNameResolver))
 }

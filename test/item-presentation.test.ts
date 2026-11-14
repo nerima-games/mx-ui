@@ -125,6 +125,44 @@ describe('item presentation', () => {
     )
   })
 
+  it('names an item id the kernel does not know as unknown in the hotbar label', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('main'))
+    const hud = createHudView(factory, parent, 'full')
+    const emptyHotbar = Array.from({ length: HOTBAR_SLOT_COUNT }, (): undefined => undefined)
+    const model = hudViewModel(spawnSnapshot, emptyHotbar, 0)
+    const unknownItem = slotView({ itemId: 'not_a_kernel_item', count: 2 }, 0, 0)
+    hud.render({
+      ...model,
+      hotbar: model.hotbar.map((hotbarSlot, index) => index === 0 ? unknownItem : hotbarSlot),
+    })
+    expect(fakeElement(hud.root).findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
+      'Hotbar slot 1, Unknown item, 2',
+    )
+  })
+
+  it('lists several active enchantments in id order in the view and the tooltip', () => {
+    const view = slotView(
+      {
+        itemId: 'diamond_sword',
+        count: 1,
+        enchantments: { unbreaking: EnchantmentLevel(3), sharpness: EnchantmentLevel(5) },
+      },
+      0,
+      0,
+    )
+    expect(view.enchantments).toStrictEqual([
+      { id: 'sharpness', level: 5 },
+      { id: 'unbreaking', level: 3 },
+    ])
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    updateSlotElement(slot, view)
+    expect(fakeElement(slot.root).find('role', 'tooltip')?.textContent).toContain(
+      'Enchantments: sharpness 5, unbreaking 3',
+    )
+  })
+
   it('accepts absolute icon URLs and bounded atlas rectangles', () => {
     const noResolver = slotView({ itemId: 'stone', count: 1 }, 0, 0)
     expect(noResolver.itemIcon).toStrictEqual({

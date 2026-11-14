@@ -102,6 +102,29 @@ describe('creative inventory view', () => {
     )
   })
 
+  it('shows host icons with untruncated names and hides a tooltip when focus leaves', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('main')
+    const view = createCreativeInventoryView(factory, parent, undefined, {
+      displayNameResolver: (itemId, language) =>
+        Result.succeed(itemId === 'apple' && language === 'en' ? 'Orchard token' : ITEM_DISPLAY_NAMES[itemId][language]),
+      iconResolver: (itemId) => Result.succeed({ kind: 'url', url: `https://assets.example/${itemId}.png` }),
+    })
+    const root = fakeElement(view.root)
+    const apple = fakeElement(
+      root.findAll('data-mx-ui', 'creative-item').find((item) => item.attributes.get('data-item-id') === 'apple'),
+    )
+    expect(apple.find('aria-hidden', 'true')?.attributes.get('src')).toBe('https://assets.example/apple.png')
+    expect(apple.find('data-mx-ui', 'slot-icon')?.attributes.has('hidden')).toBe(false)
+    expect(apple.find('data-mx-ui', 'slot-item')?.textContent).toBe('Orchard token')
+
+    const tooltip = apple.find('role', 'tooltip')
+    apple.dispatch('focus')
+    expect(tooltip?.attributes.has('hidden')).toBe(false)
+    apple.dispatch('blur')
+    expect(tooltip?.attributes.has('hidden')).toBe(true)
+  })
+
   it('keeps kernel search results when the host display-name resolver throws', () => {
     const factory = fakeDocument()
     const parent = factory.createElement('main')

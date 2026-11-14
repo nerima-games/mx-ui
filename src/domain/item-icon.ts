@@ -71,13 +71,10 @@ const isDataDescriptor = (descriptor: PropertyDescriptor | undefined): descripto
   typeof descriptor !== 'undefined' && Object.hasOwn(descriptor, 'value')
 
 const copyDataEntry = (
-  key: PropertyKey,
+  key: string,
   descriptors: PropertyDescriptorMap,
   record: Record<string, unknown>,
 ): boolean => {
-  if (typeof key !== 'string') {
-    return false
-  }
   const descriptor = descriptors[key]
   if (!isDataDescriptor(descriptor)) {
     return false
@@ -89,11 +86,12 @@ const copyDataEntry = (
 const ownDataRecord = (input: object, allowedKeys: ReadonlyArray<string>): Record<string, unknown> | undefined => {
   const descriptors = Object.getOwnPropertyDescriptors(input)
   const keys = Reflect.ownKeys(descriptors)
-  if (keys.some((key) => typeof key !== 'string' || !allowedKeys.includes(key))) {
+  const allowedOwnKeys = keys.filter((key): key is string => typeof key === 'string' && allowedKeys.includes(key))
+  if (allowedOwnKeys.length !== keys.length) {
     return
   }
   const record: Record<string, unknown> = {}
-  for (const key of keys) {
+  for (const key of allowedOwnKeys) {
     if (!copyDataEntry(key, descriptors, record)) {
       return
     }
@@ -192,9 +190,6 @@ const absoluteImageUrl = (input: unknown): Result.Result<string, ItemIconFailure
 
 const ItemIconUrlBrand = Brand.make<ItemIconUrl>((input) => Result.isSuccess(absoluteImageUrl(input)))
 
-const validPositiveCoordinate = (value: number): boolean => Number.isSafeInteger(value) && value > ZERO
-const validNonnegativeCoordinate = (value: number): boolean => Number.isSafeInteger(value) && value >= ZERO
-
 const ATLAS_KEYS = ['kind', 'url', 'x', 'y', 'width', 'height', 'atlasWidth', 'atlasHeight']
 const ATLAS_REQUIRED_KEYS = ATLAS_KEYS
 const URL_ICON_KEYS = 2
@@ -208,49 +203,16 @@ type AtlasGeometry = Readonly<{
   readonly atlasHeight: ItemIconAtlasDimension
 }>
 
-type UnbrandedAtlasGeometry = Readonly<{
-  readonly [X_COORDINATE]: number
-  readonly [Y_COORDINATE]: number
-  readonly width: number
-  readonly height: number
-  readonly atlasWidth: number
-  readonly atlasHeight: number
-}>
-
-const unbrandedAtlasGeometry = (record: DataRecord): UnbrandedAtlasGeometry | undefined => {
+const atlasGeometry = (record: DataRecord): Result.Result<AtlasGeometry, ItemIconFailure> => {
   const { x: coordinateX, y: coordinateY, width, height, atlasWidth, atlasHeight } = record
   if (
-    typeof coordinateX !== 'number' || !validNonnegativeCoordinate(coordinateX) ||
-    typeof coordinateY !== 'number' || !validNonnegativeCoordinate(coordinateY) ||
-    typeof width !== 'number' || !validPositiveCoordinate(width) ||
-    typeof height !== 'number' || !validPositiveCoordinate(height) ||
-    typeof atlasWidth !== 'number' || !validPositiveCoordinate(atlasWidth) ||
-    typeof atlasHeight !== 'number' || !validPositiveCoordinate(atlasHeight) ||
-    atlasWidth > MAX_ATLAS_DIMENSION || atlasHeight > MAX_ATLAS_DIMENSION ||
+    typeof coordinateX !== 'number' || !ItemIconAtlasOffsetBrand.is(coordinateX) ||
+    typeof coordinateY !== 'number' || !ItemIconAtlasOffsetBrand.is(coordinateY) ||
+    typeof width !== 'number' || !ItemIconAtlasDimensionBrand.is(width) ||
+    typeof height !== 'number' || !ItemIconAtlasDimensionBrand.is(height) ||
+    typeof atlasWidth !== 'number' || !ItemIconAtlasDimensionBrand.is(atlasWidth) ||
+    typeof atlasHeight !== 'number' || !ItemIconAtlasDimensionBrand.is(atlasHeight) ||
     coordinateX > atlasWidth - width || coordinateY > atlasHeight - height
-  ) {
-    return
-  }
-  return {
-    atlasHeight,
-    atlasWidth,
-    height,
-    width,
-    [X_COORDINATE]: coordinateX,
-    [Y_COORDINATE]: coordinateY,
-  }
-}
-
-const atlasGeometry = (record: DataRecord): Result.Result<AtlasGeometry, ItemIconFailure> => {
-  const geometry = unbrandedAtlasGeometry(record)
-  if (typeof geometry === 'undefined') {
-    return Result.fail(INVALID_ITEM_ICON)
-  }
-  const { x: coordinateX, y: coordinateY, width, height, atlasWidth, atlasHeight } = geometry
-  if (
-    !ItemIconAtlasOffsetBrand.is(coordinateX) || !ItemIconAtlasOffsetBrand.is(coordinateY) ||
-    !ItemIconAtlasDimensionBrand.is(width) || !ItemIconAtlasDimensionBrand.is(height) ||
-    !ItemIconAtlasDimensionBrand.is(atlasWidth) || !ItemIconAtlasDimensionBrand.is(atlasHeight)
   ) {
     return Result.fail(INVALID_ITEM_ICON)
   }
@@ -321,29 +283,26 @@ const decodeIcon = (input: unknown): Result.Result<ItemIcon, ItemIconFailure> =>
 const resultMember = (
   input: object,
   prototype: object,
-  expected: Readonly<{ readonly tag: 'Success' | 'Failure'; readonly memberName: 'success' | 'failure' }>,
+  memberName: 'success' | 'failure',
 ): unknown | undefined => {
   if (Object.getPrototypeOf(input) !== prototype) {
     return
   }
-  if (Object.getOwnPropertyDescriptor(prototype, '_tag')?.value !== expected.tag) {
-    return
-  }
   const descriptors = Object.getOwnPropertyDescriptors(input)
   const keys = Reflect.ownKeys(descriptors)
-  const member = descriptors[expected.memberName]
-  if (keys.length !== SINGLE_KEY || keys.at(FIRST_ARRAY_INDEX) !== expected.memberName || !isDataDescriptor(member)) {
+  const member = descriptors[memberName]
+  if (keys.length !== SINGLE_KEY || keys.at(FIRST_ARRAY_INDEX) !== memberName || !isDataDescriptor(member)) {
     return
   }
   return member.value
 }
 
 const effectResultFromObject = (input: object): Readonly<{ tag: 'Success' | 'Failure'; value: unknown }> | undefined => {
-  const success = resultMember(input, SUCCESS_RESULT_PROTOTYPE, { memberName: 'success', tag: 'Success' })
+  const success = resultMember(input, SUCCESS_RESULT_PROTOTYPE, 'success')
   if (typeof success !== 'undefined') {
     return { tag: 'Success', value: success }
   }
-  const failure = resultMember(input, FAILURE_RESULT_PROTOTYPE, { memberName: 'failure', tag: 'Failure' })
+  const failure = resultMember(input, FAILURE_RESULT_PROTOTYPE, 'failure')
   if (typeof failure !== 'undefined') {
     return { tag: 'Failure', value: failure }
   }

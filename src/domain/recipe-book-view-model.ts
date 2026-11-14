@@ -88,16 +88,15 @@ type IngredientDemand = Readonly<{
   readonly itemTypes: ReadonlyArray<ItemType>
 }>
 
+// The search only ever rewrites existing keys, so the map's insertion order is a stable key order.
 const allocationStateKey = (
   index: number,
-  itemTypes: ReadonlyArray<ItemType>,
   counts: ReadonlyMap<ItemType, number>,
-): string => `${index}:${itemTypes.map((itemType) => counts.get(itemType) ?? NO_ITEMS).join(',')}`
+): string => `${index}:${[...counts.values()].join(',')}`
 
 type AllocationState = Readonly<{
   readonly orderedDemands: ReadonlyArray<IngredientDemand>
   readonly counts: Map<ItemType, number>
-  readonly itemTypes: ReadonlyArray<ItemType>
   readonly failedStates: Set<string>
 }>
 
@@ -107,12 +106,12 @@ type AllocationAttempt = Readonly<{
   readonly state: AllocationState
   readonly demand: IngredientDemand
   readonly itemType: ItemType
+  readonly available: number
   readonly nextIndex: number
   readonly continueAllocation: ContinueAllocation
 }>
 
-const tryDemandAllocation = ({ state, demand, itemType, nextIndex, continueAllocation }: AllocationAttempt): boolean => {
-  const available = state.counts.get(itemType) ?? NO_ITEMS
+const tryDemandAllocation = ({ state, demand, itemType, available, nextIndex, continueAllocation }: AllocationAttempt): boolean => {
   if (available < demand.count) {
     return false
   }
@@ -130,9 +129,12 @@ type AllocateDemandInput = Readonly<{
 }>
 
 const allocateDemand = ({ state, demand, nextIndex, continueAllocation }: AllocateDemandInput): boolean => {
-  for (const itemType of demand.itemTypes) {
-    const allocated = tryDemandAllocation({ continueAllocation, demand, itemType, nextIndex, state })
-    if (allocated) {
+  // Every recursive attempt restores the counts it took, so this snapshot matches the live counts at each step.
+  for (const [itemType, available] of [...state.counts]) {
+    if (
+      demand.itemTypes.includes(itemType) &&
+      tryDemandAllocation({ available, continueAllocation, demand, itemType, nextIndex, state })
+    ) {
       return true
     }
   }
@@ -150,16 +152,14 @@ type AllocationStepStatus =
   | Readonly<{ readonly tag: 'pending'; readonly stateKey: string; readonly demand: IngredientDemand }>
 
 const allocationStepStatus = (state: AllocationState, index: number): AllocationStepStatus => {
-  if (index === state.orderedDemands.length) {
-    return { result: true, tag: 'finished' }
-  }
-  const stateKey = allocationStateKey(index, state.itemTypes, state.counts)
-  if (state.failedStates.has(stateKey)) {
-    return { result: false, tag: 'finished' }
-  }
+  // `index` only grows to `orderedDemands.length`, where every demand has been allocated.
   const demand = state.orderedDemands[index]
   if (typeof demand === 'undefined') {
     return { result: true, tag: 'finished' }
+  }
+  const stateKey = allocationStateKey(index, state.counts)
+  if (state.failedStates.has(stateKey)) {
+    return { result: false, tag: 'finished' }
   }
   return { demand, stateKey, tag: 'pending' }
 }
@@ -193,7 +193,6 @@ const allocateDemands = (demands: ReadonlyArray<IngredientDemand>, counts: Map<I
   const state: AllocationState = {
     counts,
     failedStates: new Set<string>(),
-    itemTypes: [...counts.keys()].sort(),
     orderedDemands,
   }
   return allocationSearchOf(state)(FIRST_INDEX)
@@ -261,43 +260,32 @@ export const recipeCraftableInInventory = (
   return Result.succeed(allocateDemands(demands.success, inventoryCounts))
 }
 
-type RecipePartitions = Readonly<{
-  readonly craftable: RecipeBookEntry[]
-  readonly uncraftable: RecipeBookEntry[]
+type ClassifiedRecipe = Readonly<{
+  readonly craftable: boolean
+  readonly entry: RecipeBookEntry
 }>
 
-const appendClassifiedRecipe = (
-  partitions: RecipePartitions,
+const classifiedRecipeOf = (
   recipe: Recipe,
   inventory: Inventory,
-): Result.Result<RecipeBookEntry, RecipeBookViewModelFailure> => {
-  const craftable = recipeCraftableInInventory(recipe, inventory)
-  if (Result.isFailure(craftable)) {
-    return Result.fail(craftable.failure)
-  }
-  const entry: RecipeBookEntry = { gridWidths: gridWidthsOf(recipe), recipe }
-  if (craftable.success) {
-    partitions.craftable.push(entry)
-  } else {
-    partitions.uncraftable.push(entry)
-  }
-  return Result.succeed(entry)
-}
+): Result.Result<ClassifiedRecipe, RecipeBookViewModelFailure> =>
+  Result.map(recipeCraftableInInventory(recipe, inventory), (craftable) => ({
+    craftable,
+    entry: { gridWidths: gridWidthsOf(recipe), recipe },
+  }))
 
-const recipePartitionsOf = (inventory: Inventory): Result.Result<RecipePartitions, RecipeBookViewModelFailure> => {
-  const partitions: RecipePartitions = { craftable: [], uncraftable: [] }
-  for (const recipe of VANILLA_CRAFTING_RECIPES) {
-    const appended = appendClassifiedRecipe(partitions, recipe, inventory)
-    if (Result.isFailure(appended)) {
-      return Result.fail(appended.failure)
-    }
-  }
-  return Result.succeed(partitions)
-}
+const recipePartitionsOf = (classified: ReadonlyArray<ClassifiedRecipe>): RecipeBookViewModel => ({
+  craftable: classified.filter(({ craftable }) => craftable).map(({ entry }) => entry),
+  uncraftable: classified.filter(({ craftable }) => !craftable).map(({ entry }) => entry),
+})
 
 export const recipeBookViewModel = (
   inventory: Inventory,
-): Result.Result<RecipeBookViewModel, RecipeBookViewModelFailure> => recipePartitionsOf(inventory)
+): Result.Result<RecipeBookViewModel, RecipeBookViewModelFailure> =>
+  Result.map(
+    Result.all(VANILLA_CRAFTING_RECIPES.map((recipe) => classifiedRecipeOf(recipe, inventory))),
+    recipePartitionsOf,
+  )
 
 export const recipePlacementOperationOf = (
   recipe: Recipe,

@@ -8,9 +8,11 @@ import {
   TagLocation,
   VANILLA_CRAFTING_RECIPES,
   anyOf,
+  ingredientMatches,
   shapedRecipe,
   shapelessRecipe,
   tagged,
+  type AnyOfIngredient,
   type CraftingIngredientInput,
   type ItemType,
 } from '@nerima-games/mc-kernel'
@@ -68,6 +70,19 @@ describe('recipe book view model', () => {
     expect(result.success.uncraftable.map(({ recipe }) => recipe.id)).toStrictEqual(
       VANILLA_CRAFTING_RECIPES.map(({ id }) => id),
     )
+  })
+
+  it('moves a kernel recipe to the craftable list once the inventory holds its ingredients', () => {
+    const result = recipeBookViewModel(inventoryOf(['oak_log', 1]))
+    if (Result.isFailure(result)) {
+      throw new Error('the kernel recipe table must produce a view model')
+    }
+    const craftableIds = result.success.craftable.map(({ recipe }) => recipe.id)
+    const uncraftableIds = result.success.uncraftable.map(({ recipe }) => recipe.id)
+    expect(craftableIds).toContain('minecraft:oak-planks')
+    expect(uncraftableIds).toContain('minecraft:stick')
+    expect(craftableIds.filter((id) => uncraftableIds.includes(id))).toStrictEqual([])
+    expect([...craftableIds, ...uncraftableIds].sort()).toStrictEqual(VANILLA_CRAFTING_RECIPES.map(({ id }) => id).sort())
   })
 
   it('counts quantities across slots and refuses to double-count one item', () => {
@@ -163,6 +178,50 @@ describe('recipe book view model', () => {
     const unexpectedGridWidth = { columns: 4 }
     expect(recipePlacementOperationOf(large, unexpectedGridWidth)).toStrictEqual(
       Result.fail({ _tag: 'InvalidGridWidth', gridWidth: unexpectedGridWidth }),
+    )
+  })
+
+  it('backtracks over alternatives that compete for the same stacks', () => {
+    const plankOrStick = mustSucceed(anyOf(['oak_planks', 'stick']), 'valid alternatives must build')
+    const recipe = makeShapelessRecipe('test:three-alternatives', [plankOrStick, plankOrStick, plankOrStick])
+    expect(recipeCraftableInInventory(recipe, inventoryOf(['oak_planks', 1], ['stick', 1]))).toStrictEqual(
+      Result.succeed(false),
+    )
+    expect(recipeCraftableInInventory(recipe, inventoryOf(['oak_planks', 2], ['stick', 1]))).toStrictEqual(
+      Result.succeed(true),
+    )
+  })
+
+  it('reports the kernel failure for an ingredient the kernel cannot match', () => {
+    const base = makeShapelessRecipe('test:unmatchable', ['stick'])
+    const emptyAlternatives: AnyOfIngredient = { _tag: 'AnyOf', options: [], count: RecipeIngredientCount(1) }
+    const recipe = { ...base, ingredients: [emptyAlternatives] }
+    const kernelFailure = ingredientMatches(emptyAlternatives, 'stick')
+    expect(Result.isFailure(kernelFailure)).toBe(true)
+    if (Result.isSuccess(kernelFailure)) {
+      return
+    }
+    expect(recipeCraftableInInventory(recipe, inventoryOf(['stick', 1]))).toStrictEqual(
+      Result.fail({
+        _tag: 'RecipeIngredientMatchFailure',
+        recipeId: base.id,
+        ingredient: emptyAlternatives,
+        failure: kernelFailure.failure,
+      }),
+    )
+  })
+
+  it('places a nine-ingredient recipe only on the table grid and a larger one on neither', () => {
+    const nine = makeShapelessRecipe('test:nine', Array.from({ length: 9 }, (): ItemType => 'stick'))
+    expect(recipePlacementOperationOf(nine, 2)).toStrictEqual(
+      Result.fail({ _tag: 'RecipeDoesNotFitGrid', recipeId: nine.id, gridWidth: 2 }),
+    )
+    expect(recipePlacementOperationOf(nine, 3)).toStrictEqual(
+      Result.succeed({ kind: 'place-recipe', recipeId: nine.id, gridWidth: 3 }),
+    )
+    const ten = { ...nine, ingredients: [...nine.ingredients, ...makeShapelessRecipe('test:one', ['stick']).ingredients] }
+    expect(recipePlacementOperationOf(ten, 3)).toStrictEqual(
+      Result.fail({ _tag: 'RecipeDoesNotFitGrid', recipeId: nine.id, gridWidth: 3 }),
     )
   })
 

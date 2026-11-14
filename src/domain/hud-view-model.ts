@@ -182,12 +182,9 @@ type EnchantmentField = 'enchantments' | 'storedEnchantments'
 
 /** Active and stored enchantments are independent components; neither stands in for the other. */
 const enchantmentLevelsOf = (
-  slot: InventoryCarriedSlot | HotbarSlotSnapshot,
+  slot: NonNullable<InventoryCarriedSlot | HotbarSlotSnapshot>,
   field: EnchantmentField,
 ): Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>> | undefined => {
-  if (typeof slot === 'undefined') {
-    return
-  }
   if ('item' in slot) {
     return slot.components[field]
   }
@@ -195,7 +192,7 @@ const enchantmentLevelsOf = (
 }
 
 const enchantmentsOf = (
-  slot: InventoryCarriedSlot | HotbarSlotSnapshot,
+  slot: NonNullable<InventoryCarriedSlot | HotbarSlotSnapshot>,
   field: EnchantmentField,
 ): ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>> | undefined => {
   const levels = enchantmentLevelsOf(slot, field)
@@ -299,7 +296,8 @@ const projectSlotView = (
   const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
   const view = summarySlotView(slot, index, selectedIndex)
   const { itemId } = view
-  if (typeof itemId === 'undefined') {
+  // `summarySlotView` leaves `itemId` undefined for an undefined slot; the slot test narrows the type.
+  if (typeof slot === 'undefined' || typeof itemId === 'undefined') {
     return view
   }
   return completeSlotView(view, {

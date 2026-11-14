@@ -83,11 +83,7 @@ const itemTypeFromId = (input: unknown): ItemType | undefined => {
   return
 }
 
-const decodeItemDisplayName = (input: unknown): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
-  if (typeof input !== 'string') {
-    return Result.fail({ _tag: 'InvalidItemDisplayName' })
-  }
-  const name = input
+const decodeItemDisplayName = (name: string): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
   if (name.includes(MINECRAFT_NAMESPACE_PREFIX)) {
     return Result.fail({ _tag: 'InvalidItemDisplayName' })
   }
@@ -118,26 +114,11 @@ const resultTagForMember = (memberName: 'success' | 'failure'): 'Success' | 'Fai
   return 'Failure'
 }
 
-const resultMember = (
-  input: object,
-  prototype: object,
-  memberName: 'success' | 'failure',
-): unknown | undefined => {
-  if (Object.getPrototypeOf(input) !== prototype) {
-    return
-  }
-  if (Object.getOwnPropertyDescriptor(prototype, '_tag')?.value !== resultTagForMember(memberName)) {
-    return
-  }
-  return resultDataMember(input, memberName)
-}
-
 const resultEnvelope = (
   input: object,
-  prototype: object,
   memberName: 'success' | 'failure',
 ): Readonly<{ tag: 'Success' | 'Failure'; value: unknown }> | undefined => {
-  const value = resultMember(input, prototype, memberName)
+  const value = resultDataMember(input, memberName)
   if (typeof value === 'undefined') {
     return
   }
@@ -147,10 +128,10 @@ const resultEnvelope = (
 const resultValueFromObject = (input: object): Readonly<{ tag: 'Success' | 'Failure'; value: unknown }> | undefined => {
   const prototype = Object.getPrototypeOf(input)
   if (prototype === SUCCESS_RESULT_PROTOTYPE) {
-    return resultEnvelope(input, SUCCESS_RESULT_PROTOTYPE, 'success')
+    return resultEnvelope(input, 'success')
   }
   if (prototype === FAILURE_RESULT_PROTOTYPE) {
-    return resultEnvelope(input, FAILURE_RESULT_PROTOTYPE, 'failure')
+    return resultEnvelope(input, 'failure')
   }
   return
 }
@@ -190,11 +171,8 @@ const resolverValue = (input: unknown): Result.Result<string, ItemDisplayNameRes
   return displayNameFromResult(parsed.success)
 }
 
-/** Resolve default English or Japanese item names from the kernel registry. */
+/** Resolve default English or Japanese item names from the kernel registry, which also rejects unknown input. */
 export const defaultItemDisplayNameResolver: ItemDisplayNameResolver = (itemType, language) => {
-  if (!isItemType(itemType) || (language !== 'en' && language !== 'ja')) {
-    return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
-  }
   const resolved = getDisplayName({ id: itemType, kind: 'item', language })
   if (Result.isFailure(resolved)) {
     return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)

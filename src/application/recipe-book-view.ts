@@ -451,9 +451,7 @@ const placementButtonForSection = ({
   target,
 }: PlacementButtonForSectionInput): DomInteractiveElement | undefined => {
   const entryIndex = entries.findIndex(({ recipe }) => recipe.id === target.recipeId)
-  if (entryIndex < FIRST_INDEX) {
-    return
-  }
+  // A missing recipe yields index -1, which reads as undefined here.
   const entry = entries[entryIndex]
   if (typeof entry === 'undefined') {
     return

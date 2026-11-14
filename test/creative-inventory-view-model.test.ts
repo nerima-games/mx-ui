@@ -105,6 +105,8 @@ describe('creative inventory view model', () => {
     expect(creativeItemCategoryOf('not_a_kernel_item')).toStrictEqual(
       Result.fail({ _tag: 'InvalidItemId' }),
     )
+    expect(creativeItemCategoryOf('apple')).toStrictEqual(Result.succeed('food'))
+    expect(creativeItemCategoryOf('diamond_sword')).toStrictEqual(Result.succeed('combat'))
     expect(creativeTakeOperationOf('not_a_kernel_item')).toStrictEqual(
       Result.fail({ _tag: 'InvalidItemId' }),
     )

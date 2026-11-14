@@ -469,6 +469,7 @@ const initializeSlotCells = (slot: SlotElement, root: DomInteractiveElement): vo
   // Group, so an inventory slot stays exactly as unfocusable as it was.
   slot.focusRingHidden.previous = ''
   slot.tooltipHidden.previous = ''
+  slot.itemIconHidden.previous = ''
   slot.disabled.previous = ''
 }
 
@@ -946,15 +947,8 @@ const updateSlotItemIcon = (slot: SlotElement, view: SlotView): void => {
   renderSlotIcon(slot, icon.success)
 }
 
-const enchantmentName = (id: string): string => {
-  if (!id.startsWith('minecraft:')) {
-    return id
-  }
-  return id.slice('minecraft:'.length)
-}
-
 const enchantmentText = (id: string, level: number): string =>
-  `${enchantmentName(id).replaceAll('_', ' ')} ${String(level)}`
+  `${id.replaceAll('_', ' ')} ${String(level)}`
 
 const EMPTY_ENCHANTMENT_COUNT = 0
 

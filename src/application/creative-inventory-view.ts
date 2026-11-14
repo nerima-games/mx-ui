@@ -7,8 +7,6 @@ import {
   CreativeSearchQuerySchema,
   type CreativeTakeItemOperation,
   creativeInventoryViewModel,
-  creativeSearchQueryOf,
-  creativeTakeOperationOf,
 } from '../domain/creative-inventory-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
 import {
@@ -308,12 +306,8 @@ const connectItemActions = (
   item: CreativeInventoryItem,
   actions: CreativeInventoryViewActions | undefined,
 ): void => {
-  slot.root.addEventListener('click', () => {
-    const operation = creativeTakeOperationOf(item.itemId)
-    if (Result.isSuccess(operation)) {
-      actions?.onTake?.(operation.success)
-    }
-  })
+  // `item.itemId` is already a kernel `ItemType`, so the take intent needs no revalidation.
+  slot.root.addEventListener('click', () => actions?.onTake?.({ itemId: item.itemId, kind: 'take-item' }))
   slot.root.addEventListener('focus', () => setSlotKeyboardFocus(slot, true))
   slot.root.addEventListener('blur', () => setSlotKeyboardFocus(slot, false))
 }
@@ -454,11 +448,7 @@ const connectSearch = (
   actions: CreativeInventoryViewActions | undefined,
 ): void => {
   state.parts.search.addEventListener('input', () => {
-    const parsedQuery = creativeSearchQueryOf(state.parts.search.value)
-    if (Result.isFailure(parsedQuery)) {
-      return
-    }
-    const query = parsedQuery.success
+    const query = CreativeSearchQuerySchema.make(state.parts.search.value)
     const next = creativeInventoryViewModel(query, state.currentModel.category, searchResolver)
     renderCreativeModel(state, next)
     actions?.onSearchChange?.(query)
@@ -472,11 +462,8 @@ const connectCategoryButtons = (
 ): void => {
   for (const { category, root: button } of state.parts.categoryButtons) {
     button.addEventListener('click', () => {
-      const parsedQuery = creativeSearchQueryOf(state.parts.search.value)
-      if (Result.isFailure(parsedQuery)) {
-        return
-      }
-      const next = creativeInventoryViewModel(parsedQuery.success, category, searchResolver)
+      const query = CreativeSearchQuerySchema.make(state.parts.search.value)
+      const next = creativeInventoryViewModel(query, category, searchResolver)
       renderCreativeModel(state, next)
       actions?.onCategoryChange?.(category)
     })

@@ -121,6 +121,7 @@ describe('createSlotElement', () => {
     { field: 'countLabel', value: 7 },
     { field: 'itemDisplayName', value: 7 },
     { field: 'enchantments', value: null },
+    { field: 'enchantments', value: [null] },
     { field: 'enchantments', value: [{ id: 12, level: 1 }] },
     { field: 'enchantments', value: [{ id: 'sharpness', level: 0 }] },
     { field: 'storedEnchantments', value: null },
@@ -182,6 +183,114 @@ describe('createSlotElement', () => {
 
     const root = fakeElement(slot.root)
     expect(root.find('aria-hidden', 'true')?.attributes.get('src')).toBe('https://assets.example/stone.png')
+    expect(root.find('data-mx-ui', 'slot-item')?.textContent).toBe('Stone')
+  })
+})
+
+describe('slot names and icons supplied across a host boundary', () => {
+  const stoneWithIcon = (icon: unknown) =>
+    slotView(
+      { itemId: 'stone', count: 1 },
+      0,
+      {
+        selectedIndex: 0,
+        itemDisplayNameOptions: {
+          language: 'en',
+          resolver: () => Result.succeed('Stone'),
+          iconResolver: () => Result.succeed(icon),
+        },
+      },
+    )
+
+  it('shows a host name from a tagged success record', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView({ itemId: 'stone', count: 1 }, 0, 0)
+    Reflect.set(view, 'itemDisplayName', { language: 'en', result: { _tag: 'Success', success: 'Host Stone' } })
+
+    expect(updateSlotElement(slot, view)).toStrictEqual(Result.void)
+    expect(fakeElement(slot.root).find('data-mx-ui', 'slot-item')?.textContent).toBe('Host Stone')
+  })
+
+  it.each([
+    { label: 'an empty cloned name', result: { success: '' } },
+    {
+      label: 'a cloned name whose property descriptor cannot be read',
+      result: new Proxy({ success: 'Host Stone' }, {
+        getOwnPropertyDescriptor: () => {
+          throw new Error('host value must not be trusted')
+        },
+      }),
+    },
+  ])('shows an unknown item for $label instead of falling back to another name', ({ result }) => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView({ itemId: 'stone', count: 1 }, 0, 0)
+    Reflect.set(view, 'itemDisplayName', { language: 'en', result })
+
+    expect(updateSlotElement(slot, view)).toStrictEqual(Result.void)
+    expect(fakeElement(slot.root).find('data-mx-ui', 'slot-item')?.textContent).toBe('Unknown item')
+  })
+
+  it('shows an unknown item for an item id the kernel does not know', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+
+    expect(updateSlotElement(slot, slotView({ itemId: 'not_a_kernel_item', count: 2 }, 0, 0))).toStrictEqual(Result.void)
+    expect(fakeElement(slot.root).find('data-mx-ui', 'slot-item')?.textContent).toBe('Unknown item')
+  })
+
+  it('crops and scales an atlas icon to the 16px slot icon box', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = stoneWithIcon({
+      kind: 'atlas',
+      url: 'https://assets.example/atlas.png',
+      x: 24,
+      y: 32,
+      width: 8,
+      height: 4,
+      atlasWidth: 32,
+      atlasHeight: 40,
+    })
+
+    expect(updateSlotElement(slot, view)).toStrictEqual(Result.void)
+    const root = fakeElement(slot.root)
+    const wrapper = fakeElement(root.find('data-mx-ui', 'slot-icon'))
+    const image = fakeElement(root.find('aria-hidden', 'true'))
+    expect(wrapper.attributes.has('hidden')).toBe(false)
+    expect(image.attributes.get('src')).toBe('https://assets.example/atlas.png')
+    expect(wrapper.style.properties.get('width')).toBe('16px')
+    expect(wrapper.style.properties.get('height')).toBe('8px')
+    expect(image.style.properties.get('left')).toBe('-48px')
+    expect(image.style.properties.get('top')).toBe('-64px')
+    expect(image.style.properties.get('width')).toBe('64px')
+    expect(image.style.properties.get('height')).toBe('80px')
+  })
+
+  it.each([
+    { label: 'a non-object icon result', result: null },
+    {
+      label: 'an icon result whose keys cannot be listed',
+      result: new Proxy({}, {
+        ownKeys: () => {
+          throw new Error('host value must not be trusted')
+        },
+      }),
+    },
+  ])('hides a previously shown icon when a later view carries $label', ({ result }) => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const shown = stoneWithIcon({ kind: 'url', url: 'https://assets.example/stone.png' })
+    expect(updateSlotElement(slot, shown)).toStrictEqual(Result.void)
+    const root = fakeElement(slot.root)
+    expect(root.find('data-mx-ui', 'slot-icon')?.attributes.has('hidden')).toBe(false)
+
+    const next = stoneWithIcon({ kind: 'url', url: 'https://assets.example/stone.png' })
+    Reflect.set(next, 'itemIcon', { result })
+    expect(updateSlotElement(slot, next)).toStrictEqual(Result.void)
+    expect(root.find('data-mx-ui', 'slot-icon')?.attributes.has('hidden')).toBe(true)
+    expect(root.find('aria-hidden', 'true')?.attributes.has('src')).toBe(false)
     expect(root.find('data-mx-ui', 'slot-item')?.textContent).toBe('Stone')
   })
 })
