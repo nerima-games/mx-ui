@@ -22,6 +22,7 @@ export type ItemDisplayNameResolverFailure = Readonly<{
 export type ItemDisplayNameFailure =
   | ItemDisplayNameResolverFailure
   | Readonly<{ readonly _tag: 'InvalidItemId' }>
+  | Readonly<{ readonly _tag: 'MissingItemDisplayNameResolver' }>
   | Readonly<{ readonly _tag: 'InvalidItemDisplayName' }>
 
 export type ItemDisplayNameResolver = (
@@ -33,7 +34,7 @@ type ItemDisplayNameResolverCallback = (itemType: ItemType, language: UiLanguage
 
 export type ItemDisplayNameOptions = Readonly<{
   readonly language: UiLanguage
-  readonly resolver?: ItemDisplayNameResolver
+  readonly resolver: ItemDisplayNameResolver
   readonly iconResolver?: ItemIconResolver
 }>
 
@@ -213,10 +214,9 @@ const invokeResolver = (
 const resolveForItemType = (
   itemType: ItemType,
   language: UiLanguage,
-  resolver: ItemDisplayNameResolverCallback | undefined,
+  resolver: ItemDisplayNameResolverCallback,
 ): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
-  const activeResolver = resolver ?? defaultItemDisplayNameResolver
-  const called = invokeResolver(activeResolver, itemType, language)
+  const called = invokeResolver(resolver, itemType, language)
   if (Result.isFailure(called)) {
     return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
   }
@@ -231,11 +231,14 @@ const resolveForItemType = (
 export const resolveItemDisplayName = (
   input: unknown,
   language: UiLanguage,
-  resolver?: ItemDisplayNameResolverCallback,
+  resolver?: ItemDisplayNameResolver,
 ): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
   const itemType = itemTypeFromId(input)
   if (typeof itemType === 'undefined') {
     return Result.fail({ _tag: 'InvalidItemId' })
+  }
+  if (typeof resolver === 'undefined') {
+    return Result.fail({ _tag: 'MissingItemDisplayNameResolver' })
   }
   return resolveForItemType(itemType, language, resolver)
 }

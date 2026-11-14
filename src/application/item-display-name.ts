@@ -3,6 +3,7 @@ import {
   type ItemDisplayNameFailure,
   ItemDisplayNameSchema,
   type ItemDisplayNameView,
+  defaultItemDisplayNameResolver,
   resolveItemDisplayName,
 } from '../domain/item-display-name.js'
 import { Result, Schema } from 'effect'
@@ -104,11 +105,15 @@ export const itemDisplayNameText = (
   if (typeof slot.itemId === 'undefined') {
     return ''
   }
-  const supplied = displayNameText(slot.itemDisplayName, language)
-  if (typeof supplied !== 'undefined') {
-    return supplied
+  const currentView = slot.itemDisplayName
+  if (typeof currentView !== 'undefined' && currentView.language === language) {
+    const supplied = displayNameText(currentView, language)
+    if (typeof supplied !== 'undefined') {
+      return supplied
+    }
+    return translateUiMessage(language, 'item.unknown')
   }
-  const resolved = resolveItemDisplayName(slot.itemId, language)
+  const resolved = resolveItemDisplayName(slot.itemId, language, defaultItemDisplayNameResolver)
   if (Result.isSuccess(resolved)) {
     return resolved.success
   }
@@ -129,13 +134,14 @@ export const itemDisplayNameValue = (
   if (typeof slot.itemId === 'undefined') {
     return { key: 'inventory.empty' }
   }
-  const resolved = slot.itemDisplayName
-  if (typeof resolved !== 'undefined' && resolved.language === language) {
-    const name = displayNameResultOf(resolved.result)
+  const currentView = slot.itemDisplayName
+  if (typeof currentView !== 'undefined' && currentView.language === language) {
+    const name = displayNameResultOf(currentView.result)
     if (Result.isSuccess(name)) {
       return displayNameValue(name)
     }
+    return { key: 'item.unknown' }
   }
-  const displayName = resolveItemDisplayName(slot.itemId, language)
+  const displayName = resolveItemDisplayName(slot.itemId, language, defaultItemDisplayNameResolver)
   return displayNameValue(displayName)
 }

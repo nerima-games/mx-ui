@@ -39,7 +39,7 @@ import {
   type UiLocalizationRoot,
 } from '../src/application/ui-localization.js'
 import { textCell } from '../src/application/dom-write.js'
-import { itemDisplayNameView } from '../src/domain/item-display-name.js'
+import { defaultItemDisplayNameResolver, itemDisplayNameView } from '../src/domain/item-display-name.js'
 import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from './fixtures/settings-input'
 import type { ItemType } from '@nerima-games/mc-kernel'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
@@ -275,9 +275,9 @@ describe('UI language', () => {
     expect(resolverCalls.at(-1)).toStrictEqual({ itemType: 'iron_ingot', language: 'ja' })
     const defaultView = itemDisplayNameView('stone')
     expect(defaultView.language).toBe('en')
-    expect(Result.isSuccess(defaultView.result)).toBe(true)
-    if (Result.isSuccess(defaultView.result)) {
-      expect(defaultView.result.success).toBe('Stone')
+    expect(Result.isFailure(defaultView.result)).toBe(true)
+    if (Result.isFailure(defaultView.result)) {
+      expect(defaultView.result.failure).toStrictEqual({ _tag: 'MissingItemDisplayNameResolver' })
     }
     const resolverFailure = resolveItemDisplayName('stone', 'en', () =>
       Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
@@ -290,7 +290,10 @@ describe('UI language', () => {
     const unknownId = resolveItemDisplayName('minecraft:no_such_item', 'en', resolver)
     expect(Result.isFailure(unknownId)).toBe(true)
     expect(resolverCalls).toHaveLength(callsBeforeUnknown)
-    expect(Result.isSuccess(resolveItemDisplayName('stone', 'ja'))).toBe(true)
+    expect(resolveItemDisplayName('stone', 'ja')).toStrictEqual(
+      Result.fail({ _tag: 'MissingItemDisplayNameResolver' }),
+    )
+    expect(Result.isSuccess(resolveItemDisplayName('stone', 'ja', defaultItemDisplayNameResolver))).toBe(true)
     expect(
       Result.isFailure(resolveItemDisplayName('stone', 'en', () => Result.succeed(''))),
     ).toBe(true)

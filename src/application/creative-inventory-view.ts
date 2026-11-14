@@ -12,6 +12,7 @@ import {
 } from '../domain/creative-inventory-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
 import {
+  defaultItemDisplayNameResolver,
   type ItemDisplayNameOptions,
   type ItemDisplayNameResolver,
   resolveItemDisplayName,
@@ -263,8 +264,9 @@ const displayNameOptionsFor = (
   language: UiLanguage,
   options: CreativeInventoryViewOptions | undefined,
 ): ItemDisplayNameOptions => {
-  const displayNameOptions: { language: UiLanguage; resolver?: ItemDisplayNameResolver; iconResolver?: ItemIconResolver } = {
+  const displayNameOptions: { language: UiLanguage; resolver: ItemDisplayNameResolver; iconResolver?: ItemIconResolver } = {
     language,
+    resolver: defaultItemDisplayNameResolver,
   }
   if (typeof options?.displayNameResolver !== 'undefined') {
     displayNameOptions.resolver = options.displayNameResolver

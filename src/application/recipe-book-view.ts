@@ -1,5 +1,9 @@
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
-import type { ItemDisplayNameOptions, ItemDisplayNameResolver } from '../domain/item-display-name.js'
+import {
+  defaultItemDisplayNameResolver,
+  type ItemDisplayNameOptions,
+  type ItemDisplayNameResolver,
+} from '../domain/item-display-name.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
   type Recipe,
@@ -174,7 +178,7 @@ const displayNameOptionsFor = (
 ): ItemDisplayNameOptions => {
   const resolver = options?.displayNameResolver
   if (typeof resolver === 'undefined') {
-    return { language }
+    return { language, resolver: defaultItemDisplayNameResolver }
   }
   return { language, resolver }
 }

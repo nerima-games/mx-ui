@@ -18,7 +18,7 @@ describe('item presentation', () => {
   it('property: arbitrary item ids resolve to a name or an independently expected typed failure', () => {
     fc.assert(
       fc.property(fc.anything(), (itemId) => {
-        const resolved = resolveItemDisplayName(itemId, 'en')
+        const resolved = resolveItemDisplayName(itemId, 'en', defaultItemDisplayNameResolver)
         const isKnownItemId =
           isItemType(itemId) ||
           (typeof itemId === 'string' &&
@@ -40,9 +40,9 @@ describe('item presentation', () => {
     )
   })
 
-  it('uses bilingual kernel names by default and keeps the host resolver override', () => {
-    const english = itemDisplayNameView('minecraft:stone')
-    const japanese = itemDisplayNameView('stone', { language: 'ja' })
+  it('uses the kernel resolver for bilingual names and keeps the host resolver override', () => {
+    const english = itemDisplayNameView('minecraft:stone', { language: 'en', resolver: defaultItemDisplayNameResolver })
+    const japanese = itemDisplayNameView('stone', { language: 'ja', resolver: defaultItemDisplayNameResolver })
     expect(Result.isSuccess(english.result)).toBe(true)
     expect(Result.isSuccess(japanese.result)).toBe(true)
     if (Result.isSuccess(english.result) && Result.isSuccess(japanese.result)) {
