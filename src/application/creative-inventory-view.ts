@@ -12,9 +12,9 @@ import {
 } from '../domain/creative-inventory-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
 import {
-  defaultItemDisplayNameResolver,
   type ItemDisplayNameOptions,
   type ItemDisplayNameResolver,
+  defaultItemDisplayNameResolver,
   resolveItemDisplayName,
 } from '../domain/item-display-name.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'

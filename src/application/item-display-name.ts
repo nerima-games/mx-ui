@@ -98,6 +98,21 @@ const displayNameText = (slot: SlotView['itemDisplayName'], language: UiLanguage
   return name.success
 }
 
+/** A same-language host view decides the name; an unreadable one is shown as unknown, not replaced. */
+const suppliedDisplayNameText = (
+  view: SlotView['itemDisplayName'],
+  language: UiLanguage,
+): ItemDisplayName | UiMessageText | undefined => {
+  if (typeof view === 'undefined' || view.language !== language) {
+    return
+  }
+  const supplied = displayNameText(view, language)
+  if (typeof supplied !== 'undefined') {
+    return supplied
+  }
+  return translateUiMessage(language, 'item.unknown')
+}
+
 export const itemDisplayNameText = (
   slot: Pick<SlotView, 'itemId' | 'itemDisplayName'>,
   language: UiLanguage,
@@ -105,13 +120,9 @@ export const itemDisplayNameText = (
   if (typeof slot.itemId === 'undefined') {
     return ''
   }
-  const currentView = slot.itemDisplayName
-  if (typeof currentView !== 'undefined' && currentView.language === language) {
-    const supplied = displayNameText(currentView, language)
-    if (typeof supplied !== 'undefined') {
-      return supplied
-    }
-    return translateUiMessage(language, 'item.unknown')
+  const supplied = suppliedDisplayNameText(slot.itemDisplayName, language)
+  if (typeof supplied !== 'undefined') {
+    return supplied
   }
   const resolved = resolveItemDisplayName(slot.itemId, language, defaultItemDisplayNameResolver)
   if (Result.isSuccess(resolved)) {

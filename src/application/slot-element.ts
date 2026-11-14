@@ -49,14 +49,14 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
-import { EnchantmentLevel, SUPPORTED_VANILLA_ENCHANTMENT_IDS } from '@nerima-games/mc-kernel'
-import { Result } from 'effect'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
+import { EnchantmentLevel, SUPPORTED_VANILLA_ENCHANTMENT_IDS } from '@nerima-games/mc-kernel'
 import { type ItemIcon, type ItemIconFailure, resolveItemIcon } from '../domain/item-icon.js'
 import { type UiLanguage, type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
 import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
 import type { ItemDisplayNameView } from '../domain/item-display-name.js'
 import { PALETTE_VAR } from './palette-css.js'
+import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameText } from './item-display-name.js'
 
@@ -762,14 +762,19 @@ const isItemDisplayNameFailure = (input: unknown): boolean => {
   ].includes(failureTag)
 }
 
+const CLONED_SUCCESS_KEY_COUNT = 1
+const CLONED_SUCCESS_KEY_INDEX = 0
+
 const isItemDisplayNameResult = (result: unknown): result is ItemDisplayNameView['result'] => {
   if (!isRecord(result)) {
     return false
   }
   const tag = Reflect.get(result, '_tag')
-  // effect keeps `_tag` on the Result prototype, so structuredClone yields a bare `{ success }`.
+  // Effect keeps `_tag` on the Result prototype, so structuredClone yields a bare `{ success }`.
   const keys = Reflect.ownKeys(result)
-  const isClonedSuccess = typeof tag === 'undefined' && keys.length === 1 && keys[0] === 'success'
+  const isClonedSuccess = typeof tag === 'undefined' &&
+    keys.length === CLONED_SUCCESS_KEY_COUNT &&
+    keys[CLONED_SUCCESS_KEY_INDEX] === 'success'
   if (tag === 'Success' || isClonedSuccess) {
     return typeof Reflect.get(result, 'success') === 'string'
   }

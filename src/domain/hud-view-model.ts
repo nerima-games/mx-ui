@@ -5,7 +5,6 @@ import {
   SUPPORTED_VANILLA_ENCHANTMENT_IDS,
   type SupportedVanillaEnchantmentId,
 } from '@nerima-games/mc-kernel'
-import { Result } from 'effect'
 import {
   type HudPresentationSnapshot,
   hudPresentationView,
@@ -23,6 +22,7 @@ import {
   itemDisplayNameView,
 } from './item-display-name.js'
 import { type ItemIconView, itemIconView } from './item-icon.js'
+import { Result } from 'effect'
 
 export {
   DEFAULT_MAX_HEALTH_POINTS,

@@ -1,8 +1,8 @@
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import {
-  defaultItemDisplayNameResolver,
   type ItemDisplayNameOptions,
   type ItemDisplayNameResolver,
+  defaultItemDisplayNameResolver,
 } from '../domain/item-display-name.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import {
