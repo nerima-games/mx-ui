@@ -122,9 +122,10 @@ describe('color vision settings projection', () => {
       expect(Result.isFailure(settingsViewModel(settings, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS))).toBe(true)
     }
 
-    const ownerAcceptedExtraTag = { ...DEFAULT_SETTINGS, _tag: 'ColorVisionCorrection' }
-    expect(Result.isSuccess(settingsViewModel(ownerAcceptedExtraTag, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS))).toBe(
-      true,
+    // mc-sim v0.11.1 rejects unknown settings fields, so an extra tag is a typed snapshot failure.
+    const ownerRejectedExtraTag = { ...DEFAULT_SETTINGS, _tag: 'ColorVisionCorrection' }
+    expect(settingsViewModel(ownerRejectedExtraTag, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidSettingsSnapshot' }),
     )
   })
 

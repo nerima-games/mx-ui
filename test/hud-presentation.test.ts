@@ -1,3 +1,4 @@
+import { TICKS_PER_SECOND } from '@nerima-games/mc-sim'
 import { Result, Schema } from 'effect'
 import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
@@ -7,7 +8,6 @@ import {
   type HudPresentationSnapshot,
 } from '../src/domain/hud-presentation.js'
 
-const TICKS_PER_SECOND = 60
 const PLAN_DAY_LENGTH_TICKS = 1_200 * TICKS_PER_SECOND
 const CUSTOM_DAY_LENGTH_TICKS = 400 * TICKS_PER_SECOND
 const PLAN_NIGHT_START_TICK = Math.round((PLAN_DAY_LENGTH_TICKS * 55) / 100)

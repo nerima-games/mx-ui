@@ -50,7 +50,6 @@ export type EnchantingTableState = {
 
 const ZERO = 0
 const TWO = 2
-
 const UINT32_BIT_WIDTH = 32
 /** 2**32, the wraparound modulus `>>> 0` produces; used to reimplement it without a bitwise op. */
 const UINT32_MODULUS = TWO ** UINT32_BIT_WIDTH

@@ -1,4 +1,5 @@
 import { INVENTORY_SCENARIOS } from './mc-sim-scenarios'
+import { UI1_ITEM_SURFACE_SCENARIOS } from './scenarios/ui1-item-surfaces'
 import { OVERLAY_SCENARIOS } from './scenarios/overlay'
 import { SESSION_SCENARIOS } from './scenarios/session'
 import { STATION_SCENARIOS } from './scenarios/stations'
@@ -11,6 +12,7 @@ export const SCENARIO_REGISTRY: ReadonlyArray<ScenarioDefinition> = [
   ...OVERLAY_SCENARIOS,
   ...SESSION_SCENARIOS,
   ...INVENTORY_SCENARIOS,
+  ...UI1_ITEM_SURFACE_SCENARIOS,
   ...STATION_SCENARIOS,
   ...END_HUD_INSPECTOR_SCENARIOS,
 ]

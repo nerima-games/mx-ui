@@ -376,7 +376,7 @@ describe('supplemental HUD presentation surfaces', () => {
       { category: 'positive', remainingSecs: 12.2 },
       { category: 'negative', remainingSecs: 1.1 },
     ],
-    time: { dayLengthTicks: 72_000, ticks: 37_800 },
+    time: { dayLengthTicks: 24_000, ticks: 12_600 },
   })
 
   it('uses condition-specific heart art for a living player', () => {
@@ -584,9 +584,9 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     const unresolved = mount()
     unresolved.view.render(hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)]))
     expect(unresolved.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 1, Unknown item, 64',
+      'Hotbar slot 1, Stone, 64',
     )
-    expect(unresolved.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
+    expect(unresolved.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Stone')
 
     const namespaced = mount()
     namespaced.view.render(
@@ -1239,6 +1239,9 @@ describe('HUD owner projection contracts', () => {
             empty: slot === undefined,
             index,
             itemId: slot?.item,
+            ...(typeof slot === 'undefined'
+              ? {}
+              : { itemIcon: { result: Result.fail({ _tag: 'ItemIconUnavailable' as const }) } }),
             selected: index === selectedIndex,
           }))
 

@@ -41,6 +41,7 @@ import {
   MAX_RENDER_DISTANCE,
   MIN_RENDER_DISTANCE,
   SPAWN_VITALS,
+  TICKS_PER_SECOND,
   VitalsSchema,
   itemStack as makeItemStack,
 } from '@nerima-games/mc-sim'
@@ -155,6 +156,8 @@ describe('UiMount', () => {
     await Effect.runPromise(runtime.start)
 
     const state = await Effect.runPromise(makeUiFrameState)
+    const dayLengthTicks = 1_200 * TICKS_PER_SECOND
+    const thirtySecondsBeforeNight = Math.round((dayLengthTicks * 55) / 100) - 30 * TICKS_PER_SECOND
     const presentation = Schema.decodeUnknownSync(HudPresentationSnapshotSchema)({
       absorptionPoints: 3,
       armor: { current: 12, max: 20 },
@@ -163,7 +166,7 @@ describe('UiMount', () => {
       oxygen: { current: 10, max: 20 },
       position: { xCoordinate: 12.5, yCoordinate: 64, zCoordinate: -3.25 },
       statusEffects: [{ category: 'negative', remainingSecs: 12.2 }],
-      time: { dayLengthTicks: 72_000, ticks: 37_800 },
+      time: { dayLengthTicks, ticks: thirtySecondsBeforeNight },
     })
     const deadVitals = Schema.decodeUnknownSync(VitalsSchema)({
       ...SPAWN_VITALS,

@@ -181,6 +181,17 @@ describe('enchanting table controller', () => {
     expect(result.success).toStrictEqual([undefined, undefined, undefined])
   })
 
+  it('returns no offers for a kernel item outside the sim enchantment registry', () => {
+    const result = enchantingOffers(
+      readyState({ item: { itemId: 'blaze_rod', count: 1 } }),
+    )
+    expect(Result.isSuccess(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      throw new Error('an item outside the sim enchantment registry must have no offers')
+    }
+    expect(result.success).toStrictEqual([undefined, undefined, undefined])
+  })
+
   it('returns no offers when the table has no item', () => {
     const result = enchantingOffers(readyState({ item: undefined }))
     expect(Result.isSuccess(result)).toBe(true)

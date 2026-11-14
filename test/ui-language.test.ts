@@ -39,13 +39,20 @@ import {
   type UiLocalizationRoot,
 } from '../src/application/ui-localization.js'
 import { textCell } from '../src/application/dom-write.js'
-import { itemDisplayNameView } from '../src/domain/item-display-name.js'
+import { defaultItemDisplayNameResolver, itemDisplayNameView } from '../src/domain/item-display-name.js'
 import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from './fixtures/settings-input'
 import type { ItemType } from '@nerima-games/mc-kernel'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
 import { asUiMessageText, asWorldTypeId } from './helpers/ui3-brand-values'
 
 describe('UI language', () => {
+  it('localizes the recipe-book grid guidance in English and Japanese', () => {
+    expect(translateUiMessage('en', 'recipe-book.no-grid-fit')).toBe('Does not fit a crafting grid')
+    expect(translateUiMessage('ja', 'recipe-book.no-grid-fit')).toBe('クラフト枠に配置できません')
+    expect(translateUiMessage('en', 'recipe-book.requires-table')).toBe('Requires a 3×3 grid')
+    expect(translateUiMessage('ja', 'recipe-book.requires-table')).toBe('3×3 のクラフト枠が必要です')
+  })
+
   it('returns typed failures for unsupported inputs through the decoder and mount controller', () => {
     const mount = makeUiMount({ root: document.createElement('main') })
     fc.assert(
@@ -283,7 +290,10 @@ describe('UI language', () => {
     const unknownId = resolveItemDisplayName('minecraft:no_such_item', 'en', resolver)
     expect(Result.isFailure(unknownId)).toBe(true)
     expect(resolverCalls).toHaveLength(callsBeforeUnknown)
-    expect(Result.isFailure(resolveItemDisplayName('stone', 'en'))).toBe(true)
+    expect(resolveItemDisplayName('stone', 'ja')).toStrictEqual(
+      Result.fail({ _tag: 'MissingItemDisplayNameResolver' }),
+    )
+    expect(Result.isSuccess(resolveItemDisplayName('stone', 'ja', defaultItemDisplayNameResolver))).toBe(true)
     expect(
       Result.isFailure(resolveItemDisplayName('stone', 'en', () => Result.succeed(''))),
     ).toBe(true)

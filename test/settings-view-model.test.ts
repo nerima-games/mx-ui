@@ -308,8 +308,9 @@ describe('settingsViewModel', () => {
   it('uses the owner validator as published, including its current extra-field behavior', () => {
     const withExtraField = { ...SNAPSHOT, extraField: true }
 
-    expect(isValidSettings(withExtraField)).toBe(true)
-    expect(Result.isSuccess(makeModelResult(withExtraField))).toBe(true)
+    // mc-sim v0.11.1 (src/domain/settings.ts SettingsSchema, isValidSettings) rejects unknown fields.
+    expect(isValidSettings(withExtraField)).toBe(false)
+    expect(makeModelResult(withExtraField)).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsSnapshot' }))
   })
 
   it('returns a deeply frozen view model and bindings list', () => {

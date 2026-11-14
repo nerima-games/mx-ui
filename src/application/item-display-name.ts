@@ -1,28 +1,112 @@
 import {
   type ItemDisplayName,
+  type ItemDisplayNameFailure,
+  ItemDisplayNameSchema,
   type ItemDisplayNameView,
+  defaultItemDisplayNameResolver,
   resolveItemDisplayName,
 } from '../domain/item-display-name.js'
+import { Result, Schema } from 'effect'
 import {
   type UiLanguage,
   type UiMessageText,
   type UiMessageValue,
   translateUiMessage,
 } from '../domain/ui-language.js'
-import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 
 const MINECRAFT_NAMESPACE_PREFIX = 'minecraft:'
+const ITEM_DISPLAY_NAME_UNAVAILABLE: ItemDisplayNameFailure = { _tag: 'ItemDisplayNameUnavailable' }
+const INVALID_ITEM_DISPLAY_NAME: ItemDisplayNameFailure = { _tag: 'InvalidItemDisplayName' }
+const ONE_RESULT_MEMBER = 1
+const TWO_RESULT_MEMBERS = 2
+const FIRST_RESULT_KEY = 0
 
-const displayNameText = (slot: SlotView['itemDisplayName'], language: UiLanguage): ItemDisplayName | undefined => {
-  if (typeof slot === 'undefined' || slot.language !== language || Result.isFailure(slot.result)) {
-    return
-  }
-  const { success } = slot.result
-  if (success.includes(MINECRAFT_NAMESPACE_PREFIX)) {
+const isDataDescriptor = (descriptor: PropertyDescriptor | undefined): descriptor is PropertyDescriptor & { value: unknown } =>
+  typeof descriptor !== 'undefined' && Object.hasOwn(descriptor, 'value')
+
+const isSuccessEnvelope = (
+  keys: ReadonlyArray<string | symbol>,
+  descriptors: PropertyDescriptorMap,
+): boolean => {
+  const { _tag: tag } = descriptors
+  const { success } = descriptors
+  const hasUntaggedSuccess = keys.length === ONE_RESULT_MEMBER && keys.at(FIRST_RESULT_KEY) === 'success'
+  const hasTaggedSuccess = keys.length === TWO_RESULT_MEMBERS &&
+    keys.includes('success') && keys.includes('_tag') &&
+    isDataDescriptor(tag) && tag.value === 'Success'
+  return (hasUntaggedSuccess || hasTaggedSuccess) && isDataDescriptor(success)
+}
+
+type DisplayNameResult = ItemDisplayNameView['result']
+
+const serializedSuccessDescriptor = (input: DisplayNameResult): PropertyDescriptor | undefined => {
+  const descriptors = Object.getOwnPropertyDescriptors(input)
+  const keys = Reflect.ownKeys(descriptors)
+  const { success } = descriptors
+  if (!isSuccessEnvelope(keys, descriptors) || !isDataDescriptor(success)) {
     return
   }
   return success
+}
+
+const serializedDisplayNameSuccess = (input: DisplayNameResult): unknown | undefined => {
+  const descriptor = serializedSuccessDescriptor(input)
+  if (!isDataDescriptor(descriptor)) {
+    return
+  }
+  return descriptor.value
+}
+
+const serializedSuccessValue = (input: DisplayNameResult): Result.Result<unknown, ItemDisplayNameFailure> => Result.try({
+  catch: () => INVALID_ITEM_DISPLAY_NAME,
+  try: () => serializedDisplayNameSuccess(input),
+})
+
+const decodeDisplayName = (input: unknown): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
+  if (typeof input !== 'string' || input.includes(MINECRAFT_NAMESPACE_PREFIX)) {
+    return Result.fail(INVALID_ITEM_DISPLAY_NAME)
+  }
+  const decoded = Schema.decodeUnknownResult(ItemDisplayNameSchema)(input)
+  if (Result.isFailure(decoded)) {
+    return Result.fail(INVALID_ITEM_DISPLAY_NAME)
+  }
+  return Result.succeed(decoded.success)
+}
+
+const displayNameResultOf = (input: DisplayNameResult): Result.Result<ItemDisplayName, ItemDisplayNameFailure> => {
+  const serializedSuccess = serializedSuccessValue(input)
+  if (Result.isFailure(serializedSuccess)) {
+    return Result.fail(serializedSuccess.failure)
+  }
+  const { success } = serializedSuccess
+  if (typeof success === 'undefined') {
+    return Result.fail(ITEM_DISPLAY_NAME_UNAVAILABLE)
+  }
+  return decodeDisplayName(success)
+}
+
+const displayNameText = (view: ItemDisplayNameView): ItemDisplayName | undefined => {
+  const name = displayNameResultOf(view.result)
+  if (Result.isFailure(name)) {
+    return
+  }
+  return name.success
+}
+
+/** A same-language host view decides the name; an unreadable one is shown as unknown, not replaced. */
+const suppliedDisplayNameText = (
+  view: SlotView['itemDisplayName'],
+  language: UiLanguage,
+): ItemDisplayName | UiMessageText | undefined => {
+  if (typeof view === 'undefined' || view.language !== language) {
+    return
+  }
+  const supplied = displayNameText(view)
+  if (typeof supplied !== 'undefined') {
+    return supplied
+  }
+  return translateUiMessage(language, 'item.unknown')
 }
 
 export const itemDisplayNameText = (
@@ -32,14 +116,22 @@ export const itemDisplayNameText = (
   if (typeof slot.itemId === 'undefined') {
     return ''
   }
-  return displayNameText(slot.itemDisplayName, language) ?? translateUiMessage(language, 'item.unknown')
+  const supplied = suppliedDisplayNameText(slot.itemDisplayName, language)
+  if (typeof supplied !== 'undefined') {
+    return supplied
+  }
+  const resolved = resolveItemDisplayName(slot.itemId, language, defaultItemDisplayNameResolver)
+  if (Result.isSuccess(resolved)) {
+    return resolved.success
+  }
+  return translateUiMessage(language, 'item.unknown')
 }
 
-const displayNameValue = (result: ItemDisplayNameView['result']): UiMessageValue => {
-  if (Result.isFailure(result) || result.success.includes(MINECRAFT_NAMESPACE_PREFIX)) {
-    return { key: 'item.unknown' }
+const displayNameValue = (name: Result.Result<ItemDisplayName, ItemDisplayNameFailure>): UiMessageValue => {
+  if (Result.isSuccess(name)) {
+    return name.success
   }
-  return result.success
+  return { key: 'item.unknown' }
 }
 
 export const itemDisplayNameValue = (
@@ -49,10 +141,9 @@ export const itemDisplayNameValue = (
   if (typeof slot.itemId === 'undefined') {
     return { key: 'inventory.empty' }
   }
-  const resolved = slot.itemDisplayName
-  if (typeof resolved !== 'undefined' && resolved.language === language) {
-    return displayNameValue(resolved.result)
+  const currentView = slot.itemDisplayName
+  if (typeof currentView !== 'undefined' && currentView.language === language) {
+    return displayNameValue(displayNameResultOf(currentView.result))
   }
-  const displayName = resolveItemDisplayName(slot.itemId, language)
-  return displayNameValue(displayName)
+  return displayNameValue(resolveItemDisplayName(slot.itemId, language, defaultItemDisplayNameResolver))
 }

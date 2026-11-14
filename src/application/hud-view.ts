@@ -241,9 +241,17 @@ const isRecord = (input: unknown): input is Record<string, unknown> =>
 const isOptionalString = (input: unknown): boolean =>
   typeof input === 'undefined' || typeof input === 'string'
 
+const CLONED_SUCCESS_KEY_COUNT = 1
+const CLONED_SUCCESS_KEY_INDEX = 0
+
 const isItemDisplayNameResult = (result: Record<string, unknown>): boolean => {
   const tag = Reflect.get(result, '_tag')
-  if (tag === 'Success') {
+  // Effect keeps `_tag` on the Result prototype, so structuredClone yields a bare `{ success }`.
+  const keys = Reflect.ownKeys(result)
+  const isClonedSuccess = typeof tag === 'undefined' &&
+    keys.length === CLONED_SUCCESS_KEY_COUNT &&
+    keys[CLONED_SUCCESS_KEY_INDEX] === 'success'
+  if (tag === 'Success' || isClonedSuccess) {
     return typeof Reflect.get(result, 'success') === 'string'
   }
   if (tag === 'Failure') {
