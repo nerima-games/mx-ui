@@ -584,9 +584,9 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     const unresolved = mount()
     unresolved.view.render(hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)]))
     expect(unresolved.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 1, Stone, 64',
+      'Hotbar slot 1, Unknown item, 64',
     )
-    expect(unresolved.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Stone')
+    expect(unresolved.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
 
     const namespaced = mount()
     namespaced.view.render(
@@ -596,9 +596,9 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       }),
     )
     expect(namespaced.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 1, Stone, 64',
+      'Hotbar slot 1, Unknown item, 64',
     )
-    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Stone')
+    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
 
     const model = hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)], 0, fakeItemDisplayNameOptions())
     const unsafeDisplayName = Schema.decodeUnknownSync(ItemDisplayNameSchema)('minecraft:stone')
@@ -611,9 +611,9 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       ),
     })
     expect(namespaced.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 1, Stone, 64',
+      'Hotbar slot 1, Unknown item, 64',
     )
-    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Stone')
+    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
   })
 
   it('REGRESSION: selected radio state follows a moving hotbar selection', () => {
