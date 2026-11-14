@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Result } from 'effect'
 import { createSlotElement, setSlotButtonView, updateSlotElement } from '../src/application/slot-element'
-import { slotView } from '../src/domain/hud-view-model'
+import { enchantmentsComponent, storedEnchantmentsComponent } from '@nerima-games/mc-kernel'
+import { type InventoryCarriedSlot, itemStack } from '@nerima-games/mc-sim'
+import { type HotbarSlotSnapshot, slotView } from '../src/domain/hud-view-model'
+import { slotSnapshotOf } from '../src/domain/inventory-view-model'
 import { fakeDocument, fakeElement } from './fake-dom'
 
 describe('createSlotElement', () => {
@@ -120,6 +123,7 @@ describe('createSlotElement', () => {
     { field: 'enchantments', value: null },
     { field: 'enchantments', value: [{ id: 12, level: 1 }] },
     { field: 'enchantments', value: [{ id: 'sharpness', level: 0 }] },
+    { field: 'storedEnchantments', value: null },
   ])('returns a typed failure for an invalid $field value $value', ({ field, value }) => {
     const factory = fakeDocument()
     const slot = createSlotElement(factory, 0)
@@ -179,5 +183,89 @@ describe('createSlotElement', () => {
     const root = fakeElement(slot.root)
     expect(root.find('aria-hidden', 'true')?.attributes.get('src')).toBe('https://assets.example/stone.png')
     expect(root.find('data-mx-ui', 'slot-item')?.textContent).toBe('Stone')
+  })
+})
+
+const succeeded = <A, E>(result: Result.Result<A, E>): A => {
+  if (Result.isSuccess(result)) {
+    return result.success
+  }
+  return expect.fail(`expected success: ${JSON.stringify(result.failure)}`)
+}
+
+const bookWith = (enchantments: Record<string, number>, storedEnchantments: Record<string, number>) => {
+  const book = succeeded(itemStack('book', 1))
+  return {
+    ...book,
+    components: {
+      ...book.components,
+      enchantments: succeeded(enchantmentsComponent(enchantments)),
+      storedEnchantments: succeeded(storedEnchantmentsComponent(storedEnchantments)),
+    },
+  }
+}
+
+describe('active and stored enchantments', () => {
+  const bookView = (slot: InventoryCarriedSlot | HotbarSlotSnapshot) =>
+    slotView(slot, 0, {
+      selectedIndex: 0,
+      itemDisplayNameOptions: { language: 'en', resolver: () => Result.succeed('Book') },
+    })
+
+  it.each([
+    {
+      name: '(a) empty enchantments with stored enchantments lists only the stored ones',
+      active: {},
+      stored: { mending: 1 },
+      expectedActive: undefined,
+      expectedStored: [{ id: 'mending', level: 1 }],
+      tooltip: 'Book\nCount: 1\nStored enchantments: mending 1',
+    },
+    {
+      name: '(b) enchantments with empty stored enchantments lists only the active ones',
+      active: { sharpness: 5 },
+      stored: {},
+      expectedActive: [{ id: 'sharpness', level: 5 }],
+      expectedStored: undefined,
+      tooltip: 'Book\nCount: 1\nEnchantments: sharpness 5',
+    },
+    {
+      name: '(c) both empty lists neither and adds no enchantment tooltip line',
+      active: {},
+      stored: {},
+      expectedActive: undefined,
+      expectedStored: undefined,
+      tooltip: 'Book\nCount: 1',
+    },
+    {
+      name: '(d) both non-empty lists both with the stored line before the enchantments line',
+      active: { sharpness: 5 },
+      stored: { mending: 1 },
+      expectedActive: [{ id: 'sharpness', level: 5 }],
+      expectedStored: [{ id: 'mending', level: 1 }],
+      tooltip: 'Book\nCount: 1\nStored enchantments: mending 1\nEnchantments: sharpness 5',
+    },
+  ])('$name', ({ active, stored, expectedActive, expectedStored, tooltip }) => {
+    const stack = bookWith(active, stored)
+    const views = [bookView(stack), bookView(slotSnapshotOf(stack))]
+
+    for (const view of views) {
+      expect(view.enchantments).toStrictEqual(expectedActive)
+      expect(view.storedEnchantments).toStrictEqual(expectedStored)
+      expect(Reflect.has(view, 'enchantments')).toBe(typeof expectedActive !== 'undefined')
+      expect(Reflect.has(view, 'storedEnchantments')).toBe(typeof expectedStored !== 'undefined')
+
+      const factory = fakeDocument()
+      const slot = createSlotElement(factory, 0)
+      expect(updateSlotElement(slot, view)).toStrictEqual(Result.void)
+      expect(fakeElement(slot.root).find('data-mx-ui', 'slot-tooltip')?.textContent).toBe(tooltip)
+    }
+  })
+
+  it('copies each enchantment component into its own snapshot field', () => {
+    const snapshot = slotSnapshotOf(bookWith({ sharpness: 5 }, { mending: 1 }))
+
+    expect(snapshot.enchantments).toStrictEqual({ sharpness: 5 })
+    expect(snapshot.storedEnchantments).toStrictEqual({ mending: 1 })
   })
 })

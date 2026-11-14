@@ -805,7 +805,16 @@ const isSlotEnchantment = (input: unknown): boolean => {
 const isSlotEnchantmentList = (input: unknown): boolean =>
   Array.isArray(input) && input.every((entry) => isSlotEnchantment(entry))
 
-type SlotViewInputField = 'countLabel' | 'enchantments' | 'itemDisplayName'
+type SlotEnchantmentField = 'enchantments' | 'storedEnchantments'
+type SlotViewInputField = 'countLabel' | 'itemDisplayName' | SlotEnchantmentField
+
+const SLOT_ENCHANTMENT_FIELDS: ReadonlyArray<SlotEnchantmentField> = ['enchantments', 'storedEnchantments']
+
+const invalidSlotEnchantmentField = (view: Record<string, unknown>): SlotEnchantmentField | undefined =>
+  SLOT_ENCHANTMENT_FIELDS.find((field) => {
+    const enchantments = Reflect.get(view, field)
+    return typeof enchantments !== 'undefined' && !isSlotEnchantmentList(enchantments)
+  })
 
 /** The first optional `SlotView` field whose runtime value violates its declared type. */
 const invalidSlotViewField = (view: Record<string, unknown>): SlotViewInputField | undefined => {
@@ -817,11 +826,7 @@ const invalidSlotViewField = (view: Record<string, unknown>): SlotViewInputField
   if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
     return 'countLabel'
   }
-  const enchantments = Reflect.get(view, 'enchantments')
-  if (typeof enchantments !== 'undefined' && !isSlotEnchantmentList(enchantments)) {
-    return 'enchantments'
-  }
-  return
+  return invalidSlotEnchantmentField(view)
 }
 
 const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
@@ -954,12 +959,16 @@ const tooltipDurabilityLine = (view: SlotView, language: UiLanguage): string | u
   })
 }
 
-const tooltipEnchantmentLine = (view: SlotView, language: UiLanguage): string | undefined => {
-  if (typeof view.enchantments === 'undefined' || view.enchantments.length === EMPTY_ENCHANTMENT_COUNT) {
+const tooltipEnchantmentLine = (
+  enchantments: SlotView['enchantments'],
+  key: 'item.tooltip.enchantments' | 'item.tooltip.storedEnchantments',
+  language: UiLanguage,
+): string | undefined => {
+  if (typeof enchantments === 'undefined' || enchantments.length === EMPTY_ENCHANTMENT_COUNT) {
     return
   }
-  return translateUiMessage(language, 'item.tooltip.enchantments', {
-    values: view.enchantments.map(({ id, level }) => enchantmentText(id, level)).join(', '),
+  return translateUiMessage(language, key, {
+    values: enchantments.map(({ id, level }) => enchantmentText(id, level)).join(', '),
   })
 }
 
@@ -976,7 +985,9 @@ const slotTooltipText = (view: SlotView, language: UiLanguage): string => {
   const count = view.countLabel ?? '1'
   const lines = [itemDisplayNameText(view, language), translateUiMessage(language, 'item.tooltip.count', { count })]
   appendTooltipLine(lines, tooltipDurabilityLine(view, language))
-  appendTooltipLine(lines, tooltipEnchantmentLine(view, language))
+  // Vanilla lists stored enchantments before active ones.
+  appendTooltipLine(lines, tooltipEnchantmentLine(view.storedEnchantments, 'item.tooltip.storedEnchantments', language))
+  appendTooltipLine(lines, tooltipEnchantmentLine(view.enchantments, 'item.tooltip.enchantments', language))
   return lines.join('\n')
 }
 

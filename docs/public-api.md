@@ -299,7 +299,7 @@ mc-sim continues to own persisted settings and game state.
 | `SettingsViewActions.onClose?` / station `*ViewActions.onClose?` | `() => void` | Supplying the callback adds a native close button and connects it to the host's screen transition. |
 
 `UI_MESSAGES` and `ACHIEVEMENT_TITLES` store English and Japanese text for each entry.
-`UI_TRANSLATION_KEY_COUNT` reports 465 combined UI message and achievement-title keys, and tests check that both languages cover every entry.
+`UI_TRANSLATION_KEY_COUNT` reports 466 combined UI message and achievement-title keys, and tests check that both languages cover every entry.
 `UiMountOptions` accepts `initialLanguage`; decode persisted values with `decodeUiLanguage` before passing them. After mount, `updateLanguage` switches localized dictionary text and aria attributes. After a successful language update, rebuild every language-dependent view model and render or update those views. Pass the new language in `ItemDisplayNameOptions` when rebuilding item-bearing models. `applyUiLanguage` does not rerun the host's item-name resolver.
 
 `defaultItemDisplayNameResolver` calls the kernel catalog with a validated `ItemType` without a `minecraft:` prefix and the requested `UiLanguage`. Pass it explicitly when kernel names are desired; a host-supplied resolver can provide customized names. `resolveItemDisplayName` retains the resolver's typed result. An invalid snapshot ID, a missing resolver, a resolver failure, or an item with no kernel display name returns a typed failure; the visible slot uses the localized unknown-item label and never prints the ID.

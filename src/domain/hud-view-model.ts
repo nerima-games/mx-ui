@@ -46,6 +46,7 @@ export type HotbarSlotSnapshot = {
   readonly count: number
   readonly durability?: number | undefined
   readonly enchantments?: Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>> | undefined
+  readonly storedEnchantments?: Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>> | undefined
 }
 export type VitalsSnapshot = Vitals
 
@@ -55,6 +56,7 @@ export type SlotView = {
   readonly itemDisplayName?: ItemDisplayNameView
   readonly itemIcon?: ItemIconView
   readonly enchantments?: ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>>
+  readonly storedEnchantments?: ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>>
   readonly countLabel: string | undefined
   readonly durabilityPercent: number | undefined
   readonly selected: boolean
@@ -159,19 +161,6 @@ const slotDurabilityPercent = (
   return Math.round(durability * FULL_PERCENT)
 }
 
-const enchantmentsForSlot = (
-  slot: InventoryCarriedSlot | HotbarSlotSnapshot | undefined,
-): Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>> | undefined => {
-  if (typeof slot === 'undefined') {
-    return
-  }
-  if ('item' in slot) {
-    return slot.components.enchantments ?? slot.components.storedEnchantments
-  }
-  const { enchantments } = slot
-  return enchantments
-}
-
 const enchantmentEntries = (
   enchantments: Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>>,
 ): ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>> | undefined => {
@@ -189,17 +178,31 @@ const enchantmentEntries = (
   return entries
 }
 
-const enchantmentsOf = (
-  slot: InventoryCarriedSlot | HotbarSlotSnapshot | undefined,
-): ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>> | undefined => {
+type EnchantmentField = 'enchantments' | 'storedEnchantments'
+
+/** Active and stored enchantments are independent components; neither stands in for the other. */
+const enchantmentLevelsOf = (
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot,
+  field: EnchantmentField,
+): Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>> | undefined => {
   if (typeof slot === 'undefined') {
     return
   }
-  const enchantments = enchantmentsForSlot(slot)
-  if (typeof enchantments === 'undefined') {
+  if ('item' in slot) {
+    return slot.components[field]
+  }
+  return slot[field]
+}
+
+const enchantmentsOf = (
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot,
+  field: EnchantmentField,
+): ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>> | undefined => {
+  const levels = enchantmentLevelsOf(slot, field)
+  if (typeof levels === 'undefined') {
     return
   }
-  return enchantmentEntries(enchantments)
+  return enchantmentEntries(levels)
 }
 
 const itemIdOf = (slot: InventoryCarriedSlot | HotbarSlotSnapshot): string | undefined => {
@@ -249,6 +252,7 @@ type SlotViewPresentation = Readonly<{
   readonly displayName: ItemDisplayNameView | undefined
   readonly itemIcon: ItemIconView
   readonly enchantments: SlotView['enchantments']
+  readonly storedEnchantments: SlotView['storedEnchantments']
 }>
 
 const completeSlotView = (view: SlotView, presentation: SlotViewPresentation): SlotView => {
@@ -258,6 +262,9 @@ const completeSlotView = (view: SlotView, presentation: SlotViewPresentation): S
   }
   if (typeof presentation.enchantments !== 'undefined') {
     combined = { ...combined, enchantments: presentation.enchantments }
+  }
+  if (typeof presentation.storedEnchantments !== 'undefined') {
+    combined = { ...combined, storedEnchantments: presentation.storedEnchantments }
   }
   return combined
 }
@@ -297,8 +304,9 @@ const projectSlotView = (
   }
   return completeSlotView(view, {
     displayName: optionalDisplayName(itemId, itemDisplayNameOptions),
-    enchantments: enchantmentsOf(slot),
+    enchantments: enchantmentsOf(slot, 'enchantments'),
     itemIcon: itemIconView(itemId, itemDisplayNameOptions?.iconResolver),
+    storedEnchantments: enchantmentsOf(slot, 'storedEnchantments'),
   })
 }
 
