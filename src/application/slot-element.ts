@@ -344,7 +344,7 @@ const setTooltipAppearance = (tooltip: DomElement): void => {
   tooltip.style.setProperty('border', `1px solid ${PALETTE_VAR.slotBorder}`)
 }
 
-const configureTooltip = (tooltip: DomElement, id: string): void => {
+const configureTooltip = (tooltip: DomElement, id: SlotTooltipId): void => {
   setTooltipAttributes(tooltip, id)
   setTooltipPosition(tooltip)
   setTooltipAppearance(tooltip)
