@@ -318,7 +318,6 @@ const createItemButton = ({ factory, root, grid, actions, item, index }: CreateI
   slot.root.setAttribute('data-item-id', item.itemId)
   slot.root.setAttribute('data-category', item.category)
   inheritUiLanguage(root, slot.root)
-  setSlotFocusTarget(slot, { columns: ITEM_GRID_COLUMNS, group: 'creative-items', index })
   connectItemActions(slot, item, actions)
   grid.appendChild(slot.root)
   return { index, item, slot }
@@ -348,6 +347,7 @@ const renderCategoryButtons = (
 }
 
 const renderHiddenItem = (slot: SlotElement): void => {
+  setSlotHidden(slot, true)
   setSlotButtonView(slot, { disabled: true, focused: false, label: '', tabStop: false })
 }
 
@@ -355,11 +355,20 @@ type RenderVisibleItemOptions = Readonly<{
   readonly slot: SlotElement
   readonly shown: CreativeInventoryItem
   readonly index: number
+  readonly focusIndex: number
   readonly itemDisplayNameOptions: ItemDisplayNameOptions
   readonly language: UiLanguage
 }>
 
-const renderVisibleItem = ({ slot, shown, index, itemDisplayNameOptions, language }: RenderVisibleItemOptions): void => {
+const showItemSlot = (slot: SlotElement, focusIndex: number): void => {
+  setSlotHidden(slot, false)
+  setSlotFocusTarget(slot, { columns: ITEM_GRID_COLUMNS, group: 'creative-items', index: focusIndex })
+}
+
+const renderVisibleItem = (
+  { slot, shown, index, focusIndex, itemDisplayNameOptions, language }: RenderVisibleItemOptions,
+): void => {
+  showItemSlot(slot, focusIndex)
   const view = slotView(
     { count: 1, itemId: shown.itemId },
     index,
@@ -390,18 +399,21 @@ type RenderItemsOptions = Readonly<{
   readonly options: CreativeInventoryViewOptions | undefined
 }>
 
+/**
+ * Focus indices are positions among the VISIBLE slots, renumbered on every render.
+ * The grid packs only visible slots, so a catalog index would place on-screen
+ * neighbours in different navigation rows and arrow keys would find no target.
+ */
 const renderItems = ({ buttons, model, root, options }: RenderItemsOptions): number => {
-  const visible = new Map(model.items.map((item) => [item.itemId, item]))
+  const visible = new Set(model.items.map((shown) => shown.itemId))
   const language = uiLanguageForElement(root)
   const itemDisplayNameOptions = displayNameOptionsFor(language, options)
-  for (const { index, item, slot } of buttons) {
-    const shown = visible.get(item.itemId)
-    setSlotHidden(slot, typeof shown === 'undefined')
-    if (typeof shown === 'undefined') {
-      renderHiddenItem(slot)
-    } else {
-      renderVisibleItem({ index, itemDisplayNameOptions, language, shown, slot })
-    }
+  const isVisible = (button: ItemButton): boolean => visible.has(button.item.itemId)
+  for (const { slot } of buttons.filter((button) => !isVisible(button))) {
+    renderHiddenItem(slot)
+  }
+  for (const [focusIndex, { index, item, slot }] of buttons.filter(isVisible).entries()) {
+    renderVisibleItem({ focusIndex, index, itemDisplayNameOptions, language, shown: item, slot })
   }
   return visible.size
 }

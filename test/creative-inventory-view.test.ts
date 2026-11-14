@@ -1,10 +1,68 @@
+// @vitest-environment jsdom
+
 import * as fc from 'fast-check'
 import { ITEM_DISPLAY_NAMES, ITEM_TYPES, type ItemType } from '@nerima-games/mc-kernel'
 import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { createCreativeInventoryView } from '../src/application/creative-inventory-view'
+import { focusTargetForElement, moveFocusTarget } from '../src/application/inventory-navigation'
 import type { ItemDisplayNameResolver } from '../src/domain/item-display-name'
-import { fakeDocument, fakeElement } from './fake-dom'
+import { type FakeElement, fakeDocument, fakeElement } from './fake-dom'
+
+type FocusRow = readonly [string | undefined, string | undefined, string | undefined]
+
+const visibleFocusOrder = (root: FakeElement): ReadonlyArray<FocusRow> =>
+  root.findAll('data-mx-ui', 'creative-item')
+    .filter((item) => !item.attributes.has('hidden'))
+    .map((item): FocusRow => [
+      item.attributes.get('data-item-id'),
+      item.attributes.get('data-focus-index'),
+      item.attributes.get('data-focus-columns'),
+    ])
+
+/**
+ * Copy every creative item's attributes, as the view wrote them, onto plain jsdom
+ * buttons so the real navigation code can query them. Rendering the whole catalog
+ * in jsdom takes seconds per step; navigation reads only these attributes.
+ */
+const projectCreativeItems = (root: FakeElement): HTMLElement => {
+  const container = document.createElement('div')
+  for (const item of root.findAll('data-mx-ui', 'creative-item')) {
+    const button = document.createElement('button')
+    for (const [name, value] of item.attributes) {
+      button.setAttribute(name, value)
+    }
+    container.append(button)
+  }
+  document.body.replaceChildren(container)
+  return container
+}
+
+const creativeItemInDocument = (root: Element, itemId: string): HTMLElement => {
+  const element = root.querySelector(`[data-mx-ui="creative-item"][data-item-id="${itemId}"]`)
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Expected creative item ${itemId}`)
+  }
+  return element
+}
+
+const focusedItemId = (): string | null | undefined => document.activeElement?.getAttribute('data-item-id')
+
+const moveFocused = (root: Element, direction: 'down' | 'right'): boolean => {
+  const target = focusTargetForElement(document.activeElement)
+  if (typeof target === 'undefined') {
+    return false
+  }
+  return moveFocusTarget(root, target, direction)
+}
+
+const pressRightUntilStopped = (root: Element): ReadonlyArray<string | null | undefined> => {
+  const visited = [focusedItemId()]
+  while (moveFocused(root, 'right')) {
+    visited.push(focusedItemId())
+  }
+  return visited
+}
 
 describe('creative inventory view', () => {
   it('renders the full catalog, searches both host languages, exposes focus tooltips, and emits typed take intents', () => {
@@ -142,5 +200,89 @@ describe('creative inventory view', () => {
     )
     expect(stone?.attributes.has('hidden')).toBe(false)
     expect(stone?.find('data-mx-ui', 'slot-item')?.attributes.get('title')).toBe('Unknown item')
+  })
+
+  it('numbers focus targets in visible display order and renumbers them on search and category changes', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('main')
+    const view = createCreativeInventoryView(factory, parent)
+    const root = fakeElement(view.root)
+    const search = fakeElement(root.find('data-mx-ui', 'creative-search'))
+
+    search.value = 'book'
+    search.dispatch('input')
+    expect(visibleFocusOrder(root)).toStrictEqual([
+      ['bookshelf', '0', '9'],
+      ['enchanted_book', '1', '9'],
+      ['book', '2', '9'],
+      ['written_book', '3', '9'],
+      ['writable_book', '4', '9'],
+    ])
+
+    const equipment = root.findAll('data-mx-ui', 'creative-category').find((button) =>
+      button.attributes.get('data-category') === 'equipment',
+    )
+    fakeElement(equipment).dispatch('click')
+    expect(visibleFocusOrder(root)).toStrictEqual([
+      ['enchanted_book', '0', '9'],
+      ['book', '1', '9'],
+      ['written_book', '2', '9'],
+      ['writable_book', '3', '9'],
+    ])
+
+    search.value = 'stone'
+    search.dispatch('input')
+    expect(visibleFocusOrder(root)).toStrictEqual([
+      ['stone_pickaxe', '0', '9'],
+      ['stone_hoe', '1', '9'],
+      ['stone_shovel', '2', '9'],
+      ['stone_axe', '3', '9'],
+    ])
+  })
+
+  it('moves arrow focus through the packed visible grid and never onto hidden items', () => {
+    const factory = fakeDocument()
+    const parent = factory.createElement('main')
+    const root = fakeElement(createCreativeInventoryView(factory, parent).root)
+    const search = fakeElement(root.find('data-mx-ui', 'creative-search'))
+
+    search.value = 'book'
+    search.dispatch('input')
+    const bookGrid = projectCreativeItems(root)
+    const cobblestone = creativeItemInDocument(bookGrid, 'cobblestone')
+    expect(cobblestone.hasAttribute('hidden')).toBe(true)
+    expect(focusTargetForElement(cobblestone)).toBeUndefined()
+    creativeItemInDocument(bookGrid, 'bookshelf').focus()
+    expect(pressRightUntilStopped(bookGrid)).toStrictEqual([
+      'bookshelf',
+      'enchanted_book',
+      'book',
+      'written_book',
+      'writable_book',
+    ])
+
+    search.value = 'stone'
+    search.dispatch('input')
+    const stoneGrid = projectCreativeItems(root)
+    creativeItemInDocument(stoneGrid, 'stone').focus()
+    expect(moveFocused(stoneGrid, 'down')).toBe(true)
+    expect(focusedItemId()).toBe('stone_hoe')
+
+    const redstone = root.findAll('data-mx-ui', 'creative-category').find((button) =>
+      button.attributes.get('data-category') === 'redstone',
+    )
+    fakeElement(redstone).dispatch('click')
+    const redstoneGrid = projectCreativeItems(root)
+    creativeItemInDocument(redstoneGrid, 'redstone_block').focus()
+    expect(pressRightUntilStopped(redstoneGrid)).toStrictEqual([
+      'redstone_block',
+      'redstone_torch',
+      'stone_button',
+      'redstone_lamp',
+      'redstone_dust',
+      'redstone_ore',
+      'deepslate_redstone_ore',
+    ])
+    redstoneGrid.remove()
   })
 })
