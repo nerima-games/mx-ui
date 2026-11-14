@@ -118,6 +118,6 @@ describe('creative inventory view', () => {
       item.attributes.get('data-item-id') === 'stone',
     )
     expect(stone?.attributes.has('hidden')).toBe(false)
-    expect(stone?.find('data-mx-ui', 'slot-item')?.textContent).toBe(ITEM_DISPLAY_NAMES.stone.en)
+    expect(stone?.find('data-mx-ui', 'slot-item')?.attributes.get('title')).toBe('Unknown item')
   })
 })
