@@ -49,12 +49,13 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
+import { Result } from 'effect'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
-import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { type ItemIcon, type ItemIconFailure, resolveItemIcon } from '../domain/item-icon.js'
+import { type UiLanguage, type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
 import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
 import type { ItemDisplayNameView } from '../domain/item-display-name.js'
 import { PALETTE_VAR } from './palette-css.js'
-import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameText } from './item-display-name.js'
 
@@ -162,12 +163,27 @@ export const FOCUS_RING_SHADOW_WIDTH = '5px'
 export const SLOT_TARGET_MIN_SIZE = '24px'
 const DEFAULT_FOCUS_COLUMNS = 1
 const FIRST_INDEX = 0
+type SlotTooltipId = `mx-ui-slot-tooltip-${number}`
 
 export type SlotElement = {
   readonly root: DomInteractiveElement
   readonly hiddenFlag: AttributeCell
   readonly itemText: TextCell
   readonly itemTitle: AttributeCell
+  readonly itemIconHidden: AttributeCell
+  readonly itemIconSource: AttributeCell
+  readonly itemIconWidth: StyleCell
+  readonly itemIconHeight: StyleCell
+  readonly itemIconLeft: StyleCell
+  readonly itemIconTop: StyleCell
+  readonly itemIconImageWidth: StyleCell
+  readonly itemIconImageHeight: StyleCell
+  readonly tooltipText: TextCell
+  readonly tooltipHidden: AttributeCell
+  readonly tooltipTitle: AttributeCell
+  readonly tooltipId: SlotTooltipId
+  readonly ariaDescribedBy: AttributeCell
+  tooltipFocused: boolean
   readonly countText: TextCell
   readonly countTitle: AttributeCell
   readonly emptyFlag: AttributeCell
@@ -228,6 +244,7 @@ const styleSlotRootTargetSize = (root: DomInteractiveElement): void => {
   // The floor, not a size. See `SLOT_TARGET_MIN_SIZE`: `min-*` leaves a host
   // Free to make slots bigger, and a slot whose content box is zero tall takes
   // Its focus ring and its `weight` distinguisher down with it.
+  root.style.setProperty('box-sizing', 'border-box')
   root.style.setProperty('min-width', SLOT_TARGET_MIN_SIZE)
   root.style.setProperty('min-height', SLOT_TARGET_MIN_SIZE)
 }
@@ -250,6 +267,102 @@ const createSlotRoot = (factory: DomElementFactory, index: number): DomInteracti
 type SlotTextElements = {
   readonly text: TextCell
   readonly title: AttributeCell
+}
+
+type SlotIconElements = {
+  readonly hidden: AttributeCell
+  readonly source: AttributeCell
+  readonly width: StyleCell
+  readonly height: StyleCell
+  readonly left: StyleCell
+  readonly top: StyleCell
+  readonly imageWidth: StyleCell
+  readonly imageHeight: StyleCell
+}
+
+const createIconWrapper = (factory: DomElementFactory, root: DomElement): DomElement => {
+  const wrapper = factory.createElement('span')
+  wrapper.setAttribute('data-mx-ui', 'slot-icon')
+  wrapper.setAttribute('hidden', '')
+  wrapper.style.setProperty('display', 'inline-block')
+  wrapper.style.setProperty('position', 'relative')
+  wrapper.style.setProperty('overflow', 'hidden')
+  wrapper.style.setProperty('vertical-align', 'middle')
+  root.appendChild(wrapper)
+  return wrapper
+}
+
+const createIconImage = (factory: DomElementFactory, wrapper: DomElement): DomElement => {
+  const image = factory.createElement('img')
+  image.setAttribute('alt', '')
+  image.setAttribute('aria-hidden', 'true')
+  image.style.setProperty('position', 'absolute')
+  wrapper.appendChild(image)
+  return image
+}
+
+const createSlotIcon = (factory: DomElementFactory, root: DomElement): SlotIconElements => {
+  const wrapper = createIconWrapper(factory, root)
+  const image = createIconImage(factory, wrapper)
+  return {
+    height: styleCell(wrapper, 'height'),
+    hidden: attributeCell(wrapper, 'hidden'),
+    imageHeight: styleCell(image, 'height'),
+    imageWidth: styleCell(image, 'width'),
+    left: styleCell(image, 'left'),
+    source: attributeCell(image, 'src'),
+    top: styleCell(image, 'top'),
+    width: styleCell(wrapper, 'width'),
+  }
+}
+
+let nextTooltipId = 0
+const TOOLTIP_ID_INCREMENT = 1
+
+const setTooltipAttributes = (tooltip: DomElement, id: SlotTooltipId): void => {
+  tooltip.setAttribute('id', id)
+  tooltip.setAttribute('role', 'tooltip')
+  tooltip.setAttribute('data-mx-ui', 'slot-tooltip')
+  tooltip.setAttribute('hidden', '')
+}
+
+const setTooltipPosition = (tooltip: DomElement): void => {
+  tooltip.style.setProperty('position', 'absolute')
+  tooltip.style.setProperty('left', '0')
+  tooltip.style.setProperty('top', '100%')
+  tooltip.style.setProperty('z-index', '10')
+  tooltip.style.setProperty('padding', '4px 6px')
+  tooltip.style.setProperty('min-width', 'max-content')
+  tooltip.style.setProperty('max-width', 'min(240px, 80vw)')
+  tooltip.style.setProperty('white-space', 'pre-line')
+  tooltip.style.setProperty('text-align', 'left')
+}
+
+const setTooltipAppearance = (tooltip: DomElement): void => {
+  tooltip.style.setProperty('background-color', PALETTE_VAR.surface)
+  tooltip.style.setProperty('color', PALETTE_VAR.ink)
+  tooltip.style.setProperty('border', `1px solid ${PALETTE_VAR.slotBorder}`)
+}
+
+const configureTooltip = (tooltip: DomElement, id: SlotTooltipId): void => {
+  setTooltipAttributes(tooltip, id)
+  setTooltipPosition(tooltip)
+  setTooltipAppearance(tooltip)
+}
+
+const createSlotTooltip = (factory: DomElementFactory, root: DomElement): Readonly<{
+  text: TextCell
+  hidden: AttributeCell
+  id: SlotTooltipId
+}> => {
+  const tooltip = factory.createElement('span')
+  const id: SlotTooltipId = `mx-ui-slot-tooltip-${nextTooltipId}`
+  nextTooltipId += TOOLTIP_ID_INCREMENT
+  configureTooltip(tooltip, id)
+  root.appendChild(tooltip)
+  const hidden = attributeCell(tooltip, 'hidden')
+  hidden.previous = ''
+  return { hidden, id, text: textCell(tooltip) }
 }
 
 const createSlotItem = (factory: DomElementFactory, root: DomElement): SlotTextElements => {
@@ -336,14 +449,31 @@ const createSlotFocusRing = (factory: DomElementFactory, root: DomElement): Attr
   return attributeCell(focusRing, 'hidden')
 }
 
-export const createSlotElement = (factory: DomElementFactory, index: number): SlotElement => {
-  const root = createSlotRoot(factory, index)
-  const item = createSlotItem(factory, root)
-  const count = createSlotCount(factory, root)
-  const durability = createSlotDurability(factory, root)
-  const focusRingHidden = createSlotFocusRing(factory, root)
+type SlotElementParts = Readonly<{
+  readonly count: SlotTextElements
+  readonly durability: SlotDurabilityElements
+  readonly focusRingHidden: AttributeCell
+  readonly item: SlotTextElements
+  readonly itemIcon: SlotIconElements
+  readonly root: DomInteractiveElement
+  readonly tooltip: Readonly<{ text: TextCell; hidden: AttributeCell; id: SlotTooltipId }>
+}>
 
+const initializeSlotCells = (slot: SlotElement, root: DomInteractiveElement): void => {
+  radioStateCells.set(slot, { checked: attributeCell(root, 'aria-checked') })
+  // The ring was hidden directly above; tell its cell so, or the first call
+  // Issues a redundant write from the construction side, where the 「unchanged
+  // Re-render mutates nothing」 test cannot see it. `tabStop` is deliberately NOT
+  // Seeded: a slot has no `tabindex` until somebody makes it part of a focus
+  // Group, so an inventory slot stays exactly as unfocusable as it was.
+  slot.focusRingHidden.previous = ''
+  slot.tooltipHidden.previous = ''
+  slot.disabled.previous = ''
+}
+
+const assembleSlotElement = ({ root, itemIcon, item, count, durability, tooltip, focusRingHidden }: SlotElementParts): SlotElement => {
   const slot: SlotElement = {
+    ariaDescribedBy: attributeCell(root, 'aria-describedby'),
     ariaDisabled: attributeCell(root, 'aria-disabled'),
     ariaLabel: attributeCell(root, 'aria-label'),
     ariaLive: attributeCell(root, 'aria-live'),
@@ -361,6 +491,14 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
     focusIndex: attributeCell(root, 'data-focus-index'),
     focusRingHidden,
     hiddenFlag: attributeCell(root, 'hidden'),
+    itemIconHeight: itemIcon.height,
+    itemIconHidden: itemIcon.hidden,
+    itemIconImageHeight: itemIcon.imageHeight,
+    itemIconImageWidth: itemIcon.imageWidth,
+    itemIconLeft: itemIcon.left,
+    itemIconSource: itemIcon.source,
+    itemIconTop: itemIcon.top,
+    itemIconWidth: itemIcon.width,
     itemText: item.text,
     itemTitle: item.title,
     mergeableFlag: attributeCell(root, 'data-mergeable'),
@@ -368,19 +506,27 @@ export const createSlotElement = (factory: DomElementFactory, index: number): Sl
     root,
     selectedFlag: attributeCell(root, 'data-selected'),
     tabStop: attributeCell(root, 'tabindex'),
+    tooltipFocused: false,
+    tooltipHidden: tooltip.hidden,
+    tooltipId: tooltip.id,
+    tooltipText: tooltip.text,
+    tooltipTitle: attributeCell(root, 'title'),
   }
-  radioStateCells.set(slot, {
-    checked: attributeCell(root, 'aria-checked'),
-  })
-  // The ring was hidden directly above; tell its cell so, or the first call
-  // Issues a redundant write from the construction side, where the 「unchanged
-  // Re-render mutates nothing」 test cannot see it. `tabStop` is deliberately NOT
-  // Seeded: a slot has no `tabindex` until somebody makes it part of a focus
-  // Group, so an inventory slot stays exactly as unfocusable as it was.
-  slot.focusRingHidden.previous = ''
-  slot.disabled.previous = ''
-
+  initializeSlotCells(slot, root)
   return slot
+}
+
+export const createSlotElement = (factory: DomElementFactory, index: number): SlotElement => {
+  const root = createSlotRoot(factory, index)
+  return assembleSlotElement({
+    count: createSlotCount(factory, root),
+    durability: createSlotDurability(factory, root),
+    focusRingHidden: createSlotFocusRing(factory, root),
+    item: createSlotItem(factory, root),
+    itemIcon: createSlotIcon(factory, root),
+    root,
+    tooltip: createSlotTooltip(factory, root),
+  })
 }
 
 /**
@@ -473,7 +619,9 @@ const clearSlotFocusTarget = (slot: SlotElement): void => {
  * separate.
  */
 export const setSlotKeyboardFocus = (slot: SlotElement, focused: boolean): void => {
+  slot.tooltipFocused = focused
   writeHidden(slot.focusRingHidden, !focused)
+  writeHidden(slot.tooltipHidden, !focused || typeof slot.ariaDescribedBy.previous === 'undefined')
 }
 
 const clearRadioState = (slot: SlotElement): void => {
@@ -529,12 +677,7 @@ const writeSlotButtonLabel = (slot: SlotElement, view: SlotButtonView): void => 
   writeLocalizedAttribute(slot.ariaLabel, view.localizedLabel.key, view.localizedLabel.values)
 }
 
-/** Project optional button semantics without taking ownership of activation. */
-export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): void => {
-  if (typeof view === 'undefined') {
-    clearSlotButtonView(slot)
-    return
-  }
+const applySlotButtonView = (slot: SlotElement, view: SlotButtonView): void => {
   writeAttribute(slot.role, 'button')
   writeSlotButtonLabel(slot, view)
   writeAttribute(slot.ariaDisabled, String(view.disabled))
@@ -542,6 +685,18 @@ export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): voi
   setSlotTabStop(slot, view.tabStop)
   setSlotKeyboardFocus(slot, view.focused)
   clearRadioState(slot)
+}
+
+/** Project optional button semantics without taking ownership of activation. */
+export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): void => {
+  if (typeof view === 'undefined') {
+    clearSlotButtonView(slot)
+    return
+  }
+  if (typeof view.label !== 'string') {
+    return
+  }
+  applySlotButtonView(slot, view)
 }
 
 const selectionColor = (selected: boolean): string => {
@@ -629,19 +784,201 @@ const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
     updateSlotText(slot.itemText, slot.itemTitle)
     return
   }
-  const language = uiLanguageForElement(slot.root)
+  const language = view.itemDisplayName?.language ?? uiLanguageForElement(slot.root)
   updateSlotText(slot.itemText, slot.itemTitle, itemDisplayNameText(view, language))
 }
 
-const projectSlotView = (slot: SlotElement, view: SlotView, mergeable: boolean | undefined): void => {
+const ICON_EDGE_PIXELS = 16
+
+const iconGeometry = (icon: ItemIcon): Readonly<{
+  readonly width: number
+  readonly height: number
+  readonly left: number
+  readonly top: number
+  readonly imageWidth: number
+  readonly imageHeight: number
+}> => {
+  if (icon.kind === 'url') {
+    return {
+      height: ICON_EDGE_PIXELS,
+      imageHeight: ICON_EDGE_PIXELS,
+      imageWidth: ICON_EDGE_PIXELS,
+      left: FIRST_INDEX,
+      top: FIRST_INDEX,
+      width: ICON_EDGE_PIXELS,
+    }
+  }
+  const scale = ICON_EDGE_PIXELS / Math.max(icon.width, icon.height)
+  return {
+    height: icon.height * scale,
+    imageHeight: icon.atlasHeight * scale,
+    imageWidth: icon.atlasWidth * scale,
+    left: -icon.x * scale,
+    top: -icon.y * scale,
+    width: icon.width * scale,
+  }
+}
+
+const pixels = (value: number): string => `${String(value)}px`
+
+const clearSlotIcon = (slot: SlotElement): void => {
+  writeHidden(slot.itemIconHidden, true)
+  writeAttribute(slot.itemIconSource)
+}
+
+const writeSlotIconGeometry = (slot: SlotElement, geometry: ReturnType<typeof iconGeometry>): void => {
+  writeStyle(slot.itemIconWidth, pixels(geometry.width))
+  writeStyle(slot.itemIconHeight, pixels(geometry.height))
+  writeStyle(slot.itemIconLeft, pixels(geometry.left))
+  writeStyle(slot.itemIconTop, pixels(geometry.top))
+  writeStyle(slot.itemIconImageWidth, pixels(geometry.imageWidth))
+  writeStyle(slot.itemIconImageHeight, pixels(geometry.imageHeight))
+}
+
+const renderSlotIcon = (slot: SlotElement, icon: ItemIcon): void => {
+  const geometry = iconGeometry(icon)
+  writeAttribute(slot.itemIconSource, icon.url)
+  writeSlotIconGeometry(slot, geometry)
+  writeHidden(slot.itemIconHidden, false)
+}
+
+const SINGLE_ICON_RESULT_MEMBER = 1
+const FIRST_ICON_RESULT_MEMBER = 0
+
+const isDataDescriptor = (descriptor: PropertyDescriptor | undefined): descriptor is PropertyDescriptor & { value: unknown } =>
+  typeof descriptor !== 'undefined' && Object.hasOwn(descriptor, 'value')
+
+const serializedIconSuccess = (input: unknown): Result.Result<unknown, ItemIconFailure> => Result.try({
+  catch: () => ({ _tag: 'InvalidItemIcon' }),
+  try: () => {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      return
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(input)
+    const keys = Reflect.ownKeys(descriptors)
+    const member = descriptors['success']
+    if (keys.length !== SINGLE_ICON_RESULT_MEMBER || keys.at(FIRST_ICON_RESULT_MEMBER) !== 'success' || !isDataDescriptor(member)) {
+      return
+    }
+    return member.value
+  },
+})
+
+const itemIconForSlotView = (view: SlotView): Result.Result<ItemIcon, ItemIconFailure> => {
+  const result = view.itemIcon?.result
+  if (typeof result === 'undefined') {
+    return Result.fail({ _tag: 'ItemIconUnavailable' })
+  }
+  const serialized = serializedIconSuccess(result)
+  if (Result.isFailure(serialized) || typeof serialized.success === 'undefined') {
+    if (Result.isFailure(serialized)) {
+      return Result.fail(serialized.failure)
+    }
+    return Result.fail({ _tag: 'ItemIconUnavailable' })
+  }
+  return resolveItemIcon(view.itemId, () => Result.succeed(serialized.success))
+}
+
+const updateSlotItemIcon = (slot: SlotElement, view: SlotView): void => {
+  const icon = itemIconForSlotView(view)
+  if (Result.isFailure(icon)) {
+    clearSlotIcon(slot)
+    return
+  }
+  renderSlotIcon(slot, icon.success)
+}
+
+const enchantmentName = (id: string): string => {
+  if (!id.startsWith('minecraft:')) {
+    return id
+  }
+  return id.slice('minecraft:'.length)
+}
+
+const enchantmentText = (id: string, level: number): string =>
+  `${enchantmentName(id).replaceAll('_', ' ')} ${String(level)}`
+
+const EMPTY_ENCHANTMENT_COUNT = 0
+
+const tooltipDurabilityLine = (view: SlotView, language: UiLanguage): string | undefined => {
+  if (typeof view.durabilityPercent === 'undefined') {
+    return
+  }
+  return translateUiMessage(language, 'item.tooltip.durability', {
+    percent: String(view.durabilityPercent),
+  })
+}
+
+const tooltipEnchantmentLine = (view: SlotView, language: UiLanguage): string | undefined => {
+  if (typeof view.enchantments === 'undefined' || view.enchantments.length === EMPTY_ENCHANTMENT_COUNT) {
+    return
+  }
+  return translateUiMessage(language, 'item.tooltip.enchantments', {
+    values: view.enchantments.map(({ id, level }) => enchantmentText(id, level)).join(', '),
+  })
+}
+
+const appendTooltipLine = (lines: Array<string>, line: string | undefined): void => {
+  if (typeof line !== 'undefined') {
+    lines.push(line)
+  }
+}
+
+const slotTooltipText = (view: SlotView, language: UiLanguage): string => {
+  if (typeof view.itemId === 'undefined') {
+    return ''
+  }
+  const count = view.countLabel ?? '1'
+  const lines = [itemDisplayNameText(view, language), translateUiMessage(language, 'item.tooltip.count', { count })]
+  appendTooltipLine(lines, tooltipDurabilityLine(view, language))
+  appendTooltipLine(lines, tooltipEnchantmentLine(view, language))
+  return lines.join('\n')
+}
+
+const writeOptionalAttribute = (cell: AttributeCell, value: string): void => {
+  if (value === '') {
+    writeAttribute(cell)
+    return
+  }
+  writeAttribute(cell, value)
+}
+
+const updateSlotTooltip = (slot: SlotElement, view: SlotView): void => {
+  const language = view.itemDisplayName?.language ?? uiLanguageForElement(slot.root)
+  const tooltip = slotTooltipText(view, language)
+  writeText(slot.tooltipText, tooltip)
+  writeOptionalAttribute(slot.tooltipTitle, tooltip)
+  if (tooltip === '') {
+    writeAttribute(slot.ariaDescribedBy)
+  } else {
+    writeAttribute(slot.ariaDescribedBy, slot.tooltipId)
+  }
+  writeHidden(slot.tooltipHidden, !slot.tooltipFocused || tooltip === '')
+}
+
+const updateSlotContents = (slot: SlotElement, view: SlotView): void => {
+  updateSlotItemIcon(slot, view)
   updateSlotItemText(slot, view)
+  updateSlotTooltip(slot, view)
   updateSlotText(slot.countText, slot.countTitle, view.countLabel)
+}
+
+const updateSlotFlags = (slot: SlotElement, view: SlotView, mergeable: boolean | undefined): void => {
   writeAttribute(slot.emptyFlag, presenceValue(view.empty))
   writeAttribute(slot.selectedFlag, presenceValue(view.selected))
   updateRadioState(slot, view.selected)
   writeAttribute(slot.mergeableFlag, presenceValue(mergeable === true))
+}
+
+const updateSlotSelectionAppearance = (slot: SlotElement, view: SlotView): void => {
   writeStyle(slot.borderColor, selectionColor(view.selected))
   writeStyle(slot.borderWeight, selectionBorderWeight(view.selected))
+}
+
+const projectSlotView = (slot: SlotElement, view: SlotView, mergeable: boolean | undefined): void => {
+  updateSlotContents(slot, view)
+  updateSlotFlags(slot, view, mergeable)
+  updateSlotSelectionAppearance(slot, view)
   updateSlotDurability(slot, view.durabilityPercent)
 }
 

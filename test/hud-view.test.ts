@@ -584,9 +584,9 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     const unresolved = mount()
     unresolved.view.render(hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)]))
     expect(unresolved.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 1, Unknown item, 64',
+      'Hotbar slot 1, Stone, 64',
     )
-    expect(unresolved.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
+    expect(unresolved.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Stone')
 
     const namespaced = mount()
     namespaced.view.render(
@@ -596,9 +596,9 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       }),
     )
     expect(namespaced.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 1, Unknown item, 64',
+      'Hotbar slot 1, Stone, 64',
     )
-    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
+    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Stone')
 
     const model = hudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(64)], 0, fakeItemDisplayNameOptions())
     const unsafeDisplayName = Schema.decodeUnknownSync(ItemDisplayNameSchema)('minecraft:stone')
@@ -611,9 +611,9 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
       ),
     })
     expect(namespaced.root.findAll('data-mx-ui', 'slot')[0]?.attributes.get('aria-label')).toBe(
-      'Hotbar slot 1, Unknown item, 64',
+      'Hotbar slot 1, Stone, 64',
     )
-    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
+    expect(namespaced.root.findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Stone')
   })
 
   it('REGRESSION: selected radio state follows a moving hotbar selection', () => {
@@ -1239,6 +1239,9 @@ describe('HUD owner projection contracts', () => {
             empty: slot === undefined,
             index,
             itemId: slot?.item,
+            ...(typeof slot === 'undefined'
+              ? {}
+              : { itemIcon: { result: Result.fail({ _tag: 'ItemIconUnavailable' as const }) } }),
             selected: index === selectedIndex,
           }))
 

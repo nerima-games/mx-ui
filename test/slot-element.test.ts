@@ -1,10 +1,39 @@
 import { describe, expect, it } from 'vitest'
 import { Result } from 'effect'
-import { createSlotElement, updateSlotElement } from '../src/application/slot-element'
+import { createSlotElement, setSlotButtonView, updateSlotElement } from '../src/application/slot-element'
 import { slotView } from '../src/domain/hud-view-model'
 import { fakeDocument, fakeElement } from './fake-dom'
 
 describe('createSlotElement', () => {
+  it('keeps the minimum interaction target inclusive of the slot border', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const root = fakeElement(slot.root)
+
+    expect(root.style.properties.get('box-sizing')).toBe('border-box')
+    expect(root.style.properties.get('min-width')).toBe('24px')
+    expect(root.style.properties.get('min-height')).toBe('24px')
+  })
+
+  it('ignores an invalid runtime button label without changing the slot', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = {
+      disabled: false,
+      focused: false,
+      label: 'valid label',
+      tabStop: true,
+    }
+    expect(Reflect.set(view, 'label', 12)).toBe(true)
+    const before = factory.mark()
+
+    const result = setSlotButtonView(slot, view)
+
+    expect(result).toBeUndefined()
+    expect(factory.since(before)).toStrictEqual([])
+    expect(fakeElement(slot.root).attributes.has('role')).toBe(false)
+  })
+
   it('wraps long display names and counts while retaining their full text and hover values', () => {
     // Catches long slot text widening narrow inventory tracks instead of wrapping.
     const factory = fakeDocument()
@@ -99,5 +128,32 @@ describe('createSlotElement', () => {
 
     expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotViewInput', field: 'view' }))
     expect(factory.since(before)).toStrictEqual([])
+  })
+
+  it('renders an icon when a structured clone strips the Effect Result prototype', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView(
+      { itemId: 'stone', count: 1 },
+      0,
+      {
+        selectedIndex: 0,
+        itemDisplayNameOptions: {
+          language: 'en',
+          iconResolver: () => Result.succeed({ kind: 'url', url: 'https://assets.example/stone.png' }),
+        },
+      },
+    )
+    const icon = view.itemIcon
+    expect(icon).toBeDefined()
+    if (typeof icon === 'undefined') {
+      return
+    }
+
+    updateSlotElement(slot, { ...view, itemIcon: { result: structuredClone(icon.result) } })
+
+    const root = fakeElement(slot.root)
+    expect(root.find('aria-hidden', 'true')?.attributes.get('src')).toBe('https://assets.example/stone.png')
+    expect(root.find('data-mx-ui', 'slot-item')?.textContent).toBe('Stone')
   })
 })

@@ -1,6 +1,12 @@
 /** Project owner supplied game state into UI-ready HUD values. */
 
 import {
+  EnchantmentLevel,
+  SUPPORTED_VANILLA_ENCHANTMENT_IDS,
+  type SupportedVanillaEnchantmentId,
+} from '@nerima-games/mc-kernel'
+import { Result } from 'effect'
+import {
   type HudPresentationSnapshot,
   hudPresentationView,
 } from './hud-presentation.js'
@@ -11,8 +17,12 @@ import {
   isDead,
   vitalsView,
 } from '@nerima-games/mc-sim'
-import { type ItemDisplayNameOptions, type ItemDisplayNameView, itemDisplayNameView } from './item-display-name.js'
-import { Result } from 'effect'
+import {
+  type ItemDisplayNameOptions,
+  type ItemDisplayNameView,
+  itemDisplayNameView,
+} from './item-display-name.js'
+import { type ItemIconView, itemIconView } from './item-icon.js'
 
 export {
   DEFAULT_MAX_HEALTH_POINTS,
@@ -35,6 +45,7 @@ export type HotbarSlotSnapshot = {
   readonly itemId: string | undefined
   readonly count: number
   readonly durability?: number | undefined
+  readonly enchantments?: Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>> | undefined
 }
 export type VitalsSnapshot = Vitals
 
@@ -42,6 +53,8 @@ export type SlotView = {
   readonly index: number
   readonly itemId: string | undefined
   readonly itemDisplayName?: ItemDisplayNameView
+  readonly itemIcon?: ItemIconView
+  readonly enchantments?: ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>>
   readonly countLabel: string | undefined
   readonly durabilityPercent: number | undefined
   readonly selected: boolean
@@ -146,6 +159,49 @@ const slotDurabilityPercent = (
   return Math.round(durability * FULL_PERCENT)
 }
 
+const enchantmentsForSlot = (
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot | undefined,
+): Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>> | undefined => {
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if ('item' in slot) {
+    return slot.components.enchantments ?? slot.components.storedEnchantments
+  }
+  const { enchantments } = slot
+  return enchantments
+}
+
+const enchantmentEntries = (
+  enchantments: Readonly<Partial<Record<SupportedVanillaEnchantmentId, EnchantmentLevel>>>,
+): ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>> | undefined => {
+  const entries: Array<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>> = []
+  for (const id of SUPPORTED_VANILLA_ENCHANTMENT_IDS) {
+    const level = enchantments[id]
+    if (typeof level !== 'undefined' && EnchantmentLevel.is(level) && level > ZERO) {
+      entries.push({ id, level })
+    }
+  }
+  entries.sort((left, right) => left.id.localeCompare(right.id))
+  if (entries.length === ZERO) {
+    return
+  }
+  return entries
+}
+
+const enchantmentsOf = (
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot | undefined,
+): ReadonlyArray<Readonly<{ id: SupportedVanillaEnchantmentId; level: EnchantmentLevel }>> | undefined => {
+  if (typeof slot === 'undefined') {
+    return
+  }
+  const enchantments = enchantmentsForSlot(slot)
+  if (typeof enchantments === 'undefined') {
+    return
+  }
+  return enchantmentEntries(enchantments)
+}
+
 const itemIdOf = (slot: InventoryCarriedSlot | HotbarSlotSnapshot): string | undefined => {
   if (typeof slot === 'undefined') {
     return
@@ -179,12 +235,38 @@ type InvalidSlotCountInput = Readonly<{
 }>
 type InvalidSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
 
-const projectSlotView = (
+const optionalDisplayName = (
+  itemId: string,
+  options: ItemDisplayNameOptions | undefined,
+): ItemDisplayNameView | undefined => {
+  if (typeof options === 'undefined') {
+    return
+  }
+  return itemDisplayNameView(itemId, options)
+}
+
+type SlotViewPresentation = Readonly<{
+  readonly displayName: ItemDisplayNameView | undefined
+  readonly itemIcon: ItemIconView
+  readonly enchantments: SlotView['enchantments']
+}>
+
+const completeSlotView = (view: SlotView, presentation: SlotViewPresentation): SlotView => {
+  let combined: SlotView = { ...view, itemIcon: presentation.itemIcon }
+  if (typeof presentation.displayName !== 'undefined') {
+    combined = { ...combined, itemDisplayName: presentation.displayName }
+  }
+  if (typeof presentation.enchantments !== 'undefined') {
+    combined = { ...combined, enchantments: presentation.enchantments }
+  }
+  return combined
+}
+
+const summarySlotView = (
   slot: InventoryCarriedSlot | HotbarSlotSnapshot,
   index: number,
-  selection: number | SlotViewOptions,
+  selectedIndex: number,
 ): SlotView => {
-  const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
   const count = slot?.count ?? ZERO
   const candidateItemId = itemIdOf(slot)
   const empty =
@@ -192,20 +274,32 @@ const projectSlotView = (
     typeof candidateItemId === 'undefined' ||
     !Number.isSafeInteger(count) ||
     count <= ZERO
-
-  const itemId = visibleSlotValue(candidateItemId, empty)
-  const view: SlotView = {
+  return {
     countLabel: slotCountLabel(count, empty),
     durabilityPercent: visibleSlotValue(slotDurabilityPercent(slot), empty),
     empty,
     index,
-    itemId,
+    itemId: visibleSlotValue(candidateItemId, empty),
     selected: index === selectedIndex,
   }
-  if (typeof itemId === 'undefined' || typeof itemDisplayNameOptions === 'undefined') {
+}
+
+const projectSlotView = (
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot,
+  index: number,
+  selection: number | SlotViewOptions,
+): SlotView => {
+  const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
+  const view = summarySlotView(slot, index, selectedIndex)
+  const { itemId } = view
+  if (typeof itemId === 'undefined') {
     return view
   }
-  return { ...view, itemDisplayName: itemDisplayNameView(itemId, itemDisplayNameOptions) }
+  return completeSlotView(view, {
+    displayName: optionalDisplayName(itemId, itemDisplayNameOptions),
+    enchantments: enchantmentsOf(slot),
+    itemIcon: itemIconView(itemId, itemDisplayNameOptions?.iconResolver),
+  })
 }
 
 export function slotView(

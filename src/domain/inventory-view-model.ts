@@ -300,6 +300,7 @@ type InvalidSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
 const slotSnapshotOfValidSlot = (slot: Slot, durability?: number): HotbarSlotSnapshot => ({
   count: slot?.count ?? EMPTY_STACK_COUNT,
   durability,
+  enchantments: slot?.components.enchantments ?? slot?.components.storedEnchantments,
   itemId: slot?.item,
 })
 
