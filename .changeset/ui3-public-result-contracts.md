@@ -8,4 +8,8 @@ Callers must check the result before rendering. `Result.isFailure(result)` ident
 
 The public return contracts of `updateIconElement`, `updateSlotElement`, and `requireRootButton` also change to `Result`. The `render()` methods returned by `createAnvilView`, `createCaptionView`, `createChestStorageView`, `createCrosshairView`, `createEnchantingTableView`, `createFurnaceView`, `createHudView`, `createInventoryView`, `createMainMenuView`, and `createSettingsView` now return typed `Result<void, Failure>` values instead of `void`. Check each result with `Result.isFailure`; the success value is available at `.success`. `createMainMenuView` also exposes an `initializationResult` that callers should inspect.
 
+The object returned by `createSessionOverlays` now returns `Result` from `updateDebug` and `updateSettings`; successful `updateSettings` returns a `SettingsSnapshot`. It also exposes `initializationResult` and `updateSettingsSnapshot`. The object returned by `makeUiMount` adds `updateSettingsSnapshot`; `updateSettings` and `updateLanguage` retain their success values but may return additional typed settings and view failures.
+
+The new `CreateSessionOverlaysOptions.onLanguageChange` callback must return its `Result`.
+
 `worldNameLabel` now declares `WorldNameText | UiMessageText` instead of `string`; both remain string values. Additional malformed-input overloads on model helpers preserve their existing return types for well-typed successful calls.
