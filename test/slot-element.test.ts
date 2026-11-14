@@ -163,6 +163,7 @@ describe('createSlotElement', () => {
         selectedIndex: 0,
         itemDisplayNameOptions: {
           language: 'en',
+          resolver: () => Result.succeed('Stone'),
           iconResolver: () => Result.succeed({ kind: 'url', url: 'https://assets.example/stone.png' }),
         },
       },
