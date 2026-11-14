@@ -163,6 +163,7 @@ export const FOCUS_RING_SHADOW_WIDTH = '5px'
 export const SLOT_TARGET_MIN_SIZE = '24px'
 const DEFAULT_FOCUS_COLUMNS = 1
 const FIRST_INDEX = 0
+type SlotTooltipId = `mx-ui-slot-tooltip-${number}`
 
 export type SlotElement = {
   readonly root: DomInteractiveElement
@@ -180,7 +181,7 @@ export type SlotElement = {
   readonly tooltipText: TextCell
   readonly tooltipHidden: AttributeCell
   readonly tooltipTitle: AttributeCell
-  readonly tooltipId: string
+  readonly tooltipId: SlotTooltipId
   readonly ariaDescribedBy: AttributeCell
   tooltipFocused: boolean
   readonly countText: TextCell
@@ -318,7 +319,7 @@ const createSlotIcon = (factory: DomElementFactory, root: DomElement): SlotIconE
 let nextTooltipId = 0
 const TOOLTIP_ID_INCREMENT = 1
 
-const setTooltipAttributes = (tooltip: DomElement, id: string): void => {
+const setTooltipAttributes = (tooltip: DomElement, id: SlotTooltipId): void => {
   tooltip.setAttribute('id', id)
   tooltip.setAttribute('role', 'tooltip')
   tooltip.setAttribute('data-mx-ui', 'slot-tooltip')
@@ -352,10 +353,10 @@ const configureTooltip = (tooltip: DomElement, id: string): void => {
 const createSlotTooltip = (factory: DomElementFactory, root: DomElement): Readonly<{
   text: TextCell
   hidden: AttributeCell
-  id: string
+  id: SlotTooltipId
 }> => {
   const tooltip = factory.createElement('span')
-  const id = `mx-ui-slot-tooltip-${String(nextTooltipId)}`
+  const id: SlotTooltipId = `mx-ui-slot-tooltip-${nextTooltipId}`
   nextTooltipId += TOOLTIP_ID_INCREMENT
   configureTooltip(tooltip, id)
   root.appendChild(tooltip)
@@ -455,7 +456,7 @@ type SlotElementParts = Readonly<{
   readonly item: SlotTextElements
   readonly itemIcon: SlotIconElements
   readonly root: DomInteractiveElement
-  readonly tooltip: Readonly<{ text: TextCell; hidden: AttributeCell; id: string }>
+  readonly tooltip: Readonly<{ text: TextCell; hidden: AttributeCell; id: SlotTooltipId }>
 }>
 
 const initializeSlotCells = (slot: SlotElement, root: DomInteractiveElement): void => {
