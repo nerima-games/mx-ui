@@ -637,7 +637,7 @@ export const UI_MESSAGES: Readonly<Record<UiMessageKey, Readonly<Record<UiLangua
   'pause.title.options': { en: 'Settings', ja: '設定' },
   'recipe-book.craftable': { en: 'Craftable', ja: '作成可能' },
   'recipe-book.no-grid-fit': { en: 'Does not fit a crafting grid', ja: 'クラフト枠に配置できません' },
-  'recipe-book.place': { en: 'Place {item}', ja: '{item} の材料を配置' },
+  'recipe-book.place': { en: 'Place {item} in the {size} grid', ja: '{item} の材料を {size} のクラフト枠に配置' },
   'recipe-book.requires-table': { en: 'Requires a 3×3 grid', ja: '3×3 のクラフト枠が必要です' },
   'recipe-book.title': { en: 'Recipe book', ja: 'レシピブック' },
   'recipe-book.un-craftable': { en: 'Missing ingredients', ja: '材料が不足しています' },

@@ -3,6 +3,7 @@ import { emptyInventory } from '@nerima-games/mc-sim'
 import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { createRecipeBookView } from '../src/application/recipe-book-view'
+import { applyUiLanguage, type UiLocalizationRoot } from '../src/application/ui-localization'
 import { type RecipeBookEntry, recipeBookViewModel } from '../src/domain/recipe-book-view-model'
 import { type FakeElement, fakeDocument, fakeElement } from './fake-dom'
 
@@ -128,6 +129,38 @@ describe('recipe book view', () => {
       'Does not fit a crafting grid',
     )
     expect(noFitCard.findAll('data-mx-ui', 'recipe-book-place')).toHaveLength(0)
+  })
+
+  it('names each placement button of a both-size recipe with its grid size in English and Japanese', () => {
+    const boneMeal = kernelEntries().find(({ recipe }) => recipe.id === 'minecraft:bone-meal')
+    if (typeof boneMeal === 'undefined') {
+      return expect.fail('the kernel recipe table must contain the bone meal recipe')
+    }
+    expect(boneMeal.gridWidths).toStrictEqual([2, 3])
+    const placementNamesIn = (language: 'en' | 'ja'): ReadonlyArray<string | undefined> => {
+      const factory = fakeDocument()
+      const parent = fakeElement(factory.createElement('main'))
+      const localizationRoot: UiLocalizationRoot = Object.assign(parent, {
+        querySelectorAll: (selector: string) =>
+          selector === '*' ? Array.from(parent.walk()) : parent.findAll('data-mx-ui-localized', ''),
+      })
+      expect(Result.isSuccess(applyUiLanguage(localizationRoot, language))).toBe(true)
+      const view = createRecipeBookView(factory, parent, { onPlaceRecipe: () => undefined })
+      view.render({ craftable: [boneMeal], uncraftable: [] })
+      const root = fakeElement(view.root)
+      return ([2, 3] as const).map((gridWidth) =>
+        placementButtonIn(root, 'craftable', boneMeal.recipe.id, gridWidth)?.attributes.get('aria-label'),
+      )
+    }
+
+    expect(placementNamesIn('en')).toStrictEqual([
+      'Place Bone Meal in the 2×2 grid',
+      'Place Bone Meal in the 3×3 grid',
+    ])
+    expect(placementNamesIn('ja')).toStrictEqual([
+      '骨粉 の材料を 2×2 のクラフト枠に配置',
+      '骨粉 の材料を 3×3 のクラフト枠に配置',
+    ])
   })
 
   it('reuses its cards across renders and returns focus to the placement button that had it', () => {

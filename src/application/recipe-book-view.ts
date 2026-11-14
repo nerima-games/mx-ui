@@ -107,6 +107,11 @@ const GRID_WIDTH_LABEL: Readonly<Record<RecipeGridWidth, string>> = {
   3: '3 × 3',
 }
 
+const GRID_SIZE_NAME: Readonly<Record<RecipeGridWidth, string>> = {
+  2: '2×2',
+  3: '3×3',
+}
+
 const sectionFor = (section: RecipeSection): Readonly<{ key: 'recipe-book.craftable' | 'recipe-book.un-craftable'; group: string }> => {
   if (section === 'craftable') {
     return { group: 'recipe-book-craftable', key: 'recipe-book.craftable' }
@@ -211,7 +216,10 @@ const writeGridButtonPresentation = (button: DomInteractiveElement, input: GridB
   button.style.setProperty('min-height', '24px')
   button.style.setProperty('color', PALETTE_VAR.ink)
   button.style.setProperty('background-color', PALETTE_VAR.slotFill)
-  setLocalizedAttribute(button, 'aria-label', 'recipe-book.place', { item: input.itemName })
+  setLocalizedAttribute(button, 'aria-label', 'recipe-book.place', {
+    item: input.itemName,
+    size: GRID_SIZE_NAME[input.gridWidth],
+  })
   writeText(textCell(button), GRID_WIDTH_LABEL[input.gridWidth])
 }
 
@@ -246,6 +254,7 @@ const attachGridButtonFocus = (button: DomInteractiveElement, input: GridButtonI
 
 const createGridButton = (input: GridButtonInput): DomInteractiveElement => {
   const button: DomInteractiveElement = input.factory.createElement('button')
+  inheritUiLanguage(input.card, button)
   writeGridButtonAttributes(button, input)
   writeGridButtonPresentation(button, input)
   attachGridButtonFocus(button, input)
@@ -340,6 +349,7 @@ const appendGridButtons = (
 
 const createRecipeCardShell = (input: RecipeCardInput): RecipeCardShell => {
   const card = input.factory.createElement('article')
+  inheritUiLanguage(input.root, card)
   card.setAttribute('data-mx-ui', 'recipe-book-entry')
   card.setAttribute('data-recipe-id', input.entry.recipe.id)
   card.setAttribute('data-recipe-state', input.section)
