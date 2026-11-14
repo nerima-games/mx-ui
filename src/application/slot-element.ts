@@ -49,6 +49,7 @@ import {
   writeStyle,
   writeText,
 } from './dom-write.js'
+import { EnchantmentLevel, SUPPORTED_VANILLA_ENCHANTMENT_IDS } from '@nerima-games/mc-kernel'
 import { Result } from 'effect'
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import { type ItemIcon, type ItemIconFailure, resolveItemIcon } from '../domain/item-icon.js'
@@ -688,15 +689,19 @@ const applySlotButtonView = (slot: SlotElement, view: SlotButtonView): void => {
 }
 
 /** Project optional button semantics without taking ownership of activation. */
-export const setSlotButtonView = (slot: SlotElement, view?: SlotButtonView): void => {
+export const setSlotButtonView = (
+  slot: SlotElement,
+  view?: SlotButtonView,
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotButtonLabel' }>> => {
   if (typeof view === 'undefined') {
     clearSlotButtonView(slot)
-    return
+    return Result.void
   }
-  if (typeof view.label !== 'string') {
-    return
+  if (typeof Reflect.get(view, 'label') !== 'string') {
+    return Result.fail({ _tag: 'InvalidSlotButtonLabel' })
   }
   applySlotButtonView(slot, view)
+  return Result.void
 }
 
 const selectionColor = (selected: boolean): string => {
@@ -777,6 +782,46 @@ const isItemDisplayNameView = (input: unknown): input is ItemDisplayNameView => 
     return false
   }
   return isItemDisplayNameResult(Reflect.get(input, 'result'))
+}
+
+/**
+ * The kernel's `EnchantmentLevel` admits 0, but `domain/hud-view-model.ts` never
+ * lists a level-0 entry in a slot view, so 0 is rejected here as well.
+ */
+const MIN_SLOT_ENCHANTMENT_LEVEL = 1
+
+const isSlotEnchantment = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const id = Reflect.get(input, 'id')
+  const level = Reflect.get(input, 'level')
+  return SUPPORTED_VANILLA_ENCHANTMENT_IDS.some((supported) => supported === id) &&
+    typeof level === 'number' &&
+    EnchantmentLevel.is(level) &&
+    level >= MIN_SLOT_ENCHANTMENT_LEVEL
+}
+
+const isSlotEnchantmentList = (input: unknown): boolean =>
+  Array.isArray(input) && input.every((entry) => isSlotEnchantment(entry))
+
+type SlotViewInputField = 'countLabel' | 'enchantments' | 'itemDisplayName'
+
+/** The first optional `SlotView` field whose runtime value violates its declared type. */
+const invalidSlotViewField = (view: Record<string, unknown>): SlotViewInputField | undefined => {
+  const itemDisplayName = Reflect.get(view, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isItemDisplayNameView(itemDisplayName)) {
+    return 'itemDisplayName'
+  }
+  const countLabel = Reflect.get(view, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return 'countLabel'
+  }
+  const enchantments = Reflect.get(view, 'enchantments')
+  if (typeof enchantments !== 'undefined' && !isSlotEnchantmentList(enchantments)) {
+    return 'enchantments'
+  }
+  return
 }
 
 const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
@@ -995,17 +1040,13 @@ export const updateSlotElement = (
   slot: SlotElement,
   view: SlotView,
   mergeable?: boolean,
-): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: 'countLabel' | 'itemDisplayName' | 'view' }>> => {
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: SlotViewInputField | 'view' }>> => {
   if (!isRecord(view)) {
     return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'view' })
   }
-  const itemDisplayName = Reflect.get(view, 'itemDisplayName')
-  if (typeof itemDisplayName !== 'undefined' && !isItemDisplayNameView(itemDisplayName)) {
-    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' })
-  }
-  const countLabel = Reflect.get(view, 'countLabel')
-  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
-    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'countLabel' })
+  const field = invalidSlotViewField(view)
+  if (typeof field !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidSlotViewInput', field })
   }
   projectSlotView(slot, view, mergeable)
   return Result.void

@@ -15,7 +15,18 @@ describe('createSlotElement', () => {
     expect(root.style.properties.get('min-height')).toBe('24px')
   })
 
-  it('ignores an invalid runtime button label without changing the slot', () => {
+  it('applies a valid button label and reports success', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+
+    const result = setSlotButtonView(slot, { disabled: false, focused: false, label: 'Stone, 1', tabStop: true })
+
+    expect(result).toStrictEqual(Result.void)
+    expect(fakeElement(slot.root).attributes.get('role')).toBe('button')
+    expect(fakeElement(slot.root).attributes.get('aria-label')).toBe('Stone, 1')
+  })
+
+  it('returns a typed failure for an invalid runtime button label without changing the slot', () => {
     const factory = fakeDocument()
     const slot = createSlotElement(factory, 0)
     const view = {
@@ -29,7 +40,7 @@ describe('createSlotElement', () => {
 
     const result = setSlotButtonView(slot, view)
 
-    expect(result).toBeUndefined()
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotButtonLabel' }))
     expect(factory.since(before)).toStrictEqual([])
     expect(fakeElement(slot.root).attributes.has('role')).toBe(false)
   })
@@ -106,7 +117,10 @@ describe('createSlotElement', () => {
   it.each([
     { field: 'countLabel', value: 7 },
     { field: 'itemDisplayName', value: 7 },
-  ])('returns a typed failure for a non-string $field value', ({ field, value }) => {
+    { field: 'enchantments', value: null },
+    { field: 'enchantments', value: [{ id: 12, level: 1 }] },
+    { field: 'enchantments', value: [{ id: 'sharpness', level: 0 }] },
+  ])('returns a typed failure for an invalid $field value $value', ({ field, value }) => {
     const factory = fakeDocument()
     const slot = createSlotElement(factory, 0)
     const view = slotView({ itemId: 'stone', count: 2 }, 0, 0)
@@ -117,6 +131,15 @@ describe('createSlotElement', () => {
 
     expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSlotViewInput', field }))
     expect(factory.since(before)).toStrictEqual([])
+  })
+
+  it('accepts a supported enchantment at a positive level', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+    const view = slotView({ itemId: 'stone', count: 2 }, 0, 0)
+    expect(Reflect.set(view, 'enchantments', [{ id: 'sharpness', level: 2 }])).toBe(true)
+
+    expect(updateSlotElement(slot, view)).toStrictEqual(Result.void)
   })
 
   it('returns a typed failure for a malformed slot view before reading its fields', () => {
