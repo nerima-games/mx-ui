@@ -28,9 +28,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
+import { Result } from 'effect'
 import {
   CROSSHAIR_PULSE_SECS,
-  crosshairViewModel,
+  crosshairViewModel as crosshairViewModelResult,
   IDLE_CROSSHAIR_STATUS,
   type CrosshairStatus,
   type CrosshairViewModel,
@@ -64,6 +65,17 @@ const mount = (motion: 'full' | 'reduced' = 'full') => {
 
 const aiming: CrosshairStatus = IDLE_CROSSHAIR_STATUS
 const hitAt = (secs: number): CrosshairStatus => ({ modals: [], lastHitAtSecs: secs })
+const crosshairViewModel = (
+  status: CrosshairStatus,
+  nowSecs: number,
+): CrosshairViewModel | undefined => {
+  const result = crosshairViewModelResult(status, nowSecs)
+  expect(Result.isFailure(result)).toBe(false)
+  if (Result.isFailure(result)) {
+    return undefined
+  }
+  return result.success
+}
 
 const arms = (root: FakeElement): ReadonlyArray<FakeElement> =>
   root.findAll('data-mx-ui', 'crosshair-arm')
@@ -88,7 +100,152 @@ const thicknessOf = (root: FakeElement): ReadonlyArray<string | undefined> =>
       : arm.style.properties.get('height'),
   )
 
+type CrosshairFailureField = 'breakProgress' | 'lastHitAtSecs' | 'modals' | 'nowSecs' | 'pulseSecs' | 'status'
+type CrosshairPropertyFailure = Readonly<{
+  readonly _tag: 'InvalidCrosshairViewModelInput'
+  readonly field: CrosshairFailureField
+}>
+type ExpectedCrosshairStatus = Readonly<{
+  readonly modals: ReadonlyArray<ScreenId>
+  readonly breakProgress: number | undefined
+  readonly lastHitAtSecs: number | undefined
+}>
+type ExpectedCrosshairTimes = Readonly<{ readonly nowSecs: number; readonly pulseSecs: number }>
+
+const INVALID_MODAL_STACK = Symbol('invalid-modal-stack')
+const TEST_SCREEN_IDS: ReadonlyArray<ScreenId> = [
+  'pause',
+  'settings',
+  'inventory',
+  'crafting',
+  'chat',
+  'achievements',
+  'statistics',
+]
+
+const propertyFailure = (field: CrosshairFailureField): Result.Result<never, CrosshairPropertyFailure> =>
+  Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field })
+
+const isPropertyRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isPropertyScreenId = (input: unknown): input is ScreenId =>
+  typeof input === 'string' && TEST_SCREEN_IDS.some((known) => known === input)
+
+const readPropertyModalStack = (
+  input: unknown,
+): Result.Result<ReadonlyArray<ScreenId>, typeof INVALID_MODAL_STACK> => {
+  if (!Array.isArray(input)) {
+    return Result.fail(INVALID_MODAL_STACK)
+  }
+  const modalStack: Array<ScreenId> = []
+  for (const screen of input) {
+    if (!isPropertyScreenId(screen)) {
+      return Result.fail(INVALID_MODAL_STACK)
+    }
+    modalStack.push(screen)
+  }
+  return Result.succeed(modalStack)
+}
+
+const readExpectedCrosshairStatus = (
+  input: unknown,
+): Result.Result<ExpectedCrosshairStatus, CrosshairPropertyFailure> => {
+  if (!isPropertyRecord(input)) {
+    return propertyFailure('status')
+  }
+  const modals = readPropertyModalStack(input['modals'])
+  if (Result.isFailure(modals)) {
+    return propertyFailure('modals')
+  }
+  const breakProgressInput = input['breakProgress']
+  if (typeof breakProgressInput !== 'undefined' &&
+    (typeof breakProgressInput !== 'number' || !Number.isFinite(breakProgressInput))) {
+    return propertyFailure('breakProgress')
+  }
+  const lastHitAtSecsInput = input['lastHitAtSecs']
+  if (typeof lastHitAtSecsInput !== 'undefined' &&
+    (typeof lastHitAtSecsInput !== 'number' || !Number.isFinite(lastHitAtSecsInput))) {
+    return propertyFailure('lastHitAtSecs')
+  }
+  return Result.succeed({
+    breakProgress: typeof breakProgressInput === 'undefined'
+      ? undefined
+      : breakProgressInput,
+    lastHitAtSecs: typeof lastHitAtSecsInput === 'undefined'
+      ? undefined
+      : lastHitAtSecsInput,
+    modals: modals.success,
+  })
+}
+
+const readExpectedCrosshairTimes = (
+  nowSecsInput: unknown,
+  pulseSecsInput: unknown,
+): Result.Result<ExpectedCrosshairTimes, CrosshairPropertyFailure> => {
+  if (typeof nowSecsInput !== 'number' || !Number.isFinite(nowSecsInput)) {
+    return propertyFailure('nowSecs')
+  }
+  const pulseSecs = typeof pulseSecsInput === 'undefined'
+    ? CROSSHAIR_PULSE_SECS
+    : pulseSecsInput
+  if (typeof pulseSecs !== 'number' || !Number.isFinite(pulseSecs) || pulseSecs < 0) {
+    return propertyFailure('pulseSecs')
+  }
+  return Result.succeed({ nowSecs: nowSecsInput, pulseSecs })
+}
+
+const expectedCrosshairResult = (
+  statusInput: unknown,
+  nowSecsInput: unknown,
+  pulseSecsInput: unknown,
+): Result.Result<CrosshairViewModel | undefined, CrosshairPropertyFailure> => {
+  const status = readExpectedCrosshairStatus(statusInput)
+  if (Result.isFailure(status)) {
+    return Result.fail(status.failure)
+  }
+  const times = readExpectedCrosshairTimes(nowSecsInput, pulseSecsInput)
+  if (Result.isFailure(times)) {
+    return Result.fail(times.failure)
+  }
+  if (status.success.modals.length > 0) {
+    return Result.succeed(undefined)
+  }
+  const since = typeof status.success.lastHitAtSecs === 'undefined'
+    ? undefined
+    : times.success.nowSecs - status.success.lastHitAtSecs
+  return Result.succeed({
+    breakProgress: typeof status.success.breakProgress === 'undefined'
+      ? undefined
+      : Math.min(1, Math.max(0, status.success.breakProgress)),
+    hit: typeof since === 'number' && Number.isFinite(since) && since >= 0 && since < times.success.pulseSecs,
+  })
+}
+
 describe('when the crosshair is drawn, and when it is not', () => {
+  it('returns a typed failure for a null model without clearing the current reticle', () => {
+    const { root, view } = mount()
+    const model = crosshairViewModel(aiming, 0)
+    expect(model).toBeDefined()
+    if (typeof model === 'undefined') {
+      return
+    }
+    view.render(model)
+
+    const omittedResult = view.render(undefined)
+    expect(Result.isSuccess(omittedResult)).toBe(true)
+    expect(root.attributes.has('hidden')).toBe(true)
+    view.render(model)
+
+    const result = Reflect.apply(view.render, view, [null])
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewInput', field: 'model' })
+    }
+    expect(root.attributes.has('hidden')).toBe(false)
+  })
+
   it('REGRESSION: is built at mount and shown once the player is aiming', () => {
     // The reference asked 「attached」 because attachment WAS its visibility
     // model — `show()` appends to `document.body`, `hide()` removes. Here the
@@ -157,7 +314,7 @@ describe('block-breaking progress', () => {
     expect(legacyModel.breakProgress).toBeUndefined()
   })
 
-  it('normalises finite progress and rejects non-finite values', () => {
+  it('normalises finite progress and returns typed failures for invalid progress', () => {
     const model = (breakProgress: number): number | undefined =>
       crosshairViewModel({ ...aiming, breakProgress }, 0)?.breakProgress
 
@@ -166,8 +323,59 @@ describe('block-breaking progress', () => {
     expect(model(0.375)).toBe(0.375)
     expect(model(1)).toBe(1)
     expect(model(1.25)).toBe(1)
-    expect(model(Number.NaN)).toBeUndefined()
-    expect(model(Number.POSITIVE_INFINITY)).toBeUndefined()
+    for (const breakProgress of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const result = crosshairViewModelResult({ ...aiming, breakProgress }, 0)
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isFailure(result)) {
+        expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewModelInput', field: 'breakProgress' })
+      }
+    }
+  })
+
+  it('returns a typed failure for an explicit null progress value', () => {
+    const status: CrosshairStatus = { ...aiming }
+    expect(Reflect.set(status, 'breakProgress', null)).toBe(true)
+    const result = crosshairViewModelResult(status, 0)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewModelInput', field: 'breakProgress' })
+    }
+  })
+
+  it.each([null, 7])('returns a typed failure for an invalid status container %s', (status) => {
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [status, 0])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'status' }))
+  })
+
+  it('returns typed failures or a finite view model for arbitrary progress values', () => {
+    fc.assert(
+      fc.property(fc.anything(), (breakProgress) => {
+        const status: CrosshairStatus = { ...aiming }
+        expect(Reflect.set(status, 'breakProgress', breakProgress)).toBe(true)
+        const result = crosshairViewModelResult(status, 0)
+        if (typeof breakProgress === 'undefined') {
+          expect(Result.isSuccess(result)).toBe(true)
+          if (Result.isSuccess(result)) {
+            expect(result.success?.breakProgress).toBeUndefined()
+          }
+          return
+        }
+        if (typeof breakProgress === 'number' && Number.isFinite(breakProgress)) {
+          expect(Result.isSuccess(result)).toBe(true)
+          if (Result.isSuccess(result)) {
+            expect(result.success?.breakProgress).toBe(Math.min(1, Math.max(0, breakProgress)))
+          }
+          return
+        }
+        expect(Result.isFailure(result)).toBe(true)
+        if (Result.isFailure(result)) {
+          expect(result.failure).toStrictEqual({ _tag: 'InvalidCrosshairViewModelInput', field: 'breakProgress' })
+        }
+      }),
+      { numRuns: 100 },
+    )
   })
 
   it('distinguishes an active empty bar from no active break', () => {
@@ -221,6 +429,90 @@ describe('block-breaking progress', () => {
   })
 })
 
+describe('crosshairViewModel input guards', () => {
+  it.each([
+    { label: 'null', value: null },
+    { label: 'not an array', value: 7 },
+    { label: 'unknown screen id', value: ['unknown'] },
+    { label: 'null screen id', value: [null] },
+  ])('returns a typed failure when modals are $label', ({ value }) => {
+    const status: CrosshairStatus = { ...aiming }
+    expect(Reflect.set(status, 'modals', value)).toBe(true)
+
+    expect(crosshairViewModelResult(status, 0)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'modals' }),
+    )
+  })
+
+  it('returns a typed failure for an explicit null last-hit timestamp', () => {
+    const status: CrosshairStatus = { ...aiming }
+    expect(Reflect.set(status, 'lastHitAtSecs', null)).toBe(true)
+
+    expect(crosshairViewModelResult(status, 0)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'lastHitAtSecs' }),
+    )
+  })
+
+  it('returns a typed failure for an explicit null current timestamp', () => {
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [aiming, null])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'nowSecs' }))
+  })
+
+  it('returns a typed failure for an explicit null pulse duration', () => {
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [aiming, 0, null])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'pulseSecs' }))
+  })
+
+  it.each([
+    { label: 'NaN current time', nowSecs: Number.NaN, pulseSecs: CROSSHAIR_PULSE_SECS, field: 'nowSecs' },
+    { label: 'infinite current time', nowSecs: Number.POSITIVE_INFINITY, pulseSecs: CROSSHAIR_PULSE_SECS, field: 'nowSecs' },
+    { label: 'infinite last-hit time', nowSecs: 0, pulseSecs: CROSSHAIR_PULSE_SECS, lastHitAtSecs: Number.POSITIVE_INFINITY, field: 'lastHitAtSecs' },
+    { label: 'negative pulse duration', nowSecs: 0, pulseSecs: -1, field: 'pulseSecs' },
+  ])('returns a typed failure for $label', ({ nowSecs, pulseSecs, lastHitAtSecs, field }) => {
+    const status: CrosshairStatus = { ...aiming }
+    if (typeof lastHitAtSecs !== 'undefined') {
+      expect(Reflect.set(status, 'lastHitAtSecs', lastHitAtSecs)).toBe(true)
+    }
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [status, nowSecs, pulseSecs])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field }))
+  })
+
+  it('property: arbitrary public inputs return a typed failure or a valid view model', () => {
+    fc.assert(
+      fc.property(fc.anything(), fc.anything(), fc.anything(), (status, nowSecs, pulseSecs) => {
+        const actual = Reflect.apply(crosshairViewModelResult, undefined, [status, nowSecs, pulseSecs])
+        const expected = expectedCrosshairResult(status, nowSecs, pulseSecs)
+
+        expect(Result.isFailure(actual) || Result.isSuccess(actual)).toBe(true)
+        expect(actual).toStrictEqual(expected)
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  it('reads a modal-stack getter once and uses the validated value', () => {
+    let modalReads = 0
+    const status = {
+      get modals(): unknown {
+        modalReads += 1
+        return modalReads === 1 ? [] : null
+      },
+      lastHitAtSecs: undefined,
+    }
+
+    const result = Reflect.apply(crosshairViewModelResult, undefined, [status, 0])
+
+    expect(Result.isSuccess(result)).toBe(true)
+    if (Result.isSuccess(result)) {
+      expect(result.success).toStrictEqual({ hit: false, breakProgress: undefined })
+    }
+    expect(modalReads).toBe(1)
+  })
+})
+
 describe('the hit marker is a duration, not a timer (DN-UI-10)', () => {
   it('REGRESSION: marks a landed hit for exactly CROSSHAIR_PULSE_SECS', () => {
     // `<reference-impl>/packages/presentation/hud/crosshair.ts:141` does this
@@ -243,7 +535,9 @@ describe('the hit marker is a duration, not a timer (DN-UI-10)', () => {
     // 「within 120 ms」 from 「within 120 ms and already happened」.
     expect(crosshairViewModel(hitAt(0.05), 0)?.hit).toBe(false)
     expect(crosshairViewModel(hitAt(5), 1)?.hit).toBe(false)
-    expect(crosshairViewModel(hitAt(Number.NaN), 1)?.hit).toBe(false)
+    expect(crosshairViewModelResult(hitAt(Number.NaN), 1)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidCrosshairViewModelInput', field: 'lastHitAtSecs' }),
+    )
     expect(crosshairViewModel(aiming, 1)?.hit).toBe(false)
   })
 

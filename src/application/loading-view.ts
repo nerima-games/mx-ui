@@ -13,31 +13,14 @@
  * test that asked.
  *
  * ---------------------------------------------------------------------------
- * THERE IS NO PROGRESS BAR, AND THAT IS THE FINDING
+ * Stage and progress are host facts
  * ---------------------------------------------------------------------------
  *
- * The reference draws one: `<reference-impl>/packages/presentation/loading/loading-screen.ts:67`
- * builds `.loading-track` with a `.loading-track-fill` animated across it, marked
- * `aria-hidden="true"` because it carries no information — it is indeterminate,
- * a shimmer that says 「something is happening」 and nothing else.
- *
- * Then `:123` handles reduced motion:
- *
- *     @media (prefers-reduced-motion:reduce){ … .loading-track-fill{left:29%;width:42%;opacity:.8} }
- *
- * **The animation is removed and the bar is left parked at 29% of its track.**
- * For every player who asked their operating system not to animate things, an
- * indeterminate shimmer becomes a static bar that reads as determinate progress
- * roughly a third of the way along — and it never moves again, so a load that is
- * genuinely slow looks like a load that has hung. `domain/accessibility.ts`
- * argues that reduced motion 「exists for people who get motion sick rather than
- * for people who are impatient」; a frozen indeterminate bar answers neither, and
- * invents a number for the population least able to dismiss it.
- *
- * So this screen draws words. There is nothing here to suppress under reduced
- * motion, which is why — unlike `createHudView` and `createCaptionView` — this
- * view takes no `MotionPreference`: it has no decorative animation, so a
- * `setMotion` on it would be a switch with nothing behind it (DN-UI-1a).
+ * The domain validates the host's stage and fraction before this projection.
+ * This view exposes the stage as localized text and the fraction through both
+ * a native accessibility role and a visible meter. It does not estimate work
+ * from elapsed time. Older view-model callers that have no stage data are
+ * projected as generation at zero until they move to the determinate API.
  *
  * ---------------------------------------------------------------------------
  * `SURFACE`, not `SCRIM`
@@ -60,12 +43,17 @@ import {
 } from './dom-write.js'
 import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from '../domain/ui-language.js'
 import type { DomElement, DomElementFactory } from './dom-surface.js'
+import { type LoadingProgressValue, type LoadingScreenView } from '../domain/loading-screen.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
-import { setLocalizedAttribute, setLocalizedText } from './ui-localization.js'
-import type { LoadingScreenView } from '../domain/loading-screen.js'
+import { setLocalizedAttribute, setLocalizedText, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
+import { LoadingProgressValueSchema } from '../domain/ui3-brand-schemas.js'
+import { Schema } from 'effect'
 
 /** Render order, and the order the tests sweep. */
 export const LOADING_STATES: ReadonlyArray<LoadingScreenView['kind']> = ['preparing', 'failed']
+
+type LegacyLoadingScreenView = { readonly kind: 'preparing'; readonly held: boolean }
+type LoadingViewProjection = LoadingScreenView | LegacyLoadingScreenView
 
 /**
  * The words.
@@ -123,11 +111,31 @@ const LOADING_TOKEN: Readonly<Record<LoadingScreenView['kind'], string>> = {
   preparing: PALETTE_VAR.statusBusy,
 }
 
-type LoadingStateElement = {
-  readonly kind: LoadingScreenView['kind']
+type LoadingStateBase = {
   readonly root: DomElement
   readonly hidden: AttributeCell
 }
+
+type LoadingProgressElements = {
+  readonly stageText: TextCell
+  readonly progressText: TextCell
+  readonly progressLabel: AttributeCell
+  readonly progressNow: AttributeCell
+  readonly progressWidth: { readonly style: DomElement['style']; previous: number }
+}
+
+type PreparingLoadingState = LoadingStateBase & LoadingProgressElements & { readonly kind: 'preparing' }
+type FailedLoadingState = LoadingStateBase & { readonly kind: 'failed' }
+
+const PROGRESS_PERCENT_MAX = 100
+const ZERO_PROGRESS = 0
+const INITIAL_PROGRESS: LoadingProgressValue = Schema.decodeUnknownSync(LoadingProgressValueSchema)(ZERO_PROGRESS)
+
+const LOADING_STAGE_KEY = {
+  generation: 'loading.stage.generation',
+  reading: 'loading.stage.reading',
+  'render-preparation': 'loading.stage.render-preparation',
+} as const
 
 export type LoadingView = {
   /** The element the host appended us to a parent as. Exposed for tests and previews. */
@@ -139,7 +147,7 @@ export type LoadingView = {
    * 「is the floor still holding it up?」 is answered in `domain/` where it is
    * arithmetic and this file stays a dumb projection.
    */
-  readonly render: (view: LoadingScreenView | undefined) => void
+  readonly render: (view: LoadingViewProjection | undefined) => void
 }
 
 const buildStateRoot = (
@@ -201,22 +209,101 @@ const appendStateDetail = (
   root.appendChild(detail)
 }
 
-const createStateElement = (
+const createStageText = (factory: DomElementFactory, root: DomElement): TextCell => {
+  const stage = factory.createElement('p')
+  stage.setAttribute('data-mx-ui', 'loading-stage')
+  setLocalizedText(stage, 'loading.stage.generation')
+  root.appendChild(stage)
+  return textCell(stage)
+}
+
+const createProgressMeterRoot = (factory: DomElementFactory): DomElement => {
+  const progress = factory.createElement('div')
+  progress.setAttribute('data-mx-ui', 'loading-progress')
+  progress.setAttribute('role', 'progressbar')
+  progress.setAttribute('aria-valuemin', String(INITIAL_PROGRESS))
+  progress.setAttribute('aria-valuemax', String(PROGRESS_PERCENT_MAX))
+  progress.style.setProperty('width', 'min(80vw, 28rem)')
+  progress.style.setProperty('height', '0.75rem')
+  progress.style.setProperty('background-color', PALETTE_VAR.meterTrack)
+  return progress
+}
+
+const createProgressMeterFill = (factory: DomElementFactory): DomElement => {
+  const fill = factory.createElement('div')
+  fill.setAttribute('data-mx-ui', 'loading-progress-fill')
+  fill.style.setProperty('width', `${String(INITIAL_PROGRESS)}%`)
+  fill.style.setProperty('height', '100%')
+  fill.style.setProperty('background-color', LOADING_TOKEN.preparing)
+  return fill
+}
+
+const createProgressMeter = (
+  factory: DomElementFactory,
+  root: DomElement,
+): Pick<LoadingProgressElements, 'progressLabel' | 'progressNow' | 'progressWidth'> => {
+  const progress = createProgressMeterRoot(factory)
+  const progressLabel = attributeCell(progress, 'aria-label')
+  writeLocalizedAttribute(progressLabel, 'loading.progress', { percent: String(INITIAL_PROGRESS) })
+  const progressNow = attributeCell(progress, 'aria-valuenow')
+  writeAttribute(progressNow, String(INITIAL_PROGRESS))
+  const fill = createProgressMeterFill(factory)
+  progress.appendChild(fill)
+  root.appendChild(progress)
+  return {
+    progressLabel,
+    progressNow,
+    progressWidth: { previous: INITIAL_PROGRESS, style: fill.style },
+  }
+}
+
+const createProgressText = (factory: DomElementFactory, root: DomElement): TextCell => {
+  const text = factory.createElement('p')
+  text.setAttribute('data-mx-ui', 'loading-progress-text')
+  root.appendChild(text)
+  const progressText = textCell(text)
+  writeLocalizedText(progressText, 'loading.progress', { percent: String(INITIAL_PROGRESS) })
+  return progressText
+}
+
+const createLoadingProgressElements = (factory: DomElementFactory, root: DomElement): LoadingProgressElements => {
+  const stageText = createStageText(factory, root)
+  const meter = createProgressMeter(factory, root)
+  const progressText = createProgressText(factory, root)
+  return { ...meter, progressText, stageText }
+}
+
+const createStateShell = (
   factory: DomElementFactory,
   parent: DomElement,
   kind: LoadingScreenView['kind'],
-): LoadingStateElement => {
+): LoadingStateBase => {
   const root = buildStateRoot(factory, parent, kind)
   appendStateKicker(factory, root, kind)
   appendStateTitle(factory, root, kind)
   appendStateDetail(factory, root, kind)
-
-  const element: LoadingStateElement = { hidden: attributeCell(root, 'hidden'), kind, root }
+  const hidden = attributeCell(root, 'hidden')
   // Set directly above so the first frame does not flash both states at once;
   // Tell the cell what the element already says.
-  element.hidden.previous = ''
-  return element
+  hidden.previous = ''
+  return { hidden, root }
 }
+
+const createPreparingStateElement = (
+  factory: DomElementFactory,
+  parent: DomElement,
+): PreparingLoadingState => {
+  const shell = createStateShell(factory, parent, 'preparing')
+  return { ...shell, ...createLoadingProgressElements(factory, shell.root), kind: 'preparing' }
+}
+
+const createFailedStateElement = (
+  factory: DomElementFactory,
+  parent: DomElement,
+): FailedLoadingState => ({
+  ...createStateShell(factory, parent, 'failed'),
+  kind: 'failed',
+})
 
 const buildLoadingRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('div')
@@ -250,16 +337,12 @@ const buildLoadingRoot = (factory: DomElementFactory, parent: DomElement): DomEl
  */
 const buildFailureReason = (
   factory: DomElementFactory,
-  states: ReadonlyArray<LoadingStateElement>,
+  failed: FailedLoadingState,
 ): TextCell => {
   const reason = factory.createElement('p')
   reason.setAttribute('data-mx-ui', 'loading-reason')
   reason.style.setProperty('color', PALETTE_VAR.ink)
-  for (const state of states) {
-    if (state.kind === 'failed') {
-      state.root.appendChild(reason)
-    }
-  }
+  failed.root.appendChild(reason)
   return textCell(reason)
 }
 
@@ -288,15 +371,65 @@ const reasonTextValue = (view: LoadingScreenView | undefined): string => {
   return EMPTY_REASON_TEXT
 }
 
-/**
- * Build the loading screen under `parent`.
- *
- * `parent` is passed in, never looked up (`docs/public-api.md` §4-1).
- */
-export const createLoadingView = (
+const writeProgressWidth = (state: PreparingLoadingState, progress: number): void => {
+  const width = state.progressWidth
+  const percent = progress * PROGRESS_PERCENT_MAX
+  if (width.previous === percent) {
+    return
+  }
+  width.previous = percent
+  width.style.setProperty('width', `${String(percent)}%`)
+}
+
+const normalizeLoadingView = (input: LoadingViewProjection | undefined): LoadingScreenView | undefined => {
+  if (input?.kind === 'preparing' && !('stage' in input)) {
+    return { ...input, progress: INITIAL_PROGRESS, stage: 'generation' }
+  }
+  return input
+}
+
+const renderPreparingDetails = (preparing: PreparingLoadingState, view: Extract<LoadingScreenView, { kind: 'preparing' }>): void => {
+  writeLocalizedText(preparing.stageText, LOADING_STAGE_KEY[view.stage])
+  const percent = String(Math.round(view.progress * PROGRESS_PERCENT_MAX))
+  writeLocalizedAttribute(preparing.progressLabel, 'loading.progress', { percent })
+  writeAttribute(preparing.progressNow, String(view.progress * PROGRESS_PERCENT_MAX))
+  writeLocalizedText(preparing.progressText, 'loading.progress', { percent })
+  writeProgressWidth(preparing, view.progress)
+}
+
+type LoadingRenderElements = {
+  readonly busyFlag: AttributeCell
+  readonly failed: FailedLoadingState
+  readonly heldFlag: AttributeCell
+  readonly preparing: PreparingLoadingState
+  readonly reasonText: TextCell
+  readonly root: DomElement
+  readonly rootHidden: AttributeCell
+  readonly stateFlag: AttributeCell
+}
+
+const renderLoadingRootState = (elements: LoadingRenderElements, view: LoadingScreenView | undefined): void => {
+  writeHidden(elements.rootHidden, typeof view === 'undefined')
+  writeAttribute(elements.stateFlag, view?.kind)
+  writeAttribute(elements.busyFlag, busyAttributeValue(view))
+  writeAttribute(elements.heldFlag, heldAttributeValue(view))
+}
+
+const renderLoadingElements = (elements: LoadingRenderElements, input: LoadingViewProjection | undefined): void => {
+  const view = normalizeLoadingView(input)
+  renderLoadingRootState(elements, view)
+  writeHidden(elements.preparing.hidden, view?.kind !== 'preparing')
+  writeHidden(elements.failed.hidden, view?.kind !== 'failed')
+  if (view?.kind === 'preparing') {
+    renderPreparingDetails(elements.preparing, view)
+  }
+  writeText(elements.reasonText, reasonTextValue(view))
+}
+
+const createLoadingElements = (
   factory: DomElementFactory,
   parent: DomElement,
-): LoadingView => {
+): LoadingRenderElements => {
   const root = buildLoadingRoot(factory, parent)
 
   const rootHidden = attributeCell(root, 'hidden')
@@ -319,20 +452,25 @@ export const createLoadingView = (
    */
   const heldFlag = attributeCell(root, 'data-loading-held')
 
-  const states = LOADING_STATES.map((kind) => createStateElement(factory, root, kind))
-  const reasonText = buildFailureReason(factory, states)
+  const preparing = createPreparingStateElement(factory, root)
+  const failed = createFailedStateElement(factory, root)
+  const reasonText = buildFailureReason(factory, failed)
 
+  return { busyFlag, failed, heldFlag, preparing, reasonText, root, rootHidden, stateFlag }
+}
+
+/**
+ * Build the loading screen under `parent`.
+ *
+ * `parent` is passed in, never looked up (`docs/public-api.md` §4-1).
+ */
+export const createLoadingView = (
+  factory: DomElementFactory,
+  parent: DomElement,
+): LoadingView => {
+  const elements = createLoadingElements(factory, parent)
   return {
-    render: (view: LoadingScreenView | undefined): void => {
-      writeHidden(rootHidden, typeof view === 'undefined')
-      writeAttribute(stateFlag, view?.kind)
-      writeAttribute(busyFlag, busyAttributeValue(view))
-      writeAttribute(heldFlag, heldAttributeValue(view))
-      for (const state of states) {
-        writeHidden(state.hidden, state.kind !== view?.kind)
-      }
-      writeText(reasonText, reasonTextValue(view))
-    },
-    root,
+    render: (input: LoadingViewProjection | undefined): void => renderLoadingElements(elements, input),
+    root: elements.root,
   }
 }

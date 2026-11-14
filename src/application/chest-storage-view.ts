@@ -24,6 +24,7 @@ import {
 import { type TextCell, textCell, writeText } from './dom-write.js'
 import { type UiLanguage, type UiMessageKey, type UiMessageValues } from '../domain/ui-language.js'
 import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
+import { Result } from 'effect'
 import { itemDisplayNameValue } from './item-display-name.js'
 
 export type ChestStorageInteractionView = {
@@ -40,10 +41,15 @@ export type ChestStorageViewActions = {
 export type ChestStorageView = {
   readonly root: DomElement
   readonly render: (
-    model: ChestStorageViewModel,
-    interaction?: ChestStorageInteractionView,
-  ) => void
+    model: ChestStorageViewModel | null,
+    interaction?: ChestStorageInteractionView | null,
+  ) => Result.Result<void, ChestStorageViewInputFailure>
 }
+
+type ChestStorageViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidChestStorageViewInput'
+  readonly field: string
+}>
 
 type InteractiveSlotElement = {
   readonly slot: SlotElement
@@ -52,10 +58,69 @@ type InteractiveSlotElement = {
 
 /** Cursor slot occupies index 0 of its own single-slot group — there is only one. */
 const CURSOR_SLOT_INDEX = 0
+const ZERO_INDEX = 0
 /** Players see slots numbered from 1, not from 0. */
 const SLOT_DISPLAY_OFFSET = 1
 const DEFAULT_FOCUSED_TARGET: ChestStorageSlotTarget = { region: 'chest', slot: 0 }
 const CHEST_STORAGE_FOCUS_GROUP = 'chest-storage-slots'
+const PLAYER_INVENTORY_SLOT_COUNT = HOTBAR_SLOT_COUNT + INVENTORY_MAIN_SLOT_COUNT
+
+const isValidSlotIndex = (slot: unknown): slot is number =>
+  typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= ZERO_INDEX
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isValidItemDisplayNameFailure = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag')
+  return typeof tag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(tag)
+}
+
+const isValidItemDisplayNameResult = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  if (Reflect.get(input, '_tag') === 'Success') {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return Reflect.get(input, '_tag') === 'Failure' &&
+    isValidItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const isValidItemDisplayNameView = (input: unknown): boolean =>
+  isRecord(input) &&
+  (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
+  isValidItemDisplayNameResult(Reflect.get(input, 'result'))
+
+const slotBelongsToRegion = (region: unknown, slot: number): boolean => {
+  if (region === 'chest') {
+    return slot < CHEST_STORAGE_SLOT_COUNT
+  }
+  if (region === 'player') {
+    return slot < PLAYER_INVENTORY_SLOT_COUNT
+  }
+  return false
+}
+
+const isChestStorageSlotTarget = (input: unknown): input is ChestStorageSlotTarget => {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return false
+  }
+  const region = Reflect.get(input, 'region')
+  const slot = Reflect.get(input, 'slot')
+  if (!isValidSlotIndex(slot)) {
+    return false
+  }
+  return slotBelongsToRegion(region, slot)
+}
 
 const focusIndexForTarget = (target: ChestStorageSlotTarget, chestSlotCount: number): number => {
   const playerMainOffset = Math.ceil(chestSlotCount / CHEST_STORAGE_COLUMNS) * CHEST_STORAGE_COLUMNS
@@ -243,6 +308,178 @@ const updateCursor = (element: SlotElement, cursor: ChestStorageCursorView | und
   })
 }
 
+const invalidGridSlotItemDisplayNameField = (
+  region: string,
+  slot: Record<string, unknown>,
+): string | undefined => {
+  const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+    return `${region}.itemDisplayName`
+  }
+  return
+}
+
+const invalidGridSlotCountLabelField = (region: string, slot: Record<string, unknown>): string | undefined => {
+  const countLabel = Reflect.get(slot, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return `${region}.countLabel`
+  }
+  return
+}
+
+const invalidGridSlotValueField = (region: string, slot: unknown): string | undefined => {
+  if (slot === null) {
+    return `${region}.slot`
+  }
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if (!isRecord(slot)) {
+    return `${region}.slot`
+  }
+  return invalidGridSlotItemDisplayNameField(region, slot) ?? invalidGridSlotCountLabelField(region, slot)
+}
+
+const invalidGridRegionField = (region: string, slots: unknown): string | undefined => {
+  if (!Array.isArray(slots)) {
+    return region
+  }
+  for (const slot of slots) {
+    const field = invalidGridSlotValueField(region, slot)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  return
+}
+
+const invalidGridSlotField = (model: Record<string, unknown>): string | undefined => {
+  const regions = [
+    ['chest', Reflect.get(model, 'chest')],
+    ['playerMain', Reflect.get(model, 'playerMain')],
+    ['playerHotbar', Reflect.get(model, 'playerHotbar')],
+  ] as const
+  for (const [region, slots] of regions) {
+    const field = invalidGridRegionField(region, slots)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  return
+}
+
+const invalidChestStorageCursorStackField = (cursor: Record<string, unknown>): string | undefined => {
+  const stack = Reflect.get(cursor, 'stack')
+  if (!isRecord(stack)) {
+    return 'cursor'
+  }
+  if (typeof Reflect.get(stack, 'item') !== 'string' || typeof Reflect.get(stack, 'count') !== 'number') {
+    return 'cursor.stack'
+  }
+  const stackDurability = Reflect.get(stack, 'durability')
+  if (typeof stackDurability !== 'undefined' && typeof stackDurability !== 'number') {
+    return 'cursor.stack.durability'
+  }
+  return
+}
+
+const invalidChestStorageCursorDisplayField = (cursor: Record<string, unknown>): string | undefined => {
+  const countLabel = Reflect.get(cursor, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return 'cursor.countLabel'
+  }
+  const itemDisplayName = Reflect.get(cursor, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+    return 'cursor.itemDisplayName'
+  }
+  const itemId = Reflect.get(cursor, 'itemId')
+  if (typeof itemId !== 'undefined' && typeof itemId !== 'string') {
+    return 'cursor.itemId'
+  }
+  return
+}
+
+const invalidChestStorageCursorDurabilityField = (cursor: Record<string, unknown>): string | undefined => {
+  const durabilityPercent = Reflect.get(cursor, 'durabilityPercent')
+  if (typeof durabilityPercent !== 'undefined' && (typeof durabilityPercent !== 'number' || !Number.isFinite(durabilityPercent))) {
+    return 'cursor.durabilityPercent'
+  }
+  return
+}
+
+const invalidChestStorageCursorStateField = (cursor: Record<string, unknown>): string | undefined => {
+  if (typeof Reflect.get(cursor, 'empty') !== 'boolean') {
+    return 'cursor.empty'
+  }
+  if (typeof Reflect.get(cursor, 'index') !== 'number') {
+    return 'cursor.index'
+  }
+  if (typeof Reflect.get(cursor, 'selected') !== 'boolean') {
+    return 'cursor.selected'
+  }
+  return
+}
+
+const invalidChestStorageCursorField = (model: Record<string, unknown>): string | undefined => {
+  const cursor = Reflect.get(model, 'cursor')
+  if (typeof cursor === 'undefined') {
+    return
+  }
+  if (!isRecord(cursor)) {
+    return 'cursor'
+  }
+  return (
+    invalidChestStorageCursorStackField(cursor) ??
+    invalidChestStorageCursorDisplayField(cursor) ??
+    invalidChestStorageCursorDurabilityField(cursor) ??
+    invalidChestStorageCursorStateField(cursor)
+  )
+}
+
+const invalidChestStorageInteractionRecordField = (
+  interaction: Record<string, unknown>,
+): string | undefined => {
+  const focusedSlot = Reflect.get(interaction, 'focusedSlot')
+  if (typeof focusedSlot !== 'undefined' && !isChestStorageSlotTarget(focusedSlot)) {
+    return 'interaction.focusedSlot'
+  }
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
+    return 'interaction.status'
+  }
+  return
+}
+
+const invalidChestStorageInteractionField = (
+  interaction: unknown,
+): string | undefined => {
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  if (!isRecord(interaction)) {
+    return 'interaction'
+  }
+  return invalidChestStorageInteractionRecordField(interaction)
+}
+
+const invalidChestStorageViewInputField = (
+  model: unknown,
+  interaction: unknown,
+): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const invalidSlotField = invalidGridSlotField(model)
+  if (typeof invalidSlotField !== 'undefined') {
+    return invalidSlotField
+  }
+  const invalidCursorField = invalidChestStorageCursorField(model)
+  if (typeof invalidCursorField !== 'undefined') {
+    return invalidCursorField
+  }
+  return invalidChestStorageInteractionField(interaction)
+}
+
 const createChestStorageRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
   const root = factory.createElement('section')
   root.setAttribute('data-mx-ui', 'chest-storage')
@@ -361,6 +598,43 @@ const createChestStorageStatus = (factory: DomElementFactory, root: DomElement):
   return textCell(status)
 }
 
+type ChestStorageViewElements = Readonly<{
+  cursor: SlotElement
+  grids: ChestStorageGrids
+  statusText: TextCell
+}>
+
+const projectChestStorageView = (
+  elements: ChestStorageViewElements,
+  model: ChestStorageViewModel,
+  interaction: ChestStorageInteractionView | null | undefined,
+): void => {
+  const focused = interaction?.focusedSlot ?? DEFAULT_FOCUSED_TARGET
+  const active = typeof interaction !== 'undefined'
+  const chestSlotCount = model.chest.length
+  updateGrid(elements.grids.chest, model.chest, { active, chestSlotCount, target: focused })
+  updateGrid(elements.grids.playerMain, model.playerMain, { active, chestSlotCount, target: focused })
+  updateGrid(elements.grids.playerHotbar, model.playerHotbar, { active, chestSlotCount, target: focused })
+  updateCursor(elements.cursor, model.cursor)
+  writeText(elements.statusText, interaction?.status ?? '')
+}
+
+const renderChestStorageView = (
+  elements: ChestStorageViewElements,
+  model: ChestStorageViewModel | null,
+  interaction: ChestStorageInteractionView | null | undefined,
+): Result.Result<void, ChestStorageViewInputFailure> => {
+  if (model === null) {
+    return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: 'model' })
+  }
+  const invalidField = invalidChestStorageViewInputField(model, interaction)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidChestStorageViewInput', field: invalidField })
+  }
+  projectChestStorageView(elements, model, interaction)
+  return Result.void
+}
+
 /** Creates a listener-free chest projection. The host owns click and close dispatch. */
 export const createChestStorageView = (
   factory: DomElementFactory,
@@ -375,16 +649,7 @@ export const createChestStorageView = (
   const statusText = createChestStorageStatus(factory, root)
 
   return {
-    render: (model, interaction): void => {
-      const focused = interaction?.focusedSlot ?? DEFAULT_FOCUSED_TARGET
-      const active = typeof interaction !== 'undefined'
-      const chestSlotCount = model.chest.length
-      updateGrid(grids.chest, model.chest, { active, chestSlotCount, target: focused })
-      updateGrid(grids.playerMain, model.playerMain, { active, chestSlotCount, target: focused })
-      updateGrid(grids.playerHotbar, model.playerHotbar, { active, chestSlotCount, target: focused })
-      updateCursor(cursor, model.cursor)
-      writeText(statusText, interaction?.status ?? '')
-    },
+    render: (model, interaction) => renderChestStorageView({ cursor, grids, statusText }, model, interaction),
     root,
   }
 }

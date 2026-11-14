@@ -113,6 +113,7 @@ import {
   writeLocalizedTextUsing,
 } from './ui-localization.js'
 import { itemDisplayNameText, itemDisplayNameValue } from './item-display-name.js'
+import { Result } from 'effect'
 
 /**
  * How long the XP bar takes to slide, at full motion.
@@ -152,7 +153,13 @@ export type HudView = {
   /** The element the host appended us to a parent as. Exposed for tests and previews. */
   readonly root: DomElement
   /** Project a model. Idempotent: the same model twice mutates nothing the second time. */
-  readonly render: (model: HudViewModel) => void
+  readonly render: (
+    model: HudViewModel,
+  ) =>
+    Result.Result<
+      void,
+      Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudViewField }>
+    >
   /** Remove the optional host respawn listener when this view leaves its mount. */
   readonly dispose: () => void
   /**
@@ -185,7 +192,9 @@ export type HudView = {
    * Native Tab focus still needs the input owner to call this, since the view
    * cannot observe that key or focus event itself.
    */
-  readonly setKeyboardFocus: (index?: number) => void
+  readonly setKeyboardFocus: (
+    index?: number,
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidHudFocusInput'; field: 'index' }>>
 }
 
 type HudCells = {
@@ -222,6 +231,45 @@ type HudAssetRow = {
   readonly icons: Array<HudAssetElement>
   readonly value: TextCell
   readonly hidden: AttributeCell
+}
+
+type InvalidHudViewField = 'hotbar' | 'hotbar.countLabel' | 'hotbar.itemDisplayName' | 'model'
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isOptionalString = (input: unknown): boolean =>
+  typeof input === 'undefined' || typeof input === 'string'
+
+const isItemDisplayNameResult = (result: Record<string, unknown>): boolean => {
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  if (tag === 'Failure') {
+    const failure = Reflect.get(result, 'failure')
+    return isRecord(failure) && [
+      'InvalidItemDisplayName',
+      'InvalidItemId',
+      'ItemDisplayNameUnavailable',
+      'MissingItemDisplayNameResolver',
+    ].some((failureTag) => Reflect.get(failure, '_tag') === failureTag)
+  }
+  return false
+}
+
+const isItemDisplayNameView = (input: unknown): boolean => {
+  if (typeof input === 'undefined') {
+    return true
+  }
+  if (!isRecord(input)) {
+    return false
+  }
+  const language = Reflect.get(input, 'language')
+  const result = Reflect.get(input, 'result')
+  return (language === 'en' || language === 'ja') &&
+    isRecord(result) &&
+    isItemDisplayNameResult(result)
 }
 
 type HudStatusEffectItem = {
@@ -1058,13 +1106,55 @@ const renderHudDeathState = (cells: HudCells, model: HudViewModel): void => {
   renderDeathDetails(cells, model)
 }
 
-const renderHudFrame = (factory: DomElementFactory, cells: HudCells, model: HudViewModel): void => {
+const invalidHudHotbarSlotField = (slot: unknown): InvalidHudViewField | undefined => {
+  if (!isRecord(slot)) {
+    return 'hotbar'
+  }
+  if (!isOptionalString(Reflect.get(slot, 'countLabel'))) {
+    return 'hotbar.countLabel'
+  }
+  if (!isItemDisplayNameView(Reflect.get(slot, 'itemDisplayName'))) {
+    return 'hotbar.itemDisplayName'
+  }
+  return
+}
+
+const invalidHudFrameField = (model: unknown): InvalidHudViewField | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const hotbar = Reflect.get(model, 'hotbar')
+  if (!Array.isArray(hotbar)) {
+    return 'hotbar'
+  }
+  for (const slot of hotbar) {
+    const invalidSlotField = invalidHudHotbarSlotField(slot)
+    if (typeof invalidSlotField !== 'undefined') {
+      return invalidSlotField
+    }
+  }
+  return
+}
+
+const renderHudFrame = (
+  factory: DomElementFactory,
+  cells: HudCells,
+  model: HudViewModel,
+): Result.Result<
+  void,
+  Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudViewField }>
+> => {
+  const invalidField = invalidHudFrameField(model)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidHudViewInput', field: invalidField })
+  }
   renderHudVitals(factory, cells, model)
   renderHudSupplements(factory, cells, model)
   writeText(cells.levelText, model.experienceLevelLabel)
   writePercent(cells.experienceWidth, model.experiencePercent)
   renderHotbarSlots(cells.hotbar, model.hotbar)
   renderHudDeathState(cells, model)
+  return Result.void
 }
 
 /**
@@ -1102,7 +1192,12 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
    * the browser's native Tab agree with what mx-ui painted without anybody
    * listening for a key.
    */
-  const applyKeyboardFocus = (index?: number): void => {
+  const applyKeyboardFocus = (
+    index?: number,
+  ): Result.Result<void, Readonly<{ _tag: 'InvalidHudFocusInput'; field: 'index' }>> => {
+    if (typeof index !== 'undefined' && typeof index !== 'number') {
+      return Result.fail({ _tag: 'InvalidHudFocusInput', field: 'index' })
+    }
     const focusedIndex = focusedIndexFor(index)
     const tabStopIndex = focusedIndex ?? DEFAULT_TAB_STOP_INDEX
     for (const [slotIndex, slot] of cells.hotbar.entries()) {
@@ -1111,6 +1206,7 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
       setSlotTabStop(slot, slotIndex === tabStopIndex)
       setSlotKeyboardFocus(slot, slotIndex === focusedIndex)
     }
+    return Result.void
   }
 
   applyMotion(motion)
@@ -1127,7 +1223,10 @@ export const createHudView = (...arguments_: CreateHudViewArguments): HudView =>
 
   return {
     dispose,
-    render: (model: HudViewModel): void => renderHudFrame(factory, cells, model),
+    render: (model: HudViewModel): Result.Result<
+      void,
+      Readonly<{ _tag: 'InvalidHudViewInput'; field: InvalidHudViewField }>
+    > => renderHudFrame(factory, cells, model),
     root,
     setKeyboardFocus: applyKeyboardFocus,
     setMotion: applyMotion,

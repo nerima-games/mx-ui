@@ -1,5 +1,5 @@
-import { type Brand, type Effect, Schema } from 'effect'
-import type { PlayerServiceApi, TimeServiceApi } from '@nerima-games/mc-sim'
+import { type Brand, type Effect, Result, Schema } from 'effect'
+import { type PlayerServiceApi, type TimeServiceApi, TimeStateSchema } from '@nerima-games/mc-sim'
 import type { DeltaTimeSecs as DeltaTimeSecsType } from '@nerima-games/mc-kernel'
 
 export type FramesPerSecond = number & Brand.Brand<'FramesPerSecond'>
@@ -65,6 +65,114 @@ const { decodeUnknownSync } = Schema
 const FRAME_RATE_NUMERATOR = 1
 const ZERO_FRAME_DELTA_SECS = 0
 
+type InvalidDebugOverlaySnapshot = Readonly<{
+  readonly _tag: 'InvalidDebugOverlaySnapshot'
+  readonly field: string
+}>
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isFiniteNumber = (input: unknown): input is number =>
+  typeof input === 'number' && Number.isFinite(input)
+
+const invalidCameraPoseField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined') {
+    return
+  }
+  if (!isRecord(input)) {
+    return 'cameraPose'
+  }
+  const { pitchRadians, yawRadians } = input
+  if (!isFiniteNumber(pitchRadians) || !isFiniteNumber(yawRadians)) {
+    return 'cameraPose'
+  }
+  return
+}
+
+const invalidDimensionField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || typeof input === 'string') {
+    return
+  }
+  return 'dimension'
+}
+
+const invalidWorldTimeField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || Schema.is(TimeStateSchema)(input)) {
+    return
+  }
+  return 'worldTime'
+}
+
+const isValidFrameCameraPosition = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const { worldX, worldY, worldZ } = input
+  return isFiniteNumber(worldX) && isFiniteNumber(worldY) && isFiniteNumber(worldZ)
+}
+
+const invalidFrameField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined') {
+    return
+  }
+  if (!isRecord(input)) {
+    return 'frame'
+  }
+  const { cameraPosition, deltaSecs } = input
+  if (!isValidFrameCameraPosition(cameraPosition)) {
+    return 'frame.cameraPosition'
+  }
+  if (!isFiniteNumber(deltaSecs)) {
+    return 'frame.deltaSecs'
+  }
+  return
+}
+
+const invalidGpuTimingSupportedField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || typeof input === 'boolean') {
+    return
+  }
+  return 'gpuTimingSupported'
+}
+
+const invalidLatestGpuTimeField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || isFiniteNumber(input)) {
+    return
+  }
+  return 'latestGpuTimeMs'
+}
+
+const invalidQualityPresetField = (input: unknown): string | undefined => {
+  if (
+    typeof input === 'undefined' ||
+    input === 'low' ||
+    input === 'medium' ||
+    input === 'high' ||
+    input === 'ultra'
+  ) {
+    return
+  }
+  return 'qualityPreset'
+}
+
+const invalidSnapshotField = (snapshot: unknown): string | undefined => {
+  if (!isRecord(snapshot)) {
+    return 'snapshot'
+  }
+  const { cameraPose, dimension, worldTime, frame, gpuTimingSupported, latestGpuTimeMs, qualityPreset } = snapshot
+  return invalidCameraPoseField(cameraPose) ??
+    invalidDimensionField(dimension) ??
+    invalidWorldTimeField(worldTime) ??
+    invalidFrameField(frame) ??
+    invalidGpuTimingSupportedField(gpuTimingSupported) ??
+    invalidLatestGpuTimeField(latestGpuTimeMs) ??
+    invalidQualityPresetField(qualityPreset)
+}
+
+const isDebugOverlaySnapshot = (input: unknown): input is DebugOverlaySnapshot =>
+  typeof invalidSnapshotField(input) === 'undefined'
+
 const framesPerSecondFromDelta = (
   frameDeltaSecs: DebugOverlayFrame['deltaSecs'] | undefined,
 ): FramesPerSecond | null => {
@@ -101,16 +209,30 @@ const facingFromCameraPose = (
   }
 }
 
-export const debugOverlayModel = (snapshot: DebugOverlaySnapshot): DebugOverlayModel => ({
-  biome: null,
-  chunk: null,
-  coordinates: snapshot.frame?.cameraPosition ?? null,
-  dimension: snapshot.dimension ?? null,
-  facing: facingFromCameraPose(snapshot.cameraPose),
-  fps: framesPerSecondFromDelta(snapshot.frame?.deltaSecs),
-  frameDeltaSecs: snapshot.frame?.deltaSecs ?? null,
-  gpuTimingSupported: snapshot.gpuTimingSupported ?? null,
-  latestGpuTimeMs: gpuTimeFromUnknown(snapshot.latestGpuTimeMs),
-  qualityPreset: snapshot.qualityPreset ?? null,
-  worldTime: snapshot.worldTime ?? null,
-})
+export function debugOverlayModel(snapshot: null): Result.Result<DebugOverlayModel, InvalidDebugOverlaySnapshot>
+export function debugOverlayModel(snapshot: DebugOverlaySnapshot): DebugOverlayModel
+export function debugOverlayModel(
+  snapshot: unknown,
+): DebugOverlayModel | Result.Result<DebugOverlayModel, InvalidDebugOverlaySnapshot>
+export function debugOverlayModel(snapshot: DebugOverlaySnapshot): DebugOverlayModel
+export function debugOverlayModel(
+  snapshot: unknown,
+): DebugOverlayModel | Result.Result<DebugOverlayModel, InvalidDebugOverlaySnapshot> {
+  if (!isDebugOverlaySnapshot(snapshot)) {
+    const invalidField = invalidSnapshotField(snapshot)
+    return Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: invalidField ?? 'snapshot' })
+  }
+  return {
+    biome: null,
+    chunk: null,
+    coordinates: snapshot.frame?.cameraPosition ?? null,
+    dimension: snapshot.dimension ?? null,
+    facing: facingFromCameraPose(snapshot.cameraPose),
+    fps: framesPerSecondFromDelta(snapshot.frame?.deltaSecs),
+    frameDeltaSecs: snapshot.frame?.deltaSecs ?? null,
+    gpuTimingSupported: snapshot.gpuTimingSupported ?? null,
+    latestGpuTimeMs: gpuTimeFromUnknown(snapshot.latestGpuTimeMs),
+    qualityPreset: snapshot.qualityPreset ?? null,
+    worldTime: snapshot.worldTime ?? null,
+  }
+}

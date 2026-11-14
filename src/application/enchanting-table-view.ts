@@ -33,6 +33,7 @@ import {
 } from './slot-element.js'
 import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
+import { Result } from 'effect'
 import { itemDisplayNameValue } from './item-display-name.js'
 
 export type EnchantingInteractionView = {
@@ -43,9 +44,121 @@ export type EnchantingInteractionView = {
 export type EnchantingTableView = {
   readonly root: DomElement
   readonly render: (
-    model: EnchantingTableViewModel,
-    interaction?: EnchantingInteractionView,
-  ) => void
+    model: EnchantingTableViewModel | null,
+    interaction?: EnchantingInteractionView | null,
+  ) => Result.Result<void, EnchantingTableViewInputFailure>
+}
+
+type EnchantingTableViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidEnchantingTableViewInput'
+  readonly field: string
+}>
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isOptionalString = (input: unknown): boolean =>
+  typeof input === 'undefined' || typeof input === 'string'
+
+const isItemDisplayNameFailure = (input: unknown): boolean =>
+  isRecord(input) && [
+    'InvalidItemDisplayName',
+    'InvalidItemId',
+    'ItemDisplayNameUnavailable',
+    'MissingItemDisplayNameResolver',
+  ].some((failureTag) => Reflect.get(input, '_tag') === failureTag)
+
+const isItemDisplayNameResult = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const isItemDisplayNameView = (input: unknown): boolean => {
+  if (typeof input === 'undefined') {
+    return true
+  }
+  if (!isRecord(input)) {
+    return false
+  }
+  const language = Reflect.get(input, 'language')
+  return (language === 'en' || language === 'ja') && isItemDisplayNameResult(Reflect.get(input, 'result'))
+}
+
+const invalidEnchantingSlotField = (slot: unknown): string | undefined => {
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if (!isRecord(slot) || !isItemDisplayNameView(Reflect.get(slot, 'itemDisplayName'))) {
+    return 'slots[].itemDisplayName'
+  }
+  if (!isOptionalString(Reflect.get(slot, 'countLabel'))) {
+    return 'slots[].countLabel'
+  }
+  return
+}
+
+const invalidEnchantingOfferField = (offer: unknown): string | undefined => {
+  if (typeof offer === 'undefined') {
+    return
+  }
+  if (!isRecord(offer) || !isOptionalString(Reflect.get(offer, 'rejectionReason'))) {
+    return 'offers[].rejectionReason'
+  }
+  return
+}
+
+const invalidEnchantingTableModelField = (model: EnchantingTableViewModel): string | undefined => {
+  for (const slot of model.slots) {
+    const field = invalidEnchantingSlotField(slot)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  for (const offer of model.offers) {
+    const field = invalidEnchantingOfferField(offer)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  return
+}
+
+const invalidEnchantingInteractionField = (
+  interaction: EnchantingInteractionView | undefined,
+): string | undefined => {
+  if (typeof interaction !== 'undefined' && !isRecord(interaction)) {
+    return 'interaction'
+  }
+  if (typeof interaction !== 'undefined') {
+    const focusedTarget = Reflect.get(interaction, 'focusedTarget')
+    if (
+      typeof focusedTarget !== 'undefined' &&
+      !ENCHANTING_OPERATION_TARGETS.some((target) => target === focusedTarget)
+    ) {
+      return 'interaction.focusedTarget'
+    }
+  }
+  if (typeof interaction !== 'undefined' && !isOptionalString(Reflect.get(interaction, 'status'))) {
+    return 'interaction.status'
+  }
+  return
+}
+
+const invalidEnchantingTableViewInputField = (
+  model: EnchantingTableViewModel,
+  interaction: EnchantingInteractionView | undefined,
+): string | undefined => {
+  const invalidModelField = invalidEnchantingTableModelField(model)
+  if (typeof invalidModelField !== 'undefined') {
+    return invalidModelField
+  }
+  return invalidEnchantingInteractionField(interaction)
 }
 
 export type EnchantingTableViewActions = {
@@ -166,17 +279,52 @@ const offerLabel = (offer: EnchantingOfferView): Readonly<{ key: UiMessageKey; v
   }
 }
 
-const resolveFocusedTarget = (
-  requested: EnchantingOperationTarget,
-): EnchantingOperationTarget => {
-  // `EnchantingInteractionView` is a published type with no canonical constructor.
-  // A host can hand `render()` a stale or round-tripped value that only claims to satisfy the
-  // `EnchantingOperationTarget` union at compile time.
-  // Falling back to the item slot is the inert answer.
-  if (ENCHANTING_OPERATION_TARGETS.includes(requested)) {
-    return requested
+type PreparedEnchantingRender = Readonly<{
+  model: EnchantingTableViewModel
+  interaction: EnchantingInteractionView | undefined
+  focusedTarget: EnchantingOperationTarget
+}>
+
+const invalidEnchantingCollectionField = (model: Record<string, unknown>): string | undefined => {
+  if (!Array.isArray(Reflect.get(model, 'slots'))) {
+    return 'slots'
   }
-  return 'item'
+  if (!Array.isArray(Reflect.get(model, 'offers'))) {
+    return 'offers'
+  }
+  return
+}
+
+const prepareEnchantingRenderAfterCollectionCheck = (
+  model: EnchantingTableViewModel,
+  interaction: EnchantingInteractionView | null | undefined,
+): Result.Result<PreparedEnchantingRender, EnchantingTableViewInputFailure> => {
+  if (interaction === null) {
+    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'interaction' })
+  }
+  const invalidField = invalidEnchantingTableViewInputField(model, interaction)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: invalidField })
+  }
+  return Result.succeed({
+    focusedTarget: interaction?.focusedTarget ?? 'item',
+    interaction,
+    model,
+  })
+}
+
+const prepareEnchantingRender = (
+  model: EnchantingTableViewModel | null,
+  interaction: EnchantingInteractionView | null | undefined,
+): Result.Result<PreparedEnchantingRender, EnchantingTableViewInputFailure> => {
+  if (!isRecord(model)) {
+    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'model' })
+  }
+  const collectionField = invalidEnchantingCollectionField(model)
+  if (typeof collectionField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: collectionField })
+  }
+  return prepareEnchantingRenderAfterCollectionCheck(model, interaction)
 }
 
 const tabStopValue = (tabbable: boolean): string => {
@@ -470,11 +618,15 @@ export const createEnchantingTableView = (
   }
 
   return {
-    render: (model: EnchantingTableViewModel, interaction?: EnchantingInteractionView): void => {
-      const focusedTarget = resolveFocusedTarget(interaction?.focusedTarget ?? 'item')
-      renderSlots(model, focusedTarget, interaction)
-      renderOffers(model, focusedTarget, interaction)
-      writeText(statusText, interaction?.status ?? '')
+    render: (model: EnchantingTableViewModel | null, interaction?: EnchantingInteractionView | null) => {
+      const prepared = prepareEnchantingRender(model, interaction)
+      if (Result.isFailure(prepared)) {
+        return Result.fail(prepared.failure)
+      }
+      renderSlots(prepared.success.model, prepared.success.focusedTarget, prepared.success.interaction)
+      renderOffers(prepared.success.model, prepared.success.focusedTarget, prepared.success.interaction)
+      writeText(statusText, prepared.success.interaction?.status ?? '')
+      return Result.void
     },
     root,
   }

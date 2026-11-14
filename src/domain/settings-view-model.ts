@@ -1,18 +1,26 @@
 /** Presentation projection for the settings owned and held by mc-sim. */
-import { DEFAULT_UI_LANGUAGE, type UiMessageKey, translateUiMessage } from './ui-language.js'
+import {
+  DEFAULT_UI_LANGUAGE,
+  type UiLanguage,
+  type UiMessageKey,
+  decodeUiLanguage,
+  translateUiMessage,
+} from './ui-language.js'
 import { DIFFICULTIES, type Difficulty } from '@nerima-games/mc-kernel/domain/game-mode'
 import {
   GRAPHICS_QUALITIES,
   MAX_FOV_DEGREES,
   MAX_MOUSE_SENSITIVITY,
+  MAX_RENDER_DISTANCE,
   MAX_VOLUME,
   MIN_FOV_DEGREES,
   MIN_MOUSE_SENSITIVITY,
+  MIN_RENDER_DISTANCE,
   MIN_VOLUME,
   type Settings,
   isValidSettings,
 } from '@nerima-games/mc-sim'
-import { type KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
+import { KeyCode as KernelKeyCode, type KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { Result } from 'effect'
 
 const UI_SCALE_MIN = 0.75
@@ -31,6 +39,7 @@ const SENSITIVITY_BOUNDS = {
   step: SENSITIVITY_STEP,
 }
 const UI_SCALE_BOUNDS = { maximum: UI_SCALE_MAX, minimum: UI_SCALE_MIN, step: UI_SCALE_STEP }
+const RENDER_DISTANCE_BOUNDS = { maximum: MAX_RENDER_DISTANCE, minimum: MIN_RENDER_DISTANCE, step: 1 }
 
 export type SettingsSnapshot = Settings
 export type GraphicsPreset = Settings['graphicsPreset']
@@ -56,12 +65,15 @@ export type SettingsBindingRow<Action extends string = string> = {
 }
 
 export type SettingsViewModel<Action extends string = string> = {
+  readonly language: UiLanguage
   readonly difficulty: Difficulty
   readonly graphicsPreset: GraphicsPreset
   readonly reducedMotion: ReducedMotionSetting
   readonly colorVisionCorrection: ColorVisionCorrection
   readonly mouseSensitivity: NumericSettingView
+  readonly renderDistance: NumericSettingView
   readonly masterVolume: NumericSettingView
+  readonly musicVolume: NumericSettingView
   readonly sfxVolume: NumericSettingView
   readonly fovDegrees: NumericSettingView
   readonly uiScale: NumericSettingView
@@ -70,9 +82,10 @@ export type SettingsViewModel<Action extends string = string> = {
   readonly bindingRows: ReadonlyArray<SettingsBindingRow<Action>>
 }
 
-export type SettingsViewModelFailure = {
-  readonly _tag: 'InvalidSettingsSnapshot'
-}
+export type SettingsViewModelFailure =
+  | { readonly _tag: 'InvalidSettingsSnapshot' }
+  | { readonly _tag: 'InvalidSettingsLanguage' }
+  | { readonly _tag: 'InvalidSettingsDefaultBindings' }
 
 const REDUCED_MOTION_SETTINGS: ReadonlyArray<ReducedMotionSetting> = ['system', 'full', 'reduced']
 const COLOR_VISION_CORRECTIONS: ReadonlyArray<ColorVisionCorrection> = [
@@ -122,6 +135,24 @@ export const REDUCED_MOTION_CHOICES: ReadonlyArray<SettingChoice<ReducedMotionSe
 export const COLOR_VISION_CHOICES: ReadonlyArray<SettingChoice<ColorVisionCorrection>> =
   COLOR_VISION_CORRECTIONS.map((value) => Object.freeze({ label: translateUiMessage(DEFAULT_UI_LANGUAGE, COLOR_VISION_MESSAGE_KEY[value]), value }))
 
+const languageChoiceLabel = (value: UiLanguage): string => {
+  if (value === 'en') {
+    return translateUiMessage(DEFAULT_UI_LANGUAGE, 'settings.choice.language.en')
+  }
+  return translateUiMessage(DEFAULT_UI_LANGUAGE, 'settings.choice.language.ja')
+}
+
+const renderDistanceLabel = (value: number, language: UiLanguage): string => {
+  if (language === 'ja') {
+    return `${String(value)} チャンク`
+  }
+  return `${String(value)} chunks`
+}
+
+export const LANGUAGE_CHOICES: ReadonlyArray<SettingChoice<UiLanguage>> = (['en', 'ja'] as const).map(
+  (value) => Object.freeze({ label: languageChoiceLabel(value), value }),
+)
+
 const numericField = (
   value: number,
   bounds: { readonly minimum: number; readonly maximum: number; readonly step: number },
@@ -129,6 +160,22 @@ const numericField = (
 ): NumericSettingView => Object.freeze({ label: format(value), ...bounds, value })
 
 const percentLabel = (value: number): string => `${String(Math.round(value * PERCENT_SCALE))}%`
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const hasValidDefaultBindings = (input: unknown, actions: unknown): boolean => {
+  if (!isRecord(input) || !Array.isArray(actions)) {
+    return false
+  }
+  return actions.every((action) => {
+    if (typeof action !== 'string' || !Object.hasOwn(input, action)) {
+      return false
+    }
+    const code = Reflect.get(input, action)
+    return typeof code === 'string' && KernelKeyCode.is(code)
+  })
+}
 
 const bindingRow = <Action extends string>(
   settings: Settings,
@@ -149,10 +196,18 @@ const bindingRow = <Action extends string>(
 export const settingsViewModel = <Action extends string>(
   input: unknown,
   defaultBindings: Readonly<Record<Action, KeyCode>>,
-  bindableActions: ReadonlyArray<Action>,
+  ...viewOptions: [bindableActions: ReadonlyArray<Action>, languageInput?: unknown]
 ): Result.Result<SettingsViewModel<Action>, SettingsViewModelFailure> => {
+  const [bindableActions, languageInput = DEFAULT_UI_LANGUAGE] = viewOptions
   if (!isValidSettings(input)) {
     return Result.fail({ _tag: 'InvalidSettingsSnapshot' })
+  }
+  if (!hasValidDefaultBindings(defaultBindings, bindableActions)) {
+    return Result.fail({ _tag: 'InvalidSettingsDefaultBindings' })
+  }
+  const decodedLanguage = decodeUiLanguage(languageInput)
+  if (Result.isFailure(decodedLanguage)) {
+    return Result.fail({ _tag: 'InvalidSettingsLanguage' })
   }
 
   return Result.succeed(
@@ -166,9 +221,14 @@ export const settingsViewModel = <Action extends string>(
       difficulty: input.difficulty,
       fovDegrees: numericField(input.fovDegrees, FOV_BOUNDS, (value) => `${String(value)}°`),
       graphicsPreset: input.graphicsPreset,
+      language: decodedLanguage.success,
       masterVolume: numericField(input.masterVolume, VOLUME_BOUNDS, percentLabel),
       mouseSensitivity: numericField(input.mouseSensitivity, SENSITIVITY_BOUNDS, (value) => `${String(value)}×`),
+      musicVolume: numericField(input.musicVolume, VOLUME_BOUNDS, percentLabel),
       reducedMotion: input.reducedMotion,
+      renderDistance: numericField(input.renderDistance, RENDER_DISTANCE_BOUNDS, (value) =>
+        renderDistanceLabel(value, decodedLanguage.success),
+      ),
       sfxVolume: numericField(input.sfxVolume, VOLUME_BOUNDS, percentLabel),
       uiScale: numericField(input.uiScale, UI_SCALE_BOUNDS, (value) => `${String(value)}×`),
     }),

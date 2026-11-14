@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
 import { InputAction, KeyCode } from '@nerima-games/mc-kernel/domain/settings'
 import { createOnboardingView } from '../src/application/onboarding-view.js'
+import { applyUiLanguage, type UiLocalizationRoot } from '../src/application/ui-localization.js'
 import {
   onboardingViewModel,
   type OnboardingIntent,
@@ -8,7 +10,7 @@ import {
 import { fakeDocument, fakeElement } from './fake-dom.js'
 
 const QUICK_CONTROLS = [
-  { action: InputAction('Move'), keys: KeyCode('W') },
+  { action: InputAction('Move'), keys: KeyCode('KeyW') },
   { action: InputAction('Jump'), keys: KeyCode('Space') },
 ]
 
@@ -80,15 +82,27 @@ describe('createOnboardingView', () => {
     expect(move?.children[0]?.textContent).toBe('Move: ')
     expect(move?.children[1]?.tagName).toBe('kbd')
     expect(move?.children[1]?.textContent).toBe('W')
+    const localizationRoot: UiLocalizationRoot = {
+      querySelectorAll: (selector) =>
+        selector === '*'
+          ? Array.from(root.walk())
+          : root.findAll('data-mx-ui-localized', ''),
+    }
+    const japanese = applyUiLanguage(localizationRoot, 'ja')
+    expect(Result.isSuccess(japanese)).toBe(true)
+    if (Result.isSuccess(japanese)) {
+      expect(japanese.success).toBe('ja')
+    }
+    expect(root.find('data-onboarding-control-action', 'Jump')?.children[1]?.textContent).toBe('スペース')
 
     const howToPlay = root.find('data-onboarding-action', 'OpenHowToPlay')
     const dismiss = root.find('data-onboarding-action', 'PersistQuickControlsDismissal')
     expect(howToPlay?.tagName).toBe('button')
     expect(howToPlay?.attributes.get('type')).toBe('button')
-    expect(howToPlay?.attributes.get('aria-label')).toBe('How to Play')
+    expect(howToPlay?.attributes.get('aria-label')).toBe('遊び方')
     expect(dismiss?.tagName).toBe('button')
     expect(dismiss?.attributes.get('type')).toBe('button')
-    expect(dismiss?.attributes.get('aria-label')).toBe('Dismiss Quick Controls')
+    expect(dismiss?.attributes.get('aria-label')).toBe('操作ガイドを閉じる')
 
     howToPlay?.dispatch('click')
     dismiss?.dispatch('click')

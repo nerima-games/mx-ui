@@ -1,24 +1,17 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import {
+  FieldOfViewDegrees,
+  InputAction as KernelInputAction,
+  KeyCode as KernelKeyCode,
+  MouseSensitivity,
+  RenderDistanceChunks,
+  VolumeLevel,
+} from '@nerima-games/mc-kernel/domain/settings'
 import { DEFAULT_SETTINGS } from '@nerima-games/mc-sim'
-import { Result } from 'effect'
 import { fileURLToPath } from 'node:url'
-import { settingsViewModel } from '../src/domain/settings-view-model'
 import { SCENARIO_REGISTRY } from '../apps/browser-harness/scenario-registry'
 import { UI_SURFACE_LEDGER_ENTRIES, scenarioReference } from '../test/helpers/ui-surface-ledger'
 import { openHarness } from './harness'
-import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from '../test/fixtures/settings-input'
-
-const tabUntilFocused = async (page: Page, target: Locator, remainingTabs: number): Promise<void> => {
-  if (remainingTabs <= 0) {
-    return
-  }
-  const focused = await target.evaluate((element) => element === document.activeElement)
-  if (focused) {
-    return
-  }
-  await page.keyboard.press('Tab')
-  await tabUntilFocused(page, target, remainingTabs - 1)
-}
 
 type BrowserErrors = { readonly console: Array<string>; readonly page: Array<string> }
 const browserErrors = new WeakMap<Page, BrowserErrors>()
@@ -46,9 +39,41 @@ const pauseMenuViewModule = `/@fs${fileURLToPath(
 const pauseMenuViewModelModule = `/@fs${fileURLToPath(
   new URL('../src/domain/pause-menu-view-model.ts', import.meta.url),
 )}`
-const settingsViewModule = `/@fs${fileURLToPath(
-  new URL('../src/application/settings-view.ts', import.meta.url),
+const uiMountModule = `/@fs${fileURLToPath(
+  new URL('../src/application/ui-mount.ts', import.meta.url),
 )}`
+const achievementToastSubscriberModule = `/@fs${fileURLToPath(
+  new URL('../src/application/achievement-toast-subscriber.ts', import.meta.url),
+)}`
+const browserEffectsModule = '/test-effects.ts'
+const tabUntilFocused = async (page: Page, target: Locator, remainingTabs: number): Promise<void> => {
+  if (remainingTabs <= 0) {
+    return
+  }
+  const focused = await target.evaluate((element) => element === document.activeElement)
+  if (focused) {
+    return
+  }
+  await page.keyboard.press('Tab')
+  await tabUntilFocused(page, target, remainingTabs - 1)
+}
+const settingsSnapshot = {
+  ...DEFAULT_SETTINGS,
+  difficulty: 'hard' as const,
+  fovDegrees: FieldOfViewDegrees(92),
+  graphicsPreset: 'high' as const,
+  graphicsQuality: 'high' as const,
+  keyBindings: {
+    ...DEFAULT_SETTINGS.keyBindings,
+    [KernelInputAction('moveForward')]: KernelKeyCode('KeyW'),
+  },
+  masterVolume: VolumeLevel(0.8),
+  mouseSensitivity: MouseSensitivity(1),
+  reducedMotion: 'reduced' as const,
+  renderDistance: RenderDistanceChunks(14),
+  sfxVolume: VolumeLevel(1),
+  uiScale: 1.25,
+}
 
 // BEGIN W4-C accessibility coverage
 test.describe('W4-C pause menu accessibility', () => {
@@ -137,87 +162,55 @@ test.describe('W4-C pause menu accessibility', () => {
     await expect(host).toHaveAttribute('data-host-modal-stack', '')
   })
 
-  // Catches settings controls that lose their source labels or selected/checked state.
-  test('renders named settings controls and supports native keyboard access', async ({ page }) => {
-    const settingsSnapshot = {
-      ...DEFAULT_SETTINGS,
-      difficulty: 'hard' as const,
-      fovDegrees: 92,
-      graphicsPreset: 'high' as const,
-      graphicsQuality: 'high' as const,
-      keyBindings: { ...DEFAULT_SETTINGS.keyBindings, moveForward: 'KeyW' },
-      masterVolume: 0.8,
-      mouseSensitivity: 1,
-      reducedMotion: 'reduced' as const,
-      sfxVolume: 1,
-      uiScale: 1.25,
-    }
-    const settingsResult = settingsViewModel(settingsSnapshot, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS)
-    if (!Result.isSuccess(settingsResult)) {
-      throw new Error('Expected a valid Settings snapshot')
-    }
-    const settingsModel = settingsResult.success
+  // Catches settings controls that lose their source labels or fail to round-trip a host snapshot.
+  test('renders every settings control and reads keyboard changes back from the host', async ({ page }) => {
+    await openHarness(page, { screen: 'settings', scenario: 'host-updates', panel: true })
 
-    await openHarness(page, { screen: 'crosshair' })
-    await page.evaluate(
-      async ({ viewPath, model }) => {
-        const { createSettingsView } = (await import(viewPath)) as typeof import('../src/application/settings-view')
-        const host = document.createElement('main')
-        host.setAttribute('data-settings-browser-host', '')
-        document.body.appendChild(host)
-
-        const view = createSettingsView(document, host)
-        view.render(model)
-        // The host observes delegation metadata; the view itself stays passive.
-        host.addEventListener('click', (event) => {
-          if (event.target instanceof Element) {
-            const control = event.target.closest('[data-interaction-target]')
-            if (control) {
-              host.setAttribute('data-host-delegated-target', control.getAttribute('data-interaction-target') ?? '')
-              host.setAttribute('data-host-binding-action', control.getAttribute('data-binding-action') ?? '')
-              host.setAttribute(
-                'data-host-settings-intent',
-                [
-                  control.getAttribute('data-interaction-target'),
-                  control.getAttribute('data-settings-field'),
-                  control.getAttribute('data-setting-value'),
-                ]
-                  .filter((value): value is string => value !== null)
-                  .join(':'),
-              )
-            }
-          }
-        })
-      },
-      { viewPath: settingsViewModule, model: settingsModel },
-    )
-
-    const host = page.locator('[data-settings-browser-host]')
+    const host = page.locator('[data-harness-host="settings"][data-harness-scenario="host-updates"]')
     const settings = host.locator('[data-mx-ui="settings"]')
-    const sliderExpectations = [
-      ['Look sensitivity', settingsModel.mouseSensitivity],
-      ['Master volume', settingsModel.masterVolume],
-      ['SFX volume', settingsModel.sfxVolume],
-      ['Field of view', settingsModel.fovDegrees],
-      ['UI scale', settingsModel.uiScale],
-    ] as const
+    const intentOutput = page.getByTestId('diagnostics-intents')
+    const readbackSnapshot = async (): Promise<Record<string, unknown> | undefined> => {
+      const output = await intentOutput.textContent()
+      if (output === null || output === 'no intents emitted') {
+        return undefined
+      }
+      const records = JSON.parse(output) as ReadonlyArray<{
+        intent: { readonly _tag?: string; readonly snapshot?: Record<string, unknown> }
+      }>
+      return records.filter(({ intent }) => intent['_tag'] === 'SettingsReadback').at(-1)?.intent.snapshot
+    }
 
-    await Promise.all(sliderExpectations.map(async ([name, expected]) => {
+    await expect(settings).toHaveAttribute('role', 'dialog')
+    await expect(settings).toHaveAttribute('aria-modal', 'true')
+    const sliderValues = [
+      ['Look sensitivity', settingsSnapshot.mouseSensitivity, '0.1', '3', '0.1'],
+      ['Render distance', settingsSnapshot.renderDistance, '2', '16', '1'],
+      ['Master volume', settingsSnapshot.masterVolume, '0', '1', '0.01'],
+      ['Music volume', settingsSnapshot.musicVolume, '0', '1', '0.01'],
+      ['SFX volume', settingsSnapshot.sfxVolume, '0', '1', '0.01'],
+      ['Field of view', settingsSnapshot.fovDegrees, '30', '110', '1'],
+      ['UI scale', settingsSnapshot.uiScale, '0.75', '1.5', '0.05'],
+    ] as const
+    await Promise.all(sliderValues.map(async ([name, value, min, max, step]) => {
       const slider = settings.getByRole('slider', { name })
-      await expect(slider).toHaveAttribute('min', String(expected.minimum))
-      await expect(slider).toHaveAttribute('max', String(expected.maximum))
-      await expect(slider).toHaveAttribute('step', String(expected.step))
-      await expect(slider).toHaveValue(String(expected.value))
+      await expect(slider).toHaveValue(String(value))
+      await expect(slider).toHaveAttribute('min', min)
+      await expect(slider).toHaveAttribute('max', max)
+      await expect(slider).toHaveAttribute('step', step)
     }))
+    const renderDistance = settings.getByRole('slider', { name: 'Render distance' })
 
     const difficultyGroup = settings.getByRole('group', { name: 'Difficulty' })
     const graphicsGroup = settings.getByRole('group', { name: 'Graphics preset' })
     const reducedMotionGroup = settings.getByRole('group', { name: 'Reduced motion' })
     const colorVisionGroup = settings.getByRole('group', { name: 'Color vision correction' })
-    await Promise.all([difficultyGroup, graphicsGroup, reducedMotionGroup, colorVisionGroup].map(async (group) => {
-      await expect(group).toBeVisible()
-      await expect(group.locator('[aria-pressed="true"]')).toHaveCount(1)
-    }))
+    const languageGroup = settings.getByRole('group', { name: 'Language' })
+    await Promise.all(
+      [difficultyGroup, graphicsGroup, reducedMotionGroup, colorVisionGroup, languageGroup].map(async (group) => {
+        await expect(group).toBeVisible()
+        await expect(group.locator('[aria-pressed="true"]')).toHaveCount(1)
+      }),
+    )
     await expect(difficultyGroup.getByRole('button', { name: 'Difficulty: Hard' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -226,14 +219,18 @@ test.describe('W4-C pause menu accessibility', () => {
       'aria-pressed',
       'true',
     )
-    await expect(
-      reducedMotionGroup.getByRole('button', { name: 'Reduced motion: reduced' }),
-    ).toHaveAttribute('aria-pressed', 'true')
-    await expect(
-      colorVisionGroup.getByRole('button', {
-        name: `Color vision correction: ${settingsSnapshot.colorVisionCorrection}`,
-      }),
-    ).toHaveAttribute('aria-pressed', 'true')
+    await expect(reducedMotionGroup.getByRole('button', { name: 'Reduced motion: Reduced' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(colorVisionGroup.getByRole('button', { name: 'Color vision correction: Off' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(languageGroup.getByRole('button', { name: 'Language: English' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
 
     const audioSwitch = settings.getByRole('switch', { name: 'Audio enabled' })
     const captionsSwitch = settings.getByRole('switch', { name: 'Sound captions' })
@@ -241,38 +238,186 @@ test.describe('W4-C pause menu accessibility', () => {
     await expect(captionsSwitch).toHaveAttribute('aria-checked', String(settingsSnapshot.captionsEnabled))
     await expect(audioSwitch).toHaveAttribute('data-interaction-target', 'settings-toggle')
     await expect(captionsSwitch).toHaveAttribute('data-interaction-target', 'settings-toggle')
-    await expect(
-      difficultyGroup.getByRole('button', { name: 'Difficulty: Hard' }),
-    ).toHaveAttribute('data-interaction-target', 'settings-choice')
 
     const sensitivity = settings.getByRole('slider', { name: 'Look sensitivity' })
-    const moveForwardBinding = settings.getByRole('button', { name: /Move forward key.*KeyW/i })
     const focusableElements = page.locator('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')
     const focusableCount = await focusableElements.count()
-
+    await settings.getByRole('button', { name: 'Close' }).focus()
     await tabUntilFocused(page, sensitivity, focusableCount)
     await expect(sensitivity).toBeFocused()
     const previousSensitivity = await sensitivity.inputValue()
     await page.keyboard.press('ArrowRight')
     await expect(sensitivity).not.toHaveValue(previousSensitivity)
-
-    await tabUntilFocused(page, moveForwardBinding, focusableCount)
-    await expect(moveForwardBinding).toBeFocused()
-    await expect(moveForwardBinding).toHaveAttribute('type', 'button')
-    await expect(moveForwardBinding).toHaveAttribute('data-interaction-target', 'settings-binding')
-    await expect(moveForwardBinding).toHaveAttribute('data-binding-action', 'moveForward')
-    await page.keyboard.press('Enter')
-    await expect(host).toHaveAttribute('data-host-delegated-target', 'settings-binding')
-    await expect(host).toHaveAttribute('data-host-binding-action', 'moveForward')
+    await expect(sensitivity).toHaveValue('1.1')
+    await expect.poll(async () => (await readbackSnapshot())?.['mouseSensitivity']).toBe(1.1)
+    await renderDistance.focus()
+    await page.keyboard.press('End')
+    await expect(renderDistance).toHaveValue('16')
+    await expect.poll(async () => (await readbackSnapshot())?.['renderDistance']).toBe(16)
 
     const normalDifficulty = difficultyGroup.getByRole('button', { name: 'Difficulty: Normal' })
     await normalDifficulty.focus()
     await page.keyboard.press('Enter')
-    await expect(host).toHaveAttribute('data-host-settings-intent', 'settings-choice:difficulty:normal')
+    await expect.poll(async () => (await readbackSnapshot())?.['difficulty']).toBe('normal')
+
+    const moveForwardBinding = settings.locator('[data-binding-action="moveForward"]')
+    const bindings = settings.locator('[data-binding-action]')
+    await expect(bindings).toHaveCount(21)
+    const bindingNames = await bindings.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('aria-label')),
+    )
+    expect(bindingNames.every((name) => name !== null && name.trim().length > 0)).toBe(true)
+    await expect(moveForwardBinding).toHaveAccessibleName(/Move forward key.*W/i)
+    await expect(moveForwardBinding).not.toHaveAccessibleName(/KeyW/i)
+    await expect(moveForwardBinding).toHaveAttribute('type', 'button')
+    await expect(moveForwardBinding).toHaveAttribute('data-interaction-target', 'settings-binding')
+    await tabUntilFocused(page, moveForwardBinding, focusableCount)
+    await expect(moveForwardBinding).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(intentOutput).toContainText('SettingsBindingActivated')
 
     await audioSwitch.focus()
     await page.keyboard.press('Space')
-    await expect(host).toHaveAttribute('data-host-settings-intent', 'settings-toggle:audioEnabled')
+    await expect.poll(async () => (await readbackSnapshot())?.['audioEnabled']).toBe(!settingsSnapshot.audioEnabled)
+
+    const uiScale = settings.getByRole('slider', { name: 'UI scale' })
+    await uiScale.focus()
+    await page.keyboard.press('End')
+    await expect.poll(async () => (await readbackSnapshot())?.['uiScale']).toBe(Number(await uiScale.inputValue()))
+
+    const fullMotion = reducedMotionGroup.locator('[data-setting-value="full"]')
+    await fullMotion.focus()
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await readbackSnapshot())?.['reducedMotion']).toBe('full')
+
+    const protanopia = colorVisionGroup.locator('[data-setting-value="protanopia"]')
+    await protanopia.focus()
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await readbackSnapshot())?.['colorVisionCorrection']).toBe('protanopia')
+
+    const japanese = languageGroup.getByRole('button', { name: 'Language: Japanese' })
+    await japanese.focus()
+    await page.keyboard.press('Enter')
+    await expect(settings).toHaveAttribute('aria-label', '設定')
+
+    const current = await readbackSnapshot()
+    if (current === undefined) {
+      throw new Error('Expected the settings host to return a snapshot')
+    }
+    const externalUpdate = { ...current, fovDegrees: 100, uiScale: 1.5 }
+    await host.locator('[data-settings-host-mount]').evaluate((element, snapshot) => {
+      element.dispatchEvent(new CustomEvent('settings-host-update', { detail: snapshot }))
+    }, externalUpdate)
+    await expect(settings.locator('[data-setting="fieldOfView"]')).toHaveValue('100')
+    await expect(settings.locator('[data-setting="uiScale"]')).toHaveValue('1.5')
+    await expect.poll(async () => (await readbackSnapshot())?.['fovDegrees']).toBe(100)
+  })
+
+  test('UiMount applies language, scale, color vision, and reduced motion from browser settings', async ({ page }) => {
+    await openHarness(page, { screen: 'crosshair' })
+    await page.evaluate(
+      async ({ effectPath, mountPath, toastPath, snapshot }) => {
+        const [mountModule, toastModule, browserEffects] = await Promise.all([
+          import(mountPath) as Promise<typeof import('../src/application/ui-mount')>,
+          import(toastPath) as Promise<typeof import('../src/application/achievement-toast-subscriber')>,
+          import(effectPath) as Promise<typeof import('../apps/browser-harness/test-effects')>,
+        ])
+        const harnessPage = document.querySelector<HTMLElement>('[data-harness-page]')
+        if (harnessPage !== null) {
+          harnessPage.style.display = 'none'
+        }
+        const host = document.createElement('main')
+        host.setAttribute('data-settings-runtime-host', '')
+        const canvas = document.createElement('canvas')
+        host.appendChild(canvas)
+        document.body.appendChild(host)
+
+        const runtime = mountModule.makeUiMount({
+          colorVisionTarget: canvas,
+          initialLanguage: 'en',
+          initialSettingsSnapshot: snapshot,
+          root: host,
+          settingsCallbacks: {
+            onLanguageChange: (language) => {
+              host.setAttribute('data-host-language', language)
+            },
+            onSettingsChange: (settings) => {
+              host.setAttribute('data-host-settings-snapshot', JSON.stringify(settings))
+              const result = runtime.updateSettingsSnapshot(settings)
+              host.setAttribute(
+                'data-host-settings-readback',
+                result !== undefined && browserEffects.Result.isSuccess(result) ? 'success' : 'failure',
+              )
+            },
+          },
+        })
+        const scope = browserEffects.Scope.makeUnsafe()
+        host.addEventListener('host-settings-update', (event) => {
+          const result = runtime.updateSettingsSnapshot((event as CustomEvent<unknown>).detail)
+          host.setAttribute(
+            'data-host-update-result',
+            result !== undefined && browserEffects.Result.isSuccess(result) ? 'success' : 'failure',
+          )
+        })
+        await browserEffects.Effect.runPromise(
+          runtime.start.pipe(
+            browserEffects.Effect.provideService(browserEffects.Scope.Scope, scope),
+            browserEffects.Effect.provide(toastModule.AchievementToastEventBusLayer),
+          ),
+        )
+        runtime.openSettings()
+        host.setAttribute('data-settings-runtime', 'ready')
+      },
+      {
+        effectPath: browserEffectsModule,
+        mountPath: uiMountModule,
+        toastPath: achievementToastSubscriberModule,
+        snapshot: settingsSnapshot,
+      },
+    )
+
+    const host = page.locator('[data-settings-runtime-host]')
+    const mountRoot = host.locator('[data-mx-ui="mount-root"]')
+    const settings = mountRoot.locator('[data-mx-ui="settings"]')
+    await expect(host).toHaveAttribute('data-settings-runtime', 'ready')
+    await expect(settings).toBeVisible()
+    await expect.poll(() => mountRoot.evaluate((element) => getComputedStyle(element).zoom)).toBe('1.25')
+
+    const reducedMotion = settings.locator('[data-settings-field="reducedMotion"][data-setting-value="full"]')
+    await reducedMotion.click()
+    await expect(reducedMotion).toHaveAttribute('aria-pressed', 'true')
+    const experienceTransition = mountRoot.locator('[data-mx-ui="experience-fill"]')
+    await expect.poll(() => experienceTransition.evaluate((element) => (element as HTMLElement).style.transition)).toContain(
+      '220ms',
+    )
+
+    await settings.locator('[data-settings-field="colorVisionCorrection"][data-setting-value="protanopia"]').click()
+    await expect(host.locator('canvas')).toHaveAttribute('data-color-vision', 'protanopia')
+
+    const uiScale = settings.locator('[data-setting="uiScale"]')
+    await uiScale.focus()
+    await page.keyboard.press('End')
+    await expect.poll(async () => mountRoot.evaluate((element) => getComputedStyle(element).zoom)).toBe(
+      await uiScale.inputValue(),
+    )
+    await expect(host).toHaveAttribute('data-host-settings-readback', 'success')
+
+    await settings.locator('[data-settings-field="language"][data-setting-value="ja"]').click()
+    await expect(host).toHaveAttribute('data-host-language', 'ja')
+    await expect(mountRoot.locator('[data-menu-entry="settings"]')).toHaveText('設定...')
+
+    const currentSettings = JSON.parse((await host.getAttribute('data-host-settings-snapshot')) ?? 'null') as
+      | Record<string, unknown>
+      | null
+    if (currentSettings === null) {
+      throw new Error('Expected UiMount settings callback to provide a snapshot')
+    }
+    await host.evaluate((element, snapshot) => {
+      element.dispatchEvent(new CustomEvent('host-settings-update', { detail: snapshot }))
+    }, { ...currentSettings, fovDegrees: 100, uiScale: 1.5 })
+    await expect(host).toHaveAttribute('data-host-update-result', 'success')
+    await expect(settings.locator('[data-setting="fieldOfView"]')).toHaveValue('100')
+    await expect.poll(() => mountRoot.evaluate((element) => getComputedStyle(element).zoom)).toBe('1.5')
   })
 })
 // END W4-C accessibility coverage
@@ -409,6 +554,10 @@ const SURFACE_ACCESSIBILITY_CONTRACTS: Readonly<Record<string, SurfaceAccessibil
     ],
   },
   createCaptionView: { marker: 'captions', anchors: [{ role: 'status', root: true }] },
+  createChatView: {
+    marker: 'chat',
+    anchors: [{ role: 'region', name: 'Chat', root: true }],
+  },
   createChestStorageView: {
     marker: 'chest-storage',
     anchors: [
@@ -517,8 +666,8 @@ const browserAccessibilityAudit = (
   ignoredMarkers: ReadonlyArray<string>,
 ): Array<string> => {
   const validRoles = new Set([
-    'alert', 'button', 'checkbox', 'combobox', 'dialog', 'group', 'img', 'list', 'listitem',
-    'menu', 'menuitem', 'note', 'option', 'progressbar', 'radio', 'radiogroup', 'region', 'slider',
+    'alert', 'button', 'checkbox', 'combobox', 'dialog', 'group', 'img', 'list', 'listitem', 'main',
+    'log', 'menu', 'menuitem', 'note', 'option', 'progressbar', 'radio', 'radiogroup', 'region', 'slider',
     'status', 'switch', 'tab', 'tabpanel', 'textbox',
   ])
   const namedRoles = new Set(['button', 'checkbox', 'combobox', 'radio', 'slider', 'switch', 'tab', 'textbox'])

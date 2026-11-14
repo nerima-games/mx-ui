@@ -1,11 +1,17 @@
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioCaptionText, AudioPan, SoundCueId } from '@nerima-games/mc-audio'
 import { EntityHealthPoints } from '@nerima-games/mc-sim'
+import { Effect, Result, Schema } from 'effect'
 import { captionLines, type CaptionEvent } from '../../src/domain/caption'
-import { crosshairViewModel, IDLE_CROSSHAIR_STATUS } from '../../src/domain/crosshair'
+import {
+  crosshairViewModel,
+  IDLE_CROSSHAIR_STATUS,
+  type CrosshairStatus,
+  type CrosshairViewModel,
+} from '../../src/domain/crosshair'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../../src/domain/hud-view-model'
 import { emptyInventorySnapshot, inventoryViewModel } from '../../src/domain/inventory-view-model'
-import { initialMainMenuState, mainMenuViewModel, openPanel } from '../../src/domain/main-menu'
+import { initialMainMenuState, mainMenuViewModel } from '../../src/domain/main-menu'
 import { saveStatus, saveStatusMessage } from '../../src/domain/save-status'
 import { createCaptionView } from '../../src/application/caption-view'
 import { createCrosshairView } from '../../src/application/crosshair-view'
@@ -16,8 +22,23 @@ import { createMainMenuView } from '../../src/application/main-menu-view'
 import { createSaveIndicator } from '../../src/application/save-indicator'
 import type { ScenarioContext, ScenarioDefinition, ScenarioMount } from './scenario-types'
 import { HARNESS_ITEM_DISPLAY_NAME_OPTIONS } from './scenarios/inventory'
+import { UiMessageTextSchema } from '../../src/domain/ui-language'
+
+const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 
 const captionTime = (seconds: number): CaptionEvent['atSecs'] => MonotonicTimeSecs(seconds)
+
+const crosshairModel = (
+  status: CrosshairStatus,
+  nowSecs: number,
+  context: ScenarioContext,
+): CrosshairViewModel | undefined => {
+  const result = crosshairViewModel(status, nowSecs)
+  if (Result.isFailure(result)) {
+    return context.runSync(Effect.fail(result.failure))
+  }
+  return result.success
+}
 
 export const SCREEN_NAMES = [
   'main-menu',
@@ -47,14 +68,14 @@ const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount 
 
   switch (name) {
     case 'main-menu': {
-      const menu = createMainMenuView(factory, host)
-      let model = mainMenuViewModel(openPanel(initialMainMenuState, 'new-world'))
+      const menu = createMainMenuView(factory, host, {
+        onOpenMultiplayer: noTime,
+        onOpenSettings: noTime,
+        onExit: noTime,
+      })
+      const model = mainMenuViewModel(initialMainMenuState)
       menu.render(model)
-      model = mainMenuViewModel(openPanel(initialMainMenuState, 'load-world'))
-      menu.render(model)
-      model = mainMenuViewModel(initialMainMenuState)
-      menu.render(model)
-      return { root: menu.root, setTime: noTime, dispose: noTime, viewModel: () => model }
+      return { root: menu.root, setTime: noTime, dispose: menu.destroy, viewModel: () => model }
     }
     case 'hud': {
       const hud = createHudView(factory, host, environment.motion)
@@ -104,7 +125,10 @@ const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount 
     }
     case 'loading': {
       const loading = createLoadingView(factory, host)
-      let model: Parameters<typeof loading.render>[0] = { kind: 'failed', reason: 'chunk stream ended' }
+      let model: Parameters<typeof loading.render>[0] = {
+        kind: 'failed',
+        reason: decodeUiMessageText('chunk stream ended'),
+      }
       loading.render(model)
       model = { kind: 'preparing', held: true }
       loading.render(model)
@@ -112,14 +136,16 @@ const mountScreen = (name: ScreenName, context: ScenarioContext): ScenarioMount 
     }
     case 'crosshair': {
       const crosshair = createCrosshairView(factory, host, environment.motion)
-      let model = crosshairViewModel(
+      let model = crosshairModel(
         { ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress },
         context.time,
+        context,
       )
       const setTime = (seconds: number): void => {
-        model = crosshairViewModel(
+        model = crosshairModel(
           { ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0, breakProgress },
           seconds,
+          context,
         )
         crosshair.render(model)
       }

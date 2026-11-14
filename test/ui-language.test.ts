@@ -10,6 +10,7 @@ import {
   UI_LANGUAGES,
   UI_MESSAGES,
   UI_TRANSLATION_KEY_COUNT,
+  initialMainMenuState,
   ItemDisplayNameSchema,
   type ItemDisplayNameResolver,
   type UiLanguage,
@@ -20,6 +21,8 @@ import {
   createSettingsView,
   decodeUiLanguage,
   inventoryViewModel,
+  mainMenuViewModel,
+  type WorldTypeOption,
   inputActionMessageKey,
   resolveItemDisplayName,
   enchantingTableViewModel,
@@ -30,6 +33,7 @@ import {
 import {
   applyUiLanguage as applyLanguageToRoot,
   setLocalizedAchievementTitle,
+  setLocalizedAttribute,
   setLocalizedText,
   writeLocalizedTextUsing,
   type UiLocalizationRoot,
@@ -39,6 +43,7 @@ import { itemDisplayNameView } from '../src/domain/item-display-name.js'
 import { TEST_BINDABLE_ACTIONS, TEST_DEFAULT_BINDINGS } from './fixtures/settings-input'
 import type { ItemType } from '@nerima-games/mc-kernel'
 import { fakeItemDisplayNameOptions } from './helpers/item-display-name'
+import { asUiMessageText, asWorldTypeId } from './helpers/ui3-brand-values'
 
 describe('UI language', () => {
   it('returns typed failures for unsupported inputs through the decoder and mount controller', () => {
@@ -85,8 +90,23 @@ describe('UI language', () => {
     }
   })
 
+  it('updates localized attributes on the language root itself', () => {
+    const dialog = document.createElement('section')
+    setLocalizedAttribute(dialog, 'aria-label', 'pause.dialog.options')
+
+    expect(dialog.getAttribute('aria-label')).toBe('Settings')
+    expect(Result.isSuccess(applyLanguageToRoot(dialog, 'ja'))).toBe(true)
+    expect(dialog.getAttribute('aria-label')).toBe('設定')
+  })
+
   it('updates mounted English and Japanese menu text, aria labels, and placeholders', () => {
     const host = document.createElement('main')
+    const worldTypes: ReadonlyArray<WorldTypeOption> = [
+      {
+        label: { en: asUiMessageText('Standard'), ja: asUiMessageText('標準') },
+        value: asWorldTypeId('standard'),
+      },
+    ]
     let createdWorldName = ''
     const menu = createMainMenuView(document, host, {
       onCreateWorld: ({ name }) => {
@@ -96,6 +116,9 @@ describe('UI language', () => {
       onOpenSettings: () => undefined,
       onStateChange: () => undefined,
     })
+    menu.render(mainMenuViewModel(initialMainMenuState, [], worldTypes))
+    host.querySelector<HTMLButtonElement>('[data-menu-entry="single-player"]')?.click()
+    host.querySelector<HTMLButtonElement>('[data-mx-ui="menu-new-world"]')?.click()
     const inventory = createInventoryView(document, host)
     const carriedStack = itemStack('stone', 1)
     if (Result.isFailure(carriedStack)) {
@@ -109,12 +132,12 @@ describe('UI language', () => {
       )
     }
     renderInventory('en')
-    const newWorldButton = host.querySelector('[data-menu-entry="new-world"]')
+    const newWorldButton = host.querySelector('[data-mx-ui="menu-new-world"]')
     const worldNameInput = host.querySelector<HTMLInputElement>('[data-mx-ui="menu-world-name"]')
     const carriedItem = host.querySelector('[data-mx-ui="carried"] [data-mx-ui="slot-item"]')
 
     expect(newWorldButton?.textContent).toBe('Create New World')
-    expect(worldNameInput?.getAttribute('placeholder')).toBe('New World')
+    expect(worldNameInput?.getAttribute('placeholder')).toBe('World name')
     expect(carriedItem?.textContent).toBe('en:stone')
 
     expect(Result.isSuccess(applyUiLanguage(host, 'ja'))).toBe(true)
@@ -122,15 +145,26 @@ describe('UI language', () => {
     expect(carriedItem?.textContent).toBe('ja:stone')
     expect(newWorldButton?.textContent).toBe('新しいワールドを作成')
     expect(newWorldButton?.getAttribute('aria-label')).toBe('新しいワールドを作成')
-    expect(worldNameInput?.getAttribute('placeholder')).toBe('新しいワールド')
-    host.querySelector<HTMLButtonElement>('[data-menu-action="confirm"]')?.click()
+    expect(worldNameInput?.getAttribute('placeholder')).toBe('ワールド名')
+    host.querySelector<HTMLButtonElement>('[data-menu-panel="new-world"] [data-menu-action="confirm"]')?.click()
     expect(createdWorldName).toBe('新しいワールド')
 
     expect(Result.isSuccess(applyUiLanguage(host, 'en'))).toBe(true)
     expect(newWorldButton?.textContent).toBe('Create New World')
-    expect(worldNameInput?.getAttribute('placeholder')).toBe('New World')
+    expect(worldNameInput?.getAttribute('placeholder')).toBe('World name')
     expect(Result.isFailure(applyUiLanguage(host, 'fr'))).toBe(true)
     expect(newWorldButton?.textContent).toBe('Create New World')
+    menu.destroy()
+  })
+
+  it('inherits the parent language when the menu is mounted after localization', () => {
+    const host = document.createElement('main')
+    expect(Result.isSuccess(applyUiLanguage(host, 'ja'))).toBe(true)
+
+    const menu = createMainMenuView(document, host)
+    menu.render(mainMenuViewModel(initialMainMenuState))
+
+    expect(host.querySelector('[data-menu-entry="single-player"]')?.textContent).toBe('シングルプレイ')
     menu.destroy()
   })
 
@@ -281,6 +315,53 @@ describe('UI language', () => {
         expect(Object.hasOwn(UI_MESSAGES, inputActionMessageKey(input))).toBe(true)
       }),
     )
+  })
+
+  it('classifies arbitrary item ids as a typed failure or a decodable display name', () => {
+    const options = fakeItemDisplayNameOptions('ja')
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const view = itemDisplayNameView(input, options)
+        expect(view.language).toBe('ja')
+        if (Result.isFailure(view.result)) {
+          expect(view.result.failure).toStrictEqual({ _tag: 'InvalidItemId' })
+          return
+        }
+        expect(Result.isSuccess(Schema.decodeUnknownResult(ItemDisplayNameSchema)(view.result.success))).toBe(true)
+        expect(view.result.success).not.toContain('minecraft:')
+      }),
+    )
+  })
+
+  it('rejects explicit null options and absent option languages without choosing a default', () => {
+    const resolverCalls: Array<Readonly<{ itemType: ItemType; language: UiLanguage }>> = []
+    const resolver: ItemDisplayNameResolver = (itemType, language) => {
+      resolverCalls.push({ itemType, language })
+      return Result.succeed(`${language}:${itemType}`)
+    }
+    const invalidViews = [
+      itemDisplayNameView('stone', null),
+      itemDisplayNameView('stone', { language: null, resolver }),
+      itemDisplayNameView('stone', { language: undefined, resolver }),
+      itemDisplayNameView('stone', { language: 'ja', resolver: null }),
+    ]
+
+    for (const view of invalidViews) {
+      expect(view.language).toBeUndefined()
+      expect(Result.isFailure(view.result)).toBe(true)
+      if (Result.isFailure(view.result)) {
+        expect(view.result.failure).toStrictEqual({ _tag: 'InvalidItemDisplayNameOptions' })
+      }
+    }
+
+    fc.assert(
+      fc.property(fc.anything(), (itemId) => {
+        const invalidView = itemDisplayNameView(itemId, null)
+        expect(invalidView.language).toBeUndefined()
+        expect(Result.isFailure(invalidView.result)).toBe(true)
+      }),
+    )
+    expect(resolverCalls).toHaveLength(0)
   })
 
   it.each(['__proto__', 'constructor', 'toString'])('maps inherited input-action key %s to the unknown message', (action) => {

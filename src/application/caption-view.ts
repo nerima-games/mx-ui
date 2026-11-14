@@ -43,6 +43,7 @@ import { type CaptionLineView, MAX_VISIBLE_CAPTIONS } from '../domain/caption.js
 import type { DomElement, DomElementFactory } from './dom-surface.js'
 import { type MotionPreference, shouldAnimate } from '../domain/accessibility.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
+import { Result } from 'effect'
 
 /** Below this a line would be unreadable; the queue expires it before then anyway. */
 const MIN_OPACITY = 0.15
@@ -50,6 +51,12 @@ const MIN_OPACITY = 0.15
 const FULL_OPACITY = 1
 /** The queue index step: one line element per queue slot. */
 const INDEX_INCREMENT = 1
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isCaptionArrow = (input: unknown): boolean =>
+  typeof input === 'undefined' || input === '←' || input === '→'
 
 type CaptionLineElement = {
   readonly hidden: AttributeCell
@@ -60,7 +67,9 @@ type CaptionLineElement = {
 
 export type CaptionView = {
   readonly root: DomElement
-  readonly render: (lines: ReadonlyArray<CaptionLineView>) => void
+  readonly render: (
+    lines: ReadonlyArray<CaptionLineView>,
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' | 'lines' }>>
   readonly setMotion: (motion: MotionPreference) => void
 }
 
@@ -174,9 +183,18 @@ export const createCaptionView = (
   }
 
   return {
-    render: (next: ReadonlyArray<CaptionLineView>): void => {
+    render: (
+      next: ReadonlyArray<CaptionLineView>,
+    ): Result.Result<void, Readonly<{ _tag: 'InvalidCaptionViewInput'; field: 'arrow' | 'lines' }>> => {
+      if (!Array.isArray(next)) {
+        return Result.fail({ _tag: 'InvalidCaptionViewInput', field: 'lines' })
+      }
+      if (next.some((line) => !isRecord(line) || !isCaptionArrow(Reflect.get(line, 'arrow')))) {
+        return Result.fail({ _tag: 'InvalidCaptionViewInput', field: 'arrow' })
+      }
       latest = next
       project()
+      return Result.void
     },
     root,
     setMotion: (next: MotionPreference): void => {

@@ -10,7 +10,7 @@ import {
   type ItemStackFailure,
   itemStack,
 } from '@nerima-games/mc-kernel'
-import { Result, Schema } from 'effect'
+import { Effect, Result, Schema } from 'effect'
 import {
   SPAWN_VITALS,
   VitalsSchema,
@@ -41,6 +41,7 @@ import {
   IDLE_CROSSHAIR_STATUS,
   crosshairViewModel,
   type CrosshairStatus,
+  type CrosshairViewModel,
 } from '../../../src/domain/crosshair'
 import {
   FramesPerSecondSchema,
@@ -65,9 +66,23 @@ import {
   saveStatusMessage,
   type SaveState,
 } from '../../../src/domain/save-status'
+import { UiMessageTextSchema } from '../../../src/domain/ui-language'
 
 const noTimeUpdate = (_seconds: number): void => undefined
+
+const crosshairModel = (
+  status: CrosshairStatus,
+  nowSecs: number,
+  context: Parameters<ScenarioDefinition['mount']>[0],
+): CrosshairViewModel | undefined => {
+  const result = crosshairViewModel(status, nowSecs)
+  if (Result.isFailure(result)) {
+    return context.runSync(Effect.fail(result.failure))
+  }
+  return result.success
+}
 const noDispose = (): void => undefined
+const decodeUiMessageText = Schema.decodeUnknownSync(UiMessageTextSchema)
 
 export const OVERLAY_TIME_BOUNDARIES: Readonly<{
   achievementToastDismissalSecs: number
@@ -141,7 +156,7 @@ const mountHud = (
   return { root: view.root, setTime: noTimeUpdate, dispose: noDispose, viewModel: () => model }
 }
 
-const failedReason = (reason: string): LoadingProgress => ({ kind: 'failed', reason })
+const failedReason = (reason: string): LoadingProgress => ({ kind: 'failed', reason: decodeUiMessageText(reason) })
 
 const renderLoading = (
   progress: LoadingProgress,
@@ -149,9 +164,15 @@ const renderLoading = (
   context: Parameters<ScenarioDefinition['mount']>[0],
 ): ScenarioMount => {
   const view = createLoadingView(context.factory, context.host)
-  let model = loadingScreenView(loadingStatus(progress, startedAtSecs), context.time)
+  let model = loadingScreenView(
+    loadingStatus(progress, MonotonicTimeSecs(startedAtSecs)),
+    MonotonicTimeSecs(context.time),
+  )
   const update = (seconds: number): void => {
-    model = loadingScreenView(loadingStatus(progress, startedAtSecs), seconds)
+    model = loadingScreenView(
+      loadingStatus(progress, MonotonicTimeSecs(startedAtSecs)),
+      MonotonicTimeSecs(seconds),
+    )
     view.render(model)
   }
   update(context.time)
@@ -193,9 +214,9 @@ const renderCrosshair = (
   context: Parameters<ScenarioDefinition['mount']>[0],
 ): ScenarioMount => {
   const view = createCrosshairView(context.factory, context.host, context.environment.motion)
-  let model = crosshairViewModel(statusAt(context.time), context.time)
+  let model = crosshairModel(statusAt(context.time), context.time, context)
   const update = (seconds: number): void => {
-    model = crosshairViewModel(statusAt(seconds), seconds)
+    model = crosshairModel(statusAt(seconds), seconds, context)
     view.render(model)
   }
   update(context.time)

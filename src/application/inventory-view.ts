@@ -68,8 +68,9 @@ import {
   setSlotHidden,
   updateSlotElement,
 } from './slot-element.js'
-import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { UI_MESSAGES, type UiLanguage, type UiMessageKey, type UiMessageValues } from '../domain/ui-language.js'
 import { inheritUiLanguage, uiLanguageForElement, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
+import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameValue } from './item-display-name.js'
 
@@ -91,7 +92,7 @@ export type InventoryView = {
   readonly render: (
     model: InventoryViewModel,
     interaction?: InventoryInteractionView,
-  ) => void
+  ) => Result.Result<void, InvalidInventoryViewInput>
 }
 
 export type InventoryInteractionTarget =
@@ -574,6 +575,258 @@ type RenderContext = {
 
 type InventoryRenderInput = Omit<RenderContext, 'focused'>
 
+type InvalidInventoryViewInput = Readonly<{
+  _tag: 'InvalidInventoryViewInput'
+  field:
+    | 'carried.countLabel'
+    | 'carried.itemDisplayName'
+    | 'crafting.output.countLabel'
+    | 'crafting.output.itemDisplayName'
+    | 'interaction'
+    | 'interaction.focused'
+    | 'interaction.status'
+    | 'model'
+    | 'regions.countLabel'
+    | 'regions.itemDisplayName'
+}>
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isOptionalString = (input: unknown): boolean =>
+  typeof input === 'undefined' || typeof input === 'string'
+
+const isOptionalNumber = (input: unknown): boolean =>
+  typeof input === 'undefined' || typeof input === 'number'
+
+const isDenseArray = (input: unknown, isElement: (value: unknown) => boolean): boolean => {
+  if (!Array.isArray(input)) {
+    return false
+  }
+  for (let index = 0; index < input.length; index += ONE) {
+    if (!Object.hasOwn(input, index) || !isElement(input[index])) {
+      return false
+    }
+  }
+  return true
+}
+
+const isSlotViewShape = (input: unknown): boolean =>
+  isRecord(input) &&
+  Object.hasOwn(input, 'index') && typeof Reflect.get(input, 'index') === 'number' &&
+  Object.hasOwn(input, 'itemId') && isOptionalString(Reflect.get(input, 'itemId')) &&
+  Object.hasOwn(input, 'countLabel') &&
+  Object.hasOwn(input, 'durabilityPercent') && isOptionalNumber(Reflect.get(input, 'durabilityPercent')) &&
+  Object.hasOwn(input, 'selected') && typeof Reflect.get(input, 'selected') === 'boolean' &&
+  Object.hasOwn(input, 'empty') && typeof Reflect.get(input, 'empty') === 'boolean'
+
+const isMessageKey = (input: unknown): input is UiMessageKey =>
+  typeof input === 'string' && Object.hasOwn(UI_MESSAGES, input)
+
+const isMessageValuesShape = (input: unknown): boolean =>
+  isRecord(input) && Object.values(input).every((value) =>
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ||
+    (isRecord(value) && isMessageKey(Reflect.get(value, 'key'))),
+  )
+
+const isUnknownRegionShape = (input: Record<string, unknown>): boolean => {
+  const whyMessage = Reflect.get(input, 'whyMessage')
+  return typeof Reflect.get(input, 'why') === 'string' &&
+    (typeof whyMessage === 'undefined' || (
+      isRecord(whyMessage) &&
+      isMessageKey(Reflect.get(whyMessage, 'key')) &&
+      (typeof Reflect.get(whyMessage, 'values') === 'undefined' ||
+        isMessageValuesShape(Reflect.get(whyMessage, 'values')))
+    ))
+}
+
+const isRegionId = (input: unknown): input is RegionId =>
+  input === 'armour' || input === 'crafting-grid' || input === 'hotbar' || input === 'main' || input === 'offhand'
+
+const isSlotRegionShape = (input: Record<string, unknown>): boolean =>
+  isRegionId(Reflect.get(input, 'id')) &&
+  typeof Reflect.get(input, 'columns') === 'number' &&
+  isDenseArray(Reflect.get(input, 'slots'), isSlotViewShape)
+
+const isRegionShape = (input: unknown): boolean => {
+  if (!isRecord(input) || !isRegionId(Reflect.get(input, 'id'))) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  if (kind === 'slots') {
+    return isSlotRegionShape(input)
+  }
+  return kind === 'unknown' && isUnknownRegionShape(input)
+}
+
+const isCraftingOutcomeShape = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  if (kind === 'match') {
+    return isSlotViewShape(Reflect.get(input, 'output'))
+  }
+  return kind === 'no-match' || kind === 'unknown'
+}
+
+const isMergeTargetsShape = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  if (kind === 'unknown') {
+    return true
+  }
+  if (kind !== 'known') {
+    return false
+  }
+  const indices = Reflect.get(input, 'indices')
+  return isRecord(indices) && typeof Reflect.get(indices, 'has') === 'function'
+}
+
+const isInventoryViewModelShape = (input: unknown): boolean =>
+  isRecord(input) &&
+  Object.hasOwn(input, 'regions') &&
+  isDenseArray(Reflect.get(input, 'regions'), isRegionShape) &&
+  Object.hasOwn(input, 'carried') &&
+  (typeof Reflect.get(input, 'carried') === 'undefined' || isSlotViewShape(Reflect.get(input, 'carried'))) &&
+  Object.hasOwn(input, 'crafting') &&
+  isCraftingOutcomeShape(Reflect.get(input, 'crafting')) &&
+  Object.hasOwn(input, 'mergeTargets') &&
+  isMergeTargetsShape(Reflect.get(input, 'mergeTargets'))
+
+const isItemDisplayNameFailure = (input: unknown): boolean =>
+  isRecord(input) && [
+    'InvalidItemDisplayName',
+    'InvalidItemId',
+    'ItemDisplayNameUnavailable',
+    'MissingItemDisplayNameResolver',
+  ].some((failureTag) => Reflect.get(input, '_tag') === failureTag)
+
+const isItemDisplayNameResult = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const isItemDisplayNameView = (input: unknown): boolean =>
+  typeof input === 'undefined' || (
+    isRecord(input) &&
+    (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
+    isItemDisplayNameResult(Reflect.get(input, 'result'))
+  )
+
+const hasInvalidCountLabel = (slot: unknown): boolean => {
+  if (typeof slot === 'undefined') {
+    return false
+  }
+  return !isRecord(slot) || !isOptionalString(Reflect.get(slot, 'countLabel'))
+}
+
+const hasInvalidItemDisplayName = (slot: unknown): boolean => {
+  if (typeof slot === 'undefined') {
+    return false
+  }
+  return !isRecord(slot) || !isItemDisplayNameView(Reflect.get(slot, 'itemDisplayName'))
+}
+
+const isInventoryInteractionTarget = (input: unknown): input is InventoryInteractionTarget => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const kind = Reflect.get(input, 'kind')
+  if (kind === 'crafting-output') {
+    return true
+  }
+  if (kind !== 'slot') {
+    return false
+  }
+  const region = Reflect.get(input, 'region')
+  const index = Reflect.get(input, 'index')
+  return ['armour', 'crafting-grid', 'hotbar', 'main', 'offhand'].some((candidate) => candidate === region) &&
+    typeof index === 'number' && Number.isSafeInteger(index) && index >= ZERO
+}
+
+const invalidInventoryInteractionRecordField = (
+  interaction: Record<string, unknown>,
+): InvalidInventoryViewInput | undefined => {
+  if (!isInventoryInteractionTarget(Reflect.get(interaction, 'focused'))) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.focused' }
+  }
+  if (!isOptionalString(Reflect.get(interaction, 'status'))) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction.status' }
+  }
+  return
+}
+
+const invalidInventoryInteractionField = (
+  interaction: InventoryInteractionView | undefined,
+): InvalidInventoryViewInput | undefined => {
+  if (Object.is(interaction, null)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction' }
+  }
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  if (!isRecord(interaction)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'interaction' }
+  }
+  return invalidInventoryInteractionRecordField(interaction)
+}
+
+const invalidInventoryCountLabelField = (model: InventoryViewModel): InvalidInventoryViewInput | undefined => {
+  if (hasInvalidCountLabel(model.carried)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'carried.countLabel' }
+  }
+  if (model.crafting.kind === 'match' && hasInvalidCountLabel(model.crafting.output)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'crafting.output.countLabel' }
+  }
+  for (const region of model.regions) {
+    if (region.kind === 'slots' && region.slots.some(hasInvalidCountLabel)) {
+      return { _tag: 'InvalidInventoryViewInput', field: 'regions.countLabel' }
+    }
+  }
+  return
+}
+
+const invalidInventoryItemDisplayNameField = (
+  model: InventoryViewModel,
+): InvalidInventoryViewInput | undefined => {
+  if (hasInvalidItemDisplayName(model.carried)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'carried.itemDisplayName' }
+  }
+  if (model.crafting.kind === 'match' && hasInvalidItemDisplayName(model.crafting.output)) {
+    return { _tag: 'InvalidInventoryViewInput', field: 'crafting.output.itemDisplayName' }
+  }
+  for (const region of model.regions) {
+    if (region.kind === 'slots' && region.slots.some(hasInvalidItemDisplayName)) {
+      return { _tag: 'InvalidInventoryViewInput', field: 'regions.itemDisplayName' }
+    }
+  }
+  return
+}
+
+const invalidInventoryViewInput = (
+  model: InventoryViewModel,
+  interaction: InventoryInteractionView | undefined,
+): InvalidInventoryViewInput | undefined => {
+  const interactionField = invalidInventoryInteractionField(interaction)
+  if (typeof interactionField !== 'undefined') {
+    return interactionField
+  }
+  const itemDisplayNameField = invalidInventoryItemDisplayNameField(model)
+  if (typeof itemDisplayNameField !== 'undefined') {
+    return itemDisplayNameField
+  }
+  return invalidInventoryCountLabelField(model)
+}
+
 type RegionSyncContext = Readonly<{
   elements: Pick<InventoryViewElements, 'factory' | 'root' | 'regions'>
   model: InventoryViewModel
@@ -720,13 +973,19 @@ const renderCraftingOutput = (elements: CraftingElements, context: RenderContext
   applyCraftingOutputButtonView(elements.output, context)
 }
 
-const renderInventoryView = ({ elements, model, interaction, actions }: InventoryRenderInput): void => {
+const renderInventoryView = ({ elements, model, interaction, actions }: InventoryRenderInput):
+Result.Result<void, InvalidInventoryViewInput> => {
+  const invalidInput = invalidInventoryViewInput(model, interaction)
+  if (typeof invalidInput !== 'undefined') {
+    return Result.fail(invalidInput)
+  }
   const focused = resolveFocusedTarget(model, interaction)
   const context: RenderContext = { actions, elements, focused, interaction, model }
   renderRegions(elements, context)
   renderCarriedSlot(elements.carried, context)
   writeText(elements.statusText, interaction?.status ?? '')
   renderCraftingOutput(elements, context)
+  return Result.void
 }
 
 const wireCraftingOutput = (
@@ -786,8 +1045,15 @@ export const createInventoryView = (
 ): InventoryView => {
   const elements = buildInventoryViewElements(factory, parent, actions)
   return {
-    render: (model: InventoryViewModel, interaction?: InventoryInteractionView): void =>
-      renderInventoryView({ actions, elements, interaction, model }),
+    render: (
+      model: InventoryViewModel,
+      interaction?: InventoryInteractionView,
+    ): Result.Result<void, InvalidInventoryViewInput> => {
+      if (!isInventoryViewModelShape(model)) {
+        return Result.fail({ _tag: 'InvalidInventoryViewInput', field: 'model' })
+      }
+      return renderInventoryView({ actions, elements, interaction, model })
+    },
     root: elements.root,
   }
 }

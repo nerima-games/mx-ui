@@ -34,7 +34,12 @@ import { describe, expect, it } from 'vitest'
 import type { CaptionEvent } from '@nerima-games/mc-audio'
 import { COLOR_VISION_FILTER_TARGET } from '../src/domain/accessibility'
 import { captionLines, MAX_VISIBLE_CAPTIONS } from '../src/domain/caption'
-import { emptyInventorySnapshot, inventoryViewModel, type SlotRegion } from '../src/domain/inventory-view-model'
+import {
+  emptyInventorySnapshot,
+  inventoryViewModel,
+  type InventoryViewModel,
+  type SlotRegion,
+} from '../src/domain/inventory-view-model'
 import { itemStack as makeItemStack } from '@nerima-games/mc-sim'
 import { Result } from 'effect'
 import { applyColorVision, colorVisionCell, COLOR_VISION_ATTRIBUTE } from '../src/application/accessibility-dom'
@@ -170,6 +175,341 @@ describe('captions are rendered as TEXT', () => {
 })
 
 describe('the inventory renderer keeps `unknown` a different screen from `empty`', () => {
+  it('rejects malformed root and nested model shapes without rendering', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const before = factory.mark()
+
+    const unknownCrafting = { kind: 'unknown' as const }
+    const unknownMergeTargets = { kind: 'unknown' as const }
+    const sparseRegions: Array<unknown> = []
+    sparseRegions.length = 1
+    const sparseSlots: Array<unknown> = []
+    sparseSlots.length = 1
+    expect(Reflect.apply(view.render, view, [{}])).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'model',
+    }))
+
+    for (const invalidModel of [
+      null,
+      7,
+      [],
+      { regions: [] },
+      { regions: [], carried: undefined },
+      { regions: [], carried: undefined, crafting: unknownCrafting },
+      { regions: [], carried: null, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      { regions: [], carried: {}, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      { regions: [], carried: undefined, crafting: null, mergeTargets: unknownMergeTargets },
+      { regions: [], carried: undefined, crafting: { kind: 'match', output: null }, mergeTargets: unknownMergeTargets },
+      { regions: sparseRegions, carried: undefined, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      { regions: [null], carried: undefined, crafting: unknownCrafting, mergeTargets: unknownMergeTargets },
+      {
+        regions: [{
+          id: 'main',
+          kind: 'unknown',
+          why: 'inventory projection unavailable',
+          whyMessage: { key: 'inventory.empty', values: { invalid: null } },
+        }],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: unknownMergeTargets,
+      },
+      {
+        regions: [{ kind: 'slots', id: 'hotbar', columns: 9, slots: sparseSlots }],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: unknownMergeTargets,
+      },
+      {
+        regions: [{ kind: 'slots', id: 'hotbar', columns: 9, slots: null }],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: unknownMergeTargets,
+      },
+      { regions: [], carried: undefined, crafting: unknownCrafting, mergeTargets: null },
+      { regions: [], carried: undefined, crafting: unknownCrafting, mergeTargets: { kind: 'unrecognized' } },
+      {
+        regions: [],
+        carried: undefined,
+        crafting: unknownCrafting,
+        mergeTargets: { kind: 'known', indices: null },
+      },
+    ]) {
+      expect(Reflect.apply(view.render, view, [invalidModel])).toStrictEqual(Result.fail({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'model',
+      }))
+    }
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('returns typed failures for null slot labels and interaction inputs', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel(emptyInventorySnapshot)
+    const hotbar = base.regions.find((region) => region.id === 'hotbar')
+    if (typeof hotbar === 'undefined' || hotbar.kind !== 'slots' || typeof hotbar.slots[0] === 'undefined') {
+      expect(hotbar).toBeDefined()
+      return
+    }
+
+    Reflect.set(hotbar.slots[0], 'countLabel', null)
+    const regionResult = view.render(base)
+    expect(Result.isFailure(regionResult)).toBe(true)
+    if (Result.isFailure(regionResult)) {
+      expect(regionResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'regions.countLabel',
+      })
+    }
+
+    const carried = { ...hotbar.slots[0] }
+    Reflect.set(carried, 'countLabel', null)
+    const carriedResult = view.render({ ...base, carried })
+    expect(Result.isFailure(carriedResult)).toBe(true)
+    if (Result.isFailure(carriedResult)) {
+      expect(carriedResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'carried.countLabel',
+      })
+    }
+
+    const output = { ...hotbar.slots[0] }
+    Reflect.set(output, 'countLabel', null)
+    const craftingResult = view.render({ ...base, crafting: { kind: 'match', output } })
+    expect(Result.isFailure(craftingResult)).toBe(true)
+    if (Result.isFailure(craftingResult)) {
+      expect(craftingResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'crafting.output.countLabel',
+      })
+    }
+
+    const nullStatusInteraction: NonNullable<Parameters<typeof view.render>[1]> = {
+      focused: { kind: 'crafting-output' },
+      status: '',
+    }
+    expect(Reflect.set(nullStatusInteraction, 'status', null)).toBe(true)
+    const nullStatusResult = view.render(base, nullStatusInteraction)
+    expect(Result.isFailure(nullStatusResult)).toBe(true)
+    if (Result.isFailure(nullStatusResult)) {
+      expect(nullStatusResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'interaction.status',
+      })
+    }
+
+    const nullInteractionResult = Reflect.apply(view.render, view, [base, null])
+    expect(Result.isFailure(nullInteractionResult)).toBe(true)
+    if (Result.isFailure(nullInteractionResult)) {
+      expect(nullInteractionResult.failure).toStrictEqual({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'interaction',
+      })
+    }
+  })
+
+  it('returns typed failures for wrong-typed slot labels and interaction inputs before rendering', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel(emptyInventorySnapshot)
+    const hotbar = base.regions.find((region) => region.id === 'hotbar')
+    if (typeof hotbar === 'undefined' || hotbar.kind !== 'slots' || typeof hotbar.slots[0] === 'undefined') {
+      expect(hotbar).toBeDefined()
+      return
+    }
+
+    const invalidHotbar = { ...hotbar, slots: hotbar.slots.map((slot) => ({ ...slot })) }
+    const [invalidHotbarSlot] = invalidHotbar.slots
+    expect(invalidHotbarSlot).toBeDefined()
+    if (typeof invalidHotbarSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(invalidHotbarSlot, 'countLabel', 7)).toBe(true)
+    const invalidRegions = base.regions.map((region) => region.id === hotbar.id ? invalidHotbar : region)
+    const invalidRegionModel = { ...base, regions: invalidRegions }
+
+    const invalidCarried = { ...hotbar.slots[0] }
+    expect(Reflect.set(invalidCarried, 'countLabel', 7)).toBe(true)
+    const invalidCarriedModel = { ...base, carried: invalidCarried }
+
+    const invalidOutput = { ...hotbar.slots[0] }
+    expect(Reflect.set(invalidOutput, 'countLabel', 7)).toBe(true)
+    const invalidOutputModel = { ...base, crafting: { kind: 'match' as const, output: invalidOutput } }
+
+    const invalidDisplayName = { ...base, carried: { ...hotbar.slots[0] } }
+    expect(Reflect.set(invalidDisplayName.carried, 'itemDisplayName', 7)).toBe(true)
+    const invalidStatus = { focused: { kind: 'crafting-output' as const }, status: '' }
+    expect(Reflect.set(invalidStatus, 'status', 7)).toBe(true)
+    const unavailableNameModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 1),
+    }, {
+      language: 'en',
+      resolver: () => Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
+    })
+    expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
+    const before = factory.mark()
+
+    expect(view.render(invalidRegionModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'regions.countLabel',
+    }))
+    expect(view.render(invalidCarriedModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.countLabel',
+    }))
+    expect(view.render(invalidOutputModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'crafting.output.countLabel',
+    }))
+    expect(view.render(invalidDisplayName)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.itemDisplayName',
+    }))
+    expect(view.render(base, invalidStatus)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'interaction.status',
+    }))
+    expect(Reflect.apply(view.render, view, [base, 7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'interaction',
+    }))
+    expect(Reflect.apply(view.render, view, [base, { status: '', focused: null }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'interaction.focused',
+    }))
+    expect(Reflect.apply(view.render, view, [base, { status: '', focused: { kind: 'unrecognized' } }])).toStrictEqual(
+      Result.fail({
+        _tag: 'InvalidInventoryViewInput',
+        field: 'interaction.focused',
+      }),
+    )
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('renders a host-provided numeric durability value in a public inventory model', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const model = inventoryViewModel(emptyInventorySnapshot)
+    const slot: SlotView = {
+      countLabel: '1',
+      durabilityPercent: 0.25,
+      empty: false,
+      index: 0,
+      itemId: 'iron_pickaxe',
+      selected: false,
+    }
+    const validModel = {
+      ...model,
+      regions: [{ columns: 9, id: 'hotbar', kind: 'slots', slots: [slot] }],
+    } satisfies InventoryViewModel
+
+    expect(view.render(validModel)).toBe(Result.void)
+    expect(fakeElement(view.root).find('data-mx-ui', 'slot-durability')?.attributes.has('hidden')).toBe(false)
+  })
+
+  it('returns typed failures when carried, output, or region item display names are null', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const options = fakeItemDisplayNameOptions()
+
+    const carriedModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 12),
+    }, options)
+    const { carried } = carriedModel
+    if (typeof carried === 'undefined') {
+      expect(carried).toBeDefined()
+      return
+    }
+    expect(Reflect.set(carried, 'itemDisplayName', null)).toBe(true)
+    expect(view.render(carriedModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.itemDisplayName',
+    }))
+
+    const outputModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      crafting: {
+        gridWidth: 2,
+        grid: [undefined, undefined, undefined, undefined],
+        result: { _tag: 'Match', output: testItemStack('stick', 4) },
+      },
+    }, options)
+    if (outputModel.crafting.kind !== 'match') {
+      expect(outputModel.crafting.kind).toBe('match')
+      return
+    }
+    expect(Reflect.set(outputModel.crafting.output, 'itemDisplayName', null)).toBe(true)
+    expect(view.render(outputModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'crafting.output.itemDisplayName',
+    }))
+
+    const inventorySlots = [...emptyInventorySnapshot.inventory.slots]
+    inventorySlots[0] = testItemStack('iron_helmet', 1)
+    const regionModel = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      inventory: { ...emptyInventorySnapshot.inventory, slots: inventorySlots },
+    }, options)
+    const hotbar = regionModel.regions.find((region) => region.id === 'hotbar')
+    if (typeof hotbar === 'undefined' || hotbar.kind !== 'slots' || typeof hotbar.slots[0] === 'undefined') {
+      expect(hotbar).toBeDefined()
+      return
+    }
+    expect(Reflect.set(hotbar.slots[0], 'itemDisplayName', null)).toBe(true)
+    expect(view.render(regionModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'regions.itemDisplayName',
+    }))
+  })
+
+  it('rejects malformed item-display Results and accepts supported unknown-region message values', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const base = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 1),
+    }, fakeItemDisplayNameOptions())
+    if (typeof base.carried === 'undefined') {
+      expect(base.carried).toBeDefined()
+      return
+    }
+
+    const invalidCarried = { ...base.carried }
+    expect(Reflect.set(invalidCarried, 'itemDisplayName', { language: 'en', result: null })).toBe(true)
+    const invalidModel = { ...base, carried: invalidCarried }
+    const before = factory.mark()
+    expect(view.render(invalidModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidInventoryViewInput',
+      field: 'carried.itemDisplayName',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    const messageValues = {
+      text: 'unavailable',
+      count: 2,
+      active: true,
+      nested: { key: 'inventory.empty' },
+    }
+    const unknownRegion = {
+      id: 'main',
+      kind: 'unknown',
+      why: 'inventory projection unavailable',
+      whyMessage: { key: 'inventory.empty', values: messageValues },
+    }
+    const validMessageModel = { ...base, regions: [unknownRegion] }
+    expect(Reflect.apply(view.render, view, [validMessageModel])).toBe(Result.void)
+  })
+
   it('REGRESSION: an unknown region draws NO slots — it draws the reason', () => {
     // `domain/inventory-view-model.ts`: 「An armour rack drawn as four empty
     // squares tells the player they are wearing nothing; mc-sim has not said

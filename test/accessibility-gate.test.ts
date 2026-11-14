@@ -50,6 +50,7 @@
  * attribute is exactly what a fake document records.
  */
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
 import { EntityHealthPoints } from '@nerima-games/mc-kernel'
 import { captionLines } from '../src/domain/caption'
 import { HOTBAR_SLOT_COUNT, hudViewModel, spawnSnapshot } from '../src/domain/hud-view-model'
@@ -75,6 +76,7 @@ import {
 } from '../src/application/palette-css'
 import { fakeDocument, fakeElement, writeNames, type FakeElement } from './fake-dom'
 import { captionEvent, captionTime } from './helpers/caption-event'
+import { asUiMessageText } from './helpers/ui3-brand-values'
 
 const EMPTY_HOTBAR_SLOTS = Array.from({ length: HOTBAR_SLOT_COUNT }, () => undefined)
 
@@ -149,7 +151,10 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   const factory = fakeDocument()
   const parent = fakeElement(factory.createElement('div'))
 
-  const menu = createMainMenuView(factory, parent)
+  const menu = createMainMenuView(factory, parent, {
+    onExit: () => undefined,
+    onOpenSettings: () => undefined,
+  })
   menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'new-world')))
   menu.render(mainMenuViewModel(openPanel(initialMainMenuState, 'load-world')))
   menu.render(mainMenuViewModel(initialMainMenuState))
@@ -158,13 +163,17 @@ const screens = (): ReadonlyArray<{ readonly name: string; readonly root: FakeEl
   // Rendered as FAILED and then back, for the reason the HUD is rendered dead
   // and then alive: a state whose elements are only built when it occurs is a
   // state the sweep sees only if the sweep happened to trigger it.
-  loading.render({ kind: 'failed', reason: 'chunk stream ended' })
+  loading.render({ kind: 'failed', reason: asUiMessageText('chunk stream ended') })
   loading.render({ kind: 'preparing', held: true })
 
   const crosshair = createCrosshairView(factory, parent, 'full')
   // Rendered mid-hit, so the heavier arms the hit marker uses are in the sweep
   // rather than only the resting weight.
-  crosshair.render(crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }, 0))
+  const crosshairModel = crosshairViewModel({ ...IDLE_CROSSHAIR_STATUS, lastHitAtSecs: 0 }, 0)
+  expect(Result.isSuccess(crosshairModel)).toBe(true)
+  if (Result.isSuccess(crosshairModel)) {
+    crosshair.render(crosshairModel.success)
+  }
 
   const hud = createHudView(factory, parent, 'full')
   // The death screen is a STATE of the HUD here rather than a screen of its own

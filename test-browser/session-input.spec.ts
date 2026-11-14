@@ -113,20 +113,22 @@ test('pointer and keyboard focus keep the hotbar ring on the focused slot', asyn
 test('key-remap conflict swaps the displaced binding and capture stops when focus leaves the row', async ({ page }) => {
   // Catches a remap that overwrites the existing Space binding or captures a key after focus moved away.
   await openSession(page)
-  const jump = page.locator('[data-binding-action="jump"]')
-  const sneak = page.locator('[data-binding-action="sneak"]')
+  const remap = page.locator('#key-remap-root')
+  await expect(remap).toBeVisible()
+  const jump = remap.locator('[data-binding-action="jump"]')
+  const sneak = remap.locator('[data-binding-action="sneak"]')
   await expect(jump).toHaveText('Space')
-  await expect(sneak).toHaveText('ShiftLeft')
+  await expect(sneak).toHaveText('Left Shift')
 
   await sneak.click()
   await page.keyboard.press('Space')
   await expect(sneak).toHaveText('Space')
-  await expect(jump).toHaveText('ShiftLeft')
+  await expect(jump).toHaveText('Left Shift')
 
   await jump.click()
   await page.locator('#unrelated-input').click()
   await page.keyboard.press('KeyQ')
-  await expect(jump).toHaveText('ShiftLeft')
+  await expect(jump).toHaveText('Left Shift')
   await expect(sneak).toHaveText('Space')
 })
 

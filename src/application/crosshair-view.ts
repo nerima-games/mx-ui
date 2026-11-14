@@ -115,6 +115,7 @@ import type { DomElement, DomElementFactory } from './dom-surface.js'
 import { type MotionPreference, shouldAnimate } from '../domain/accessibility.js'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import type { CrosshairViewModel } from '../domain/crosshair.js'
+import { Result } from 'effect'
 import { setLocalizedAttribute } from './ui-localization.js'
 
 /** The reticle's box, in CSS pixels. `crosshair.ts:15-16` (`width/height: 20px`). */
@@ -151,7 +152,9 @@ export type CrosshairView = {
   /** The element the host appended us to a parent as. Exposed for tests and previews. */
   readonly root: DomElement
   /** Project a model, or `undefined` for 「not aiming」. Idempotent. */
-  readonly render: (model: CrosshairViewModel | undefined) => void
+  readonly render: (
+    model: CrosshairViewModel | undefined,
+  ) => Result.Result<void, Readonly<{ _tag: 'InvalidCrosshairViewInput'; field: 'model' }>>
   /** Mark the currently visible reticle as hit; the next frame render owns expiry. */
   readonly notifyHit: () => void
   /**
@@ -469,9 +472,19 @@ export const createCrosshairView = (
       latest = { ...latest, hit: true }
       project()
     },
-    render: (model: CrosshairViewModel | undefined): void => {
-      latest = model ?? null
+    render: (
+      model: CrosshairViewModel | undefined,
+    ): Result.Result<void, Readonly<{ _tag: 'InvalidCrosshairViewInput'; field: 'model' }>> => {
+      if (Object.is(model, null)) {
+        return Result.fail({ _tag: 'InvalidCrosshairViewInput', field: 'model' })
+      }
+      if (typeof model === 'undefined') {
+        latest = null
+      } else {
+        latest = model
+      }
       project()
+      return Result.void
     },
     root,
     setMotion: (next: MotionPreference): void => {

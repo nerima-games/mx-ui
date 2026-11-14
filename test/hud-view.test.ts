@@ -37,6 +37,7 @@ import { HEART, ICON_EMPTY, SCRIM, SCRIM_ALPHA, cssColor } from '../src/domain/p
 import { createHudView, EXPERIENCE_TRANSITION_MS } from '../src/application/hud-view'
 import { itemDisplayNameValue } from '../src/application/item-display-name.js'
 import { writeAttribute } from '../src/application/dom-write'
+import { createIconElement, updateIconElement } from '../src/application/icon-element'
 import {
   createSlotElement,
   FOCUS_RING_SHADOW_WIDTH,
@@ -682,6 +683,29 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     expect(root.attributes.get('tabindex')).toBe('0')
   })
 
+  it('returns a typed failure for an explicitly null focus-column count', () => {
+    const factory = fakeDocument()
+    const slot = createSlotElement(factory, 0)
+
+    const focusTarget = {
+      columns: 1,
+      group: 'test-slots',
+      index: 0,
+    }
+    expect(Reflect.set(focusTarget, 'columns', null)).toBe(true)
+    const result = setSlotFocusTarget(slot, focusTarget)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({ _tag: 'InvalidSlotFocusTarget', field: 'columns' })
+    }
+    expect(fakeElement(slot.root).attributes.has('data-focus-columns')).toBe(false)
+
+    const omittedColumnsResult = setSlotFocusTarget(slot, { group: 'test-slots', index: 0 })
+    expect(Result.isSuccess(omittedColumnsResult)).toBe(true)
+    expect(fakeElement(slot.root).attributes.get('data-focus-columns')).toBe('1')
+  })
+
   it('draws NO ring until somebody says where the keyboard is', () => {
     // A ring means "the keyboard is here". Drawing one at mount would make it
     // decoration, which is the 「後ろに何も無いフック」 DN-UI-1a rejects from the
@@ -699,6 +723,143 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     // The tab stop goes home rather than disappearing: the hotbar stays
     // reachable, it just is not where the keyboard currently is.
     expect(slots[0]?.attributes.get('tabindex')).toBe('0')
+  })
+
+  it('returns typed failures for null render labels and keyboard focus indices', () => {
+    const { view } = mount()
+    const model = hudViewModel()
+    const [firstSlot] = model.hotbar
+    if (typeof firstSlot === 'undefined') {
+      expect(firstSlot).not.toBeUndefined()
+      return
+    }
+    Reflect.set(firstSlot, 'countLabel', null)
+
+    const renderResult = view.render(model)
+    expect(Result.isFailure(renderResult)).toBe(true)
+    if (Result.isFailure(renderResult)) {
+      expect(renderResult.failure).toStrictEqual({
+        _tag: 'InvalidHudViewInput',
+        field: 'hotbar.countLabel',
+      })
+    }
+
+    const focusResult = Reflect.apply(view.setKeyboardFocus, view, [null])
+    expect(Result.isFailure(focusResult)).toBe(true)
+    if (Result.isFailure(focusResult)) {
+      expect(focusResult.failure).toStrictEqual({ _tag: 'InvalidHudFocusInput', field: 'index' })
+    }
+  })
+
+  it('returns a typed failure when a hotbar item display name is null', () => {
+    const { view } = mount()
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [firstSlot] = model.hotbar
+    if (typeof firstSlot === 'undefined') {
+      expect(firstSlot).not.toBeUndefined()
+      return
+    }
+    expect(firstSlot.itemId).toBe('stone')
+    expect(firstSlot.itemDisplayName).toBeDefined()
+    expect(Reflect.set(firstSlot, 'itemDisplayName', null)).toBe(true)
+
+    const result = view.render(model)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({
+        _tag: 'InvalidHudViewInput',
+        field: 'hotbar.itemDisplayName',
+      })
+    }
+  })
+
+  it('returns typed failures for wrong-typed hotbar labels and focus without mutating the HUD', () => {
+    const { factory, view } = mount()
+    const unavailableNameModel = projectHudViewModel(SPAWN_VITALS, [ownerCarriedSlotForCount(1)], {
+      itemDisplayNameOptions: {
+        language: 'en',
+        resolver: () => Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }),
+      },
+      selectedHotbarSlot: 0,
+    })
+    expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [firstSlot] = model.hotbar
+    expect(firstSlot).toBeDefined()
+    if (typeof firstSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(firstSlot, 'countLabel', 7)).toBe(true)
+    const before = factory.mark()
+
+    expect(view.render(model)).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar.countLabel',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    const itemNameModel = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [itemNameSlot] = itemNameModel.hotbar
+    expect(itemNameSlot).toBeDefined()
+    if (typeof itemNameSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(itemNameSlot, 'itemDisplayName', 7)).toBe(true)
+    expect(view.render(itemNameModel)).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar.itemDisplayName',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    expect(Reflect.apply(view.render, view, [7])).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'model',
+    }))
+    expect(Reflect.apply(view.render, view, [{ hotbar: 7 }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar',
+    }))
+    expect(Reflect.apply(view.render, view, [{ hotbar: [7] }])).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar',
+    }))
+    expect(writeNames(factory.since(before))).toStrictEqual([])
+
+    for (const invalidIndex of [true, '2', {}]) {
+      const focusResult = Reflect.apply(view.setKeyboardFocus, view, [invalidIndex])
+      expect(focusResult).toStrictEqual(Result.fail({ _tag: 'InvalidHudFocusInput', field: 'index' }))
+      expect(writeNames(factory.since(before))).toStrictEqual([])
+    }
+  })
+
+  it('returns a typed failure when a public icon update receives a null health condition', () => {
+    const icon = createIconElement(fakeDocument(), 'shank')
+
+    const result = Reflect.apply(updateIconElement, undefined, [icon, 'full', null])
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toStrictEqual({
+        _tag: 'InvalidIconElementInput',
+        field: 'healthCondition',
+      })
+    }
   })
 
   it('REGRESSION: the ring and the SELECTION are different questions on different slots', () => {
@@ -765,6 +926,53 @@ describe('the hotbar is focusable, and mx-ui still owns no keys', () => {
     const before = factory.mark()
     view.setKeyboardFocus(4)
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('returns a typed failure for an unsupported item display name result tag', () => {
+    const { view } = mount()
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [firstSlot] = model.hotbar
+    expect(firstSlot).toBeDefined()
+    if (typeof firstSlot === 'undefined') {
+      return
+    }
+    expect(Reflect.set(firstSlot, 'itemDisplayName', { language: 'en', result: { _tag: 'Unexpected' } })).toBe(true)
+
+    expect(view.render(model)).toStrictEqual(Result.fail({
+      _tag: 'InvalidHudViewInput',
+      field: 'hotbar.itemDisplayName',
+    }))
+  })
+
+  it.each([
+    { language: 'ja', expected: Result.void },
+    { language: 'fr', expected: Result.fail({ _tag: 'InvalidHudViewInput', field: 'hotbar.itemDisplayName' }) },
+  ])('accepts Japanese and rejects unsupported item display languages: $language', ({ language, expected }) => {
+    const { view } = mount()
+    const model = hudViewModel(
+      SPAWN_VITALS,
+      [ownerCarriedSlotForCount(1)],
+      0,
+      fakeItemDisplayNameOptions(),
+    )
+    const [firstSlot] = model.hotbar
+    expect(firstSlot).toBeDefined()
+    if (typeof firstSlot === 'undefined') {
+      return
+    }
+    const localizedSlot = { ...firstSlot }
+    expect(Reflect.set(localizedSlot, 'itemDisplayName', { language, result: Result.succeed('stone') })).toBe(true)
+    const localizedModel = { ...model }
+    expect(Reflect.set(localizedModel, 'hotbar', model.hotbar.map((slot) =>
+      slot === firstSlot ? localizedSlot : slot,
+    ))).toBe(true)
+
+    expect(view.render(localizedModel)).toStrictEqual(expected)
   })
 
   it('exposes named native hotbar radios without renderer-owned listeners', () => {

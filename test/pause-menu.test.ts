@@ -17,27 +17,6 @@ import { emptyModalStack, type ModalStack } from '../src/domain/modal-stack'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from '../src/application/dom-surface'
 import { fakeDocument, fakeElement, FakeInteractiveElement, type FakeDocument, type FakeElement } from './fake-dom'
 
-class RemovableInteractiveElement extends FakeInteractiveElement {
-  override removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null): void {
-    if (callback === null) {
-      return
-    }
-    const callbacks = this.eventListeners.get(type) ?? []
-    const callbackIndex = callbacks.indexOf(callback)
-    if (callbackIndex < 0) {
-      return
-    }
-    callbacks.splice(callbackIndex, 1)
-    if (callbacks.length === 0) {
-      this.eventListeners.delete(type)
-    }
-    const listenerIndex = this.listeners.indexOf(type)
-    if (listenerIndex >= 0) {
-      this.listeners.splice(listenerIndex, 1)
-    }
-  }
-}
-
 class RemovableFakeDocument implements DomElementFactory {
   private readonly base: FakeDocument
 
@@ -50,7 +29,7 @@ class RemovableFakeDocument implements DomElementFactory {
   createElement(tagName: string): DomElement
   createElement(tagName: string): DomElement | DomInteractiveElement | DomInputElement {
     if (tagName === 'button' || tagName === 'input') {
-      const element = new RemovableInteractiveElement(tagName, this.base.mutations)
+      const element = new FakeInteractiveElement(tagName, this.base.mutations)
       this.base.created.push(element)
       return element
     }

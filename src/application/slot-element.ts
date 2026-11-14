@@ -52,7 +52,9 @@ import {
 import type { DomElement, DomElementFactory, DomInteractiveElement } from './dom-surface.js'
 import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
+import type { ItemDisplayNameView } from '../domain/item-display-name.js'
 import { PALETTE_VAR } from './palette-css.js'
+import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
 import { itemDisplayNameText } from './item-display-name.js'
 
@@ -427,15 +429,27 @@ export const setSlotTabStop = (slot: SlotElement, tabbable: boolean): void => {
 /** Mark an interactive slot's DOM membership for the mc-render focus adapter. */
 type SlotFocusTarget = Readonly<{ group: string; index: number; columns?: number }>
 
-export const setSlotFocusTarget = (slot: SlotElement, target: SlotFocusTarget): void => {
-  const requestedColumns = target.columns ?? DEFAULT_FOCUS_COLUMNS
-  let validColumns = DEFAULT_FOCUS_COLUMNS
-  if (Number.isSafeInteger(requestedColumns) && requestedColumns > FIRST_INDEX) {
-    validColumns = requestedColumns
+const validFocusColumns = (requestedColumns: number | undefined): number => {
+  if (typeof requestedColumns !== 'undefined' &&
+    Number.isSafeInteger(requestedColumns) &&
+    requestedColumns > FIRST_INDEX) {
+    return requestedColumns
   }
+  return DEFAULT_FOCUS_COLUMNS
+}
+
+export const setSlotFocusTarget = (
+  slot: SlotElement,
+  target: SlotFocusTarget,
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotFocusTarget'; field: 'columns' }>> => {
+  if (Reflect.get(target, 'columns') === null) {
+    return Result.fail({ _tag: 'InvalidSlotFocusTarget', field: 'columns' })
+  }
+  const validColumns = validFocusColumns(target.columns)
   writeAttribute(slot.focusGroup, target.group)
   writeAttribute(slot.focusIndex, String(target.index))
   writeAttribute(slot.focusColumns, String(validColumns))
+  return Result.void
 }
 
 const clearSlotFocusTarget = (slot: SlotElement): void => {
@@ -572,6 +586,44 @@ const updateSlotText = (
   writeAttribute(title, value)
 }
 
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isItemDisplayNameFailure = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const failureTag = Reflect.get(input, '_tag')
+  return typeof failureTag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(failureTag)
+}
+
+const isItemDisplayNameResult = (result: unknown): result is ItemDisplayNameView['result'] => {
+  if (!isRecord(result)) {
+    return false
+  }
+  const tag = Reflect.get(result, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(result, 'success') === 'string'
+  }
+  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(result, 'failure'))
+}
+
+const isItemDisplayNameView = (input: unknown): input is ItemDisplayNameView => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const language = Reflect.get(input, 'language')
+  if (language !== 'en' && language !== 'ja') {
+    return false
+  }
+  return isItemDisplayNameResult(Reflect.get(input, 'result'))
+}
+
 const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
   if (typeof view.itemId === 'undefined') {
     updateSlotText(slot.itemText, slot.itemTitle)
@@ -579,6 +631,18 @@ const updateSlotItemText = (slot: SlotElement, view: SlotView): void => {
   }
   const language = uiLanguageForElement(slot.root)
   updateSlotText(slot.itemText, slot.itemTitle, itemDisplayNameText(view, language))
+}
+
+const projectSlotView = (slot: SlotElement, view: SlotView, mergeable: boolean | undefined): void => {
+  updateSlotItemText(slot, view)
+  updateSlotText(slot.countText, slot.countTitle, view.countLabel)
+  writeAttribute(slot.emptyFlag, presenceValue(view.empty))
+  writeAttribute(slot.selectedFlag, presenceValue(view.selected))
+  updateRadioState(slot, view.selected)
+  writeAttribute(slot.mergeableFlag, presenceValue(mergeable === true))
+  writeStyle(slot.borderColor, selectionColor(view.selected))
+  writeStyle(slot.borderWeight, selectionBorderWeight(view.selected))
+  updateSlotDurability(slot, view.durabilityPercent)
 }
 
 /**
@@ -594,16 +658,18 @@ export const updateSlotElement = (
   slot: SlotElement,
   view: SlotView,
   mergeable?: boolean,
-): void => {
-  updateSlotItemText(slot, view)
-  updateSlotText(slot.countText, slot.countTitle, view.countLabel)
-  writeAttribute(slot.emptyFlag, presenceValue(view.empty))
-  writeAttribute(slot.selectedFlag, presenceValue(view.selected))
-  updateRadioState(slot, view.selected)
-  writeAttribute(slot.mergeableFlag, presenceValue(mergeable === true))
-
-  writeStyle(slot.borderColor, selectionColor(view.selected))
-  writeStyle(slot.borderWeight, selectionBorderWeight(view.selected))
-
-  updateSlotDurability(slot, view.durabilityPercent)
+): Result.Result<void, Readonly<{ _tag: 'InvalidSlotViewInput'; field: 'countLabel' | 'itemDisplayName' | 'view' }>> => {
+  if (!isRecord(view)) {
+    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'view' })
+  }
+  const itemDisplayName = Reflect.get(view, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isItemDisplayNameView(itemDisplayName)) {
+    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'itemDisplayName' })
+  }
+  const countLabel = Reflect.get(view, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return Result.fail({ _tag: 'InvalidSlotViewInput', field: 'countLabel' })
+  }
+  projectSlotView(slot, view, mergeable)
+  return Result.void
 }

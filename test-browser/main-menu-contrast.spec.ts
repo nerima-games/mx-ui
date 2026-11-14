@@ -46,12 +46,49 @@ const measureButtonLabels = async (page: Page): Promise<ReadonlyArray<ButtonLabe
     const measure = (button: HTMLButtonElement): ButtonLabel => {
       const range = document.createRange()
       range.selectNodeContents(button)
-      const rects = [...range.getClientRects()].map((rect) => ({
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-      }))
+      const clippingAncestors: Array<{
+        readonly left: number
+        readonly top: number
+        readonly right: number
+        readonly bottom: number
+        readonly clipsX: boolean
+        readonly clipsY: boolean
+      }> = []
+      for (let element: HTMLElement | null = button; element !== null; element = element.parentElement) {
+        const ancestorStyle = getComputedStyle(element)
+        const clipsX = ['auto', 'clip', 'hidden', 'overlay', 'scroll'].includes(ancestorStyle.overflowX)
+        const clipsY = ['auto', 'clip', 'hidden', 'overlay', 'scroll'].includes(ancestorStyle.overflowY)
+        if (clipsX || clipsY) {
+          const bounds = element.getBoundingClientRect()
+          const left = bounds.left + element.clientLeft
+          const top = bounds.top + element.clientTop
+          clippingAncestors.push({
+            left,
+            top,
+            right: left + element.clientWidth,
+            bottom: top + element.clientHeight,
+            clipsX,
+            clipsY,
+          })
+        }
+      }
+      const rects = [...range.getClientRects()].flatMap((rect) => {
+        let left = Math.max(rect.left, 0)
+        let top = Math.max(rect.top, 0)
+        let right = Math.min(rect.right, window.innerWidth)
+        let bottom = Math.min(rect.bottom, window.innerHeight)
+        for (const ancestor of clippingAncestors) {
+          if (ancestor.clipsX) {
+            left = Math.max(left, ancestor.left)
+            right = Math.min(right, ancestor.right)
+          }
+          if (ancestor.clipsY) {
+            top = Math.max(top, ancestor.top)
+            bottom = Math.min(bottom, ancestor.bottom)
+          }
+        }
+        return right > left && bottom > top ? [{ left, top, right, bottom }] : []
+      })
 
       const chain: Array<{ filter: string; opacity: number }> = []
       for (let element: HTMLElement | null = button; element !== null; element = element.parentElement) {
@@ -110,7 +147,9 @@ const measureButtonLabels = async (page: Page): Promise<ReadonlyArray<ButtonLabe
         disabled: button.disabled || button.getAttribute('aria-disabled') === 'true',
       }
     }
-    const labels = buttons.filter((button) => button.getClientRects().length > 0).map(measure)
+    const labels = buttons
+      .filter((button) => button.getClientRects().length > 0)
+      .map(measure)
 
     for (const button of buttons) {
       button.style.setProperty('color', 'transparent', 'important')
@@ -210,11 +249,17 @@ test.describe('main-menu button label contrast', () => {
           const labels = await measureButtonLabels(page)
           expect(labels.length, 'the scenario must render labeled main-menu buttons').toBeGreaterThan(0)
           expect(labels.filter((label) => label.disabled), 'no disabled labels are excluded from this check').toHaveLength(0)
+          for (const label of labels) {
+            expect(label.backgroundAlpha, `${label.label} backdrop must be opaque`).toBe(1)
+            expect(label.backgroundImage, `${label.label} button must have a solid background`).toBe('none')
+          }
 
-          const pixels = await sampleLabelBackgrounds(page, labels)
-          expect(pixels.length).toBe(labels.length)
+          const visibleLabels = labels.filter((label) => label.rects.length > 0)
+          expect(visibleLabels.length, 'the scenario must render visible button labels').toBeGreaterThan(0)
+          const pixels = await sampleLabelBackgrounds(page, visibleLabels)
+          expect(pixels.length).toBe(visibleLabels.length)
           const groups = new Map<string, { labels: ButtonLabel[]; ratio: number | null; sampledPixels: number }>()
-          const pairs = labels.map((label, index) => [label, pixels.at(index)] as const)
+          const pairs = visibleLabels.map((label, index) => [label, pixels.at(index)] as const)
           for (const [label, sample] of pairs) {
             if (sample === undefined) {
               throw new Error('browser contrast measurement lost a label')
@@ -237,7 +282,7 @@ test.describe('main-menu button label contrast', () => {
               throw new Error('browser contrast measurement produced an empty style group')
             }
             expect(group.sampledPixels, `${label.label} style must be sampled from rendered pixels`).toBeGreaterThan(0)
-            expect(label.backgroundAlpha, `${label.label} backdrop must be opaque for off-screen labels`).toBe(1)
+            expect(label.backgroundAlpha, `${label.label} backdrop must be opaque`).toBe(1)
             expect(label.backgroundImage, `${label.label} button must have a solid background`).toBe('none')
             expect(
               group.ratio,

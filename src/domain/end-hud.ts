@@ -6,6 +6,7 @@ import {
   type UiMessageKey,
   translateUiMessage,
 } from './ui-language.js'
+import { Result } from 'effect'
 
 export const ENDER_DRAGON_DEFAULT_NAME = 'Ender Dragon'
 
@@ -49,11 +50,42 @@ const finiteOrZero = (value: number): number => {
   return ZERO
 }
 
-export const bossHealthBarViewModel = (
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+type InvalidBossHealthInput = Readonly<{
+  readonly _tag: 'InvalidBossHealthInput'
+  readonly field: string
+}>
+
+const isBossHealthSnapshot = (input: unknown): input is BossHealthSnapshot => {
+  if (!isRecord(input)) {
+    return false
+  }
+  return typeof input['name'] === 'string' &&
+    typeof input['current'] === 'number' &&
+    typeof input['max'] === 'number' &&
+    (input['phase'] === 'circling' ||
+      input['phase'] === 'perching' ||
+      input['phase'] === 'charging' ||
+      input['phase'] === 'dead')
+}
+
+const bossName = (name: string, language: UiLanguage): string => {
+  const trimmedName = name.trim()
+  const omittedBossName = trimmedName.length === ZERO
+  // Vanilla treats a whitespace-only boss name as omitted and uses the default name.
+  if (omittedBossName) {
+    return translateUiMessage(language, 'end-hud.boss-default-name')
+  }
+  return trimmedName
+}
+
+const projectBossHealthBarViewModel = (
   snapshot: BossHealthSnapshot,
-  language: UiLanguage = DEFAULT_UI_LANGUAGE,
+  language: UiLanguage,
 ): BossHealthBarViewModel => {
-  const name = snapshot.name.trim() || translateUiMessage(language, 'end-hud.boss-default-name')
+  const name = bossName(snapshot.name, language)
   const max = Math.max(ZERO, finiteOrZero(snapshot.max))
   const current = clamp(finiteOrZero(snapshot.current), ZERO, max)
   const hidden = snapshot.phase === 'dead' || max === ZERO || current === ZERO
@@ -76,6 +108,35 @@ export const bossHealthBarViewModel = (
     phase: snapshot.phase,
     progressPercent,
   }
+}
+
+export function bossHealthBarViewModel(
+  snapshot: null,
+  language?: unknown,
+): Result.Result<BossHealthBarViewModel, InvalidBossHealthInput>
+export function bossHealthBarViewModel(
+  snapshot: BossHealthSnapshot,
+  language?: UiLanguage,
+): BossHealthBarViewModel
+export function bossHealthBarViewModel(
+  snapshot: unknown,
+  language?: unknown,
+): BossHealthBarViewModel | Result.Result<BossHealthBarViewModel, InvalidBossHealthInput>
+export function bossHealthBarViewModel(
+  snapshot: BossHealthSnapshot,
+  language?: UiLanguage,
+): BossHealthBarViewModel
+export function bossHealthBarViewModel(
+  snapshot: unknown,
+  language: unknown = DEFAULT_UI_LANGUAGE,
+): BossHealthBarViewModel | Result.Result<BossHealthBarViewModel, InvalidBossHealthInput> {
+  if (!isBossHealthSnapshot(snapshot)) {
+    return Result.fail({ _tag: 'InvalidBossHealthInput', field: 'snapshot' })
+  }
+  if (language !== 'en' && language !== 'ja') {
+    return Result.fail({ _tag: 'InvalidBossHealthInput', field: 'language' })
+  }
+  return projectBossHealthBarViewModel(snapshot, language)
 }
 
 export type StrongholdLocatorSnapshot =

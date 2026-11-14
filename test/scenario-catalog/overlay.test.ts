@@ -15,7 +15,7 @@ import {
 import { captionEvent, captionTime } from '../helpers/caption-event'
 import {
   CROSSHAIR_PULSE_SECS,
-  crosshairViewModel,
+  crosshairViewModel as crosshairViewModelResult,
 } from '../../src/domain/crosshair'
 import {
   FramesPerSecondSchema,
@@ -24,6 +24,7 @@ import {
 import { hudViewModel, iconRow, slotView } from '../../src/domain/hud-view-model'
 import {
   LOADING_MINIMUM_VISIBLE_SECS,
+  createLoadingStatus,
   loadingScreenView,
   loadingStatus,
 } from '../../src/domain/loading-screen'
@@ -34,6 +35,7 @@ import {
 } from '../../src/domain/save-status'
 import { AchievementToastSchema } from '../../src/domain/achievement-toast'
 import { fakeDocument, fakeElement } from '../fake-dom'
+import { asMonotonicTimeSecs, asUiMessageText } from '../helpers/ui3-brand-values'
 
 const environment: HarnessEnvironment = {
   motion: 'full',
@@ -60,6 +62,14 @@ const decodeVitals = Schema.decodeUnknownResult(VitalsSchema, { onExcessProperty
 const decodeFiniteFps = Schema.decodeUnknownResult(FramesPerSecondSchema)
 const decodeFiniteGpuTime = Schema.decodeUnknownResult(GpuTimeMillisecondsSchema)
 const decodeToast = Schema.decodeUnknownResult(AchievementToastSchema)
+const crosshairViewModel = (...args: Parameters<typeof crosshairViewModelResult>) => {
+  const result = crosshairViewModelResult(...args)
+  expect(Result.isFailure(result)).toBe(false)
+  if (Result.isFailure(result)) {
+    return undefined
+  }
+  return result.success
+}
 
 describe('overlay scenario catalog', () => {
   for (const definition of OVERLAY_SCENARIOS) {
@@ -184,17 +194,24 @@ describe('overlay scenario catalog', () => {
   })
 
   it('keeps loading and save timing on the injected virtual clock', () => {
-    const ready = loadingStatus({ kind: 'ready' }, 0)
-    expect(loadingScreenView(ready, LOADING_MINIMUM_VISIBLE_SECS - 0.01)).toStrictEqual({
+    const ready = loadingStatus({ kind: 'ready' }, asMonotonicTimeSecs(0))
+    expect(loadingScreenView(ready, asMonotonicTimeSecs(LOADING_MINIMUM_VISIBLE_SECS - 0.01))).toStrictEqual({
       held: true,
       kind: 'preparing',
+      progress: 1,
+      stage: 'render-preparation',
     })
-    expect(loadingScreenView(ready, LOADING_MINIMUM_VISIBLE_SECS)).toBeUndefined()
-    expect(loadingScreenView(loadingStatus({ kind: 'failed', reason: '' }, 0), 200)).toStrictEqual({
+    expect(loadingScreenView(ready, asMonotonicTimeSecs(LOADING_MINIMUM_VISIBLE_SECS))).toBeUndefined()
+    expect(loadingScreenView(
+      loadingStatus({ kind: 'failed', reason: asUiMessageText('') }, asMonotonicTimeSecs(0)),
+      asMonotonicTimeSecs(200),
+    )).toStrictEqual({
       kind: 'failed',
       reason: '',
     })
-    expect(loadingStatus({ kind: 'ready' }, Number.NaN).startedAtSecs).toBe(0)
+    expect(createLoadingStatus({ kind: 'ready' }, Number.NaN)).toStrictEqual(
+      Result.fail({ _tag: 'InvalidLoadingTimestamp', reason: 'not-finite' }),
+    )
 
     const saved = saveStatus('saved', 0)
     expect(saveStatusMessage(saved, SAVED_VISIBLE_SECS - 0.01)).toBe('saved')
@@ -237,7 +254,14 @@ describe('overlay scenario catalog', () => {
   it('normalizes crosshair extremes and expires hits at the pulse boundary', () => {
     expect(crosshairViewModel({ modals: [], breakProgress: -1 }, 0)?.breakProgress).toBe(0)
     expect(crosshairViewModel({ modals: [], breakProgress: 1.5 }, 0)?.breakProgress).toBe(1)
-    expect(crosshairViewModel({ modals: [], breakProgress: Number.NaN }, 0)?.breakProgress).toBeUndefined()
+    const invalidProgress = crosshairViewModelResult({ modals: [], breakProgress: Number.NaN }, 0)
+    expect(Result.isFailure(invalidProgress)).toBe(true)
+    if (Result.isFailure(invalidProgress)) {
+      expect(invalidProgress.failure).toStrictEqual({
+        _tag: 'InvalidCrosshairViewModelInput',
+        field: 'breakProgress',
+      })
+    }
     expect(crosshairViewModel({ modals: [], lastHitAtSecs: 0 }, CROSSHAIR_PULSE_SECS - 0.001)?.hit).toBe(true)
     expect(crosshairViewModel({ modals: [], lastHitAtSecs: 0 }, CROSSHAIR_PULSE_SECS)?.hit).toBe(false)
   })

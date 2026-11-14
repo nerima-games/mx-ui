@@ -26,6 +26,7 @@ import {
 } from './slot-element.js'
 import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedText } from './ui-localization.js'
+import { Result } from 'effect'
 import { itemDisplayNameValue } from './item-display-name.js'
 
 export type AnvilInteractionView = {
@@ -35,8 +36,124 @@ export type AnvilInteractionView = {
 
 export type AnvilView = {
   readonly root: DomElement
-  readonly render: (model: AnvilViewModel, interaction?: AnvilInteractionView) => void
+  readonly render: (
+    model: AnvilViewModel | null,
+    interaction?: AnvilInteractionView | null,
+  ) => Result.Result<void, AnvilViewInputFailure>
 }
+
+type AnvilViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidAnvilViewInput'
+  readonly field: string
+}>
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isValidItemDisplayNameFailure = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag')
+  return typeof tag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(tag)
+}
+
+const isValidItemDisplayNameResult = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag')
+  if (tag === 'Success') {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return tag === 'Failure' &&
+    isValidItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const isValidItemDisplayNameView = (input: unknown): boolean =>
+  isRecord(input) &&
+  (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
+  isValidItemDisplayNameResult(Reflect.get(input, 'result'))
+
+const invalidAnvilSlotRecordField = (slot: Record<string, unknown>): string | undefined => {
+  const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+    return 'slots[].itemDisplayName'
+  }
+  const countLabel = Reflect.get(slot, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return 'slots[].countLabel'
+  }
+  return
+}
+
+const invalidAnvilSlotField = (slot: unknown): string | undefined => {
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if (!isRecord(slot)) {
+    return 'slots[].slot'
+  }
+  return invalidAnvilSlotRecordField(slot)
+}
+
+const invalidAnvilModelSlotsField = (
+  model: Record<string, unknown>,
+  slots: ReadonlyArray<unknown>,
+): string | undefined => {
+  const rejectionReason = Reflect.get(model, 'rejectionReason')
+  if (typeof rejectionReason !== 'undefined' && typeof rejectionReason !== 'string') {
+    return 'rejectionReason'
+  }
+  for (const slot of slots) {
+    const field = invalidAnvilSlotField(slot)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  return
+}
+
+const invalidAnvilModelField = (model: unknown): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const slots = Reflect.get(model, 'slots')
+  if (!Array.isArray(slots)) {
+    return 'slots'
+  }
+  return invalidAnvilModelSlotsField(model, slots)
+}
+
+const invalidAnvilInteractionRecordField = (interaction: Record<string, unknown>): string | undefined => {
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
+    return 'interaction.status'
+  }
+  const focusedTarget = Reflect.get(interaction, 'focusedTarget')
+  if (typeof focusedTarget !== 'undefined' && !ANVIL_OPERATION_TARGETS.some((target) => target === focusedTarget)) {
+    return 'interaction.focusedTarget'
+  }
+  return
+}
+
+const invalidAnvilInteractionField = (interaction: unknown): string | undefined => {
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  if (!isRecord(interaction)) {
+    return 'interaction'
+  }
+  return invalidAnvilInteractionRecordField(interaction)
+}
+
+const invalidAnvilViewInputField = (model: unknown, interaction: unknown): string | undefined =>
+  invalidAnvilModelField(model) ?? invalidAnvilInteractionField(interaction)
 
 export type AnvilViewActions = {
   readonly onActivate?: (target: AnvilOperationTarget) => void
@@ -67,17 +184,6 @@ const slotAriaLabel = (
     key: 'anvil.slot-item',
     values: { count: slot.countLabel ?? '1', item: itemDisplayNameValue(slot, language), slot: { key: SLOT_MESSAGE_KEY[slot.id] } },
   }
-}
-
-const resolveFocusedTarget = (requested: AnvilOperationTarget): AnvilOperationTarget => {
-  // `AnvilInteractionView` is a published type with no canonical constructor, unlike `AnvilViewModel`.
-  // A host assembles `focusedTarget` itself.
-  // A stale or round-tripped value can disagree with the type it claims to satisfy at compile time.
-  // Falling back to the default target is the inert answer.
-  if (ANVIL_OPERATION_TARGETS.includes(requested)) {
-    return requested
-  }
-  return 'primary-input'
 }
 
 const tabStopValue = (tabbable: boolean): string => {
@@ -272,15 +378,24 @@ const createAnvilStatusElements = (
   return { levelCostText, rejection, statusText }
 }
 
+const createAnvilSlotElements = (
+  factory: DomElementFactory,
+  parent: DomElement,
+  actions: AnvilViewActions | undefined,
+): Readonly<{ root: DomElement; slots: ReadonlyArray<SlotElement> }> => {
+  const root = createAnvilRootWithCloseButton(factory, parent, actions)
+  const grid = createAnvilGrid(factory, root)
+  const slots = createAnvilSlots(factory, grid, actions)
+  return { root, slots }
+}
+
 /** Projects anvil state and wires optional native operation actions. */
 export const createAnvilView = (
   factory: DomElementFactory,
   parent: DomElement,
   actions?: AnvilViewActions,
 ): AnvilView => {
-  const root = createAnvilRootWithCloseButton(factory, parent, actions)
-  const grid = createAnvilGrid(factory, root)
-  const slots = createAnvilSlots(factory, grid, actions)
+  const { root, slots } = createAnvilSlotElements(factory, parent, actions)
 
   const name = createAnvilNameInput(factory, root, actions)
   let previousName = ''
@@ -340,11 +455,26 @@ export const createAnvilView = (
     writeText(statusElements.statusText, interaction?.status ?? '')
   }
 
+  const projectAnvilModel = (model: AnvilViewModel, interaction: AnvilInteractionView | undefined): void => {
+    const focusedTarget = interaction?.focusedTarget ?? 'primary-input'
+    renderSlots(model, focusedTarget, interaction)
+    renderAnvilDetails(model, focusedTarget, interaction)
+  }
+
   return {
-    render: (model: AnvilViewModel, interaction?: AnvilInteractionView): void => {
-      const focusedTarget = resolveFocusedTarget(interaction?.focusedTarget ?? 'primary-input')
-      renderSlots(model, focusedTarget, interaction)
-      renderAnvilDetails(model, focusedTarget, interaction)
+    render: (model: AnvilViewModel | null, interaction?: AnvilInteractionView | null) => {
+      if (model === null) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'model' })
+      }
+      if (interaction === null) {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'interaction' })
+      }
+      const invalidField = invalidAnvilViewInputField(model, interaction)
+      if (typeof invalidField !== 'undefined') {
+        return Result.fail({ _tag: 'InvalidAnvilViewInput', field: invalidField })
+      }
+      projectAnvilModel(model, interaction)
+      return Result.void
     },
     root,
   }

@@ -4,23 +4,30 @@ import {
   startAchievementToastSubscriber,
 } from './achievement-toast-subscriber.js'
 import { type AchievementToastView, createAchievementToastView } from './achievement-toast-view.js'
+import {
+  type ColorVisionFilterController,
+  type ColorVisionFilterFailure,
+  createColorVisionFilterController,
+} from './color-vision-filters.js'
 import { type CrosshairView, createCrosshairView } from './crosshair-view.js'
 import {
   DEFAULT_DEBUG_HUD_SNAPSHOT,
   DEFAULT_UI_SETTINGS,
   type DebugHudSnapshot,
+  type SessionOverlayInitializationFailure,
   type SessionOverlays,
   type UiSettings,
   type UiSettingsCallbacks,
   createSessionOverlays,
 } from './session-overlays.js'
+import { DEFAULT_SETTINGS, DomainEventBus, isValidSettings } from '@nerima-games/mc-sim'
 import {
   DEFAULT_UI_LANGUAGE,
   type UiLanguage,
   type UiLanguageFailure,
   decodeUiLanguage,
 } from '../domain/ui-language.js'
-import { Effect, Exit, Result, Schema } from 'effect'
+import { Effect, Exit, Option, Result, Schema } from 'effect'
 import {
   HOTBAR_SLOT_COUNT,
   type HudViewModel,
@@ -58,13 +65,21 @@ import {
   type MainMenuView,
   createMainMenuView,
 } from './main-menu-view.js'
+import {
+  type MotionMediaQuery,
+  type MotionPreferenceController,
+  type MotionPreferenceControllerFailure,
+  REDUCED_MOTION_MEDIA_QUERY,
+  createMotionPreferenceController,
+} from './accessibility-dom.js'
 import { type MotionPreference, type UiScale, decodeUiScale } from '../domain/accessibility.js'
+import type { SettingsSnapshot, SettingsViewModelFailure } from '../domain/settings-view-model.js'
 import { finishToastSubscriptionClose, finishUiMountCleanup } from './ui-mount-cleanup.js'
 import { initialMainMenuState, mainMenuViewModel } from '../domain/main-menu.js'
 import type { AchievementToast } from '../domain/achievement-toast.js'
 import { type CrosshairViewModel } from '../domain/crosshair.js'
-import { DomainEventBus } from '@nerima-games/mc-sim'
 import type { FocusTarget } from '@nerima-games/mc-render'
+import type { SettingsViewInputFailure } from './settings-view.js'
 import { UiMountError } from './ui-mount-error.js'
 import type { UiQaSnapshot } from '../domain/ui-qa.js'
 import { applyUiLanguage } from './ui-localization.js'
@@ -77,6 +92,13 @@ export { UiMountError } from './ui-mount-error.js'
 const HOTBAR_START_INDEX = 0
 const INITIAL_SELECTED_HOTBAR_SLOT = 0
 
+const defaultWhenUndefined = <Value>(value: Value | undefined, fallback: Value): Value => {
+  if (typeof value !== 'undefined') {
+    return value
+  }
+  return fallback
+}
+
 export type UiMountedViews = {
   readonly root: HTMLElement
   readonly hud: HudView
@@ -87,13 +109,29 @@ export type UiMountedViews = {
   readonly achievementToast: AchievementToastView
 }
 
+type SettingsPreferenceFailure = Schema.SchemaError | ColorVisionFilterFailure | MotionPreferenceControllerFailure
+type SettingsOperationFailure = SettingsViewModelFailure | SettingsViewInputFailure | SettingsPreferenceFailure
+type InitialSettingsFailure = SettingsOperationFailure | { readonly tag: 'InvalidInitialUiScale' }
+type SettingsLanguageFailure = UiLanguageFailure | SettingsViewModelFailure | SettingsViewInputFailure
+type MountInitializationFailure = SettingsPreferenceFailure | SessionOverlayInitializationFailure
+
+const noSettingsPreferenceApplication = (): Result.Result<boolean, SettingsPreferenceFailure> => Result.succeed(true)
+
+type ActiveUiMount = Readonly<{
+  views: UiMountedViews
+  motionController: MotionPreferenceController
+  colorVisionController: ColorVisionFilterController | null
+}>
+
 export type UiMountOptions = {
   readonly root: HTMLElement
   readonly motion?: MotionPreference
   readonly initialLanguage?: UiLanguage
   readonly menuCallbacks?: MainMenuCallbacks
   readonly initialSettings?: UiSettings
+  readonly initialSettingsSnapshot?: SettingsSnapshot
   readonly settingsCallbacks?: UiSettingsCallbacks
+  readonly colorVisionTarget?: HTMLElement
   readonly initialDebugSnapshot?: DebugHudSnapshot
   readonly onInventoryActivate?: (target: InventoryInteractionTarget) => void
   readonly onInventoryAction?: (action: InventoryAction) => void
@@ -115,8 +153,9 @@ export type UiMount = {
   /** Apply a hit immediately; the next frame's updateCrosshair result owns expiry. */
   readonly notifyHit: () => void
   readonly updateDebug: (snapshot: DebugHudSnapshot) => void
-  readonly updateSettings: (settings: UiSettings) => Result.Result<UiScale, Schema.SchemaError>
-  readonly updateLanguage: (language: unknown) => Result.Result<UiLanguage, UiLanguageFailure>
+  readonly updateSettings: (settings: UiSettings) => Result.Result<UiScale, SettingsOperationFailure>
+  readonly updateSettingsSnapshot: (settings: unknown) => Result.Result<SettingsSnapshot, SettingsOperationFailure>
+  readonly updateLanguage: (language: unknown) => Result.Result<UiLanguage, SettingsLanguageFailure>
   readonly openSettings: () => void
   readonly closeSettings: () => void
   readonly openInventory: (model?: InventoryViewModel) => void
@@ -149,7 +188,11 @@ export const inventoryTargetAt = (
 type UiMountSession = {
   achievementToast?: AchievementToast
   mounted: UiMountedViews | null
-  settings: UiSettings
+  motionController: MotionPreferenceController | null
+  colorVisionController: ColorVisionFilterController | null
+  applySettingsPreferences: (settings: SettingsSnapshot) => Result.Result<boolean, SettingsPreferenceFailure>
+  settings: SettingsSnapshot
+  settingsFailure: InitialSettingsFailure | null
   language: UiLanguage
   debugSnapshot: DebugHudSnapshot
   inventoryModel: InventoryViewModel
@@ -163,36 +206,14 @@ type UiMountSession = {
   toastSubscription: AchievementToastSubscription | null
 }
 
-const saveUiSettings = (
+const detachSettingsPreferences = (
   session: UiMountSession,
-  settings: UiSettings,
-  mounted: UiMountedViews | null,
-): void => {
-  session.settings = settings
-  mounted?.overlays.updateSettings(settings)
-}
-
-const applySessionUiScale = (
-  mounted: UiMountedViews | null,
-  input: unknown,
-): Result.Result<UiScale, Schema.SchemaError> => {
-  if (mounted === null) {
-    return decodeUiScale(input)
-  }
-  return applyUiScale(mounted.root.style, input)
-}
-
-const updateUiSettings = (
-  session: UiMountSession,
-  nextSettings: UiSettings,
-): Result.Result<UiScale, Schema.SchemaError> => {
-  const { mounted } = session
-  const appliedScale = applySessionUiScale(mounted, nextSettings.uiScale)
-  if (Result.isFailure(appliedScale)) {
-    return appliedScale
-  }
-  saveUiSettings(session, nextSettings, mounted)
-  return appliedScale
+): Pick<UiMountSession, 'motionController' | 'colorVisionController'> => {
+  const { colorVisionController, motionController } = session
+  session.motionController = null
+  session.colorVisionController = null
+  session.applySettingsPreferences = noSettingsPreferenceApplication
+  return { colorVisionController, motionController }
 }
 
 /** `document.activeElement` narrowed to something focus-restorable, or nothing. */
@@ -305,47 +326,165 @@ type PartialMount = {
   hud?: HudView
   mainMenu: MainMenuView | null
   overlays: SessionOverlays | null
+  motionController: MotionPreferenceController | null
+  colorVisionController: ColorVisionFilterController | null
   readonly ownedRoot: HTMLElement
+}
+
+type UiCleanupFailure = {
+  readonly operation: string
+  readonly error: UiMountError
+}
+
+const NO_CLEANUP_FAILURES = 0
+
+type UiCleanupOperation = {
+  readonly name: string
+  readonly run: () => void
+}
+
+const attemptUiCleanup = (
+  message: string,
+  operations: ReadonlyArray<UiCleanupOperation>,
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  Effect.gen(function* collectCleanupFailures() {
+    const failures: Array<UiCleanupFailure> = []
+    for (const operation of operations) {
+      const result = yield* Effect.result(Effect.try({
+        catch: (cause) => new UiMountError(message, { cause }),
+        try: operation.run,
+      }))
+      if (Result.isFailure(result)) {
+        failures.push({ error: result.failure, operation: operation.name })
+      }
+    }
+    return failures
+  })
+
+const finishUiCleanup = (
+  message: string,
+  failures: ReadonlyArray<UiCleanupFailure>,
+): Result.Result<void, UiMountError> => {
+  if (failures.length === NO_CLEANUP_FAILURES) {
+    return Result.void
+  }
+  return Result.fail(new UiMountError(message, { cause: { cleanupErrors: failures } }))
 }
 
 /** Removes the views and owned root left by a failed initialization. */
 const destroyPartialMount = (partial: PartialMount): Effect.Effect<void, UiMountError> =>
-  Effect.try({
-    catch: (cause) => new UiMountError('Failed to clean up partial mx-ui mount', { cause }),
-    try: () => {
-      partial.hud?.dispose()
-      partial.mainMenu?.destroy()
-      partial.overlays?.destroy()
-      partial.ownedRoot.remove()
+  Effect.flatMap(
+    attemptUiCleanup('Failed to clean up partial mx-ui mount', [
+      { name: 'hud', run: () => partial.hud?.dispose() },
+      { name: 'mainMenu', run: () => partial.mainMenu?.destroy() },
+      { name: 'overlays', run: () => partial.overlays?.destroy() },
+      { name: 'motionController', run: () => partial.motionController?.dispose() },
+      { name: 'colorVisionController', run: () => partial.colorVisionController?.dispose() },
+      { name: 'ownedRoot', run: () => partial.ownedRoot.remove() },
+    ]),
+    (failures) => {
+      const result = finishUiCleanup('Failed to clean up partial mx-ui mount', failures)
+      if (Result.isFailure(result)) {
+        return Effect.fail(result.failure)
+      }
+      return Effect.void
     },
-  })
+  )
+
+type MutableMainMenuCallbacks = {
+  -readonly [Key in keyof MainMenuCallbacks]?: MainMenuCallbacks[Key]
+}
+
+const addWorldMenuCallbacks = (
+  result: MutableMainMenuCallbacks,
+  callbacks: MainMenuCallbacks | undefined,
+): void => {
+  if (typeof callbacks?.onCreateWorld === 'function') {
+    result.onCreateWorld = (request) => callbacks?.onCreateWorld?.(request)
+  }
+  if (typeof callbacks?.onLoadWorld === 'function') {
+    result.onLoadWorld = (world) => callbacks?.onLoadWorld?.(world)
+  }
+  if (typeof callbacks?.onDeleteWorld === 'function') {
+    result.onDeleteWorld = (world) => callbacks?.onDeleteWorld?.(world)
+  }
+  if (typeof callbacks?.onDeleteUnreadableSave === 'function') {
+    result.onDeleteUnreadableSave = (save) => callbacks?.onDeleteUnreadableSave?.(save)
+  }
+}
+
+const addOtherMenuCallbacks = (
+  result: MutableMainMenuCallbacks,
+  callbacks: MainMenuCallbacks | undefined,
+): void => {
+  if (typeof callbacks?.onExportWorld === 'function') {
+    result.onExportWorld = (world) => callbacks?.onExportWorld?.(world)
+  }
+  if (typeof callbacks?.onOpenMultiplayer === 'function') {
+    result.onOpenMultiplayer = () => callbacks?.onOpenMultiplayer?.()
+  }
+  if (typeof callbacks?.onExit === 'function') {
+    result.onExit = () => callbacks?.onExit?.()
+  }
+  if (typeof callbacks?.onStateChange === 'function') {
+    result.onStateChange = (state) => callbacks?.onStateChange?.(state)
+  }
+}
 
 const buildMenuCallbacks = (
   overlays: SessionOverlays,
   callbacks: MainMenuCallbacks | undefined,
-): MainMenuCallbacks => ({
-  onCreateWorld: (request) => callbacks?.onCreateWorld(request),
-  onLoadWorld: (world) => callbacks?.onLoadWorld(world),
-  onOpenSettings: () => {
-    overlays.openSettings()
-    callbacks?.onOpenSettings()
-  },
-  onStateChange: (state) => callbacks?.onStateChange(state),
-})
+): MainMenuCallbacks => {
+  const result: MutableMainMenuCallbacks = {}
+  addWorldMenuCallbacks(result, callbacks)
+  addOtherMenuCallbacks(result, callbacks)
+  result.onOpenSettings = () => {
+      overlays.openSettings()
+      callbacks?.onOpenSettings?.()
+  }
+  return result
+}
+
+const invalidExternalMenuCallbackField = (callbacks: unknown): string | undefined => {
+  if (typeof callbacks === 'undefined') {
+    return
+  }
+  if (callbacks === null || typeof callbacks !== 'object') {
+    return 'callbacks'
+  }
+  for (const field of ['onOpenMultiplayer', 'onOpenSettings', 'onExit'] as const) {
+    if (Reflect.get(callbacks, field) === null) {
+      return `callbacks.${field}`
+    }
+  }
+  return
+}
 
 const removeUiMountedViews = (
   previous: UiMountedViews | null,
   message: string,
-): Effect.Effect<void, UiMountError> =>
-  Effect.try({
-    catch: (cause) => new UiMountError(message, { cause }),
-    try: () => {
-      previous?.hud.dispose()
-      previous?.mainMenu.destroy()
-      previous?.overlays.destroy()
-      previous?.root.remove()
-    },
-  })
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  attemptUiCleanup(message, [
+    { name: 'hud', run: () => previous?.hud.dispose() },
+    { name: 'mainMenu', run: () => previous?.mainMenu.destroy() },
+    { name: 'overlays', run: () => previous?.overlays.destroy() },
+  ])
+
+const removeOwnedRoot = (
+  previous: UiMountedViews | null,
+  message: string,
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  attemptUiCleanup(message, [{ name: 'ownedRoot', run: () => previous?.root.remove() }])
+
+const combineSettingsControllerCleanup = (
+  message: string,
+  motionController: MotionPreferenceController | null,
+  colorVisionController: ColorVisionFilterController | null,
+): Effect.Effect<ReadonlyArray<UiCleanupFailure>> =>
+  attemptUiCleanup(message, [
+    { name: 'motionController', run: () => motionController?.dispose() },
+    { name: 'colorVisionController', run: () => colorVisionController?.dispose() },
+  ])
 
 const createAchievementToastLifecycle = (session: UiMountSession) => {
   const close = (): Effect.Effect<void, Schema.SchemaError> => {
@@ -393,12 +532,55 @@ const createAchievementToastLifecycle = (session: UiMountSession) => {
   return { close, read, start }
 }
 
+const validatedInitialSettingsState = (
+  input: unknown,
+): Readonly<{ failure: InitialSettingsFailure | null; settings: SettingsSnapshot }> => {
+  if (
+    input !== null &&
+    typeof input === 'object' &&
+    Object.hasOwn(input, 'uiScale') &&
+    'uiScale' in input &&
+    Result.isFailure(decodeUiScale(input.uiScale))
+  ) {
+    return { failure: { tag: 'InvalidInitialUiScale' }, settings: DEFAULT_SETTINGS }
+  }
+  if (isValidSettings(input)) {
+    return { failure: null, settings: input }
+  }
+  return { failure: { _tag: 'InvalidSettingsSnapshot' }, settings: DEFAULT_SETTINGS }
+}
+
+const resolveInitialSettings = (options: UiMountOptions): unknown => {
+  if (typeof options.initialSettingsSnapshot !== 'undefined') {
+    return options.initialSettingsSnapshot
+  }
+
+  let legacySettings: typeof DEFAULT_UI_SETTINGS | null = DEFAULT_UI_SETTINGS
+  if (typeof options.initialSettings !== 'undefined') {
+    legacySettings = options.initialSettings
+  }
+  if (legacySettings === null) {
+    return null
+  }
+  return {
+    ...DEFAULT_SETTINGS,
+    fovDegrees: legacySettings.fieldOfView,
+    masterVolume: legacySettings.masterVolume,
+    mouseSensitivity: legacySettings.mouseSensitivity,
+    renderDistance: legacySettings.renderDistance,
+    uiScale: legacySettings.uiScale,
+  }
+}
+
 const createMountState = (options: UiMountOptions): Readonly<{
   session: UiMountSession
   toastLifecycle: ReturnType<typeof createAchievementToastLifecycle>
 }> => {
+  const initialSettingsState = validatedInitialSettingsState(resolveInitialSettings(options))
   const session: UiMountSession = {
-    debugSnapshot: options.initialDebugSnapshot ?? DEFAULT_DEBUG_HUD_SNAPSHOT,
+    applySettingsPreferences: noSettingsPreferenceApplication,
+    colorVisionController: null,
+    debugSnapshot: defaultWhenUndefined(options.initialDebugSnapshot, DEFAULT_DEBUG_HUD_SNAPSHOT),
     hudModel: hudViewModel(
       spawnSnapshot,
       emptyInventorySnapshot.inventory.slots.slice(HOTBAR_START_INDEX, HOTBAR_SLOT_COUNT),
@@ -409,13 +591,31 @@ const createMountState = (options: UiMountOptions): Readonly<{
     inventoryModel: inventoryViewModel(emptyInventorySnapshot),
     inventoryOpen: false,
     inventoryRestoreFocus: null,
-    language: options.initialLanguage ?? DEFAULT_UI_LANGUAGE,
+    language: defaultWhenUndefined(options.initialLanguage, DEFAULT_UI_LANGUAGE),
+    motionController: null,
     mounted: null,
-    settings: options.initialSettings ?? DEFAULT_UI_SETTINGS,
+    settings: initialSettingsState.settings,
+    settingsFailure: initialSettingsState.failure,
     toastScope: null,
     toastSubscription: null,
   }
   return { session, toastLifecycle: createAchievementToastLifecycle(session) }
+}
+
+const motionPreferenceQuery = (document: Document): MotionMediaQuery => {
+  const view = document.defaultView
+  if (typeof view?.matchMedia === 'function') {
+    return view.matchMedia(REDUCED_MOTION_MEDIA_QUERY)
+  }
+  return {
+    addEventListener: () => {
+      // A document without a window has no media query event source.
+    },
+    matches: false,
+    removeEventListener: () => {
+      // A document without a window has no media query event source.
+    },
+  }
 }
 
 const isInventoryFocusTarget = (session: UiMountSession, target: FocusTarget): boolean => {
@@ -441,19 +641,34 @@ const activationKind = (shiftKey: boolean): 'click' | 'shift-click' => {
   return 'click'
 }
 
-type UiMountInventoryOperations = Readonly<{
-  activateInventoryFocus: (kind?: 'click' | 'shift-click') => boolean
-  dragInventorySlot: (source: InventoryDragTarget, target: InventoryDragTarget) => boolean
-  moveFocus: (direction: InventoryNavigationDirection) => boolean
-  moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
-  renderInventory: (view: InventoryView, focus?: boolean) => void
-  syncKeyboardFocus: () => void
-}>
+type InventoryOperations = {
+  readonly activateInventoryFocus: (kind?: 'click' | 'shift-click') => boolean
+  readonly dragInventorySlot: (source: InventoryDragTarget, target: InventoryDragTarget) => boolean
+  readonly moveFocus: (direction: InventoryNavigationDirection) => boolean
+  readonly moveInventoryFocus: (direction: InventoryNavigationDirection) => boolean
+  readonly renderInventory: (view: InventoryView, focus?: boolean) => void
+  readonly syncKeyboardFocus: () => void
+}
 
-const createUiMountInventoryOperations = (
-  options: UiMountOptions,
+const applySettingsScale = (
+  root: HTMLElement,
+  scale: number,
+): ReturnType<typeof applyUiScale> => applyUiScale(root.style, scale)
+
+const applySettingsColorVision = (
+  controller: ColorVisionFilterController | null,
+  correction: SettingsSnapshot['colorVisionCorrection'],
+): Result.Result<boolean, ColorVisionFilterFailure> => {
+  if (controller === null) {
+    return Result.succeed(false)
+  }
+  return Result.map(controller.apply(correction), () => true)
+}
+
+const createInventoryOperations = (
   session: UiMountSession,
-): UiMountInventoryOperations => {
+  options: UiMountOptions,
+): InventoryOperations => {
   const syncKeyboardFocus = (): void => {
     const focusedTarget = focusTargetForUiElement(options.root.ownerDocument.activeElement)
     if (focusedTarget?.group === 'hotbar') {
@@ -524,10 +739,7 @@ const createUiMountInventoryOperations = (
     return true
   }
 
-  const dragInventorySlot = (
-    source: InventoryDragTarget,
-    target: InventoryDragTarget,
-  ): boolean => {
+  const dragInventorySlot = (source: InventoryDragTarget, target: InventoryDragTarget): boolean => {
     if (!session.inventoryOpen) {
       return false
     }
@@ -545,160 +757,516 @@ const createUiMountInventoryOperations = (
   }
 }
 
-export const makeUiMount = (options: UiMountOptions): UiMount => {
-  const { session, toastLifecycle } = createMountState(options)
-  const {
-    activateInventoryFocus,
-    dragInventorySlot,
-    moveFocus,
-    moveInventoryFocus,
-    renderInventory,
-    syncKeyboardFocus,
-  } = createUiMountInventoryOperations(options, session)
+type BaseViewsContext = {
+  readonly document: Document
+  readonly ownedRoot: HTMLElement
+  readonly partial: PartialMount
+  readonly options: UiMountOptions
+  readonly session: UiMountSession
+  readonly inventory: InventoryOperations
+}
 
-  const unmount = (
-    message = 'Failed to stop mx-ui',
-  ): Effect.Effect<void, UiMountError | Schema.SchemaError> =>
+const applyExplicitMotionOverride = (
+  motion: MotionPreference | undefined,
+  hud: HudView,
+  crosshair: CrosshairView,
+): void => {
+  if (typeof motion !== 'undefined') {
+    hud.setMotion(motion)
+    crosshair.setMotion(motion)
+  }
+}
+
+const configureMotionPreference = (
+  context: BaseViewsContext,
+  hud: HudView,
+  crosshair: CrosshairView,
+): Result.Result<MotionPreferenceController, Schema.SchemaError> => {
+  const result = createMotionPreferenceController(
+    motionPreferenceQuery(context.document),
+    context.session.settings.reducedMotion,
+    (preference) => {
+      hud.setMotion(preference)
+      crosshair.setMotion(preference)
+    },
+  )
+  return Result.map(result, (controller) => {
+    context.partial.motionController = controller
+    applyExplicitMotionOverride(context.options.motion, hud, crosshair)
+    return controller
+  })
+}
+
+const configureColorVision = (
+  context: BaseViewsContext,
+): Result.Result<ColorVisionFilterController | null, ColorVisionFilterFailure> => {
+  const target = defaultWhenUndefined(context.options.colorVisionTarget, context.options.root.querySelector('canvas'))
+  if (target === null || typeof target === 'undefined') {
+    return Result.succeed(null)
+  }
+  const controller = createColorVisionFilterController(context.ownedRoot, target)
+  context.partial.colorVisionController = controller
+  return Result.map(applySettingsColorVision(controller, context.session.settings.colorVisionCorrection), () => controller)
+}
+
+const createInventoryKeyHandler = (
+  context: BaseViewsContext,
+  inventory: InventoryView,
+): ((event: KeyboardEvent) => boolean) => {
+  // No `if (!session.inventoryOpen) return` guard here, unlike the public
+  // `closeInventory` member below: this closure is only reachable through
+  // `dispatchInventoryKey`, and every key that reaches `INVENTORY_KEY_HANDLERS`
+  // (including Escape) is already gated by `!ctx.session.inventoryOpen`
+  // Returning `false` one level up — so `inventoryOpen` is always `true` here.
+  // A guard restating that would be a branch no key event can ever take.
+  const closeInventory = (): void => {
+    context.session.inventoryOpen = false
+    inventory.root.setAttribute('hidden', '')
+    const target = context.session.inventoryRestoreFocus
+    context.session.inventoryRestoreFocus = null
+    if (target?.isConnected === true) {
+      target.focus()
+    }
+    context.inventory.syncKeyboardFocus()
+  }
+  // No `if (session.inventoryOpen) return` guard here, unlike the public
+  // `openInventory` member below: this closure's only real caller is
+  // `handleToggleKey`, which calls it exclusively from the
+  // `!ctx.session.inventoryOpen` branch of its own toggle — so `inventoryOpen`
+  // Is always `false` here.
+  const openInventory = (): void => {
+    context.session.inventoryRestoreFocus = restoreFocusTarget(context.document.activeElement)
+    context.session.inventoryOpen = true
+    inventory.root.removeAttribute('hidden')
+    context.inventory.renderInventory(inventory, true)
+  }
+  return (event) => dispatchInventoryKey(event, { closeInventory, openInventory, session: context.session })
+}
+
+const activateInventoryViewTarget = (
+  context: BaseViewsContext,
+  target: InventoryInteractionTarget,
+  shiftKey: boolean,
+): void => {
+  context.session.inventoryFocus = target
+  context.inventory.activateInventoryFocus(activationKind(shiftKey))
+}
+
+const updateInventoryViewFocus = (
+  context: BaseViewsContext,
+  target: InventoryInteractionTarget,
+  inventory: InventoryView,
+): void => {
+  context.session.inventoryFocus = target
+  context.inventory.renderInventory(inventory)
+}
+
+const createInitialInventoryView = (context: BaseViewsContext): InventoryView => {
+  const inventory = createInventoryView(context.document, context.ownedRoot, {
+    onActivate: (target, shiftKey) => activateInventoryViewTarget(context, target, shiftKey),
+    onFocusChange: (target) => updateInventoryViewFocus(context, target, inventory),
+  })
+  inventory.root.setAttribute('hidden', '')
+  context.inventory.renderInventory(inventory)
+  return inventory
+}
+
+const configureBasePreferences = (
+  context: BaseViewsContext,
+  hud: HudView,
+  crosshair: CrosshairView,
+): Result.Result<Pick<ActiveUiMount, 'motionController' | 'colorVisionController'>, SettingsPreferenceFailure> =>
+  Result.flatMap(configureMotionPreference(context, hud, crosshair), (motionController) =>
+    Result.flatMap(configureColorVision(context), (colorVisionController) =>
+      Result.map(applySettingsScale(context.ownedRoot, context.session.settings.uiScale), () => ({
+        colorVisionController,
+        motionController,
+      })),
+    ),
+  )
+
+const createBaseViews = (context: BaseViewsContext): Result.Result<Readonly<{
+  colorVisionController: ColorVisionFilterController | null
+  crosshair: CrosshairView
+  handleInventoryKey: (event: KeyboardEvent) => boolean
+  hud: HudView
+  inventory: InventoryView
+  motionController: MotionPreferenceController
+}>, SettingsPreferenceFailure> => {
+  const initialMotion = defaultWhenUndefined(context.options.motion, 'full')
+  const hud = createHudView(context.document, context.ownedRoot, initialMotion, {
+    onRespawn: context.options.onRespawn,
+  })
+  context.partial.hud = hud
+  const crosshair = createCrosshairView(context.document, context.ownedRoot, initialMotion)
+  crosshair.render(context.session.crosshairModel)
+  const preferences = configureBasePreferences(context, hud, crosshair)
+  return Result.map(preferences, ({ colorVisionController, motionController }) => {
+    hud.render(context.session.hudModel)
+    const inventory = createInitialInventoryView(context)
+    const handleInventoryKey = createInventoryKeyHandler(context, inventory)
+    return { colorVisionController, crosshair, handleInventoryKey, hud, inventory, motionController }
+  })
+}
+
+const applySettingsMotion = (
+  controller: MotionPreferenceController,
+  motion: SettingsSnapshot['reducedMotion'],
+): Result.Result<SettingsSnapshot['reducedMotion'], MotionPreferenceControllerFailure> => controller.update(motion)
+
+const createMountedSettingsPreferenceApplication = (
+  root: HTMLElement,
+  motionController: MotionPreferenceController,
+  colorVisionController: ColorVisionFilterController | null,
+): ((settings: SettingsSnapshot) => Result.Result<boolean, SettingsPreferenceFailure>) => (settings) =>
+  Result.flatMap(applySettingsScale(root, settings.uiScale), () =>
+    Result.flatMap(applySettingsColorVision(colorVisionController, settings.colorVisionCorrection), () =>
+      Result.map(applySettingsMotion(motionController, settings.reducedMotion), () => true),
+    ),
+  )
+
+type SettingsOperations = {
+  readonly applySettingsPreferences: (settings: SettingsSnapshot) => Result.Result<boolean, SettingsPreferenceFailure>
+  readonly updateSettings: (settings: UiSettings) => Result.Result<UiScale, SettingsOperationFailure>
+  readonly updateSettingsSnapshot: (input: unknown) => Result.Result<SettingsSnapshot, SettingsOperationFailure>
+  readonly updateLanguage: (input: unknown) => Result.Result<UiLanguage, SettingsLanguageFailure>
+}
+
+const applySettingsSnapshotPreferences = (
+  session: UiMountSession,
+  input: SettingsSnapshot,
+  preferences: Result.Result<boolean, SettingsPreferenceFailure>,
+): Result.Result<SettingsSnapshot, SettingsOperationFailure> => {
+  session.settingsFailure = Option.getOrNull(Result.getFailure(preferences))
+  return Result.map(preferences, () => {
+    session.settings = input
+    return input
+  })
+}
+
+const updateValidSettingsSnapshot = (
+  session: UiMountSession,
+  input: SettingsSnapshot,
+  applySettingsPreferences: SettingsOperations['applySettingsPreferences'],
+): Result.Result<SettingsSnapshot, SettingsOperationFailure> => {
+  const { language, mounted } = session
+  const viewResult = mounted?.overlays.updateSettingsSnapshot(input, language) ?? Result.succeed(input)
+  return Result.flatMap(viewResult, () =>
+    applySettingsSnapshotPreferences(session, input, applySettingsPreferences(input)),
+  )
+}
+
+const createSettingsOperations = (
+  session: UiMountSession,
+): SettingsOperations => {
+  const applySettingsPreferences = (settings: SettingsSnapshot): Result.Result<boolean, SettingsPreferenceFailure> =>
+    session.applySettingsPreferences(settings)
+
+  const updateSettingsSnapshot = (input: unknown): Result.Result<SettingsSnapshot, SettingsOperationFailure> => {
+    if (!isValidSettings(input)) {
+      return Result.fail({ _tag: 'InvalidSettingsSnapshot' })
+    }
+    return updateValidSettingsSnapshot(session, input, applySettingsPreferences)
+  }
+
+  const updateSettings = (settings: UiSettings): Result.Result<UiScale, SettingsOperationFailure> => {
+    const scale = decodeUiScale(settings.uiScale)
+    if (Result.isFailure(scale)) {
+      return scale
+    }
+    return Result.map(updateSettingsSnapshot({
+      ...session.settings,
+      fovDegrees: settings.fieldOfView,
+      masterVolume: settings.masterVolume,
+      mouseSensitivity: settings.mouseSensitivity,
+      renderDistance: settings.renderDistance,
+      uiScale: scale.success,
+    }), () => scale.success)
+  }
+
+  const applyLanguageToMountedRoot = (
+    mounted: UiMountedViews | null,
+    language: UiLanguage,
+  ): Result.Result<UiLanguage, UiLanguageFailure> => {
+    if (mounted === null) {
+      return Result.succeed(language)
+    }
+    return applyUiLanguage(mounted.root, language)
+  }
+
+  const updateMountedSettingsLanguage = (
+    language: UiLanguage,
+  ): Result.Result<SettingsSnapshot, SettingsViewModelFailure | SettingsViewInputFailure> => {
+    const { mounted } = session
+    if (mounted === null) {
+      return Result.succeed(session.settings)
+    }
+    return mounted.overlays.updateSettingsSnapshot(session.settings, language)
+  }
+
+  const failLanguageUpdate = (
+    language: UiLanguage,
+    failure: SettingsLanguageFailure,
+  ): Result.Result<UiLanguage, SettingsLanguageFailure> =>
+    Result.flatMap(applyLanguageToMountedRoot(session.mounted, language), () => Result.fail(failure))
+
+  const applyDecodedLanguage = (language: UiLanguage): Result.Result<UiLanguage, SettingsLanguageFailure> => {
+    const previousLanguage = session.language
+    return Result.flatMap(applyLanguageToMountedRoot(session.mounted, language), (appliedLanguage) => {
+      const settingsUpdate = updateMountedSettingsLanguage(appliedLanguage)
+      if (Result.isFailure(settingsUpdate)) {
+        return failLanguageUpdate(previousLanguage, settingsUpdate.failure)
+      }
+      session.language = appliedLanguage
+      return Result.succeed(appliedLanguage)
+    })
+  }
+
+  const updateLanguage = (input: unknown): Result.Result<UiLanguage, SettingsLanguageFailure> => {
+    const decoded = decodeUiLanguage(input)
+    if (Result.isFailure(decoded)) {
+      return decoded
+    }
+    return applyDecodedLanguage(decoded.success)
+  }
+
+  return { applySettingsPreferences, updateLanguage, updateSettings, updateSettingsSnapshot }
+}
+
+const collectUnmountCleanupResult = (
+  message: string,
+  previous: UiMountedViews | null,
+  preferences: Pick<UiMountSession, 'motionController' | 'colorVisionController'>,
+): Effect.Effect<Result.Result<void, UiMountError>> =>
+  Effect.gen(function* collectUnmountCleanup() {
+    const controllerFailures = yield* combineSettingsControllerCleanup(
+      message,
+      preferences.motionController,
+      preferences.colorVisionController,
+    )
+    const viewFailures = yield* removeUiMountedViews(previous, message)
+    const rootFailures = yield* removeOwnedRoot(previous, message)
+    return finishUiCleanup(message, [
+      ...controllerFailures,
+      ...viewFailures,
+      ...rootFailures,
+    ])
+  })
+
+const createUnmountOperation = (
+  session: UiMountSession,
+  toastLifecycle: ReturnType<typeof createAchievementToastLifecycle>,
+): ((message?: string) => Effect.Effect<void, UiMountError | Schema.SchemaError>) =>
+  (message = 'Failed to stop mx-ui'): Effect.Effect<void, UiMountError | Schema.SchemaError> =>
     Effect.gen(function* closeMount() {
       const previous = session.mounted
       session.mounted = null
+      const preferences = detachSettingsPreferences(session)
       session.inventoryOpen = false
       session.inventoryRestoreFocus = null
-
       const subscriptionResult = yield* Effect.result(toastLifecycle.close())
-      const viewsResult = yield* Effect.result(removeUiMountedViews(previous, message))
-      return yield* finishUiMountCleanup(subscriptionResult, viewsResult)
+      const cleanupResult = yield* collectUnmountCleanupResult(message, previous, preferences)
+      return yield* finishUiMountCleanup(subscriptionResult, cleanupResult)
     })
 
-  const createBaseInventory = (document: Document, ownedRoot: HTMLElement): InventoryView => {
-    const inventory = createInventoryView(document, ownedRoot, {
-      onActivate: (target, shiftKey) => {
-        session.inventoryFocus = target
-        activateInventoryFocus(activationKind(shiftKey))
-      },
-      onFocusChange: (target) => {
-        session.inventoryFocus = target
-        renderInventory(inventory)
-      },
+const createMountedSettingsCallbacks = (
+  session: UiMountSession,
+  settingsOperations: SettingsOperations,
+  callbacks: UiSettingsCallbacks | undefined,
+): UiSettingsCallbacks => ({
+  ...callbacks,
+  onSettingsChange: (settings) => {
+    const updated = settingsOperations.updateSettingsSnapshot(settings)
+    session.settingsFailure = Option.getOrNull(Result.getFailure(updated))
+    return Result.map(updated, (accepted) => callbacks?.onSettingsChange?.(accepted))
+  },
+})
+
+type CreateInitialOverlaysContext = {
+  readonly document: Document
+  readonly ownedRoot: HTMLElement
+  readonly partial: PartialMount
+  readonly options: UiMountOptions
+  readonly session: UiMountSession
+  readonly settingsOperations: SettingsOperations
+  readonly handleInventoryKey: (event: KeyboardEvent) => boolean
+}
+
+type CreateInitialViewsContext = Omit<CreateInitialOverlaysContext, 'handleInventoryKey'> & {
+  readonly inventory: InventoryOperations
+}
+
+type InitialBaseSessionViews = {
+  readonly achievementToast: AchievementToastView
+  readonly colorVisionController: ColorVisionFilterController | null
+  readonly crosshair: CrosshairView
+  readonly hud: HudView
+  readonly inventory: InventoryView
+  readonly motionController: MotionPreferenceController
+  readonly overlays: SessionOverlays
+}
+
+const createInitialAchievementToast = (document: Document, ownedRoot: HTMLElement): AchievementToastView => {
+  const view = createAchievementToastView(document, ownedRoot)
+  view.render()
+  return view
+}
+
+const createInitializedSessionOverlays = (
+  context: CreateInitialOverlaysContext,
+): Result.Result<SessionOverlays, SessionOverlayInitializationFailure> => {
+  const overlays = createSessionOverlays(context.document, context.ownedRoot, {
+    callbacks: createMountedSettingsCallbacks(context.session, context.settingsOperations, context.options.settingsCallbacks),
+    delegateKeyDown: context.handleInventoryKey,
+    initialDebug: context.session.debugSnapshot,
+    initialLanguage: context.session.language,
+    initialSettingsSnapshot: context.session.settings,
+    onLanguageChange: context.settingsOperations.updateLanguage,
+  })
+  context.partial.overlays = overlays
+  return Result.map(overlays.initializationResult, () => overlays)
+}
+
+const createInitialBaseSessionViews = (
+  context: CreateInitialViewsContext,
+): Result.Result<InitialBaseSessionViews, MountInitializationFailure> => {
+  const baseViews = createBaseViews({ ...context, inventory: context.inventory })
+  return Result.flatMap(baseViews, ({
+    colorVisionController,
+    crosshair,
+    handleInventoryKey,
+    hud,
+    inventory,
+    motionController,
+  }) => {
+    const achievementToast = createInitialAchievementToast(context.document, context.ownedRoot)
+    return Result.map(createInitializedSessionOverlays({ ...context, handleInventoryKey }), (overlays) => ({
+      achievementToast,
+      colorVisionController,
+      crosshair,
+      hud,
+      inventory,
+      motionController,
+      overlays,
+    }))
+  })
+}
+
+type CreateInitialMainMenuContext = {
+  readonly document: Document
+  readonly ownedRoot: HTMLElement
+  readonly partial: PartialMount
+  readonly overlays: SessionOverlays
+  readonly callbacks: MainMenuCallbacks | undefined
+}
+
+const createInitialMainMenu = (context: CreateInitialMainMenuContext): MainMenuView => {
+  const mainMenu = createMainMenuView(
+    context.document,
+    context.ownedRoot,
+    buildMenuCallbacks(context.overlays, context.callbacks),
+  )
+  context.partial.mainMenu = mainMenu
+  mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
+  return mainMenu
+}
+
+const invalidInitialSettings = (failure: InitialSettingsFailure | null): UiMountError | null => {
+  if (failure === null) {
+    return null
+  }
+  if ('tag' in failure && failure.tag === 'InvalidInitialUiScale') {
+    return new UiMountError('Invalid initial UI scale')
+  }
+  return new UiMountError('Invalid initial settings snapshot')
+}
+
+const invalidInitialMountOption = (options: UiMountOptions): UiMountError | null => {
+  const invalidMenuCallbackField = invalidExternalMenuCallbackField(options.menuCallbacks)
+  if (typeof invalidMenuCallbackField !== 'undefined') {
+    return new UiMountError('Invalid initial main-menu callbacks', {
+      cause: { _tag: 'InvalidMainMenuViewInput', field: invalidMenuCallbackField },
     })
-    inventory.root.setAttribute('hidden', '')
-    renderInventory(inventory)
-    return inventory
   }
-
-  const createBaseViews = (
-    document: Document,
-    ownedRoot: HTMLElement,
-  ): {
-    readonly handleInventoryKey: (event: KeyboardEvent) => boolean
-    readonly hud: HudView
-    readonly crosshair: CrosshairView
-    readonly inventory: InventoryView
-  } => {
-    const hud = createHudView(document, ownedRoot, options.motion ?? 'full', {
-      onRespawn: options.onRespawn,
-    })
-    hud.render(session.hudModel)
-    const crosshair = createCrosshairView(document, ownedRoot, options.motion ?? 'full')
-    crosshair.render(session.crosshairModel)
-
-    const inventory = createBaseInventory(document, ownedRoot)
-
-    // No `if (!session.inventoryOpen) return` guard here, unlike the public
-    // `closeInventory` member below: this closure is only reachable through
-    // `dispatchInventoryKey`, and every key that reaches `INVENTORY_KEY_HANDLERS`
-    // (including Escape) is already gated by `!ctx.session.inventoryOpen`
-    // Returning `false` one level up — so `inventoryOpen` is always `true` here.
-    // A guard restating that would be a branch no key event can ever take.
-    const closeInventory = (): void => {
-      session.inventoryOpen = false
-      inventory.root.setAttribute('hidden', '')
-      const target = session.inventoryRestoreFocus
-      session.inventoryRestoreFocus = null
-      if (target?.isConnected === true) {
-        target.focus()
-      }
-      syncKeyboardFocus()
-    }
-    // No `if (session.inventoryOpen) return` guard here, unlike the public
-    // `openInventory` member below: this closure's only real caller is
-    // `handleToggleKey`, which calls it exclusively from the
-    // `!ctx.session.inventoryOpen` branch of its own toggle — so `inventoryOpen`
-    // Is always `false` here.
-    const openInventory = (): void => {
-      session.inventoryRestoreFocus = restoreFocusTarget(document.activeElement)
-      session.inventoryOpen = true
-      inventory.root.removeAttribute('hidden')
-      renderInventory(inventory, true)
-    }
-    const handleInventoryKey = (event: KeyboardEvent): boolean =>
-      dispatchInventoryKey(event, {
-        closeInventory,
-        openInventory,
-        session,
-      })
-
-    return { crosshair, handleInventoryKey, hud, inventory }
+  if (options.motion === null) {
+    return new UiMountError('Invalid initial motion preference')
   }
-
-  const createMainMenu = ({
-    document,
-    ownedRoot,
-    overlays,
-    partial,
-  }: Readonly<{
-    document: Document
-    ownedRoot: HTMLElement
-    overlays: SessionOverlays
-    partial: PartialMount
-  }>): MainMenuView => {
-    const mainMenu = createMainMenuView(
-      document,
-      ownedRoot,
-      buildMenuCallbacks(overlays, options.menuCallbacks),
-    )
-    partial.mainMenu = mainMenu
-    mainMenu.render(mainMenuViewModel(initialMainMenuState, []))
-    return mainMenu
+  if (options.colorVisionTarget === null) {
+    return new UiMountError('Invalid color-vision target')
   }
+  return null
+}
 
-  const createMountedViews = (
-    document: Document,
-    ownedRoot: HTMLElement,
-    partial: PartialMount,
-  ): UiMountedViews => {
-    const { crosshair, handleInventoryKey, hud, inventory } = createBaseViews(document, ownedRoot)
-    partial.hud = hud
-    const achievementToast = createAchievementToastView(document, ownedRoot)
-    achievementToast.render()
-    const overlays = createSessionOverlays(document, ownedRoot, {
-      callbacks: options.settingsCallbacks,
-      delegateKeyDown: handleInventoryKey,
-      initialDebug: session.debugSnapshot,
-      initialSettings: session.settings,
-    })
-    partial.overlays = overlays
-    const mainMenu = createMainMenu({ document, overlays, ownedRoot, partial })
-    applyUiLanguage(ownedRoot, session.language)
-    return { achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot }
+const invalidInitialMount = (options: UiMountOptions, session: UiMountSession): UiMountError | null => {
+  const invalidOption = invalidInitialMountOption(options)
+  if (invalidOption !== null) {
+    return invalidOption
   }
+  return invalidInitialSettings(session.settingsFailure)
+}
 
-  const buildMountedViews = (): Effect.Effect<UiMountedViews, UiMountError> =>
+export const makeUiMount = (options: UiMountOptions): UiMount => {
+  const { session, toastLifecycle } = createMountState(options)
+  const settingsOperations = createSettingsOperations(session)
+  const inventoryOperations = createInventoryOperations(session, options)
+  const unmount = createUnmountOperation(session, toastLifecycle)
+
+  const buildMountedViews = (): Effect.Effect<ActiveUiMount, UiMountError> =>
     Effect.gen(function* run() {
+      const initialFailure = invalidInitialMount(options, session)
+      if (initialFailure !== null) {
+        return yield* Effect.fail(initialFailure)
+      }
       const { document, ownedRoot } = yield* requireOwnedRoot(options.root)
-      const partial: PartialMount = { mainMenu: null, overlays: null, ownedRoot }
-      const uiScale = applyUiScale(ownedRoot.style, session.settings.uiScale)
-      if (Result.isFailure(uiScale)) {
-        return yield* Effect.andThen(
-          destroyPartialMount(partial),
-          Effect.fail(new UiMountError('Invalid initial UI scale', { cause: uiScale.failure })),
-        )
+      const partial: PartialMount = {
+        colorVisionController: null,
+        mainMenu: null,
+        motionController: null,
+        overlays: null,
+        ownedRoot,
       }
       const mount = Effect.try({
         catch: (cause) => new UiMountError('Failed to mount mx-ui', { cause }),
-        try: () => createMountedViews(document, ownedRoot, partial),
+        try: (): Result.Result<ActiveUiMount, MountInitializationFailure> =>
+          Result.map(createInitialBaseSessionViews({
+            document,
+            inventory: inventoryOperations,
+            options,
+            ownedRoot,
+            partial,
+            session,
+            settingsOperations,
+          }), ({
+            achievementToast,
+            colorVisionController,
+            crosshair,
+            hud,
+            inventory,
+            motionController,
+            overlays,
+          }) => {
+            const mainMenu = createInitialMainMenu({
+              callbacks: options.menuCallbacks,
+              document,
+              overlays,
+              ownedRoot,
+              partial,
+            })
+            applyUiLanguage(ownedRoot, session.language)
+            return {
+              colorVisionController,
+              motionController,
+              views: { achievementToast, crosshair, hud, inventory, mainMenu, overlays, root: ownedRoot },
+            }
+          }),
       })
-      return yield* Effect.catch(mount, (mountError) =>
+      const mountResult = Effect.flatMap(mount, (result) => {
+        if (Result.isFailure(result)) {
+          return Effect.fail(new UiMountError('Could not initialize mx-ui views', { cause: result.failure }))
+        }
+        return Effect.succeed(result.success)
+      })
+      return yield* Effect.catch(mountResult, (mountError) =>
         Effect.andThen(
           Effect.catch(destroyPartialMount(partial), (cleanupError) =>
             Effect.fail(
@@ -713,7 +1281,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
     })
 
   return {
-    activateInventoryFocus,
+    activateInventoryFocus: inventoryOperations.activateInventoryFocus,
     closeInventory: () => {
       if (!session.inventoryOpen) {
         return
@@ -725,7 +1293,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       if (target?.isConnected === true) {
         target.focus()
       }
-      syncKeyboardFocus()
+      inventoryOperations.syncKeyboardFocus()
     },
     closeSettings: () => session.mounted?.overlays.closeSettings(),
     current: () => {
@@ -734,9 +1302,9 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       }
       return session.mounted
     },
-    dragInventorySlot,
-    moveFocus,
-    moveInventoryFocus,
+    dragInventorySlot: inventoryOperations.dragInventorySlot,
+    moveFocus: inventoryOperations.moveFocus,
+    moveInventoryFocus: inventoryOperations.moveInventoryFocus,
     name: '@nerima-games/mx-ui',
     notifyHit: () => {
       const model = session.crosshairModel
@@ -761,7 +1329,7 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       session.inventoryRestoreFocus = restoreFocusTarget(options.root.ownerDocument.activeElement)
       session.inventoryOpen = true
       view.root.removeAttribute('hidden')
-      renderInventory(view, true)
+      inventoryOperations.renderInventory(view, true)
     },
     openSettings: () => session.mounted?.overlays.openSettings(),
     start: Effect.gen(function* start() {
@@ -769,8 +1337,15 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       return yield* Effect.onInterrupt(
         Effect.gen(function* completeStartup() {
           const mounted = yield* buildMountedViews()
-          session.mounted = mounted
-          yield* toastLifecycle.start(mounted)
+          session.motionController = mounted.motionController
+          session.colorVisionController = mounted.colorVisionController
+          session.applySettingsPreferences = createMountedSettingsPreferenceApplication(
+            mounted.views.root,
+            mounted.motionController,
+            mounted.colorVisionController,
+          )
+          session.mounted = mounted.views
+          yield* toastLifecycle.start(mounted.views)
           return createUiModuleInstance(uiModule.frameStages, toastLifecycle.read)
         }),
         () => unmount('Failed to roll back interrupted mx-ui startup'),
@@ -797,27 +1372,18 @@ export const makeUiMount = (options: UiMountOptions): UiMount => {
       session.inventoryModel = model
       const view = session.mounted?.inventory
       if (typeof view !== 'undefined') {
-        renderInventory(view, session.inventoryOpen)
+        inventoryOperations.renderInventory(view, session.inventoryOpen)
       }
     },
     updateInventoryActionState: (state) => {
       session.inventoryActionState = state
       const view = session.mounted?.inventory
       if (view) {
-        renderInventory(view)
+        inventoryOperations.renderInventory(view)
       }
     },
-    updateLanguage: (input) => {
-      const decoded = decodeUiLanguage(input)
-      if (Result.isFailure(decoded)) {
-        return decoded
-      }
-      session.language = decoded.success
-      if (session.mounted !== null) {
-        return applyUiLanguage(session.mounted.root, decoded.success)
-      }
-      return decoded
-    },
-    updateSettings: (nextSettings) => updateUiSettings(session, nextSettings),
+    updateLanguage: settingsOperations.updateLanguage,
+    updateSettings: settingsOperations.updateSettings,
+    updateSettingsSnapshot: settingsOperations.updateSettingsSnapshot,
   }
 }

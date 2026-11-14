@@ -26,6 +26,7 @@ import {
 } from './slot-element.js'
 import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
 import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement } from './ui-localization.js'
+import { Result } from 'effect'
 import { itemDisplayNameValue } from './item-display-name.js'
 
 export type FurnaceInteractionView = {
@@ -35,8 +36,120 @@ export type FurnaceInteractionView = {
 
 export type FurnaceView = {
   readonly root: DomElement
-  readonly render: (model: FurnaceViewModel, interaction?: FurnaceInteractionView) => void
+  readonly render: (
+    model: FurnaceViewModel | null,
+    interaction?: FurnaceInteractionView | null,
+  ) => Result.Result<void, FurnaceViewInputFailure>
 }
+
+type FurnaceViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidFurnaceViewInput'
+  readonly field: string
+}>
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const isValidItemDisplayNameFailure = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag')
+  return typeof tag === 'string' && [
+    'ItemDisplayNameUnavailable',
+    'InvalidItemId',
+    'MissingItemDisplayNameResolver',
+    'InvalidItemDisplayName',
+  ].includes(tag)
+}
+
+const isValidItemDisplayNameResult = (input: unknown): boolean => {
+  if (!isRecord(input)) {
+    return false
+  }
+  if (Reflect.get(input, '_tag') === 'Success') {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return Reflect.get(input, '_tag') === 'Failure' &&
+    isValidItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const isValidItemDisplayNameView = (input: unknown): boolean =>
+  isRecord(input) &&
+  (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
+  isValidItemDisplayNameResult(Reflect.get(input, 'result'))
+
+const invalidFurnaceSlotItemDisplayNameField = (slot: Record<string, unknown>): string | undefined => {
+  const itemDisplayName = Reflect.get(slot, 'itemDisplayName')
+  if (typeof itemDisplayName !== 'undefined' && !isValidItemDisplayNameView(itemDisplayName)) {
+    return 'slots[].itemDisplayName'
+  }
+  return
+}
+
+const invalidFurnaceSlotCountLabelField = (slot: Record<string, unknown>): string | undefined => {
+  const countLabel = Reflect.get(slot, 'countLabel')
+  if (typeof countLabel !== 'undefined' && typeof countLabel !== 'string') {
+    return 'slots[].countLabel'
+  }
+  return
+}
+
+const invalidFurnaceSlotField = (slot: unknown): string | undefined => {
+  if (typeof slot === 'undefined') {
+    return
+  }
+  if (!isRecord(slot)) {
+    return 'slots[].slot'
+  }
+  return invalidFurnaceSlotItemDisplayNameField(slot) ?? invalidFurnaceSlotCountLabelField(slot)
+}
+
+const invalidFurnaceModelSlotsField = (slots: ReadonlyArray<unknown>): string | undefined => {
+  for (const slot of slots) {
+    const field = invalidFurnaceSlotField(slot)
+    if (typeof field !== 'undefined') {
+      return field
+    }
+  }
+  return
+}
+
+const invalidFurnaceModelField = (model: unknown): string | undefined => {
+  if (!isRecord(model)) {
+    return 'model'
+  }
+  const slots = Reflect.get(model, 'slots')
+  if (!Array.isArray(slots)) {
+    return 'slots'
+  }
+  return invalidFurnaceModelSlotsField(slots)
+}
+
+const invalidFurnaceInteractionRecordField = (interaction: Record<string, unknown>): string | undefined => {
+  const focusedSlot = Reflect.get(interaction, 'focusedSlot')
+  if (typeof focusedSlot !== 'undefined' && !FURNACE_SLOT_IDS.some((slotId) => slotId === focusedSlot)) {
+    return 'interaction.focusedSlot'
+  }
+  const status = Reflect.get(interaction, 'status')
+  if (typeof status !== 'undefined' && typeof status !== 'string') {
+    return 'interaction.status'
+  }
+  return
+}
+
+const invalidFurnaceInteractionField = (interaction: unknown): string | undefined => {
+  if (typeof interaction === 'undefined') {
+    return
+  }
+  if (!isRecord(interaction)) {
+    return 'interaction'
+  }
+  return invalidFurnaceInteractionRecordField(interaction)
+}
+
+const invalidFurnaceViewInputField = (model: unknown, interaction: unknown): string | undefined =>
+  invalidFurnaceModelField(model) ?? invalidFurnaceInteractionField(interaction)
 
 export type FurnaceViewActions = {
   readonly onActivate?: (target: FurnaceSlotId) => void
@@ -218,15 +331,65 @@ const createFurnaceStatus = (factory: DomElementFactory, root: DomElement): Text
   return textCell(status)
 }
 
-const resolveFocusedSlot = (requested: FurnaceSlotId): FurnaceSlotId => {
-  // `FurnaceInteractionView` is a published type with no canonical constructor.
-  // A host can hand `render()` a stale or round-tripped value that only claims to satisfy the
-  // `FurnaceSlotId` union at compile time.
-  // Falling back to the input slot is the inert answer.
-  if (FURNACE_SLOT_IDS.includes(requested)) {
-    return requested
+type FurnaceSlotsProjection = Readonly<{
+  slots: ReadonlyArray<SlotElement>
+  slotViews: FurnaceViewModel['slots']
+  focusedSlot: FurnaceSlotId
+  interaction: FurnaceInteractionView | null | undefined
+}>
+
+const renderFurnaceSlots = ({ slots, slotViews, focusedSlot, interaction }: FurnaceSlotsProjection): void => {
+  for (const [index, slotElement] of slots.entries()) {
+    const slot = slotViews[index]
+    if (typeof slot !== 'undefined') {
+      updateSlotElement(slotElement, slot)
+      const focused = slot.id === focusedSlot
+      setSlotButtonView(slotElement, {
+        disabled: false,
+        focused: typeof interaction !== 'undefined' && focused,
+        label: '',
+        localizedLabel: slotAriaLabel(slot, uiLanguageForElement(slotElement.root)),
+        tabStop: focused,
+      })
+    }
   }
-  return 'input'
+}
+
+type FurnaceViewElements = Readonly<{
+  slots: ReadonlyArray<SlotElement>
+  cook: ProgressElement
+  burn: ProgressElement
+  statusText: TextCell
+}>
+
+type FurnaceRenderInput = FurnaceViewElements & Readonly<{
+  model: FurnaceViewModel | null
+  interaction: FurnaceInteractionView | null | undefined
+}>
+
+const projectFurnaceModel = (
+  elements: FurnaceViewElements,
+  model: FurnaceViewModel,
+  interaction: FurnaceInteractionView | null | undefined,
+): void => {
+  const focusedSlot = interaction?.focusedSlot ?? 'input'
+  renderFurnaceSlots({ focusedSlot, interaction, slotViews: model.slots, slots: elements.slots })
+  renderProgress(elements.cook, model.cookProgressPercent)
+  renderProgress(elements.burn, model.burnProgressPercent)
+  writeText(elements.statusText, interaction?.status ?? '')
+}
+
+const renderFurnaceModel = ({ slots, cook, burn, statusText, model, interaction }: FurnaceRenderInput):
+Result.Result<void, FurnaceViewInputFailure> => {
+  if (model === null) {
+    return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: 'model' })
+  }
+  const invalidField = invalidFurnaceViewInputField(model, interaction)
+  if (typeof invalidField !== 'undefined') {
+    return Result.fail({ _tag: 'InvalidFurnaceViewInput', field: invalidField })
+  }
+  projectFurnaceModel({ burn, cook, slots, statusText }, model, interaction)
+  return Result.void
 }
 
 /** Projects furnace state and wires optional native slot actions. */
@@ -246,32 +409,8 @@ export const createFurnaceView = (
   const statusText = createFurnaceStatus(factory, root)
 
   return {
-    render: (model: FurnaceViewModel, interaction?: FurnaceInteractionView): void => {
-      const focusedSlot = resolveFocusedSlot(interaction?.focusedSlot ?? 'input')
-
-      const renderFurnaceSlot = (slotElement: SlotElement, slot: FurnaceSlotView): void => {
-        updateSlotElement(slotElement, slot)
-        const focused = slot.id === focusedSlot
-        setSlotButtonView(slotElement, {
-          disabled: false,
-          focused: typeof interaction !== 'undefined' && focused,
-          label: '',
-          localizedLabel: slotAriaLabel(slot, uiLanguageForElement(slotElement.root)),
-          tabStop: focused,
-        })
-      }
-
-      for (const [index, slotElement] of slots.entries()) {
-        const slot = model.slots[index]
-        if (typeof slot !== 'undefined') {
-          renderFurnaceSlot(slotElement, slot)
-        }
-      }
-
-      renderProgress(cook, model.cookProgressPercent)
-      renderProgress(burn, model.burnProgressPercent)
-      writeText(statusText, interaction?.status ?? '')
-    },
+    render: (model: FurnaceViewModel | null, interaction?: FurnaceInteractionView | null) =>
+      renderFurnaceModel({ burn, cook, interaction, model, slots, statusText }),
     root,
   }
 }

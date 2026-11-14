@@ -52,7 +52,8 @@
  * because a timer that outlives the thing it was about will fire into a
  * crosshair that has since been taken down.
  */
-import { type ModalStack, pointerLockReleased } from './modal-stack.js'
+import { type ModalStack, type ScreenId, pointerLockReleased } from './modal-stack.js'
+import { Result } from 'effect'
 
 /**
  * How long a landed hit is marked.
@@ -88,6 +89,7 @@ export const IDLE_CROSSHAIR_STATUS: CrosshairStatus = {
 
 /**
  * What the crosshair shows right now, or `undefined` for nothing at all.
+ * Invalid input returns a typed failure.
  *
  * Named `CrosshairViewModel` rather than `CrosshairView` to leave the second name
  * to `application/crosshair-view.ts`, exactly as `HudViewModel` and
@@ -108,36 +110,165 @@ export type CrosshairViewModel = {
 const ZERO = 0
 const PROGRESS_UPPER_BOUND = 1
 
-/** Clamp a supplied break-progress value to 0-1, or report there is none. */
-const clampBreakProgress = (supplied: number | undefined): number | undefined => {
-  if (typeof supplied === 'undefined' || !Number.isFinite(supplied)) {
-    return
+type InvalidCrosshairViewModelInput = Readonly<{
+  readonly _tag: 'InvalidCrosshairViewModelInput'
+  readonly field: 'breakProgress' | 'lastHitAtSecs' | 'modals' | 'nowSecs' | 'pulseSecs' | 'status'
+}>
+
+type ValidatedCrosshairStatus = Readonly<{
+  readonly modals: ModalStack
+  readonly breakProgress: number | undefined
+  readonly lastHitAtSecs: number | undefined
+}>
+
+type CrosshairStatusRecord = Readonly<{
+  readonly status: Record<string, unknown>
+  readonly modals: ModalStack
+}>
+
+type ValidatedCrosshairTimes = Readonly<{
+  readonly nowSecs: number
+  readonly pulseSecs: number
+}>
+
+const SCREEN_IDS: ReadonlyArray<ScreenId> = [
+  'pause',
+  'settings',
+  'inventory',
+  'crafting',
+  'chat',
+  'achievements',
+  'statistics',
+]
+
+const isScreenId = (input: unknown): input is ScreenId =>
+  typeof input === 'string' && SCREEN_IDS.some((screen) => screen === input)
+
+const isFiniteSeconds = (input: unknown): input is number =>
+  typeof input === 'number' && Number.isFinite(input)
+
+const isModalStack = (input: unknown): input is ModalStack => {
+  if (!Array.isArray(input)) {
+    return false
   }
-  return Math.min(PROGRESS_UPPER_BOUND, Math.max(ZERO, supplied))
+  for (const screen of input) {
+    if (!isScreenId(screen)) {
+      return false
+    }
+  }
+  return true
+}
+
+const isCrosshairRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const invalidCrosshairViewModelInput = (
+  field: InvalidCrosshairViewModelInput['field'],
+): Result.Result<never, InvalidCrosshairViewModelInput> => Result.fail({
+  _tag: 'InvalidCrosshairViewModelInput',
+  field,
+})
+
+/** Clamp finite progress to 0-1 and preserve undefined as the no-progress state. */
+const clampBreakProgress = (
+  supplied: unknown,
+): Result.Result<number | undefined, InvalidCrosshairViewModelInput> => {
+  if (typeof supplied === 'undefined') {
+    // eslint-disable-next-line no-undefined -- Undefined represents the no-progress state.
+    return Result.succeed(undefined)
+  }
+  if (typeof supplied !== 'number' || !Number.isFinite(supplied)) {
+    return invalidCrosshairViewModelInput('breakProgress')
+  }
+  return Result.succeed(Math.min(PROGRESS_UPPER_BOUND, Math.max(ZERO, supplied)))
+}
+
+const readCrosshairStatusRecord = (
+  input: unknown,
+): Result.Result<CrosshairStatusRecord, InvalidCrosshairViewModelInput> => {
+  if (!isCrosshairRecord(input)) {
+    return invalidCrosshairViewModelInput('status')
+  }
+  const { modals } = input
+  if (!isModalStack(modals)) {
+    return invalidCrosshairViewModelInput('modals')
+  }
+  return Result.succeed({ modals, status: input })
+}
+
+const validateCrosshairStatus = (
+  input: unknown,
+): Result.Result<ValidatedCrosshairStatus, InvalidCrosshairViewModelInput> => {
+  const record = readCrosshairStatusRecord(input)
+  if (Result.isFailure(record)) {
+    return Result.fail(record.failure)
+  }
+  const { modals, status } = record.success
+  const { breakProgress: suppliedBreakProgress, lastHitAtSecs } = status
+  return Result.flatMap(clampBreakProgress(suppliedBreakProgress), (breakProgress) => {
+    if (typeof lastHitAtSecs !== 'undefined' && !isFiniteSeconds(lastHitAtSecs)) {
+      return invalidCrosshairViewModelInput('lastHitAtSecs')
+    }
+    return Result.succeed({ breakProgress, lastHitAtSecs, modals })
+  })
+}
+
+const validateCrosshairTimes = (
+  nowSecs: unknown,
+  pulseSecs: unknown,
+): Result.Result<ValidatedCrosshairTimes, InvalidCrosshairViewModelInput> => {
+  if (!isFiniteSeconds(nowSecs)) {
+    return invalidCrosshairViewModelInput('nowSecs')
+  }
+  if (!isFiniteSeconds(pulseSecs) || pulseSecs < ZERO) {
+    return invalidCrosshairViewModelInput('pulseSecs')
+  }
+  return Result.succeed({ nowSecs, pulseSecs })
+}
+
+// eslint-disable-next-line no-undefined -- Undefined is the public no-view state.
+const noCrosshairView = (): Result.Result<undefined, never> => Result.succeed(undefined)
+
+const isRecentHit = (
+  lastHitAtSecs: number | undefined,
+  nowSecs: number,
+  pulseSecs: number,
+): boolean => {
+  if (typeof lastHitAtSecs === 'undefined') {
+    return false
+  }
+  const since = nowSecs - lastHitAtSecs
+  // A NaN or a backwards clock shows NO hit, which is the opposite call from
+  // `saveStatusMessage` and `loadingScreenView` and for the same underlying
+  // Rule: choose the outcome that does not invent a claim. There, keeping a
+  // Message up claims nothing new. Here, a hit marker IS the claim: a hit that
+  // Stuck because of a bad subtraction would tell the player they connected
+  // When they missed.
+  return Number.isFinite(since) && since >= ZERO && since < pulseSecs
 }
 
 export const crosshairViewModel = (
   status: CrosshairStatus,
   nowSecs: number,
   pulseSecs: number = CROSSHAIR_PULSE_SECS,
-): CrosshairViewModel | undefined => {
-  if (pointerLockReleased(status.modals)) {
-    return
+): Result.Result<CrosshairViewModel | undefined, InvalidCrosshairViewModelInput> => {
+  const validatedStatus = validateCrosshairStatus(status)
+  if (Result.isFailure(validatedStatus)) {
+    return Result.fail(validatedStatus.failure)
   }
-  const breakProgress = clampBreakProgress(status.breakProgress)
-  const at = status.lastHitAtSecs
-  if (typeof at === 'undefined') {
-    return { breakProgress, hit: false }
+  const validatedTimes = validateCrosshairTimes(nowSecs, pulseSecs)
+  if (Result.isFailure(validatedTimes)) {
+    return Result.fail(validatedTimes.failure)
   }
-  const since = nowSecs - at
-  // A NaN or a backwards clock shows NO hit, which is the opposite call from
-  // `saveStatusMessage` and `loadingScreenView` and for the same underlying
-  // Rule: choose the outcome that does not invent a claim. There, keeping a
-  // Message up claims nothing new. Here, a hit marker IS the claim — 「you struck
-  // Something」 — and one that stuck because of a bad subtraction would tell the
-  // Player they connected when they missed.
-  return {
-    breakProgress,
-    hit: Number.isFinite(since) && since >= ZERO && since < pulseSecs,
+  if (pointerLockReleased(validatedStatus.success.modals)) {
+    return noCrosshairView()
   }
+  return Result.succeed({
+    breakProgress: validatedStatus.success.breakProgress,
+    hit: isRecentHit(
+      validatedStatus.success.lastHitAtSecs,
+      validatedTimes.success.nowSecs,
+      validatedTimes.success.pulseSecs,
+    ),
+  })
 }

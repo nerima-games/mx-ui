@@ -7,6 +7,7 @@ import {
   sessionHref,
   type SessionIdAllocationFailure,
 } from '../src/domain/session-navigation'
+import { asUiMessageText, asWorldSeedValue, asWorldTypeId } from './helpers/ui3-brand-values'
 
 // Mirrors mc-compose's `readSessionId` contract exactly (that module stayed
 // in mc-compose — see this file's header) so the generator here and the
@@ -33,7 +34,13 @@ describe('sessionHref', () => {
 
 describe('createSessionHref', () => {
   it('round-trips Unicode and reserved characters in creation metadata', () => {
-    const request: CreateWorldRequest = { mode: 'survival', name: '鉱山 & Plains / 100%?' }
+    const request: CreateWorldRequest = {
+      mode: 'survival',
+      name: asUiMessageText('鉱山 & Plains / 100%?'),
+      seed: { kind: 'fixed', value: asWorldSeedValue(73) },
+      difficulty: 'hard',
+      worldType: asWorldTypeId('standard'),
+    }
     const href = createSessionHref('world-123', request)
     const parsed = new URLSearchParams(new URL(href, 'https://example.test').search)
 
@@ -41,13 +48,41 @@ describe('createSessionHref', () => {
     expect(parsed.get('create')).toBe('1')
     expect(parsed.get('name')).toBe(request.name)
     expect(parsed.get('mode')).toBe('survival')
+    expect(parsed.get('difficulty')).toBe('hard')
+    expect(parsed.get('worldType')).toBe('standard')
+    expect(parsed.get('seedKind')).toBe('fixed')
+    expect(parsed.get('seed')).toBe('73')
   })
 
-  it('carries the creative mode through unchanged', () => {
-    const href = createSessionHref('id', { mode: 'creative', name: 'Flat World' })
+  it('carries all options and a random seed without inventing a numeric seed', () => {
+    const request: CreateWorldRequest = {
+      mode: 'creative',
+      name: asUiMessageText('Flat World'),
+      seed: { kind: 'random' },
+      difficulty: 'peaceful',
+      worldType: asWorldTypeId('flat-like-host-option'),
+    }
+    const href = createSessionHref('id', request)
     const parsed = new URLSearchParams(new URL(href, 'https://example.test').search)
 
     expect(parsed.get('mode')).toBe('creative')
+    expect(parsed.get('difficulty')).toBe('peaceful')
+    expect(parsed.get('worldType')).toBe('flat-like-host-option')
+    expect(parsed.get('seedKind')).toBe('random')
+    expect(parsed.has('seed')).toBe(false)
+  })
+
+  it('omits a world type when the host has not selected one', () => {
+    const request: CreateWorldRequest = {
+      mode: 'survival',
+      name: asUiMessageText('Untyped world'),
+      seed: { kind: 'random' },
+      difficulty: 'normal',
+    }
+    const parsed = new URLSearchParams(new URL(createSessionHref('new-world', request), 'https://example.test').search)
+
+    expect(parsed.get('session')).toBe('new-world')
+    expect(parsed.has('worldType')).toBe(false)
   })
 })
 

@@ -5,7 +5,14 @@ import {
 } from '../domain/onboarding-view-model.js'
 import { type TextCell, textCell } from './dom-write.js'
 import { type UiMessageKey, inputActionMessageKey } from '../domain/ui-language.js'
-import { inheritUiLanguage, setLocalizedAttribute, setLocalizedText, writeLocalizedText } from './ui-localization.js'
+import {
+  inheritUiLanguage,
+  setLocalizedAttribute,
+  setLocalizedText,
+  writeLocalizedText,
+  writeLocalizedTextUsing,
+} from './ui-localization.js'
+import { keyDisplayName } from '../domain/key-display-name.js'
 
 export type OnboardingCallbacks = {
   readonly onIntent: (intent: OnboardingIntent) => void
@@ -26,7 +33,7 @@ type QuickControlRowElements = {
   readonly row: DomElement
   readonly action: DomElement
   readonly actionText: TextCell
-  readonly keys: DomElement
+  readonly keys: TextCell
 }
 
 type TextBlockOptions = {
@@ -103,7 +110,7 @@ const createQuickControlRow = (
   const keys = factory.createElement('kbd')
   row.appendChild(keys)
   parent.appendChild(row)
-  return { action, actionText: textCell(action), keys, row }
+  return { action, actionText: textCell(action), keys: textCell(keys), row }
 }
 
 const createActionButton = ({ action, factory, intent, labelKey, onIntent, parent }: ActionButtonOptions): void => {
@@ -147,7 +154,7 @@ const writeQuickControlRow = (row: QuickControlRowElements, hint: OnboardingView
   writeLocalizedText(row.actionText, 'onboarding.action', {
     action: { key: inputActionMessageKey(hint.action) },
   })
-  row.keys.textContent = hint.keys
+  writeLocalizedTextUsing(row.keys, (language) => keyDisplayName(hint.keys, language))
 }
 
 const hideExtraRows = (rows: ReadonlyArray<QuickControlRowElements>, visibleCount: number): void => {

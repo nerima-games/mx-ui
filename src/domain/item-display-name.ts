@@ -29,10 +29,33 @@ export type ItemDisplayNameOptions = Readonly<{
   readonly resolver: ItemDisplayNameResolver
 }>
 
+type InvalidItemDisplayNameOptions = null | Readonly<{
+  readonly language: UiLanguage | null | undefined
+  readonly resolver: ItemDisplayNameResolver | null | undefined
+}>
+
 export type ItemDisplayNameView = Readonly<{
   readonly language: UiLanguage
   readonly result: Result.Result<ItemDisplayName, ItemDisplayNameFailure>
 }>
+
+type InvalidItemDisplayNameOptionsView = Readonly<{
+  readonly language: undefined
+  readonly result: Result.Result<ItemDisplayName, Readonly<{ readonly _tag: 'InvalidItemDisplayNameOptions' }>>
+}>
+
+const invalidItemDisplayNameOptionsView = (): InvalidItemDisplayNameOptionsView => ({
+  language: Reflect.get({}, 'language'),
+  result: Result.fail({ _tag: 'InvalidItemDisplayNameOptions' }),
+})
+
+const isItemDisplayNameOptions = (input: unknown): input is ItemDisplayNameOptions =>
+  typeof input === 'object' &&
+  input !== null &&
+  'language' in input &&
+  (input.language === 'en' || input.language === 'ja') &&
+  'resolver' in input &&
+  typeof input.resolver === 'function'
 
 const itemTypeFromId = (input: unknown): ItemType | undefined => {
   if (typeof input !== 'string') {
@@ -90,13 +113,34 @@ export const resolveItemDisplayName = (
   return resolveForItemType(itemType, language, resolver)
 }
 
-export const itemDisplayNameView = (
+export function itemDisplayNameView(
   itemId: unknown,
   options?: ItemDisplayNameOptions,
-): ItemDisplayNameView => {
-  const language = options?.language ?? 'en'
+): ItemDisplayNameView
+export function itemDisplayNameView(
+  itemId: unknown,
+  options: InvalidItemDisplayNameOptions,
+): InvalidItemDisplayNameOptionsView
+export function itemDisplayNameView(
+  itemId: unknown,
+  options: ItemDisplayNameOptions | InvalidItemDisplayNameOptions,
+): ItemDisplayNameView | InvalidItemDisplayNameOptionsView
+export function itemDisplayNameView(
+  itemId: unknown,
+  options?: ItemDisplayNameOptions | InvalidItemDisplayNameOptions,
+): ItemDisplayNameView | InvalidItemDisplayNameOptionsView {
+  if (typeof options === 'undefined') {
+    const language: UiLanguage = 'en'
+    return {
+      language,
+      result: resolveItemDisplayName(itemId, language),
+    }
+  }
+  if (!isItemDisplayNameOptions(options)) {
+    return invalidItemDisplayNameOptionsView()
+  }
   return {
-    language,
-    result: resolveItemDisplayName(itemId, language, options?.resolver),
+    language: options.language,
+    result: resolveItemDisplayName(itemId, options.language, options.resolver),
   }
 }

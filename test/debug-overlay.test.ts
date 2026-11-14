@@ -1,4 +1,5 @@
 import { Result, Schema } from 'effect'
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
@@ -147,5 +148,90 @@ describe('debugOverlayModel', () => {
       gpuTimingSupported: true,
       qualityPreset: 'medium',
     })
+  })
+
+  it.each([
+    ['cameraPose', 'cameraPose'],
+    ['dimension', 'dimension'],
+    ['worldTime', 'worldTime'],
+    ['frame', 'frame'],
+    ['gpuTimingSupported', 'gpuTimingSupported'],
+    ['qualityPreset', 'qualityPreset'],
+    ['latestGpuTimeMs', 'latestGpuTimeMs'],
+  ] as const)('rejects explicit null for %s with a typed failure', (property, field) => {
+    const snapshot: Record<string, unknown> = { ...emptySnapshot() }
+    Reflect.set(snapshot, property, null)
+
+    expect(debugOverlayModel(snapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field }),
+    )
+  })
+
+  it('returns a typed failure for non-finite camera pose angles', () => {
+    const invalidPitch = { ...emptySnapshot(), cameraPose: { pitchRadians: Number.NaN, yawRadians: 0 } }
+    const invalidYaw = { ...emptySnapshot(), cameraPose: { pitchRadians: 0, yawRadians: Number.POSITIVE_INFINITY } }
+
+    expect(debugOverlayModel(invalidPitch)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'cameraPose' }),
+    )
+    expect(debugOverlayModel(invalidYaw)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'cameraPose' }),
+    )
+  })
+
+  it.each([
+    { label: 'a non-record', worldTime: 7 },
+    { label: 'a null tick counter', worldTime: { ticks: null, dayLengthTicks: 24_000 } },
+    { label: 'a non-numeric day length', worldTime: { ticks: 0, dayLengthTicks: false } },
+    { label: 'a zero day length', worldTime: { ticks: 0, dayLengthTicks: 0 } },
+  ])('rejects world time with $label instead of projecting it', ({ worldTime }) => {
+    const snapshot: Record<string, unknown> = { ...emptySnapshot(), worldTime }
+
+    expect(debugOverlayModel(snapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'worldTime' }),
+    )
+  })
+
+  it('returns a typed snapshot failure when a getter changes during validation', () => {
+    let reads = 0
+    const unstableSnapshot = new Proxy(emptySnapshot(), {
+      get: (target, property, receiver) => {
+        if (property === 'cameraPose') {
+          reads += 1
+          return reads === 1 ? null : undefined
+        }
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    expect(debugOverlayModel(unstableSnapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'snapshot' }),
+    )
+  })
+
+  it('rejects null nested frame values with typed failures', () => {
+    const noCameraPosition: Record<string, unknown> = {
+      ...emptySnapshot(),
+      frame: { deltaSecs: 0.5, cameraPosition: null },
+    }
+    const noDelta: Record<string, unknown> = {
+      ...emptySnapshot(),
+      frame: { deltaSecs: null, cameraPosition: { worldX: 0, worldY: 64, worldZ: -0.5 } },
+    }
+
+    expect(debugOverlayModel(noCameraPosition)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'frame.cameraPosition' }),
+    )
+    expect(debugOverlayModel(noDelta)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: 'frame.deltaSecs' }),
+    )
+  })
+
+  it('returns a typed failure rather than throwing for arbitrary snapshot input', () => {
+    fc.assert(fc.property(fc.anything(), (snapshot) => {
+      const output = debugOverlayModel(snapshot)
+      const isFailure = typeof output === 'object' && output !== null && Reflect.get(output, '_tag') === 'Failure'
+      expect(isFailure || 'coordinates' in output).toBe(true)
+    }))
   })
 })

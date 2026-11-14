@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Result } from 'effect'
+import * as fc from 'fast-check'
 import * as ui from '../src/index'
 import {
   applyColorVisionMatrix,
@@ -20,6 +21,7 @@ import {
   HOTBAR_SLOT_COUNT,
   hudViewModel,
   iconRow,
+  slotView,
   spawnSnapshot,
 } from '../src/domain/hud-view-model'
 import {
@@ -66,7 +68,31 @@ const testItemStack = (
   }
   expect.fail(`mc-sim itemStack failed: ${JSON.stringify(result.failure)}`)
 }
+
+const isTaggedResult = (input: unknown): input is Result.Result<unknown, unknown> =>
+  typeof input === 'object' && input !== null && Reflect.has(input, '_tag')
+
 describe('HUD projection from mc-sim state', () => {
+  it.effect('hudViewModel rejects a null stack count instead of projecting an empty hotbar slot', () =>
+    Effect.sync(() => {
+      const nullCount = hudViewModel(spawnSnapshot, [{ item: 'stone', count: null }], 0)
+      expect(Result.isFailure(nullCount)).toBe(true)
+      if (Result.isFailure(nullCount)) {
+        expect(nullCount.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+      }
+
+      fc.assert(
+        fc.property(fc.string(), (item) => {
+          const result = hudViewModel(spawnSnapshot, [{ item, count: null }], 0)
+          expect(Result.isFailure(result)).toBe(true)
+          if (Result.isFailure(result)) {
+            expect(result.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+          }
+        }),
+      )
+    }),
+  )
+
   it.effect('projects owner vitals into icon rows and selects the supplied hotbar slot', () =>
     Effect.sync(() => {
       expect(iconRow(20, 20)).toStrictEqual(Array.from({ length: 10 }, () => 'full'))
@@ -570,6 +596,32 @@ describe('inventory and crafting project state without interpreting it', () => {
     ),
   })
 
+  it.effect('inventoryViewModel rejects explicit null stack counts across the snapshot', () =>
+    Effect.sync(() => {
+      const result = inventoryViewModel({
+        ...emptyInventorySnapshot,
+        inventory: { ...emptyInventorySnapshot.inventory, slots: [{ item: 'stone', count: null }] },
+      })
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isFailure(result)) {
+        expect(result.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+      }
+
+      fc.assert(
+        fc.property(fc.string(), (item) => {
+          const invalid = inventoryViewModel({
+            ...emptyInventorySnapshot,
+            inventory: { ...emptyInventorySnapshot.inventory, slots: [{ item, count: null }] },
+          })
+          expect(Result.isFailure(invalid)).toBe(true)
+          if (Result.isFailure(invalid)) {
+            expect(invalid.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+          }
+        }),
+      )
+    }),
+  )
+
   it.effect('the projection is pure, total and the same for the same input', () =>
     Effect.sync(() => {
       const snapshot = inventoryWith({ inventory: filled(0, 'diamond_pickaxe', 1) })
@@ -906,6 +958,107 @@ describe('inventory and crafting project state without interpreting it', () => {
       // going through `slotView` — which has its own, independent fallback and
       // would otherwise be the only thing keeping this promise.
       expect(slotSnapshotOf(undefined).count).toBe(0)
+    }),
+  )
+
+  it.effect('slotSnapshotOf rejects explicit null while preserving empty and occupied slot projections', () =>
+    Effect.sync(() => {
+      const nullSlot = slotSnapshotOf(null)
+      expect(Result.isFailure(nullSlot)).toBe(true)
+      if (Result.isFailure(nullSlot)) {
+        expect(nullSlot.failure).toStrictEqual({ _tag: 'NullInventorySlot' })
+      }
+      const nullCount = slotSnapshotOf({ item: 'stone', count: null })
+      expect(Result.isFailure(nullCount)).toBe(true)
+      if (Result.isFailure(nullCount)) {
+        expect(nullCount.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+      }
+
+      const slots = fc.oneof(
+        fc.constant(null),
+        fc.constant(undefined),
+        fc.integer({ min: 1, max: 64 }).map((count) => testItemStack('stone', count)),
+      )
+      fc.assert(
+        fc.property(slots, (slot) => {
+          const snapshot = slotSnapshotOf(slot)
+          if (isTaggedResult(snapshot)) {
+            if (Result.isFailure(snapshot)) {
+              expect(snapshot.failure).toStrictEqual({ _tag: 'NullInventorySlot' })
+              expect(slot).toBeNull()
+              return
+            }
+            throw new Error('a valid mc-sim slot must not be wrapped in a success Result')
+          }
+          if (slot === null) {
+            throw new Error('an explicit null slot must fail')
+          }
+          expect(snapshot.count).toBe(slot?.count ?? 0)
+          expect(snapshot.itemId).toBe(slot?.item)
+        }),
+      )
+      fc.assert(
+        fc.property(fc.string(), (item) => {
+          const invalid = slotSnapshotOf({ item, count: null })
+          expect(Result.isFailure(invalid)).toBe(true)
+          if (Result.isFailure(invalid)) {
+            expect(invalid.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+          }
+        }),
+      )
+    }),
+  )
+
+  it.effect('slotView rejects explicit null instead of drawing an empty slot', () =>
+    Effect.sync(() => {
+      const nullSlot = slotView(null, 0, 0)
+      expect(Result.isFailure(nullSlot)).toBe(true)
+      if (Result.isFailure(nullSlot)) {
+        expect(nullSlot.failure).toStrictEqual({ _tag: 'NullSlotViewInput' })
+      }
+      const nullCount = slotView({ itemId: 'stone', count: null }, 0, 0)
+      expect(Result.isFailure(nullCount)).toBe(true)
+      if (Result.isFailure(nullCount)) {
+        expect(nullCount.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+      }
+      expect(slotView(undefined, 0, 0).empty).toBe(true)
+
+      const slots = fc.oneof(
+        fc.constant(null),
+        fc.constant(undefined),
+        fc.integer({ min: 1, max: 64 }).map((count) => testItemStack('stone', count)),
+      )
+      fc.assert(
+        fc.property(slots, (slot) => {
+          const view = slotView(slot, 0, 0)
+          if (slot === null) {
+            expect(isTaggedResult(view)).toBe(true)
+            if (isTaggedResult(view)) {
+              expect(Result.isFailure(view)).toBe(true)
+              if (Result.isFailure(view)) {
+                expect(view.failure).toStrictEqual({ _tag: 'NullSlotViewInput' })
+              }
+            }
+            return
+          }
+          if (isTaggedResult(view)) {
+            throw new Error('a valid mc-sim slot must project directly')
+          }
+          expect(view.empty).toBe(typeof slot === 'undefined')
+          if (typeof slot !== 'undefined') {
+            expect(view.itemId).toBe(slot.item)
+          }
+        }),
+      )
+      fc.assert(
+        fc.property(fc.string(), (itemId) => {
+          const invalid = slotView({ itemId, count: null }, 0, 0)
+          expect(Result.isFailure(invalid)).toBe(true)
+          if (Result.isFailure(invalid)) {
+            expect(invalid.failure).toStrictEqual({ _tag: 'InvalidSlotCount' })
+          }
+        }),
+      )
     }),
   )
 

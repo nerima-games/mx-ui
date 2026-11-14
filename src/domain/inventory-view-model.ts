@@ -42,6 +42,7 @@ import {
 } from './hud-view-model.js'
 import { INVENTORY_SLOT_COUNT, type Inventory, type ItemStack, type Slot } from '@nerima-games/mc-sim'
 import type { ItemDisplayNameOptions } from './item-display-name.js'
+import { Result } from 'effect'
 
 export { INVENTORY_SLOT_COUNT }
 
@@ -133,6 +134,79 @@ export type InventorySnapshot = {
   readonly mergeableSlotIndices: ReadonlySet<number> | undefined
 }
 
+type InvalidCountSlot = Readonly<{
+  readonly count: null | undefined
+  readonly item?: unknown
+  readonly itemId?: unknown
+}>
+type SlotWithInvalidCount = Slot | InvalidCountSlot
+type InventoryWithInvalidCount = Omit<Inventory, 'slots'> & Readonly<{
+  readonly slots: ReadonlyArray<SlotWithInvalidCount>
+}>
+type CraftingResultWithInvalidCount =
+  | { readonly _tag: 'Match'; readonly output: ItemStack | InvalidCountSlot }
+  | { readonly _tag: 'NoMatch' }
+type CraftingSnapshotWithInvalidCount = Omit<CraftingSnapshot, 'grid' | 'result'> & Readonly<{
+  readonly grid: ReadonlyArray<SlotWithInvalidCount>
+  readonly result: CraftingResultWithInvalidCount | undefined
+}>
+type InventorySnapshotInputWithInvalidCount = Omit<
+  InventorySnapshot,
+  'inventory' | 'carried' | 'armour' | 'offhand' | 'crafting'
+> & Readonly<{
+  readonly inventory: InventoryWithInvalidCount
+  readonly carried: SlotWithInvalidCount
+  readonly armour: ReadonlyArray<SlotWithInvalidCount> | undefined
+  readonly offhand: SlotWithInvalidCount | null
+  readonly crafting: CraftingSnapshotWithInvalidCount | undefined
+}>
+type InvalidInventorySnapshot = Omit<InventorySnapshot, 'inventory'> & Readonly<{
+  readonly inventory: Omit<Inventory, 'slots'> & Readonly<{
+    readonly slots: readonly [InvalidCountSlot, ...InvalidCountSlot[]]
+  }>
+}>
+type InvalidInventorySlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
+const isCraftingMatch = (
+  result: CraftingResultWithInvalidCount | undefined,
+): result is Extract<CraftingResultWithInvalidCount, { readonly _tag: 'Match' }> =>
+  typeof result !== 'undefined' && Reflect.get(result, '_tag') === 'Match'
+
+const craftingSlotsFrom = (
+  crafting: CraftingSnapshotWithInvalidCount | undefined,
+): ReadonlyArray<SlotWithInvalidCount> => {
+  if (typeof crafting === 'undefined') {
+    return []
+  }
+  const { grid, result } = crafting
+  if (isCraftingMatch(result)) {
+    return [...grid, result.output]
+  }
+  return grid
+}
+
+const armourSlotsFrom = (armour: ReadonlyArray<SlotWithInvalidCount> | undefined): ReadonlyArray<SlotWithInvalidCount> => {
+  if (typeof armour === 'undefined') {
+    return []
+  }
+  return armour
+}
+
+const hasValidInventorySlotCounts = (
+  snapshot: InventorySnapshotInputWithInvalidCount,
+): snapshot is InventorySnapshot => {
+  const craftingSlots = craftingSlotsFrom(snapshot.crafting)
+  const armourSlots = armourSlotsFrom(snapshot.armour)
+  const slots: ReadonlyArray<SlotWithInvalidCount | null> = [
+    ...snapshot.inventory.slots,
+    snapshot.carried,
+    ...armourSlots,
+    snapshot.offhand,
+    ...craftingSlots,
+  ]
+  return !slots.some((slot) => slot !== null && typeof slot !== 'undefined' && typeof slot.count !== 'number')
+}
+
 // ---------------------------------------------------------------------------
 // The projection
 // ---------------------------------------------------------------------------
@@ -219,11 +293,41 @@ const EMPTY_STACK_COUNT = 0
  * because `slotView` already knows what to do with one and DN-UI-7c is about
  * what happens when two places decide separately what "empty" means.
  */
-export const slotSnapshotOf = (slot: Slot, durability?: number): HotbarSlotSnapshot => ({
+type NullSlotSnapshotFailure = Readonly<{ readonly _tag: 'NullInventorySlot' }>
+type InvalidSlotCountInput = Readonly<{ readonly count: null | undefined; readonly item?: unknown }>
+type InvalidSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
+const slotSnapshotOfValidSlot = (slot: Slot, durability?: number): HotbarSlotSnapshot => ({
   count: slot?.count ?? EMPTY_STACK_COUNT,
   durability,
   itemId: slot?.item,
 })
+
+export function slotSnapshotOf(slot: Slot, durability?: number): HotbarSlotSnapshot
+export function slotSnapshotOf(
+  slot: null,
+  durability?: number,
+): Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure>
+export function slotSnapshotOf(
+  slot: InvalidSlotCountInput,
+  durability?: number,
+): Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure>
+export function slotSnapshotOf(
+  slot: Slot | InvalidSlotCountInput | null,
+  durability?: number,
+): HotbarSlotSnapshot | Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure>
+export function slotSnapshotOf(
+  slot: Slot | InvalidSlotCountInput | null,
+  durability?: number,
+): HotbarSlotSnapshot | Result.Result<HotbarSlotSnapshot, NullSlotSnapshotFailure | InvalidSlotCountFailure> {
+  if (slot === null) {
+    return Result.fail({ _tag: 'NullInventorySlot' })
+  }
+  if (typeof slot !== 'undefined' && typeof slot.count !== 'number') {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
+  return slotSnapshotOfValidSlot(slot, durability)
+}
 
 type ProjectRegionOptions = {
   readonly id: RegionId
@@ -404,10 +508,21 @@ const mergeTargetsOf = (indices: ReadonlySet<number> | undefined): MergeTargets 
  * because on this screen the plausible answer and the true one differ in
  * exactly the cases a player would notice.
  */
-export const inventoryViewModel = (
+export function inventoryViewModel(
+  snapshot: InvalidInventorySnapshot,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): Result.Result<InventoryViewModel, InvalidInventorySlotCountFailure>
+export function inventoryViewModel(
   snapshot: InventorySnapshot,
   itemDisplayNameOptions?: ItemDisplayNameOptions,
-): InventoryViewModel => {
+): InventoryViewModel
+export function inventoryViewModel(
+  snapshot: InventorySnapshot | InventorySnapshotInputWithInvalidCount,
+  itemDisplayNameOptions?: ItemDisplayNameOptions,
+): InventoryViewModel | Result.Result<InventoryViewModel, InvalidInventorySlotCountFailure> {
+  if (!hasValidInventorySlotCounts(snapshot)) {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
   const { slots } = snapshot.inventory
   const selectedHotbarIndex = clampIndex(
     snapshot.selectedHotbarIndex,

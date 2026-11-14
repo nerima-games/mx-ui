@@ -6,7 +6,14 @@ import {
   MouseSensitivity,
   VolumeLevel,
 } from '@nerima-games/mc-kernel/domain/settings'
-import { DEFAULT_SETTINGS, isValidSettings } from '@nerima-games/mc-sim'
+import {
+  DEFAULT_SETTINGS,
+  MAX_RENDER_DISTANCE,
+  MAX_VOLUME,
+  MIN_RENDER_DISTANCE,
+  MIN_VOLUME,
+  isValidSettings,
+} from '@nerima-games/mc-sim'
 import { Result } from 'effect'
 import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +21,7 @@ import {
   COLOR_VISION_CHOICES,
   DIFFICULTY_CHOICES,
   GRAPHICS_PRESET_CHOICES,
+  LANGUAGE_CHOICES,
   REDUCED_MOTION_CHOICES,
   settingsViewModel,
   type SettingsSnapshot,
@@ -53,7 +61,9 @@ const NUMERIC_SETTING_RANGES = [
   { field: 'fovDegrees', maximum: 110, minimum: 30 },
   { field: 'uiScale', maximum: 1.5, minimum: 0.75 },
   { field: 'mouseSensitivity', maximum: 3, minimum: 0.1 },
+  { field: 'renderDistance', maximum: MAX_RENDER_DISTANCE, minimum: MIN_RENDER_DISTANCE },
   { field: 'masterVolume', maximum: 1, minimum: 0 },
+  { field: 'musicVolume', maximum: MAX_VOLUME, minimum: MIN_VOLUME },
   { field: 'sfxVolume', maximum: 1, minimum: 0 },
 ] as const
 
@@ -76,7 +86,21 @@ describe('settingsViewModel', () => {
     expect(model.reducedMotion).toBe('reduced')
     expect(model.colorVisionCorrection).toBe('off')
     expect(model.mouseSensitivity).toStrictEqual({ label: '1.2×', maximum: 3, minimum: 0.1, step: 0.1, value: 1.2 })
+    expect(model.renderDistance).toStrictEqual({
+      label: `${String(SNAPSHOT.renderDistance)} chunks`,
+      maximum: MAX_RENDER_DISTANCE,
+      minimum: MIN_RENDER_DISTANCE,
+      step: 1,
+      value: SNAPSHOT.renderDistance,
+    })
     expect(model.masterVolume).toStrictEqual({ label: '80%', maximum: 1, minimum: 0, step: 0.01, value: 0.8 })
+    expect(model.musicVolume).toStrictEqual({
+      label: `${String(Math.round(DEFAULT_SETTINGS.musicVolume * 100))}%`,
+      maximum: MAX_VOLUME,
+      minimum: MIN_VOLUME,
+      step: 0.01,
+      value: DEFAULT_SETTINGS.musicVolume,
+    })
     expect(model.sfxVolume).toStrictEqual({ label: '42%', maximum: 1, minimum: 0, step: 0.01, value: 0.42 })
     expect(model.fovDegrees).toStrictEqual({ label: '92°', maximum: 110, minimum: 30, step: 1, value: 92 })
     expect(model.uiScale).toStrictEqual({ label: '1.25×', maximum: 1.5, minimum: 0.75, step: 0.05, value: 1.25 })
@@ -89,6 +113,8 @@ describe('settingsViewModel', () => {
       fovDegrees: fc.integer({ min: 30, max: 110 }).map((value) => FieldOfViewDegrees(value)),
       masterVolume: fc.integer({ min: 0, max: 100 }).map((value) => VolumeLevel(value / 100)),
       mouseSensitivity: fc.integer({ min: 1, max: 30 }).map((value) => MouseSensitivity(value / 10)),
+      musicVolume: fc.integer({ min: 0, max: 100 }).map((value) => VolumeLevel(value / 100)),
+      renderDistance: fc.integer({ min: MIN_RENDER_DISTANCE, max: MAX_RENDER_DISTANCE }),
       sfxVolume: fc.integer({ min: 0, max: 100 }).map((value) => VolumeLevel(value / 100)),
       uiScale: fc.integer({ min: 75, max: 150 }).map((value) => value / 100),
     })
@@ -107,6 +133,10 @@ describe('settingsViewModel', () => {
           result.success.masterVolume.label === `${String(Math.round(values.masterVolume * 100))}%` &&
           result.success.mouseSensitivity.value === values.mouseSensitivity &&
           result.success.mouseSensitivity.label === `${String(values.mouseSensitivity)}×` &&
+          result.success.musicVolume.value === values.musicVolume &&
+          result.success.musicVolume.label === `${String(Math.round(values.musicVolume * 100))}%` &&
+          result.success.renderDistance.value === values.renderDistance &&
+          result.success.renderDistance.label === `${String(values.renderDistance)} chunks` &&
           result.success.sfxVolume.value === values.sfxVolume &&
           result.success.sfxVolume.label === `${String(Math.round(values.sfxVolume * 100))}%` &&
           result.success.uiScale.value === values.uiScale &&
@@ -149,6 +179,7 @@ describe('settingsViewModel', () => {
     expect(DIFFICULTY_CHOICES.map(({ value }) => value)).toStrictEqual(DIFFICULTIES)
     expect(GRAPHICS_PRESET_CHOICES.map(({ value }) => value)).toStrictEqual(['low', 'medium', 'high', 'ultra'])
     expect(REDUCED_MOTION_CHOICES.map(({ value }) => value)).toStrictEqual(['system', 'full', 'reduced'])
+    expect(LANGUAGE_CHOICES.map(({ value }) => value)).toStrictEqual(['en', 'ja'])
     expect(COLOR_VISION_CHOICES.map(({ value }) => value)).toStrictEqual([
       'off',
       'protanopia',
@@ -173,6 +204,94 @@ describe('settingsViewModel', () => {
       expect(makeModelResult(input)).toStrictEqual(
         Result.fail({ _tag: 'InvalidSettingsSnapshot' }),
       )
+    }
+  })
+
+  it.each([
+    { bindings: null, label: 'a null bindings record' },
+    { bindings: 7, label: 'a non-record bindings value' },
+    { bindings: {}, label: 'a missing fallback key' },
+    { bindings: { attack: null }, label: 'a null fallback code' },
+    { bindings: { attack: 7 }, label: 'a non-string fallback code' },
+    { bindings: { attack: '' }, label: 'a blank fallback code' },
+  ])('returns a typed failure for $label', ({ bindings }) => {
+    const settingsWithoutAttackBinding = { ...SNAPSHOT, keyBindings: {} }
+    const result = Reflect.apply(settingsViewModel, undefined, [settingsWithoutAttackBinding, bindings, ['attack']])
+
+    expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsDefaultBindings' }))
+  })
+
+  it('property: validates fallback bindings before projecting a missing settings binding', () => {
+    const settingsWithoutAttackBinding = { ...SNAPSHOT, keyBindings: {} }
+    fc.assert(
+      fc.property(fc.anything(), (bindings) => {
+        const result = Reflect.apply(settingsViewModel, undefined, [settingsWithoutAttackBinding, bindings, ['attack']])
+        const candidate =
+          bindings !== null && typeof bindings === 'object' && !Array.isArray(bindings) && Object.hasOwn(bindings, 'attack')
+            ? Reflect.get(bindings, 'attack')
+            : undefined
+        const validCode = typeof candidate === 'string' && KernelKeyCode.is(candidate)
+
+        if (!validCode) {
+          expect(result).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsDefaultBindings' }))
+          return true
+        }
+
+        if (!Result.isResult(result) || !Result.isSuccess(result)) {
+          return false
+        }
+        if (result.success === null || typeof result.success !== 'object') {
+          return false
+        }
+        expect(Reflect.get(result.success, 'bindingRows')).toStrictEqual([{ action: 'attack', code: candidate }])
+        return true
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  it('rejects an explicit null key binding instead of using the default binding', () => {
+    const input = {
+      ...SNAPSHOT,
+      keyBindings: { ...SNAPSHOT.keyBindings, moveForward: null },
+    }
+
+    expect(makeModelResult(input)).toStrictEqual(Result.fail({ _tag: 'InvalidSettingsSnapshot' }))
+  })
+
+  it('projects render distance at the sim bounds and rejects the adjacent invalid values', () => {
+    for (const value of [MIN_RENDER_DISTANCE, MAX_RENDER_DISTANCE]) {
+      const result = makeModelResult({ ...SNAPSHOT, renderDistance: value })
+      expect(Result.isSuccess(result)).toBe(true)
+      if (Result.isSuccess(result)) {
+        expect(result.success.renderDistance.value).toBe(value)
+      }
+    }
+
+    for (const value of [MIN_RENDER_DISTANCE - 1, MAX_RENDER_DISTANCE + 1, 20]) {
+      expect(makeModelResult({ ...SNAPSHOT, renderDistance: value })).toStrictEqual(
+        Result.fail({ _tag: 'InvalidSettingsSnapshot' }),
+      )
+    }
+  })
+
+  it('validates the optional UI language input with an independent property oracle', () => {
+    fc.assert(
+      fc.property(fc.string(), (language) => {
+        const result = settingsViewModel(SNAPSHOT, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS, language)
+        const expectedLanguage = language === 'en' || language === 'ja'
+        if (expectedLanguage) {
+          return Result.isSuccess(result) && result.success.language === language
+        }
+        return Result.isFailure(result) && result.failure['_tag'] === 'InvalidSettingsLanguage'
+      }),
+      { numRuns: 200, seed: 20261109 },
+    )
+
+    const japanese = settingsViewModel(SNAPSHOT, TEST_DEFAULT_BINDINGS, TEST_BINDABLE_ACTIONS, 'ja')
+    expect(Result.isSuccess(japanese)).toBe(true)
+    if (Result.isSuccess(japanese)) {
+      expect(japanese.success.renderDistance.label).toBe(`${String(SNAPSHOT.renderDistance)} チャンク`)
     }
   })
 

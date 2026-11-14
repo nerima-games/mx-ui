@@ -14,6 +14,7 @@ import { type DomElement, type DomElementFactory } from './dom-surface.js'
 import { type HudIconName, hudIconDataUri } from './hud-icons.generated.js'
 import { PALETTE_VAR, type PaletteTokenName } from './palette-css.js'
 import { type IconState } from '../domain/hud-view-model.js'
+import { Result } from 'effect'
 
 export type IconKind = 'heart' | 'shank'
 type HealthCondition = 'poison' | 'wither'
@@ -324,22 +325,17 @@ const updateIconArt = (update: IconArtUpdate): void => {
   updateIconVisibility(update.icon, update.state)
 }
 
-export const updateIconElement = (
-  icon: IconElement,
-  state: IconState,
-  healthCondition?: HealthCondition,
-): void => {
-  writeHidden(icon.hiddenFlag, false)
-  const name = iconName(icon.kind, state, healthCondition)
-  if (
-    icon.previous === state &&
-    icon.previousCondition === (healthCondition ?? null) &&
-    icon.previousArt === name
-  ) {
-    return
-  }
+type IconStateProjection = Readonly<{
+  icon: IconElement
+  state: IconState
+  healthCondition: HealthCondition | undefined
+  previousCondition: HealthCondition | null
+  name: HudIconName
+}>
+
+const projectIconState = ({ icon, state, healthCondition, previousCondition, name }: IconStateProjection): void => {
   icon.previous = state
-  icon.previousCondition = healthCondition ?? null
+  icon.previousCondition = previousCondition
   writeAttribute(icon.stateFlag, state)
   updateIconArt({
     icon,
@@ -348,4 +344,33 @@ export const updateIconElement = (
     paletteToken: iconPaletteToken(icon.kind, state, healthCondition),
     state,
   })
+}
+
+const previousConditionFor = (healthCondition: HealthCondition | undefined): HealthCondition | null => {
+  if (typeof healthCondition === 'undefined') {
+    return null
+  }
+  return healthCondition
+}
+
+export const updateIconElement = (
+  icon: IconElement,
+  state: IconState,
+  healthCondition?: HealthCondition,
+): Result.Result<void, Readonly<{ _tag: 'InvalidIconElementInput'; field: 'healthCondition' }>> => {
+  if (Object.is(healthCondition, null)) {
+    return Result.fail({ _tag: 'InvalidIconElementInput', field: 'healthCondition' })
+  }
+  const previousCondition = previousConditionFor(healthCondition)
+  writeHidden(icon.hiddenFlag, false)
+  const name = iconName(icon.kind, state, healthCondition)
+  if (
+    icon.previous === state &&
+    icon.previousCondition === previousCondition &&
+    icon.previousArt === name
+  ) {
+    return Result.void
+  }
+  projectIconState({ healthCondition, icon, name, previousCondition, state })
+  return Result.void
 }

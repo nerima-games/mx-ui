@@ -12,7 +12,7 @@ import {
   FramesPerSecondSchema,
   GpuTimeMillisecondsSchema,
 } from './debug-overlay.js'
-import { Schema } from 'effect'
+import { Result, Schema } from 'effect'
 
 const literals = Schema.Literals
 const nullOr = Schema.NullOr
@@ -136,14 +136,104 @@ const debugOverlayStateFromModel = (model: DebugOverlayModel): UiQaDebugOverlayS
 const debugOverlayStateFromOptionalModel = (
   model: DebugOverlayModel | undefined,
 ): UiQaDebugOverlayState | null => {
-  if (!model) {
+  if (typeof model === 'undefined') {
     return null
   }
 
   return debugOverlayStateFromModel(model)
 }
 
-export const uiQaStateFromSnapshot = (snapshot: UiQaSnapshot): UiQaState => ({
-  achievementToast: nullable(snapshot.achievementToast),
-  debugOverlay: debugOverlayStateFromOptionalModel(snapshot.debugOverlay),
-})
+type InvalidUiQaSnapshot = Readonly<{
+  readonly _tag: 'InvalidUiQaSnapshot'
+  readonly field: string
+}>
+
+const isRecord = (input: unknown): input is Record<string, unknown> =>
+  input !== null && typeof input === 'object' && !Array.isArray(input)
+
+const hasOnlyFields = (input: unknown, fields: ReadonlyArray<string>): input is Record<string, unknown> =>
+  isRecord(input) && Object.keys(input).every((field) => fields.includes(field))
+
+const isExactAchievementToast = (input: unknown): input is AchievementToast =>
+  hasOnlyFields(input, ['achievement', 'icon', 'player', 'tick', 'title']) &&
+  Schema.is(AchievementToastSchema)(input)
+
+const isExactDebugOverlayState = (input: unknown): input is UiQaDebugOverlayState => {
+  if (
+    !hasOnlyFields(input, [
+      'biome',
+      'chunk',
+      'coordinates',
+      'dimension',
+      'facing',
+      'fps',
+      'frameDeltaSecs',
+      'gpuTimingSupported',
+      'latestGpuTimeMs',
+      'qualityPreset',
+      'worldTime',
+    ]) ||
+    !Schema.is(DebugOverlayStateSchema)(input)
+  ) {
+    return false
+  }
+
+  const { coordinates, facing, worldTime } = input
+  return (coordinates === null || hasOnlyFields(coordinates, ['worldX', 'worldY', 'worldZ'])) &&
+    (facing === null || hasOnlyFields(facing, ['pitchRadians', 'yawRadians'])) &&
+    (worldTime === null || hasOnlyFields(worldTime, ['dayLengthTicks', 'ticks']))
+}
+
+const invalidUiQaSnapshotField = (input: unknown): string | undefined => {
+  if (!isRecord(input)) {
+    return 'snapshot'
+  }
+
+  if (!hasOnlyFields(input, ['achievementToast', 'debugOverlay'])) {
+    return 'snapshot'
+  }
+
+  const { achievementToast, debugOverlay } = input
+  if (achievementToast === null || (typeof achievementToast !== 'undefined' && !isExactAchievementToast(achievementToast))) {
+    return 'achievementToast'
+  }
+  if (debugOverlay === null || (typeof debugOverlay !== 'undefined' && !isExactDebugOverlayState(debugOverlay))) {
+    return 'debugOverlay'
+  }
+  return
+}
+
+const isUiQaSnapshot = (input: unknown): input is UiQaSnapshot => {
+  if (!hasOnlyFields(input, ['achievementToast', 'debugOverlay'])) {
+    return false
+  }
+  const { achievementToast, debugOverlay } = input
+  if (typeof achievementToast !== 'undefined' && !isExactAchievementToast(achievementToast)) {
+    return false
+  }
+  if (typeof debugOverlay !== 'undefined' && !isExactDebugOverlayState(debugOverlay)) {
+    return false
+  }
+  return true
+}
+
+const invalidUiQaSnapshot = (field: string): Result.Result<UiQaState, InvalidUiQaSnapshot> =>
+  Result.fail({ _tag: 'InvalidUiQaSnapshot', field })
+
+export function uiQaStateFromSnapshot(snapshot: null): Result.Result<UiQaState, InvalidUiQaSnapshot>
+export function uiQaStateFromSnapshot(snapshot: UiQaSnapshot): UiQaState
+export function uiQaStateFromSnapshot(
+  snapshot: unknown,
+): UiQaState | Result.Result<UiQaState, InvalidUiQaSnapshot>
+export function uiQaStateFromSnapshot(
+  snapshot: unknown,
+): UiQaState | Result.Result<UiQaState, InvalidUiQaSnapshot> {
+  if (!isUiQaSnapshot(snapshot)) {
+    return invalidUiQaSnapshot(invalidUiQaSnapshotField(snapshot) ?? 'snapshot')
+  }
+
+  return {
+    achievementToast: nullable(snapshot.achievementToast),
+    debugOverlay: debugOverlayStateFromOptionalModel(snapshot.debugOverlay),
+  }
+}

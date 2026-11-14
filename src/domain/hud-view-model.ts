@@ -12,6 +12,7 @@ import {
   vitalsView,
 } from '@nerima-games/mc-sim'
 import { type ItemDisplayNameOptions, type ItemDisplayNameView, itemDisplayNameView } from './item-display-name.js'
+import { Result } from 'effect'
 
 export {
   DEFAULT_MAX_HEALTH_POINTS,
@@ -57,6 +58,27 @@ type HudViewModelOptions = Readonly<{
   readonly itemDisplayNameOptions?: ItemDisplayNameOptions | undefined
   readonly presentation?: HudPresentationSnapshot | undefined
 }>
+
+type InvalidCountCarriedSlot = Readonly<{
+  readonly count: null | undefined
+  readonly item?: unknown
+  readonly itemId?: unknown
+}>
+type InvalidHudSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
+const hasValidHotbarSlotCounts = (
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot | InvalidCountCarriedSlot>,
+): hotbarSlots is ReadonlyArray<InventoryCarriedSlot> => {
+  for (const slot of hotbarSlots) {
+    if (
+      typeof slot !== 'undefined' &&
+      (Object.is(slot, null) || typeof slot !== 'object' || typeof slot.count !== 'number')
+    ) {
+      return false
+    }
+  }
+  return true
+}
 
 export type HudViewModel = {
   readonly hearts: ReadonlyArray<IconState>
@@ -149,13 +171,20 @@ const hudOptionsOf = (selection: number | HudViewModelOptions): HudViewModelOpti
   return selection
 }
 
-export const slotView = (
+type NullSlotViewFailure = Readonly<{ readonly _tag: 'NullSlotViewInput' }>
+type InvalidSlotCountInput = Readonly<{
+  readonly count: null | undefined
+  readonly item?: unknown
+  readonly itemId?: unknown
+}>
+type InvalidSlotCountFailure = Readonly<{ readonly _tag: 'InvalidSlotCount' }>
+
+const projectSlotView = (
   slot: InventoryCarriedSlot | HotbarSlotSnapshot,
   index: number,
   selection: number | SlotViewOptions,
 ): SlotView => {
   const { itemDisplayNameOptions, selectedIndex } = slotOptionsOf(selection)
-
   const count = slot?.count ?? ZERO
   const candidateItemId = itemIdOf(slot)
   const empty =
@@ -179,8 +208,41 @@ export const slotView = (
   return { ...view, itemDisplayName: itemDisplayNameView(itemId, itemDisplayNameOptions) }
 }
 
-/** Derive the HUD from authoritative simulation state and inventory input. */
-export const hudViewModel = (
+export function slotView(
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot,
+  index: number,
+  selection: number | SlotViewOptions,
+): SlotView
+export function slotView(
+  slot: null,
+  index: number,
+  selection: number | SlotViewOptions,
+): Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure>
+export function slotView(
+  slot: InvalidSlotCountInput,
+  index: number,
+  selection: number | SlotViewOptions,
+): Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure>
+export function slotView(
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot | InvalidSlotCountInput | null,
+  index: number,
+  selection: number | SlotViewOptions,
+): SlotView | Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure>
+export function slotView(
+  slot: InventoryCarriedSlot | HotbarSlotSnapshot | InvalidSlotCountInput | null,
+  index: number,
+  selection: number | SlotViewOptions,
+): SlotView | Result.Result<SlotView, NullSlotViewFailure | InvalidSlotCountFailure> {
+  if (slot === null) {
+    return Result.fail({ _tag: 'NullSlotViewInput' })
+  }
+  if (typeof slot !== 'undefined' && typeof slot.count !== 'number') {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
+  return projectSlotView(slot, index, selection)
+}
+
+const projectHudViewModel = (
   vitals: Vitals,
   hotbarSlots: ReadonlyArray<InventoryCarriedSlot>,
   selection: number | HudViewModelOptions,
@@ -203,4 +265,26 @@ export const hudViewModel = (
     return { ...model, presentation: hudPresentationView(presentation) }
   }
   return model
+}
+
+/** Derive the HUD from authoritative simulation state and inventory input. */
+export function hudViewModel(
+  vitals: Vitals,
+  hotbarSlots: readonly [InvalidCountCarriedSlot, ...InvalidCountCarriedSlot[]],
+  selection: number | HudViewModelOptions,
+): Result.Result<HudViewModel, InvalidHudSlotCountFailure>
+export function hudViewModel(
+  vitals: Vitals,
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot>,
+  selection: number | HudViewModelOptions,
+): HudViewModel
+export function hudViewModel(
+  vitals: Vitals,
+  hotbarSlots: ReadonlyArray<InventoryCarriedSlot | InvalidCountCarriedSlot>,
+  selection: number | HudViewModelOptions,
+): HudViewModel | Result.Result<HudViewModel, InvalidHudSlotCountFailure> {
+  if (!hasValidHotbarSlotCounts(hotbarSlots)) {
+    return Result.fail({ _tag: 'InvalidSlotCount' })
+  }
+  return projectHudViewModel(vitals, hotbarSlots, selection)
 }

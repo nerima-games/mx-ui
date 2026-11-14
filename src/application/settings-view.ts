@@ -11,6 +11,7 @@ import {
   COLOR_VISION_CHOICES,
   DIFFICULTY_CHOICES,
   GRAPHICS_PRESET_CHOICES,
+  LANGUAGE_CHOICES,
   type NumericSettingView,
   REDUCED_MOTION_CHOICES,
   type SettingChoice,
@@ -18,32 +19,41 @@ import {
   type SettingsViewModel,
 } from '../domain/settings-view-model.js'
 import type { DomElement, DomElementFactory, DomInputElement, DomInteractiveElement } from './dom-surface.js'
-import { KeyCode, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
+import { Effect, Result } from 'effect'
+import { KeyCode, type KeyCode as KeyCodeType, InputAction as inputAction } from '@nerima-games/mc-kernel/domain/settings'
 import { PALETTE_VAR, declarePalette } from './palette-css.js'
 import { type SettingsServiceApi, isValidSettings } from '@nerima-games/mc-sim'
-import type { UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
 import {
   inheritUiLanguage,
   setLocalizedAttribute,
   setLocalizedText,
   writeLocalizedAttribute,
   writeLocalizedText,
+  writeLocalizedTextUsing,
 } from './ui-localization.js'
-import { Effect } from 'effect'
+import { keyDisplayName } from '../domain/key-display-name.js'
 
-export type SettingsView = {
+export type SettingsView<Action extends string = string> = {
   readonly root: DomElement
-  readonly render: (model: SettingsViewModel) => void
+  readonly render: (model: SettingsViewModel<Action>) => Result.Result<void, SettingsViewInputFailure>
 }
+
+export type SettingsViewInputFailure = Readonly<{
+  readonly _tag: 'InvalidSettingsViewInput'
+  readonly field: 'model' | 'bindingRows' | 'bindingRows.action'
+}>
 
 export type SettingsSliderField =
   | 'mouseSensitivity'
+  | 'renderDistance'
   | 'masterVolume'
+  | 'musicVolume'
   | 'sfxVolume'
   | 'fovDegrees'
   | 'uiScale'
 
-export type SettingsChoiceField = 'difficulty' | 'graphicsPreset' | 'reducedMotion' | 'colorVisionCorrection'
+export type SettingsChoiceField = 'difficulty' | 'graphicsPreset' | 'reducedMotion' | 'colorVisionCorrection' | 'language'
 export type SettingsToggleField = 'audioEnabled' | 'captionsEnabled'
 
 export type SettingsSliderValue = SettingsViewModel[SettingsSliderField]['value']
@@ -108,6 +118,8 @@ const SLIDER_MESSAGE_KEY: Readonly<Record<SliderField, UiMessageKey>> = {
   fovDegrees: 'settings.field-of-view',
   masterVolume: 'settings.master-volume',
   mouseSensitivity: 'settings.look-sensitivity',
+  musicVolume: 'settings.music-volume',
+  renderDistance: 'settings.render-distance',
   sfxVolume: 'settings.sfx-volume',
   uiScale: 'settings.ui-scale',
 }
@@ -116,6 +128,7 @@ const CHOICE_MESSAGE_KEY: Readonly<Record<ChoiceField, UiMessageKey>> = {
   colorVisionCorrection: 'settings.color-vision',
   difficulty: 'settings.difficulty',
   graphicsPreset: 'settings.graphics-preset',
+  language: 'settings.language',
   reducedMotion: 'settings.reduced-motion',
 }
 
@@ -139,6 +152,10 @@ const CHOICE_VALUE_MESSAGE_KEY: Readonly<{
     low: 'settings.choice.graphics.low',
     medium: 'settings.choice.graphics.medium',
     ultra: 'settings.choice.graphics.ultra',
+  },
+  language: {
+    en: 'settings.choice.language.en',
+    ja: 'settings.choice.language.ja',
   },
   reducedMotion: {
     full: 'settings.choice.motion.full',
@@ -218,12 +235,23 @@ type SettingsElements = {
   readonly bindingRows: Map<string, BindingRowElements>
 }
 
-const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
-  const root = factory.createElement('section')
-  root.setAttribute('data-mx-ui', 'settings')
-  declarePalette(root)
+const styleSettingsRoot = (root: DomElement): void => {
   root.style.setProperty('background-color', PALETTE_VAR.surface)
   root.style.setProperty('color', PALETTE_VAR.ink)
+  root.style.setProperty('box-sizing', 'border-box')
+  root.style.setProperty(
+    'max-height',
+    'calc(100vh - 2rem - var(--mx-ui-safe-area-top, env(safe-area-inset-top, 0px)) - var(--mx-ui-safe-area-bottom, env(safe-area-inset-bottom, 0px)))',
+  )
+  root.style.setProperty('overflow-y', 'auto')
+}
+
+const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement => {
+  const root = factory.createElement('section')
+  inheritUiLanguage(parent, root)
+  root.setAttribute('data-mx-ui', 'settings')
+  declarePalette(root)
+  styleSettingsRoot(root)
   parent.appendChild(root)
   return root
 }
@@ -231,7 +259,7 @@ const createRoot = (factory: DomElementFactory, parent: DomElement): DomElement 
 const createCloseButton = (
   factory: DomElementFactory,
   root: DomElement,
-  actions: SettingsViewActions | undefined,
+  actions: Pick<SettingsViewActions, 'onClose'> | undefined,
 ): void => {
   if (typeof actions?.onClose !== 'function') {
     return
@@ -257,16 +285,18 @@ const choiceMessageKey = <Field extends ChoiceField>(
   value: SettingsViewModel[Field],
 ): UiMessageKey => CHOICE_VALUE_MESSAGE_KEY[field][value]
 
+type SettingsControlActions = Pick<SettingsViewActions, 'onChoiceChange' | 'onSliderChange' | 'onToggleChange'>
+
 type SettingsControlContext = Readonly<{
   factory: DomElementFactory
   root: DomElement
-  actions: SettingsViewActions | undefined
+  actions: SettingsControlActions | undefined
 }>
 
 const wireSliderInput = (
   input: DomInputElement,
   field: SliderField,
-  actions: SettingsViewActions | undefined,
+  actions: SettingsControlActions | undefined,
 ): void => {
   if (typeof actions?.onSliderChange === 'function') {
     input.addEventListener('input', () => actions.onSliderChange?.(field, Number(input.value)))
@@ -280,14 +310,27 @@ const createSliderOutput = (factory: DomElementFactory, row: DomElement, field: 
   return output
 }
 
-const createSliderInput = (factory: DomElementFactory, row: DomElement, field: SliderField): DomInputElement => {
-  const input: DomInputElement = factory.createElement('input')
+const settingAttribute = (field: SliderField): string => {
+  let setting: string = field
+  if (field === 'fovDegrees') {
+    setting = 'fieldOfView'
+  }
+  return setting
+}
+
+const setSliderInputAttributes = (input: DomInputElement, field: SliderField): void => {
   input.setAttribute('type', 'range')
   input.setAttribute('data-settings-field', field)
+  input.setAttribute('data-setting', settingAttribute(field))
   input.setAttribute('data-focus-group', `settings-slider-${field}`)
   input.setAttribute('data-focus-index', '0')
   input.setAttribute('data-focus-columns', '1')
   setLocalizedAttribute(input, 'aria-label', SLIDER_MESSAGE_KEY[field])
+}
+
+const createSliderInput = (factory: DomElementFactory, row: DomElement, field: SliderField): DomInputElement => {
+  const input: DomInputElement = factory.createElement('input')
+  setSliderInputAttributes(input, field)
   row.appendChild(input)
   return input
 }
@@ -353,7 +396,7 @@ type ChoiceOptionContext<Field extends ChoiceField> = Readonly<{
   value: SettingsViewModel[Field]
   index: number
   choiceCount: number
-  actions: SettingsViewActions | undefined
+  actions: SettingsControlActions | undefined
 }>
 
 const createChoiceButton = <Field extends ChoiceField>(context: ChoiceOptionContext<Field>): DomInteractiveElement => {
@@ -456,6 +499,8 @@ const createSliderControls = (
   fovDegrees: createSlider(context, 'fovDegrees'),
   masterVolume: createSlider(context, 'masterVolume'),
   mouseSensitivity: createSlider(context, 'mouseSensitivity'),
+  musicVolume: createSlider(context, 'musicVolume'),
+  renderDistance: createSlider(context, 'renderDistance'),
   sfxVolume: createSlider(context, 'sfxVolume'),
   uiScale: createSlider(context, 'uiScale'),
 })
@@ -469,6 +514,7 @@ const createChoiceControls = (
   }),
   difficulty: createChoice(context, { choices: DIFFICULTY_CHOICES, field: 'difficulty' }),
   graphicsPreset: createChoice(context, { choices: GRAPHICS_PRESET_CHOICES, field: 'graphicsPreset' }),
+  language: createChoice(context, { choices: LANGUAGE_CHOICES, field: 'language' }),
   reducedMotion: createChoice(context, { choices: REDUCED_MOTION_CHOICES, field: 'reducedMotion' }),
 })
 
@@ -481,6 +527,20 @@ const createToggleControls = (
 
 const actionMessageKey = (action: string): UiMessageKey => ACTION_MESSAGE_KEY[action] ?? 'settings.action.unknown'
 
+const invalidSettingsViewField = (model: unknown): SettingsViewInputFailure['field'] | undefined => {
+  if (model === null || typeof model !== 'object') {
+    return 'model'
+  }
+  const rows = Reflect.get(model, 'bindingRows')
+  if (!Array.isArray(rows)) {
+    return 'bindingRows'
+  }
+  if (rows.some((row) => row === null || typeof row !== 'object' || typeof Reflect.get(row, 'action') !== 'string')) {
+    return 'bindingRows.action'
+  }
+  return
+}
+
 const configureBindingButton = (button: DomInteractiveElement, action: string): void => {
   button.setAttribute('type', 'button')
   button.setAttribute('data-interaction-target', 'settings-binding')
@@ -489,19 +549,25 @@ const configureBindingButton = (button: DomInteractiveElement, action: string): 
   button.setAttribute('tabindex', '0')
 }
 
-const wireBindingButton = (
+const wireBindingButton = <Action extends string>(
   button: DomInteractiveElement,
-  action: string,
-  actions: SettingsViewActions | undefined,
+  action: Action,
+  actions: SettingsViewActions<Action> | undefined,
 ): void => {
   if (typeof actions?.onBindingActivate === 'function') {
     button.addEventListener('click', () => actions.onBindingActivate?.(action))
   }
 }
 
-const createBindingControl = (
-  context: SettingsControlContext,
-  action: string,
+type BindingActionsContext<Action extends string> = {
+  readonly actions: SettingsViewActions<Action> | undefined
+  readonly factory: DomElementFactory
+  readonly root: DomElement
+}
+
+const createBindingControl = <Action extends string>(
+  context: BindingActionsContext<Action>,
+  action: Action,
   labelKey: UiMessageKey,
 ) => {
   const button: DomInteractiveElement = context.factory.createElement('button')
@@ -518,9 +584,9 @@ const createBindingControl = (
   }
 }
 
-const createBindingRow = (
-  context: SettingsControlContext,
-  action: string,
+const createBindingRow = <Action extends string>(
+  context: BindingActionsContext<Action>,
+  action: Action,
 ): BindingRowElements => {
   const labelKey = actionMessageKey(action)
   const row = context.factory.createElement('div')
@@ -562,8 +628,10 @@ const writeChoice = (elements: ChoiceElements, selectedValue: string): void => {
 }
 
 const writeSliders = (elements: SliderControls, model: SettingsViewModel): void => {
+  writeSlider(elements.renderDistance, model.renderDistance)
   writeSlider(elements.mouseSensitivity, model.mouseSensitivity)
   writeSlider(elements.masterVolume, model.masterVolume)
+  writeSlider(elements.musicVolume, model.musicVolume)
   writeSlider(elements.sfxVolume, model.sfxVolume)
   writeSlider(elements.fovDegrees, model.fovDegrees)
   writeSlider(elements.uiScale, model.uiScale)
@@ -574,6 +642,7 @@ const writeChoices = (elements: ChoiceControls, model: SettingsViewModel): void 
   writeChoice(elements.graphicsPreset, model.graphicsPreset)
   writeChoice(elements.reducedMotion, model.reducedMotion)
   writeChoice(elements.colorVisionCorrection, model.colorVisionCorrection)
+  writeChoice(elements.language, model.language)
 }
 
 const writeToggles = (elements: ToggleControls, model: SettingsViewModel): void => {
@@ -583,50 +652,71 @@ const writeToggles = (elements: ToggleControls, model: SettingsViewModel): void 
   writeAttribute(elements.captionsEnabled.checked, ariaChecked(model.captionsEnabled))
 }
 
-type BindingRenderContext = {
+type BindingRenderContext<Action extends string> = {
   readonly factory: DomElementFactory
   readonly root: DomElement
-  readonly actions: SettingsViewActions | undefined
+  readonly actions: SettingsViewActions<Action> | undefined
   readonly elements: Map<string, BindingRowElements>
-  readonly rows: SettingsViewModel['bindingRows']
+  readonly rows: SettingsViewModel<Action>['bindingRows']
+  readonly language: SettingsViewModel['language']
 }
 
-const bindingNameValue = (code: string | undefined): string | Readonly<{ key: UiMessageKey }> => {
+const bindingNameValue = (
+  code: KeyCodeType | undefined,
+  language: SettingsViewModel['language'],
+): string | Readonly<{ key: UiMessageKey }> => {
   if (typeof code === 'undefined') {
     return { key: 'settings.unbound' }
   }
-  return code
+  return keyDisplayName(code, language)
 }
 
-const writeBindingRows = ({ actions, factory, root, elements, rows }: BindingRenderContext): void => {
+const writeBindingRows = <Action extends string>({ actions, factory, root, elements, rows, language }: BindingRenderContext<Action>): void => {
   for (const row of rows) {
-    const binding = elements.get(row.action) ?? createBindingRow({ actions, factory, root }, row.action)
-    elements.set(row.action, binding)
-    if (typeof row.code === 'undefined') {
+    const { action, code } = row
+    const binding = elements.get(action) ?? createBindingRow({ actions, factory, root }, action)
+    elements.set(action, binding)
+    if (typeof code === 'undefined') {
       writeLocalizedText(binding.value, 'settings.unbound')
     } else {
-      writeText(binding.value, row.code)
+      writeLocalizedTextUsing(
+        binding.value,
+        (activeLanguage) => keyDisplayName(code, activeLanguage),
+        language,
+      )
     }
-    writeLocalizedAttribute(binding.accessibleName, 'settings.change-key', {
-      key: bindingNameValue(row.code),
+    const accessibleNameValues: UiMessageValues = {
+      key: bindingNameValue(code, language),
       label: { key: actionMessageKey(row.action) },
-    })
+    }
+    writeLocalizedAttribute(binding.accessibleName, 'settings.change-key', accessibleNameValues)
+    writeAttribute(
+      binding.accessibleName,
+      translateUiMessage(language, 'settings.change-key', accessibleNameValues),
+    )
   }
 }
 
-type SettingsRenderContext = {
+type SettingsRenderContext<Action extends string> = {
   readonly factory: DomElementFactory
   readonly root: DomElement
   readonly elements: SettingsElements
-  readonly model: SettingsViewModel
-  readonly actions: SettingsViewActions | undefined
+  readonly model: SettingsViewModel<Action>
+  readonly actions: SettingsViewActions<Action> | undefined
 }
 
-const renderSettingsModel = ({ actions, factory, root, elements, model }: SettingsRenderContext): void => {
+const renderSettingsModel = <Action extends string>({ actions, factory, root, elements, model }: SettingsRenderContext<Action>): void => {
   writeSliders(elements.sliders, model)
   writeChoices(elements.choices, model)
   writeToggles(elements.toggles, model)
-  writeBindingRows({ actions, elements: elements.bindingRows, factory, root, rows: model.bindingRows })
+  writeBindingRows({
+    actions,
+    elements: elements.bindingRows,
+    factory,
+    language: model.language,
+    root,
+    rows: model.bindingRows,
+  })
 }
 
 const isBindableAction = <Action extends string>(
@@ -745,14 +835,15 @@ export const unbindSettingsKey = <Action extends string>(
 }
 
 /** Projects settings and wires optional native action callbacks. */
-export const createSettingsView = (
+export const createSettingsView = <Action extends string = string>(
   factory: DomElementFactory,
   parent: DomElement,
-  actions?: SettingsViewActions,
-): SettingsView => {
+  actions?: SettingsViewActions<Action>,
+): SettingsView<Action> => {
   const root = createRoot(factory, parent)
   createCloseButton(factory, root, actions)
-  const context: SettingsControlContext = { actions, factory, root }
+  const controlActions: SettingsControlActions | undefined = actions
+  const context: SettingsControlContext = { actions: controlActions, factory, root }
   const elements: SettingsElements = {
     bindingRows: new Map(),
     choices: createChoiceControls(context),
@@ -761,7 +852,14 @@ export const createSettingsView = (
   }
 
   return {
-    render: (model: SettingsViewModel): void => renderSettingsModel({ actions, elements, factory, model, root }),
+    render: (model: SettingsViewModel<Action>): Result.Result<void, SettingsViewInputFailure> => {
+      const field = invalidSettingsViewField(model)
+      if (typeof field !== 'undefined') {
+        return Result.fail({ _tag: 'InvalidSettingsViewInput', field })
+      }
+      renderSettingsModel({ actions, elements, factory, model, root })
+      return Result.void
+    },
     root,
   }
 }
