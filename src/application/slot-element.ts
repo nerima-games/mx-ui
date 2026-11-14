@@ -172,6 +172,7 @@ export type SlotElement = {
   readonly itemText: TextCell
   readonly itemTitle: AttributeCell
   readonly itemIconHidden: AttributeCell
+  readonly itemIconDisplay: StyleCell
   readonly itemIconSource: AttributeCell
   readonly itemIconWidth: StyleCell
   readonly itemIconHeight: StyleCell
@@ -272,6 +273,7 @@ type SlotTextElements = {
 
 type SlotIconElements = {
   readonly hidden: AttributeCell
+  readonly display: StyleCell
   readonly source: AttributeCell
   readonly width: StyleCell
   readonly height: StyleCell
@@ -281,11 +283,14 @@ type SlotIconElements = {
   readonly imageHeight: StyleCell
 }
 
+const ICON_DISPLAY_SHOWN = 'inline-block'
+const ICON_DISPLAY_HIDDEN = 'none'
+
 const createIconWrapper = (factory: DomElementFactory, root: DomElement): DomElement => {
   const wrapper = factory.createElement('span')
   wrapper.setAttribute('data-mx-ui', 'slot-icon')
   wrapper.setAttribute('hidden', '')
-  wrapper.style.setProperty('display', 'inline-block')
+  wrapper.style.setProperty('display', ICON_DISPLAY_HIDDEN)
   wrapper.style.setProperty('position', 'relative')
   wrapper.style.setProperty('overflow', 'hidden')
   wrapper.style.setProperty('vertical-align', 'middle')
@@ -306,6 +311,7 @@ const createSlotIcon = (factory: DomElementFactory, root: DomElement): SlotIconE
   const wrapper = createIconWrapper(factory, root)
   const image = createIconImage(factory, wrapper)
   return {
+    display: styleCell(wrapper, 'display'),
     height: styleCell(wrapper, 'height'),
     hidden: attributeCell(wrapper, 'hidden'),
     imageHeight: styleCell(image, 'height'),
@@ -470,6 +476,7 @@ const initializeSlotCells = (slot: SlotElement, root: DomInteractiveElement): vo
   slot.focusRingHidden.previous = ''
   slot.tooltipHidden.previous = ''
   slot.itemIconHidden.previous = ''
+  slot.itemIconDisplay.previous = ICON_DISPLAY_HIDDEN
   slot.disabled.previous = ''
 }
 
@@ -493,6 +500,7 @@ const assembleSlotElement = ({ root, itemIcon, item, count, durability, tooltip,
     focusIndex: attributeCell(root, 'data-focus-index'),
     focusRingHidden,
     hiddenFlag: attributeCell(root, 'hidden'),
+    itemIconDisplay: itemIcon.display,
     itemIconHeight: itemIcon.height,
     itemIconHidden: itemIcon.hidden,
     itemIconImageHeight: itemIcon.imageHeight,
@@ -880,8 +888,18 @@ const iconGeometry = (icon: ItemIcon): Readonly<{
 
 const pixels = (value: number): string => `${String(value)}px`
 
+/** An inline `display` outranks the `hidden` attribute, so both follow one visibility. */
+const writeSlotIconVisible = (slot: SlotElement, visible: boolean): void => {
+  writeHidden(slot.itemIconHidden, !visible)
+  if (visible) {
+    writeStyle(slot.itemIconDisplay, ICON_DISPLAY_SHOWN)
+    return
+  }
+  writeStyle(slot.itemIconDisplay, ICON_DISPLAY_HIDDEN)
+}
+
 const clearSlotIcon = (slot: SlotElement): void => {
-  writeHidden(slot.itemIconHidden, true)
+  writeSlotIconVisible(slot, false)
   writeAttribute(slot.itemIconSource)
 }
 
@@ -898,7 +916,7 @@ const renderSlotIcon = (slot: SlotElement, icon: ItemIcon): void => {
   const geometry = iconGeometry(icon)
   writeAttribute(slot.itemIconSource, icon.url)
   writeSlotIconGeometry(slot, geometry)
-  writeHidden(slot.itemIconHidden, false)
+  writeSlotIconVisible(slot, true)
 }
 
 const SINGLE_ICON_RESULT_MEMBER = 1
