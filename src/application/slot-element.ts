@@ -767,7 +767,10 @@ const isItemDisplayNameResult = (result: unknown): result is ItemDisplayNameView
     return false
   }
   const tag = Reflect.get(result, '_tag')
-  if (tag === 'Success') {
+  // effect keeps `_tag` on the Result prototype, so structuredClone yields a bare `{ success }`.
+  const keys = Reflect.ownKeys(result)
+  const isClonedSuccess = typeof tag === 'undefined' && keys.length === 1 && keys[0] === 'success'
+  if (tag === 'Success' || isClonedSuccess) {
     return typeof Reflect.get(result, 'success') === 'string'
   }
   return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(result, 'failure'))
