@@ -1,5 +1,33 @@
 # @nerima-games/mx-ui
 
+## 0.10.0
+
+### Minor Changes
+
+- [#60](https://github.com/nerima-games/mx-ui/pull/60) [`3aa818c`](https://github.com/nerima-games/mx-ui/commit/3aa818cf912b4b9bd472f6fa75034f48d391d8c2) Thanks [@takeokunn](https://github.com/takeokunn)! - Expose typed host inputs for HUD meters, status effects, time cues, and death details, with an on-respawn callback and host-triggered hit notification.
+
+- [#58](https://github.com/nerima-games/mx-ui/pull/58) [`9509df4`](https://github.com/nerima-games/mx-ui/commit/9509df48454b58a73ad350b4791a1095ff27c6a0) Thanks [@takeokunn](https://github.com/takeokunn)! - Pin `@nerima-games/mc-kernel` 0.17.0, `@nerima-games/mc-sim` 0.11.1, `@nerima-games/mc-render` 0.11.0 and `@nerima-games/mc-audio` 0.6.0, and place the kernel's new `bookshelf` and `sticky_piston` items in the Creative building and redstone categories.
+
+- [#59](https://github.com/nerima-games/mx-ui/pull/59) [`3feb289`](https://github.com/nerima-games/mx-ui/commit/3feb289db56ee9c8adaaaa351009232ae52f4207) Thanks [@takeokunn](https://github.com/takeokunn)! - Add host-driven menu and world controls, staged loading, complete settings, keyboard help, and chat views.
+
+- [#58](https://github.com/nerima-games/mx-ui/pull/58) [`9509df4`](https://github.com/nerima-games/mx-ui/commit/9509df48454b58a73ad350b4791a1095ff27c6a0) Thanks [@takeokunn](https://github.com/takeokunn)! - Use the kernel item catalog and recipe table, and add item icons, accessible tooltips, a recipe book, and a searchable Creative inventory with typed host operations.
+
+- [#59](https://github.com/nerima-games/mx-ui/pull/59) [`3feb289`](https://github.com/nerima-games/mx-ui/commit/3feb289db56ee9c8adaaaa351009232ae52f4207) Thanks [@takeokunn](https://github.com/takeokunn)! - This breaking contract change is recorded as a minor bump while mx-ui is still 0.x.
+  
+  **Breaking API change:** `crosshairViewModel` now returns `Result<CrosshairViewModel | undefined, InvalidCrosshairViewModelInput>` instead of `CrosshairViewModel | undefined`. It fails when `status` is null, an array, or not an object; when `status.modals` is not an array of supported screen IDs; when a supplied `breakProgress` is not a finite number; when a supplied `lastHitAtSecs` is not finite; when `nowSecs` is not finite; or when `pulseSecs` is non-finite or negative. Finite `breakProgress` values are clamped to 0–1, and omitted optional status fields remain valid.
+  
+  Callers must check the result before rendering. `Result.isFailure(result)` identifies invalid input; on success, `result.success` is still `CrosshairViewModel | undefined`. The success value is `undefined` when the crosshair is hidden because pointer lock was released.
+  
+  The public return contracts of `updateIconElement`, `updateSlotElement`, and `requireRootButton` also change to `Result`. The `render()` methods returned by `createAnvilView`, `createCaptionView`, `createChestStorageView`, `createCrosshairView`, `createEnchantingTableView`, `createFurnaceView`, `createHudView`, `createInventoryView`, `createMainMenuView`, and `createSettingsView` now return typed `Result` values with `void` success and view-specific failures, instead of `void`. Check each result with `Result.isFailure`; the success value is available at `.success`. `createMainMenuView` also exposes an `initializationResult` that callers should inspect.
+  
+  The object returned by `createSessionOverlays` now returns `Result` from `updateDebug` and `updateSettings`; successful `updateSettings` returns a `SettingsSnapshot`. It also exposes `initializationResult` and `updateSettingsSnapshot`. The object returned by `makeUiMount` adds `updateSettingsSnapshot`; `updateSettings` and `updateLanguage` retain their success values but may return additional typed settings, view, preference, and schema failures.
+  
+  The new `CreateSessionOverlaysOptions.onLanguageChange` callback must return its `Result`.
+  
+  `worldNameLabel` now declares `WorldNameText | UiMessageText` instead of `string`; both remain string values. Additional malformed-input overloads on model helpers preserve their existing return types for well-typed successful calls.
+
+- [#57](https://github.com/nerima-games/mx-ui/pull/57) [`0580396`](https://github.com/nerima-games/mx-ui/commit/058039692f34dcebf6d5b01e5a94fa808e92406a) Thanks [@takeokunn](https://github.com/takeokunn)! - Add Japanese and English UI localization, a bundled PixelMplus12 font, keyboard navigation, UI scaling, and live accessibility controls.
+
 ## 0.9.1
 
 ### Patch Changes
