@@ -251,7 +251,6 @@ const isItemDisplayNameView = (input: unknown): boolean => {
   const language = Reflect.get(input, 'language')
   const result = Reflect.get(input, 'result')
   return (language === 'en' || language === 'ja') &&
-    isRecord(result) &&
     isItemDisplayNameResult(result)
 }
 

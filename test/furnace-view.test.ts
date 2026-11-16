@@ -278,6 +278,61 @@ describe('createFurnaceView', () => {
     expect(root.listenersInTree()).toStrictEqual([])
   })
 
+  it('renders structured-cloned item display-name successes and failures', () => {
+    const factory = fakeDocument()
+    const view = createFurnaceView(factory, factory.createElement('main'))
+    const model = furnaceViewModel({
+      input: { itemId: 'sand', count: 1 },
+      fuel: undefined,
+      output: undefined,
+      cookProgress: 0,
+      burnProgress: 0,
+    }, fakeItemDisplayNameOptions())
+    const input = model.slots.find((slot) => slot.id === 'input')
+    expect(input).toBeDefined()
+    if (typeof input === 'undefined') {
+      return
+    }
+    const { itemDisplayName } = input
+    expect(itemDisplayName).toBeDefined()
+    if (typeof itemDisplayName === 'undefined') {
+      return
+    }
+    expect(Result.isSuccess(itemDisplayName.result)).toBe(true)
+    if (Result.isFailure(itemDisplayName.result)) {
+      return
+    }
+
+    const clonedSuccessSlot = {
+      ...input,
+      itemDisplayName: {
+        ...itemDisplayName,
+        result: structuredClone(Result.succeed(itemDisplayName.result.success)),
+      },
+    }
+    const clonedSuccessModel = {
+      ...model,
+      slots: model.slots.map((slot) => slot.id === 'input' ? clonedSuccessSlot : slot),
+    }
+    expect(view.render(clonedSuccessModel)).toBe(Result.void)
+    expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item')[0]?.textContent)
+      .toBe(itemDisplayName.result.success)
+
+    const clonedFailureSlot = {
+      ...input,
+      itemDisplayName: {
+        language: 'en' as const,
+        result: structuredClone(Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const })),
+      },
+    }
+    const clonedFailureModel = {
+      ...model,
+      slots: model.slots.map((slot) => slot.id === 'input' ? clonedFailureSlot : slot),
+    }
+    expect(view.render(clonedFailureModel)).toBe(Result.void)
+    expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item')[0]?.textContent).toBe('Unknown item')
+  })
+
   it('keeps one default tab stop in read-only rendering', () => {
     const factory = fakeDocument()
     const host = factory.createElement('main')

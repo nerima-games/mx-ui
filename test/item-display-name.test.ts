@@ -38,6 +38,10 @@ describe('item display-name host boundary', () => {
     { label: 'a non-object result', result: null },
     { label: 'a non-string success', result: { success: 7 } },
     { label: 'a clone with extra keys', result: { ...structuredClone(Result.succeed('Host Stone')), extra: true } },
+    {
+      label: 'a tagged success with extra keys',
+      result: Object.assign(structuredClone(Result.succeed('Host Stone')), { _tag: 'Success', extra: true }),
+    },
     { label: 'an unknown failure tag', result: structuredClone(Result.fail({ _tag: 'UnexpectedFailure' as const })) },
     { label: 'a missing failure record', result: { _tag: 'Failure', failure: null } },
   ])('rejects $label item display-name results', ({ result }) => {
