@@ -208,11 +208,22 @@ describe('createEnchantingTableView', () => {
     if (typeof itemSlot === 'undefined') {
       return
     }
-    const clonedSlot = { ...itemSlot }
-    expect(Reflect.set(clonedSlot, 'itemDisplayName', {
-      language: 'en',
-      result: { success: 'Host Sword' },
-    })).toBe(true)
+    const { itemDisplayName } = itemSlot
+    expect(itemDisplayName).toBeDefined()
+    if (typeof itemDisplayName === 'undefined') {
+      return
+    }
+    expect(Result.isSuccess(itemDisplayName.result)).toBe(true)
+    if (Result.isFailure(itemDisplayName.result)) {
+      return
+    }
+    const clonedSlot = {
+      ...itemSlot,
+      itemDisplayName: {
+        ...itemDisplayName,
+        result: structuredClone(Result.succeed(itemDisplayName.result.success)),
+      },
+    }
     const clonedModel = {
       ...model,
       slots: model.slots.map((slot) => slot.id === 'item' ? clonedSlot : slot),
@@ -220,7 +231,7 @@ describe('createEnchantingTableView', () => {
 
     expect(view.render(clonedModel)).toBe(Result.void)
     expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item').map((slot) => slot.textContent))
-      .toContain('Host Sword')
+      .toContain(itemDisplayName.result.success)
   })
 
   it.each([

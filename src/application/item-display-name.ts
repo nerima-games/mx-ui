@@ -59,13 +59,12 @@ export const isItemDisplayNameResult = (input: unknown): input is DisplayNameRes
   }
   const tag = Reflect.get(input, '_tag')
   const keys = Reflect.ownKeys(input)
-  const isClonedSuccess = typeof tag === 'undefined' &&
-    keys.length === ONE_RESULT_MEMBER &&
-    keys[FIRST_RESULT_KEY] === 'success'
-  if (tag === 'Success' || isClonedSuccess) {
+  const isClonedSingleMember = typeof tag === 'undefined' && keys.length === ONE_RESULT_MEMBER
+  if (tag === 'Success' || (isClonedSingleMember && keys[FIRST_RESULT_KEY] === 'success')) {
     return typeof Reflect.get(input, 'success') === 'string'
   }
-  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(input, 'failure'))
+  return (tag === 'Failure' || (isClonedSingleMember && keys[FIRST_RESULT_KEY] === 'failure')) &&
+    isItemDisplayNameFailure(Reflect.get(input, 'failure'))
 }
 
 const serializedSuccessDescriptor = (input: DisplayNameResult): PropertyDescriptor | undefined => {

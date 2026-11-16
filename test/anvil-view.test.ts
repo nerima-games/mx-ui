@@ -169,11 +169,22 @@ describe('createAnvilView', () => {
     if (typeof slot === 'undefined') {
       return
     }
-    const clonedSlot = { ...slot }
-    expect(Reflect.set(clonedSlot, 'itemDisplayName', {
-      language: 'en',
-      result: { success: 'Host Sword' },
-    })).toBe(true)
+    const { itemDisplayName } = slot
+    expect(itemDisplayName).toBeDefined()
+    if (typeof itemDisplayName === 'undefined') {
+      return
+    }
+    expect(Result.isSuccess(itemDisplayName.result)).toBe(true)
+    if (Result.isFailure(itemDisplayName.result)) {
+      return
+    }
+    const clonedSlot = {
+      ...slot,
+      itemDisplayName: {
+        ...itemDisplayName,
+        result: structuredClone(Result.succeed(itemDisplayName.result.success)),
+      },
+    }
     const clonedModel = {
       ...model,
       slots: model.slots.map((candidate) => candidate.id === 'primary-input' ? clonedSlot : candidate),
@@ -181,7 +192,7 @@ describe('createAnvilView', () => {
 
     expect(view.render(clonedModel)).toBe(Result.void)
     expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item').map((item) => item.textContent))
-      .toContain('Host Sword')
+      .toContain(itemDisplayName.result.success)
   })
 
   it.each([

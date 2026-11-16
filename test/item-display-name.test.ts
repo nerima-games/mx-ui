@@ -24,7 +24,11 @@ describe('item display-name host boundary', () => {
 
   it.each([
     { label: 'a tagged success', result: Result.succeed('Host Stone') },
-    { label: 'a structured-clone success', result: { success: 'Host Stone' } },
+    { label: 'a structured-clone success', result: structuredClone(Result.succeed('Host Stone')) },
+    {
+      label: 'a structured-clone failure',
+      result: structuredClone(Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const })),
+    },
     { label: 'a recognized failure', result: Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }) },
   ])('accepts $label item display-name results', ({ result }) => {
     expect(isItemDisplayNameResult(result)).toBe(true)
@@ -33,15 +37,15 @@ describe('item display-name host boundary', () => {
   it.each([
     { label: 'a non-object result', result: null },
     { label: 'a non-string success', result: { success: 7 } },
-    { label: 'a clone with extra keys', result: { success: 'Host Stone', extra: true } },
-    { label: 'an unknown failure tag', result: { _tag: 'Failure', failure: { _tag: 'UnexpectedFailure' } } },
+    { label: 'a clone with extra keys', result: { ...structuredClone(Result.succeed('Host Stone')), extra: true } },
+    { label: 'an unknown failure tag', result: structuredClone(Result.fail({ _tag: 'UnexpectedFailure' as const })) },
     { label: 'a missing failure record', result: { _tag: 'Failure', failure: null } },
   ])('rejects $label item display-name results', ({ result }) => {
     expect(isItemDisplayNameResult(result)).toBe(false)
   })
 
   it('does not use a failure value as an item display name', () => {
-    const failure = Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const })
+    const failure = structuredClone(Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }))
 
     expect(isItemDisplayNameResult(failure)).toBe(true)
     expect(itemDisplayNameValue({
@@ -56,5 +60,4 @@ describe('item display-name host boundary', () => {
   ])('the default resolver reports $label as unavailable', ({ args }) => {
     expect(Reflect.apply(defaultItemDisplayNameResolver, undefined, args)).toStrictEqual(UNAVAILABLE)
   })
-
 })
