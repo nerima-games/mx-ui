@@ -1,6 +1,6 @@
+import { BIOME_TYPES, type BiomeType, ChunkAxis, type DeltaTimeSecs as DeltaTimeSecsType } from '@nerima-games/mc-kernel'
 import { type Brand, type Effect, Result, Schema } from 'effect'
 import { type PlayerServiceApi, type TimeServiceApi, TimeStateSchema } from '@nerima-games/mc-sim'
-import type { DeltaTimeSecs as DeltaTimeSecsType } from '@nerima-games/mc-kernel'
 
 export type FramesPerSecond = number & Brand.Brand<'FramesPerSecond'>
 export const FramesPerSecondSchema: Schema.Codec<FramesPerSecond, number> = Schema.Finite.pipe(
@@ -10,6 +10,23 @@ export type GpuTimeMilliseconds = number & Brand.Brand<'GpuTimeMilliseconds'>
 export const GpuTimeMillisecondsSchema: Schema.Codec<GpuTimeMilliseconds, number> = Schema.Finite.pipe(
   Schema.brand('GpuTimeMilliseconds'),
 )
+
+const MIN_DEBUG_COUNT = 0
+
+export type LoadedChunkCount = number & Brand.Brand<'LoadedChunkCount'>
+export const LoadedChunkCountSchema: Schema.Codec<LoadedChunkCount, number> = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(MIN_DEBUG_COUNT),
+).pipe(Schema.brand('LoadedChunkCount'))
+
+export type FaultCount = number & Brand.Brand<'FaultCount'>
+export const FaultCountSchema: Schema.Codec<FaultCount, number> = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(MIN_DEBUG_COUNT),
+).pipe(Schema.brand('FaultCount'))
+
+const { Literals: literals, Struct: struct } = Schema
+const chunkAxisSchema = Schema.fromBrand('ChunkAxis', ChunkAxis)(Schema.Int)
+const chunkSchema = struct({ chunkX: chunkAxisSchema, chunkZ: chunkAxisSchema })
+const biomeSchema = literals(BIOME_TYPES)
 
 type EffectValue<EffectType> = EffectType extends Effect.Effect<
   infer Result,
@@ -40,11 +57,17 @@ export type DebugOverlaySnapshot = Readonly<{
   gpuTimingSupported: boolean | undefined
   latestGpuTimeMs: unknown
   qualityPreset: DebugOverlayQualityPreset | undefined
+  chunk: Readonly<{ chunkX: ChunkAxis; chunkZ: ChunkAxis }> | undefined
+  biome: BiomeType | undefined
+  loadedChunkCount: LoadedChunkCount | undefined
+  faultCount: FaultCount | undefined
 }>
 
 export type DebugOverlayModel = Readonly<{
-  biome: null
-  chunk: null
+  biome: BiomeType | null
+  chunk: NonNullable<DebugOverlaySnapshot['chunk']> | null
+  loadedChunkCount: LoadedChunkCount | null
+  faultCount: FaultCount | null
   coordinates: Exclude<DebugOverlayFrame['cameraPosition'], undefined> | null
   dimension: Exclude<DebugOverlaySnapshot['dimension'], undefined> | null
   facing:
@@ -156,6 +179,37 @@ const invalidQualityPresetField = (input: unknown): string | undefined => {
   return 'qualityPreset'
 }
 
+const invalidChunkField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined') {
+    return
+  }
+  if (!Schema.is(chunkSchema)(input)) {
+    return 'chunk'
+  }
+  return
+}
+
+const invalidBiomeField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || Schema.is(biomeSchema)(input)) {
+    return
+  }
+  return 'biome'
+}
+
+const invalidLoadedChunkCountField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || Schema.is(LoadedChunkCountSchema)(input)) {
+    return
+  }
+  return 'loadedChunkCount'
+}
+
+const invalidFaultCountField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || Schema.is(FaultCountSchema)(input)) {
+    return
+  }
+  return 'faultCount'
+}
+
 const invalidSnapshotField = (snapshot: unknown): string | undefined => {
   if (!isRecord(snapshot)) {
     return 'snapshot'
@@ -167,7 +221,11 @@ const invalidSnapshotField = (snapshot: unknown): string | undefined => {
     invalidFrameField(frame) ??
     invalidGpuTimingSupportedField(gpuTimingSupported) ??
     invalidLatestGpuTimeField(latestGpuTimeMs) ??
-    invalidQualityPresetField(qualityPreset)
+    invalidQualityPresetField(qualityPreset) ??
+    invalidChunkField(snapshot['chunk']) ??
+    invalidBiomeField(snapshot['biome']) ??
+    invalidLoadedChunkCountField(snapshot['loadedChunkCount']) ??
+    invalidFaultCountField(snapshot['faultCount'])
 }
 
 const isDebugOverlaySnapshot = (input: unknown): input is DebugOverlaySnapshot =>
@@ -223,15 +281,17 @@ export function debugOverlayModel(
     return Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: invalidField ?? 'snapshot' })
   }
   return {
-    biome: null,
-    chunk: null,
+    biome: snapshot.biome ?? null,
+    chunk: snapshot.chunk ?? null,
     coordinates: snapshot.frame?.cameraPosition ?? null,
     dimension: snapshot.dimension ?? null,
     facing: facingFromCameraPose(snapshot.cameraPose),
+    faultCount: snapshot.faultCount ?? null,
     fps: framesPerSecondFromDelta(snapshot.frame?.deltaSecs),
     frameDeltaSecs: snapshot.frame?.deltaSecs ?? null,
     gpuTimingSupported: snapshot.gpuTimingSupported ?? null,
     latestGpuTimeMs: gpuTimeFromUnknown(snapshot.latestGpuTimeMs),
+    loadedChunkCount: snapshot.loadedChunkCount ?? null,
     qualityPreset: snapshot.qualityPreset ?? null,
     worldTime: snapshot.worldTime ?? null,
   }

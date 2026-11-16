@@ -47,6 +47,13 @@ const coordinateLine = (language: UiLanguage, model: DebugOverlayModel): string 
   return `${String(model.coordinates.worldX)}, ${String(model.coordinates.worldY)}, ${String(model.coordinates.worldZ)}`
 }
 
+const chunkLine = (language: UiLanguage, model: DebugOverlayModel): string => {
+  if (model.chunk === null) {
+    return translateUiMessage(language, 'debug.none')
+  }
+  return `${String(model.chunk.chunkX)}, ${String(model.chunk.chunkZ)}`
+}
+
 const facingLine = (language: UiLanguage, model: DebugOverlayModel): string => {
   if (model.facing === null) {
     return translateUiMessage(language, 'debug.none')
@@ -129,10 +136,12 @@ const debugOverlayText = (language: UiLanguage, model: DebugOverlayModel): UiMes
   decodeUiMessageText([
     translateUiMessage(language, 'debug.fps', { fps: optionalNumber(language, model.fps) }),
     translateUiMessage(language, 'debug.coordinates', { coordinates: coordinateLine(language, model) }),
-    translateUiMessage(language, 'debug.chunk', { chunk: translateUiMessage(language, 'debug.none') }),
+    translateUiMessage(language, 'debug.chunk', { chunk: chunkLine(language, model) }),
     translateUiMessage(language, 'debug.facing', { facing: facingLine(language, model) }),
     translateUiMessage(language, 'debug.dimension', { dimension: optionalDimension(language, model.dimension) }),
-    translateUiMessage(language, 'debug.biome', { biome: translateUiMessage(language, 'debug.none') }),
+    translateUiMessage(language, 'debug.biome', { biome: model.biome ?? translateUiMessage(language, 'debug.none') }),
+    translateUiMessage(language, 'debug.loaded-chunk-count', { count: optionalNumber(language, model.loadedChunkCount) }),
+    translateUiMessage(language, 'debug.fault-count', { count: optionalNumber(language, model.faultCount) }),
     translateUiMessage(language, 'debug.world-time', { worldTime: worldTimeLine(language, model) }),
     translateUiMessage(language, 'debug.frame-delta', { seconds: optionalNumber(language, model.frameDeltaSecs) }),
     translateUiMessage(language, 'debug.gpu-timing-supported', { supported: optionalBoolean(language, model.gpuTimingSupported) }),

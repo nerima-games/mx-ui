@@ -299,7 +299,11 @@ mc-sim continues to own persisted settings and game state.
 | `SettingsViewActions.onClose?` / station `*ViewActions.onClose?` | `() => void` | Supplying the callback adds a native close button and connects it to the host's screen transition. |
 
 `UI_MESSAGES` and `ACHIEVEMENT_TITLES` store English and Japanese text for each entry.
-`UI_TRANSLATION_KEY_COUNT` reports 466 combined UI message and achievement-title keys, and tests check that both languages cover every entry.
+`UI_TRANSLATION_KEY_COUNT` reports the combined UI message and achievement-title key count, and tests check that both languages cover every entry.
+
+`DebugOverlaySnapshot` requires host-owned `chunk` (`{ chunkX: ChunkAxis, chunkZ: ChunkAxis }`), `biome` (`BiomeType` from mc-kernel, such as `'plains'`), `loadedChunkCount` (`LoadedChunkCount`), and `faultCount` (`FaultCount`). Decode raw counters with `LoadedChunkCountSchema` and `FaultCountSchema`; both accept nonnegative safe integers. Pass `undefined` explicitly when a value is unavailable. Explicit `null` or malformed values return `InvalidDebugOverlaySnapshot`. Untyped snapshot callers follow the existing validator convention: a missing key is treated as `undefined`.
+
+`debugOverlayModel` always returns the four fields and represents unavailable values as `null`. The debug view displays supplied values, including zero counters, and shows localized “None” for unavailable values. UI QA observations preserve the same values and require both counter keys. The host controls F3 visibility and calls the view only while the overlay is open.
 `UiMountOptions` accepts `initialLanguage`; decode persisted values with `decodeUiLanguage` before passing them. After mount, `updateLanguage` switches localized dictionary text and aria attributes. After a successful language update, rebuild every language-dependent view model and render or update those views. Pass the new language in `ItemDisplayNameOptions` when rebuilding item-bearing models. `applyUiLanguage` does not rerun the host's item-name resolver.
 
 `defaultItemDisplayNameResolver` calls the kernel catalog with a validated `ItemType` without a `minecraft:` prefix and the requested `UiLanguage`. Pass it explicitly when kernel names are desired; a host-supplied resolver can provide customized names. `resolveItemDisplayName` retains the resolver's typed result. An invalid snapshot ID, a missing resolver, a resolver failure, or an item with no kernel display name returns a typed failure; the visible slot uses the localized unknown-item label and never prints the ID.

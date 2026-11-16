@@ -1,12 +1,14 @@
 import { Result, Schema } from 'effect'
-import { DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { ChunkAxis, DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
   INITIAL_PLAYER_POSE,
   cameraPoseOf,
 } from '@nerima-games/mc-sim'
 import { describe, expect, it } from 'vitest'
 import {
+  FaultCountSchema,
   FramesPerSecondSchema,
+  LoadedChunkCountSchema,
   GpuTimeMillisecondsSchema,
   type DebugOverlayModel,
   type DebugOverlaySnapshot,
@@ -22,6 +24,10 @@ const emptySnapshot = (): DebugOverlaySnapshot => ({
   gpuTimingSupported: undefined,
   latestGpuTimeMs: undefined,
   qualityPreset: undefined,
+  chunk: undefined,
+  biome: undefined,
+  loadedChunkCount: undefined,
+  faultCount: undefined,
 })
 
 const facing = (yawRadians: number, pitchRadians: number): NonNullable<DebugOverlayModel['facing']> => {
@@ -42,6 +48,8 @@ const populatedModel: DebugOverlayModel = {
   fps: Schema.decodeUnknownSync(FramesPerSecondSchema)(0),
   coordinates: { worldX: 0, worldY: 64, worldZ: -0.5 },
   chunk: null,
+  loadedChunkCount: null,
+  faultCount: null,
   facing: facing(0, -0.25),
   dimension: 'overworld',
   biome: null,
@@ -84,6 +92,8 @@ describe('createDebugOverlayView', () => {
         'Facing: None',
         'Dimension: None',
         'Biome: None',
+        'Loaded chunks: None',
+        'Faults: None',
         'World time: None',
         'Frame delta: None',
         'GPU timing supported: None',
@@ -127,6 +137,33 @@ describe('createDebugOverlayView', () => {
     const before = factory.mark()
     view.update(snapshot)
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('displays host chunk, biome and counters and clears values that become unavailable', () => {
+    const factory = fakeDocument()
+    const view = createDebugOverlayView(factory, factory.createElement('main'))
+    const root = fakeElement(view.root)
+    view.update({
+      ...emptySnapshot(),
+      chunk: { chunkX: ChunkAxis(-2), chunkZ: ChunkAxis(0) },
+      biome: 'plains',
+      loadedChunkCount: Schema.decodeUnknownSync(LoadedChunkCountSchema)(12),
+      faultCount: Schema.decodeUnknownSync(FaultCountSchema)(0),
+    })
+    expect(root.textContent).toContain('Chunk: -2, 0')
+    expect(root.textContent).toContain('Biome: plains')
+    expect(root.textContent).toContain('Loaded chunks: 12')
+    expect(root.textContent).toContain('Faults: 0')
+
+    view.update({ ...emptySnapshot(), loadedChunkCount: Schema.decodeUnknownSync(LoadedChunkCountSchema)(0), faultCount: Schema.decodeUnknownSync(FaultCountSchema)(5) })
+    expect(root.textContent).toContain('Chunk: None')
+    expect(root.textContent).toContain('Biome: None')
+    expect(root.textContent).toContain('Loaded chunks: 0')
+    expect(root.textContent).toContain('Faults: 5')
+
+    view.update(emptySnapshot())
+    expect(root.textContent).toContain('Loaded chunks: None')
+    expect(root.textContent).toContain('Faults: None')
   })
 
   it('localizes supported dimensions and quality presets while preserving host extensions', () => {

@@ -166,6 +166,10 @@ const mountDebugFixture = async (page: Page, populated: boolean): Promise<void> 
               gpuTimingSupported: true,
               latestGpuTimeMs: 3.1,
               qualityPreset: 'high',
+              chunk: undefined,
+              biome: undefined,
+              loadedChunkCount: undefined,
+              faultCount: undefined,
             }
           : {
               cameraPose: undefined,
@@ -175,6 +179,10 @@ const mountDebugFixture = async (page: Page, populated: boolean): Promise<void> 
               gpuTimingSupported: undefined,
               latestGpuTimeMs: undefined,
               qualityPreset: undefined,
+              chunk: undefined,
+              biome: undefined,
+              loadedChunkCount: undefined,
+              faultCount: undefined,
             },
       )
       view.root.removeAttribute('hidden')

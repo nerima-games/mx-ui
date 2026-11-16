@@ -243,6 +243,8 @@ const renderDeathHud = (context: Parameters<ScenarioDefinition['mount']>[0]): Sc
 const emptyDebugModel: DebugOverlayModel = {
   biome: null,
   chunk: null,
+  loadedChunkCount: null,
+  faultCount: null,
   coordinates: null,
   dimension: null,
   facing: null,

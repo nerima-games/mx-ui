@@ -4,13 +4,17 @@ import {
 } from './achievement-toast.js'
 import {
   AngleRadians,
+  BIOME_TYPES,
+  ChunkAxis,
   DeltaTimeSecs,
   DimensionIdSchema,
 } from '@nerima-games/mc-kernel'
 import {
   type DebugOverlayModel,
+  FaultCountSchema,
   FramesPerSecondSchema,
   GpuTimeMillisecondsSchema,
+  LoadedChunkCountSchema,
 } from './debug-overlay.js'
 import { Result, Schema } from 'effect'
 
@@ -85,16 +89,22 @@ export type UiQaDebugOverlayState = Readonly<{
   [Key in keyof DebugOverlayModel]: NullWhenUnavailable<DebugOverlayModel[Key]>
 }>
 
+const DebugChunkAxisSchema = Schema.fromBrand('ChunkAxis', ChunkAxis)(Schema.Int)
+const DebugChunkSchema = struct({ chunkX: DebugChunkAxisSchema, chunkZ: DebugChunkAxisSchema })
+const DebugBiomeSchema = literals(BIOME_TYPES)
+
 const DebugOverlayStateSchema: Schema.Codec<UiQaDebugOverlayState, unknown> = struct({
-  biome: Schema.Null,
-  chunk: Schema.Null,
+  biome: nullOr(DebugBiomeSchema),
+  chunk: nullOr(DebugChunkSchema),
   coordinates: MaybeDebugCoordinatesSchema,
   dimension: MaybeDimensionSchema,
   facing: MaybeDebugFacingSchema,
+  faultCount: nullOr(FaultCountSchema),
   fps: nullOr(FramesPerSecondSchema),
   frameDeltaSecs: MaybeDebugDeltaTimeSecsSchema,
   gpuTimingSupported: MaybeBooleanSchema,
   latestGpuTimeMs: MaybeGpuTimeMillisecondsSchema,
+  loadedChunkCount: nullOr(LoadedChunkCountSchema),
   qualityPreset: MaybeQualityPresetSchema,
   worldTime: MaybeDebugWorldTimeSchema,
 })
@@ -120,15 +130,17 @@ export const UiQaStateSchema: Schema.Codec<UiQaState, unknown> = struct({
 const nullable = <Value>(value: Value | undefined): Value | null => value ?? null
 
 const debugOverlayStateFromModel = (model: DebugOverlayModel): UiQaDebugOverlayState => ({
-  biome: null,
-  chunk: null,
+  biome: model.biome,
+  chunk: model.chunk,
   coordinates: nullable(model.coordinates),
   dimension: nullable(model.dimension),
   facing: nullable(model.facing),
+  faultCount: nullable(model.faultCount),
   fps: nullable(model.fps),
   frameDeltaSecs: nullable(model.frameDeltaSecs),
   gpuTimingSupported: nullable(model.gpuTimingSupported),
   latestGpuTimeMs: nullable(model.latestGpuTimeMs),
+  loadedChunkCount: nullable(model.loadedChunkCount),
   qualityPreset: nullable(model.qualityPreset),
   worldTime: nullable(model.worldTime),
 })
@@ -163,6 +175,8 @@ const isExactDebugOverlayState = (input: unknown): input is UiQaDebugOverlayStat
     !hasOnlyFields(input, [
       'biome',
       'chunk',
+      'loadedChunkCount',
+      'faultCount',
       'coordinates',
       'dimension',
       'facing',
@@ -178,8 +192,9 @@ const isExactDebugOverlayState = (input: unknown): input is UiQaDebugOverlayStat
     return false
   }
 
-  const { coordinates, facing, worldTime } = input
-  return (coordinates === null || hasOnlyFields(coordinates, ['worldX', 'worldY', 'worldZ'])) &&
+  const { chunk, coordinates, facing, worldTime } = input
+  return (chunk === null || hasOnlyFields(chunk, ['chunkX', 'chunkZ'])) &&
+    (coordinates === null || hasOnlyFields(coordinates, ['worldX', 'worldY', 'worldZ'])) &&
     (facing === null || hasOnlyFields(facing, ['pitchRadians', 'yawRadians'])) &&
     (worldTime === null || hasOnlyFields(worldTime, ['dayLengthTicks', 'ticks']))
 }

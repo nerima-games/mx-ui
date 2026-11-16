@@ -353,6 +353,10 @@ describe('the module contract has caught up with this file’s shape', () => {
           gpuTimingSupported: undefined,
           latestGpuTimeMs: undefined,
           qualityPreset: undefined,
+          chunk: undefined,
+          biome: undefined,
+          loadedChunkCount: undefined,
+          faultCount: undefined,
           worldTime: undefined,
         })
 
