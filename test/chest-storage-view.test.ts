@@ -422,6 +422,61 @@ describe('createChestStorageView', () => {
     }))
   })
 
+  it('renders structured-cloned item display-name successes and failures', () => {
+    const factory = fakeDocument()
+    const view = createChestStorageView(factory, factory.createElement('main'))
+    const model = chestStorageViewModel({
+      chest: [
+        { item: 'minecraft:arrow', count: 1, durability: undefined },
+        { item: 'minecraft:stone', count: 1, durability: undefined },
+      ],
+      chestSlotCount: CHEST_STORAGE_SLOT_COUNT,
+      playerInventory: [],
+      cursor: undefined,
+      selectedSlot: undefined,
+    }, fakeItemDisplayNameOptions())
+    const [successSlot, failureSlot] = model.chest
+    expect(successSlot).toBeDefined()
+    expect(failureSlot).toBeDefined()
+    if (typeof successSlot === 'undefined' || typeof failureSlot === 'undefined') {
+      return
+    }
+    const displayName = successSlot.itemDisplayName
+    expect(displayName).toBeDefined()
+    if (typeof displayName === 'undefined') {
+      return
+    }
+    expect(Result.isSuccess(displayName.result)).toBe(true)
+    if (Result.isFailure(displayName.result)) {
+      return
+    }
+
+    const clonedModel = {
+      ...model,
+      chest: [
+        {
+          ...successSlot,
+          itemDisplayName: {
+            language: 'en' as const,
+            result: structuredClone(Result.succeed(displayName.result.success)),
+          },
+        },
+        {
+          ...failureSlot,
+          itemDisplayName: {
+            language: 'en' as const,
+            result: structuredClone(Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const })),
+          },
+        },
+      ],
+    }
+
+    expect(view.render(clonedModel)).toBe(Result.void)
+    const itemNames = fakeElement(view.root).findAll('data-mx-ui', 'slot-item').map((item) => item.textContent)
+    expect(itemNames).toContain(displayName.result.success)
+    expect(itemNames).toContain('Unknown item')
+  })
+
   it('uses the first chest slot as the tab stop when focus is omitted', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('main'))

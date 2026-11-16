@@ -1,5 +1,6 @@
 import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
+import { isItemDisplayNameResult, itemDisplayNameValue } from '../src/application/item-display-name'
 import { defaultItemDisplayNameResolver, resolveItemDisplayName } from '../src/domain/item-display-name'
 
 const UNAVAILABLE = Result.fail({ _tag: 'ItemDisplayNameUnavailable' })
@@ -19,6 +20,42 @@ describe('item display-name host boundary', () => {
   ])('treats $label from a host resolver as unavailable', ({ value }) => {
     const resolved = Reflect.apply(resolveItemDisplayName, undefined, ['stone', 'en', () => value])
     expect(resolved).toStrictEqual(UNAVAILABLE)
+  })
+
+  it.each([
+    { label: 'a tagged success', result: Result.succeed('Host Stone') },
+    { label: 'a structured-clone success', result: structuredClone(Result.succeed('Host Stone')) },
+    {
+      label: 'a structured-clone failure',
+      result: structuredClone(Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const })),
+    },
+    { label: 'a recognized failure', result: Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }) },
+  ])('accepts $label item display-name results', ({ result }) => {
+    expect(isItemDisplayNameResult(result)).toBe(true)
+  })
+
+  it.each([
+    { label: 'a non-object result', result: null },
+    { label: 'a non-string success', result: { success: 7 } },
+    { label: 'a clone with extra keys', result: { ...structuredClone(Result.succeed('Host Stone')), extra: true } },
+    {
+      label: 'a tagged success with extra keys',
+      result: Object.assign(structuredClone(Result.succeed('Host Stone')), { _tag: 'Success', extra: true }),
+    },
+    { label: 'an unknown failure tag', result: structuredClone(Result.fail({ _tag: 'UnexpectedFailure' as const })) },
+    { label: 'a missing failure record', result: { _tag: 'Failure', failure: null } },
+  ])('rejects $label item display-name results', ({ result }) => {
+    expect(isItemDisplayNameResult(result)).toBe(false)
+  })
+
+  it('does not use a failure value as an item display name', () => {
+    const failure = structuredClone(Result.fail({ _tag: 'ItemDisplayNameUnavailable' as const }))
+
+    expect(isItemDisplayNameResult(failure)).toBe(true)
+    expect(itemDisplayNameValue({
+      itemId: 'stone',
+      itemDisplayName: { language: 'en', result: failure },
+    }, 'en')).toStrictEqual({ key: 'item.unknown' })
   })
 
   it.each([

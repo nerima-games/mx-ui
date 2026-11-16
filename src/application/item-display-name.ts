@@ -27,24 +27,51 @@ const isDataDescriptor = (descriptor: PropertyDescriptor | undefined): descripto
 
 const isSuccessEnvelope = (
   keys: ReadonlyArray<string | symbol>,
-  descriptors: PropertyDescriptorMap,
+  tag: unknown,
 ): boolean => {
-  const { _tag: tag } = descriptors
-  const { success } = descriptors
   const hasUntaggedSuccess = keys.length === ONE_RESULT_MEMBER && keys.at(FIRST_RESULT_KEY) === 'success'
   const hasTaggedSuccess = keys.length === TWO_RESULT_MEMBERS &&
     keys.includes('success') && keys.includes('_tag') &&
-    isDataDescriptor(tag) && tag.value === 'Success'
-  return (hasUntaggedSuccess || hasTaggedSuccess) && isDataDescriptor(success)
+    tag === 'Success'
+  return hasUntaggedSuccess || hasTaggedSuccess
 }
 
 type DisplayNameResult = ItemDisplayNameView['result']
 
-const serializedSuccessDescriptor = (input: DisplayNameResult): PropertyDescriptor | undefined => {
+const isItemDisplayNameFailure = (input: unknown): boolean => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return false
+  }
+  const failureTag = Reflect.get(input, '_tag')
+  return typeof failureTag === 'string' && [
+    'InvalidItemDisplayName',
+    'InvalidItemId',
+    'ItemDisplayNameUnavailable',
+    'MissingItemDisplayNameResolver',
+  ].includes(failureTag)
+}
+
+export const isItemDisplayNameResult = (input: unknown): boolean => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return false
+  }
+  // Effect stores _tag on the Result prototype, so structuredClone keeps only the own success or failure field.
+  const keys = Reflect.ownKeys(input)
+  const tag = Reflect.get(input, '_tag')
+  if (isSuccessEnvelope(keys, tag)) {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  const isClonedSingleMember = typeof tag === 'undefined' && keys.length === ONE_RESULT_MEMBER
+  return (tag === 'Failure' || (isClonedSingleMember && keys[FIRST_RESULT_KEY] === 'failure')) &&
+    isItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
+const serializedSuccessDescriptor = (input: object): PropertyDescriptor | undefined => {
   const descriptors = Object.getOwnPropertyDescriptors(input)
   const keys = Reflect.ownKeys(descriptors)
-  const { success } = descriptors
-  if (!isSuccessEnvelope(keys, descriptors) || !isDataDescriptor(success)) {
+  const { _tag: tag, success } = descriptors
+  const tagValue: unknown = isDataDescriptor(tag) && tag.value
+  if (!isSuccessEnvelope(keys, tagValue) || !isDataDescriptor(success)) {
     return
   }
   return success

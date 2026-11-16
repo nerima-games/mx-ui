@@ -153,6 +153,48 @@ describe('createAnvilView', () => {
     expect(view.render(unavailableNameModel)).toStrictEqual(Result.void)
   })
 
+  it('renders a structured-cloned item display-name success', () => {
+    const factory = fakeDocument()
+    const view = createAnvilView(factory, factory.createElement('main'))
+    const model = anvilViewModel({
+      levelCost: 1,
+      name: '',
+      output: undefined,
+      primaryInput: { count: 1, itemId: 'iron_sword' },
+      rejectionReason: undefined,
+      secondaryInput: undefined,
+    }, fakeItemDisplayNameOptions())
+    const slot = model.slots.find((candidate) => candidate.id === 'primary-input')
+    expect(slot).toBeDefined()
+    if (typeof slot === 'undefined') {
+      return
+    }
+    const { itemDisplayName } = slot
+    expect(itemDisplayName).toBeDefined()
+    if (typeof itemDisplayName === 'undefined') {
+      return
+    }
+    expect(Result.isSuccess(itemDisplayName.result)).toBe(true)
+    if (Result.isFailure(itemDisplayName.result)) {
+      return
+    }
+    const clonedSlot = {
+      ...slot,
+      itemDisplayName: {
+        ...itemDisplayName,
+        result: structuredClone(Result.succeed(itemDisplayName.result.success)),
+      },
+    }
+    const clonedModel = {
+      ...model,
+      slots: model.slots.map((candidate) => candidate.id === 'primary-input' ? clonedSlot : candidate),
+    }
+
+    expect(view.render(clonedModel)).toBe(Result.void)
+    expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item').map((item) => item.textContent))
+      .toContain(itemDisplayName.result.success)
+  })
+
   it.each([
     { language: 'ja', expected: Result.void },
     { language: 'fr', expected: Result.fail({ _tag: 'InvalidAnvilViewInput', field: 'slots[].itemDisplayName' }) },

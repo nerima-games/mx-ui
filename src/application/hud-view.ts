@@ -112,7 +112,7 @@ import {
   writeLocalizedText,
   writeLocalizedTextUsing,
 } from './ui-localization.js'
-import { itemDisplayNameText, itemDisplayNameValue } from './item-display-name.js'
+import { isItemDisplayNameResult, itemDisplayNameText, itemDisplayNameValue } from './item-display-name.js'
 import { Result } from 'effect'
 
 /**
@@ -241,31 +241,6 @@ const isRecord = (input: unknown): input is Record<string, unknown> =>
 const isOptionalString = (input: unknown): boolean =>
   typeof input === 'undefined' || typeof input === 'string'
 
-const CLONED_SUCCESS_KEY_COUNT = 1
-const CLONED_SUCCESS_KEY_INDEX = 0
-
-const isItemDisplayNameResult = (result: Record<string, unknown>): boolean => {
-  const tag = Reflect.get(result, '_tag')
-  // Effect keeps `_tag` on the Result prototype, so structuredClone yields a bare `{ success }`.
-  const keys = Reflect.ownKeys(result)
-  const isClonedSuccess = typeof tag === 'undefined' &&
-    keys.length === CLONED_SUCCESS_KEY_COUNT &&
-    keys[CLONED_SUCCESS_KEY_INDEX] === 'success'
-  if (tag === 'Success' || isClonedSuccess) {
-    return typeof Reflect.get(result, 'success') === 'string'
-  }
-  if (tag === 'Failure') {
-    const failure = Reflect.get(result, 'failure')
-    return isRecord(failure) && [
-      'InvalidItemDisplayName',
-      'InvalidItemId',
-      'ItemDisplayNameUnavailable',
-      'MissingItemDisplayNameResolver',
-    ].some((failureTag) => Reflect.get(failure, '_tag') === failureTag)
-  }
-  return false
-}
-
 const isItemDisplayNameView = (input: unknown): boolean => {
   if (typeof input === 'undefined') {
     return true
@@ -276,7 +251,6 @@ const isItemDisplayNameView = (input: unknown): boolean => {
   const language = Reflect.get(input, 'language')
   const result = Reflect.get(input, 'result')
   return (language === 'en' || language === 'ja') &&
-    isRecord(result) &&
     isItemDisplayNameResult(result)
 }
 

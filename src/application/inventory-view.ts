@@ -70,9 +70,9 @@ import {
 } from './slot-element.js'
 import { UI_MESSAGES, type UiLanguage, type UiMessageKey, type UiMessageValues } from '../domain/ui-language.js'
 import { inheritUiLanguage, uiLanguageForElement, writeLocalizedAttribute, writeLocalizedText } from './ui-localization.js'
+import { isItemDisplayNameResult, itemDisplayNameValue } from './item-display-name.js'
 import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
-import { itemDisplayNameValue } from './item-display-name.js'
 
 type RegionElement = {
   readonly id: RegionId
@@ -695,25 +695,6 @@ const isInventoryViewModelShape = (input: unknown): boolean =>
   isCraftingOutcomeShape(Reflect.get(input, 'crafting')) &&
   Object.hasOwn(input, 'mergeTargets') &&
   isMergeTargetsShape(Reflect.get(input, 'mergeTargets'))
-
-const isItemDisplayNameFailure = (input: unknown): boolean =>
-  isRecord(input) && [
-    'InvalidItemDisplayName',
-    'InvalidItemId',
-    'ItemDisplayNameUnavailable',
-    'MissingItemDisplayNameResolver',
-  ].some((failureTag) => Reflect.get(input, '_tag') === failureTag)
-
-const isItemDisplayNameResult = (input: unknown): boolean => {
-  if (!isRecord(input)) {
-    return false
-  }
-  const tag = Reflect.get(input, '_tag')
-  if (tag === 'Success') {
-    return typeof Reflect.get(input, 'success') === 'string'
-  }
-  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(input, 'failure'))
-}
 
 const isItemDisplayNameView = (input: unknown): boolean =>
   typeof input === 'undefined' || (

@@ -54,11 +54,11 @@ import { EnchantmentLevel, SUPPORTED_VANILLA_ENCHANTMENT_IDS } from '@nerima-gam
 import { type ItemIcon, type ItemIconFailure, resolveItemIcon } from '../domain/item-icon.js'
 import { type UiLanguage, type UiMessageKey, type UiMessageValues, translateUiMessage } from '../domain/ui-language.js'
 import { clearLocalizedAttribute, uiLanguageForElement, writeLocalizedAttribute } from './ui-localization.js'
+import { isItemDisplayNameResult, itemDisplayNameText } from './item-display-name.js'
 import type { ItemDisplayNameView } from '../domain/item-display-name.js'
 import { PALETTE_VAR } from './palette-css.js'
 import { Result } from 'effect'
 import type { SlotView } from '../domain/hud-view-model.js'
-import { itemDisplayNameText } from './item-display-name.js'
 
 /**
  * Below this, a durability bar turns from `DURABILITY_HIGH` to `DURABILITY_LOW`.
@@ -757,38 +757,6 @@ const updateSlotText = (
 
 const isRecord = (input: unknown): input is Record<string, unknown> =>
   input !== null && typeof input === 'object' && !Array.isArray(input)
-
-const isItemDisplayNameFailure = (input: unknown): boolean => {
-  if (!isRecord(input)) {
-    return false
-  }
-  const failureTag = Reflect.get(input, '_tag')
-  return typeof failureTag === 'string' && [
-    'ItemDisplayNameUnavailable',
-    'InvalidItemId',
-    'MissingItemDisplayNameResolver',
-    'InvalidItemDisplayName',
-  ].includes(failureTag)
-}
-
-const CLONED_SUCCESS_KEY_COUNT = 1
-const CLONED_SUCCESS_KEY_INDEX = 0
-
-const isItemDisplayNameResult = (result: unknown): result is ItemDisplayNameView['result'] => {
-  if (!isRecord(result)) {
-    return false
-  }
-  const tag = Reflect.get(result, '_tag')
-  // Effect keeps `_tag` on the Result prototype, so structuredClone yields a bare `{ success }`.
-  const keys = Reflect.ownKeys(result)
-  const isClonedSuccess = typeof tag === 'undefined' &&
-    keys.length === CLONED_SUCCESS_KEY_COUNT &&
-    keys[CLONED_SUCCESS_KEY_INDEX] === 'success'
-  if (tag === 'Success' || isClonedSuccess) {
-    return typeof Reflect.get(result, 'success') === 'string'
-  }
-  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(result, 'failure'))
-}
 
 const isItemDisplayNameView = (input: unknown): input is ItemDisplayNameView => {
   if (!isRecord(input)) {

@@ -471,6 +471,42 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     }))
   })
 
+  it('renders a structured-cloned carried item display-name success', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const model = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 1),
+    }, fakeItemDisplayNameOptions())
+    const { carried } = model
+    expect(carried).toBeDefined()
+    if (typeof carried === 'undefined') {
+      return
+    }
+    const { itemDisplayName } = carried
+    expect(itemDisplayName).toBeDefined()
+    if (typeof itemDisplayName === 'undefined') {
+      return
+    }
+    expect(Result.isSuccess(itemDisplayName.result)).toBe(true)
+    if (Result.isFailure(itemDisplayName.result)) {
+      return
+    }
+    const clonedCarried = {
+      ...carried,
+      itemDisplayName: {
+        ...itemDisplayName,
+        result: structuredClone(Result.succeed(itemDisplayName.result.success)),
+      },
+    }
+    const clonedModel = { ...model, carried: clonedCarried }
+
+    expect(view.render(clonedModel)).toBe(Result.void)
+    expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item').map((item) => item.textContent))
+      .toContain(itemDisplayName.result.success)
+  })
+
   it('rejects malformed item-display Results and accepts supported unknown-region message values', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
