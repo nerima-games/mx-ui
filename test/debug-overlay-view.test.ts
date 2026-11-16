@@ -1,12 +1,14 @@
 import { Result, Schema } from 'effect'
-import { DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { ChunkAxis, DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
   INITIAL_PLAYER_POSE,
   cameraPoseOf,
 } from '@nerima-games/mc-sim'
 import { describe, expect, it } from 'vitest'
 import {
+  FaultCountSchema,
   FramesPerSecondSchema,
+  LoadedChunkCountSchema,
   GpuTimeMillisecondsSchema,
   type DebugOverlayModel,
   type DebugOverlaySnapshot,
@@ -22,6 +24,10 @@ const emptySnapshot = (): DebugOverlaySnapshot => ({
   gpuTimingSupported: undefined,
   latestGpuTimeMs: undefined,
   qualityPreset: undefined,
+  chunk: undefined,
+  biome: undefined,
+  loadedChunkCount: undefined,
+  faultCount: undefined,
 })
 
 const facing = (yawRadians: number, pitchRadians: number): NonNullable<DebugOverlayModel['facing']> => {
@@ -42,6 +48,8 @@ const populatedModel: DebugOverlayModel = {
   fps: Schema.decodeUnknownSync(FramesPerSecondSchema)(0),
   coordinates: { worldX: 0, worldY: 64, worldZ: -0.5 },
   chunk: null,
+  loadedChunkCount: null,
+  faultCount: null,
   facing: facing(0, -0.25),
   dimension: 'overworld',
   biome: null,
@@ -137,17 +145,17 @@ describe('createDebugOverlayView', () => {
     const root = fakeElement(view.root)
     view.update({
       ...emptySnapshot(),
-      chunk: { chunkX: -2, chunkZ: 0 },
-      biome: 'mod:crystal_caves',
-      loadedChunkCount: 12,
-      faultCount: 0,
+      chunk: { chunkX: ChunkAxis(-2), chunkZ: ChunkAxis(0) },
+      biome: 'plains',
+      loadedChunkCount: Schema.decodeUnknownSync(LoadedChunkCountSchema)(12),
+      faultCount: Schema.decodeUnknownSync(FaultCountSchema)(0),
     })
     expect(root.textContent).toContain('Chunk: -2, 0')
-    expect(root.textContent).toContain('Biome: mod:crystal_caves')
+    expect(root.textContent).toContain('Biome: plains')
     expect(root.textContent).toContain('Loaded chunks: 12')
     expect(root.textContent).toContain('Faults: 0')
 
-    view.update({ ...emptySnapshot(), loadedChunkCount: 0, faultCount: 5 })
+    view.update({ ...emptySnapshot(), loadedChunkCount: Schema.decodeUnknownSync(LoadedChunkCountSchema)(0), faultCount: Schema.decodeUnknownSync(FaultCountSchema)(5) })
     expect(root.textContent).toContain('Chunk: None')
     expect(root.textContent).toContain('Biome: None')
     expect(root.textContent).toContain('Loaded chunks: 0')

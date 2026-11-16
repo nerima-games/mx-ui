@@ -1,7 +1,7 @@
 import { Result, Schema } from 'effect'
 import fc from 'fast-check'
-import { describe, expect, it } from 'vitest'
-import { DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import { ChunkAxis, DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
   INITIAL_PLAYER_DIMENSION,
   INITIAL_PLAYER_POSE,
@@ -11,7 +11,11 @@ import {
 } from '@nerima-games/mc-sim'
 import {
   debugOverlayModel,
+  FaultCountSchema,
   FramesPerSecondSchema,
+  LoadedChunkCountSchema,
+  type FaultCount,
+  type LoadedChunkCount,
   type DebugOverlaySnapshot,
 } from '../src/domain/debug-overlay'
 
@@ -43,6 +47,10 @@ const emptySnapshot = (): DebugOverlaySnapshot => ({
   gpuTimingSupported: undefined,
   latestGpuTimeMs: undefined,
   qualityPreset: undefined,
+  chunk: undefined,
+  biome: undefined,
+  loadedChunkCount: undefined,
+  faultCount: undefined,
 })
 
 describe('debugOverlayModel', () => {
@@ -86,6 +94,7 @@ describe('debugOverlayModel', () => {
   it('projects public simulation and rendering values without replacing zero or false', () => {
     const worldTime = { ticks: 0, dayLengthTicks: 24_000 } satisfies EffectValue<TimeServiceApi['snapshot']>
     const snapshot: DebugOverlaySnapshot = {
+      ...emptySnapshot(),
       cameraPose: cameraPose(-1.25, 0),
       dimension: INITIAL_PLAYER_DIMENSION,
       worldTime,
@@ -115,18 +124,18 @@ describe('debugOverlayModel', () => {
   it('preserves host chunk, biome and counters including zero', () => {
     const snapshot: DebugOverlaySnapshot = {
       ...emptySnapshot(),
-      chunk: { chunkX: -2, chunkZ: 0 },
-      biome: 'minecraft:plains',
-      loadedChunkCount: 0,
-      faultCount: 3,
+      chunk: { chunkX: ChunkAxis(-2), chunkZ: ChunkAxis(0) },
+      biome: 'plains',
+      loadedChunkCount: Schema.decodeUnknownSync(LoadedChunkCountSchema)(0),
+      faultCount: Schema.decodeUnknownSync(FaultCountSchema)(3),
     }
     expect(debugOverlayModel(snapshot)).toMatchObject({
       chunk: { chunkX: -2, chunkZ: 0 },
-      biome: 'minecraft:plains',
+      biome: 'plains',
       loadedChunkCount: 0,
       faultCount: 3,
     })
-    expect(debugOverlayModel({ ...snapshot, faultCount: 0 })).toMatchObject({ faultCount: 0 })
+    expect(debugOverlayModel({ ...snapshot, faultCount: Schema.decodeUnknownSync(FaultCountSchema)(0) })).toMatchObject({ faultCount: 0 })
   })
 
   it.each([
@@ -138,6 +147,8 @@ describe('debugOverlayModel', () => {
     ['chunk', { chunkX: 0 }],
     ['biome', null],
     ['biome', 7],
+    ['biome', 'minecraft:plains'],
+    ['biome', 'UNKNOWN_BIOME'],
     ['loadedChunkCount', null],
     ['loadedChunkCount', -1],
     ['loadedChunkCount', 0.5],
@@ -153,6 +164,35 @@ describe('debugOverlayModel', () => {
     expect(debugOverlayModel(snapshot)).toEqual(
       Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field }),
     )
+  })
+
+  it('requires every host snapshot key while allowing unavailable values', () => {
+    expectTypeOf<Pick<DebugOverlaySnapshot, 'chunk'>>().toEqualTypeOf<Readonly<{
+      chunk: Readonly<{ chunkX: ChunkAxis; chunkZ: ChunkAxis }> | undefined
+    }>>()
+    expectTypeOf<Pick<DebugOverlaySnapshot, 'biome'>>().toEqualTypeOf<Readonly<{
+      biome: import('@nerima-games/mc-kernel').BiomeType | undefined
+    }>>()
+    expectTypeOf<Pick<DebugOverlaySnapshot, 'loadedChunkCount'>>().toEqualTypeOf<Readonly<{
+      loadedChunkCount: LoadedChunkCount | undefined
+    }>>()
+    expectTypeOf<Pick<DebugOverlaySnapshot, 'faultCount'>>().toEqualTypeOf<Readonly<{
+      faultCount: FaultCount | undefined
+    }>>()
+  })
+
+  it('decodes only nonnegative safe counter integers', () => {
+    const decoders = [
+      Schema.decodeUnknownSync(LoadedChunkCountSchema),
+      Schema.decodeUnknownSync(FaultCountSchema),
+    ]
+    for (const decode of decoders) {
+      expect(decode(0)).toBe(0)
+      expect(decode(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER)
+      for (const value of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, null]) {
+        expect(() => decode(value)).toThrow(Schema.SchemaError)
+      }
+    }
   })
 
   it('keeps a zero frame delta while leaving FPS unavailable', () => {

@@ -1,6 +1,6 @@
+import { BIOME_TYPES, type BiomeType, ChunkAxis, type DeltaTimeSecs as DeltaTimeSecsType } from '@nerima-games/mc-kernel'
 import { type Brand, type Effect, Result, Schema } from 'effect'
 import { type PlayerServiceApi, type TimeServiceApi, TimeStateSchema } from '@nerima-games/mc-sim'
-import type { DeltaTimeSecs as DeltaTimeSecsType } from '@nerima-games/mc-kernel'
 
 export type FramesPerSecond = number & Brand.Brand<'FramesPerSecond'>
 export const FramesPerSecondSchema: Schema.Codec<FramesPerSecond, number> = Schema.Finite.pipe(
@@ -10,6 +10,23 @@ export type GpuTimeMilliseconds = number & Brand.Brand<'GpuTimeMilliseconds'>
 export const GpuTimeMillisecondsSchema: Schema.Codec<GpuTimeMilliseconds, number> = Schema.Finite.pipe(
   Schema.brand('GpuTimeMilliseconds'),
 )
+
+const MIN_DEBUG_COUNT = 0
+
+export type LoadedChunkCount = number & Brand.Brand<'LoadedChunkCount'>
+export const LoadedChunkCountSchema: Schema.Codec<LoadedChunkCount, number> = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(MIN_DEBUG_COUNT),
+).pipe(Schema.brand('LoadedChunkCount'))
+
+export type FaultCount = number & Brand.Brand<'FaultCount'>
+export const FaultCountSchema: Schema.Codec<FaultCount, number> = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(MIN_DEBUG_COUNT),
+).pipe(Schema.brand('FaultCount'))
+
+const { Literals: literals, Struct: struct } = Schema
+const chunkAxisSchema = Schema.fromBrand('ChunkAxis', ChunkAxis)(Schema.Int)
+const chunkSchema = struct({ chunkX: chunkAxisSchema, chunkZ: chunkAxisSchema })
+const biomeSchema = literals(BIOME_TYPES)
 
 type EffectValue<EffectType> = EffectType extends Effect.Effect<
   infer Result,
@@ -40,17 +57,17 @@ export type DebugOverlaySnapshot = Readonly<{
   gpuTimingSupported: boolean | undefined
   latestGpuTimeMs: unknown
   qualityPreset: DebugOverlayQualityPreset | undefined
-  chunk?: Readonly<{ chunkX: number; chunkZ: number }> | undefined
-  biome?: string | undefined
-  loadedChunkCount?: number | undefined
-  faultCount?: number | undefined
+  chunk: Readonly<{ chunkX: ChunkAxis; chunkZ: ChunkAxis }> | undefined
+  biome: BiomeType | undefined
+  loadedChunkCount: LoadedChunkCount | undefined
+  faultCount: FaultCount | undefined
 }>
 
 export type DebugOverlayModel = Readonly<{
-  biome: string | null
+  biome: BiomeType | null
   chunk: NonNullable<DebugOverlaySnapshot['chunk']> | null
-  loadedChunkCount?: number | null
-  faultCount?: number | null
+  loadedChunkCount: LoadedChunkCount | null
+  faultCount: FaultCount | null
   coordinates: Exclude<DebugOverlayFrame['cameraPosition'], undefined> | null
   dimension: Exclude<DebugOverlaySnapshot['dimension'], undefined> | null
   facing:
@@ -70,7 +87,6 @@ export type DebugOverlayModel = Readonly<{
 const { decodeUnknownSync } = Schema
 const FRAME_RATE_NUMERATOR = 1
 const ZERO_FRAME_DELTA_SECS = 0
-const MIN_DEBUG_COUNT = 0
 
 type InvalidDebugOverlaySnapshot = Readonly<{
   readonly _tag: 'InvalidDebugOverlaySnapshot'
@@ -167,24 +183,31 @@ const invalidChunkField = (input: unknown): string | undefined => {
   if (typeof input === 'undefined') {
     return
   }
-  if (!isRecord(input) || !Number.isSafeInteger(input['chunkX']) || !Number.isSafeInteger(input['chunkZ'])) {
+  if (!Schema.is(chunkSchema)(input)) {
     return 'chunk'
   }
   return
 }
 
 const invalidBiomeField = (input: unknown): string | undefined => {
-  if (typeof input === 'undefined' || typeof input === 'string') {
+  if (typeof input === 'undefined' || Schema.is(biomeSchema)(input)) {
     return
   }
   return 'biome'
 }
 
-const invalidCountField = (input: unknown, field: string): string | undefined => {
-  if (typeof input === 'undefined' || (typeof input === 'number' && Number.isSafeInteger(input) && input >= MIN_DEBUG_COUNT)) {
+const invalidLoadedChunkCountField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || Schema.is(LoadedChunkCountSchema)(input)) {
     return
   }
-  return field
+  return 'loadedChunkCount'
+}
+
+const invalidFaultCountField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || Schema.is(FaultCountSchema)(input)) {
+    return
+  }
+  return 'faultCount'
 }
 
 const invalidSnapshotField = (snapshot: unknown): string | undefined => {
@@ -201,8 +224,8 @@ const invalidSnapshotField = (snapshot: unknown): string | undefined => {
     invalidQualityPresetField(qualityPreset) ??
     invalidChunkField(snapshot['chunk']) ??
     invalidBiomeField(snapshot['biome']) ??
-    invalidCountField(snapshot['loadedChunkCount'], 'loadedChunkCount') ??
-    invalidCountField(snapshot['faultCount'], 'faultCount')
+    invalidLoadedChunkCountField(snapshot['loadedChunkCount']) ??
+    invalidFaultCountField(snapshot['faultCount'])
 }
 
 const isDebugOverlaySnapshot = (input: unknown): input is DebugOverlaySnapshot =>

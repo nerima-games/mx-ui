@@ -456,6 +456,10 @@ test.describe('D: debug overlay and achievement toast', () => {
         gpuTimingSupported: undefined,
         latestGpuTimeMs: undefined,
         qualityPreset: undefined,
+        chunk: undefined,
+        biome: undefined,
+        loadedChunkCount: undefined,
+        faultCount: undefined,
       })
       view.root.removeAttribute('hidden')
     }, debugOverlayViewModule)

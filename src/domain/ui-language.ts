@@ -432,7 +432,7 @@ export const UI_MESSAGES: Readonly<Record<UiMessageKey, Readonly<Record<UiLangua
   'debug.dimension.overworld': { en: 'Overworld', ja: '通常世界' },
   'debug.facing': { en: 'Facing: {facing}', ja: '向き: {facing}' },
   'debug.false': { en: 'No', ja: 'いいえ' },
-  'debug.fault-count': { en: 'Faults: {count}', ja: 'fault 件数: {count}' },
+  'debug.fault-count': { en: 'Faults: {count}', ja: '障害件数: {count}' },
   'debug.fps': { en: 'FPS: {fps}', ja: 'FPS: {fps}' },
   'debug.frame-delta': { en: 'Frame delta: {seconds}', ja: 'フレーム時間: {seconds}' },
   'debug.gpu-time': { en: 'GPU time: {milliseconds}', ja: 'GPU 時間: {milliseconds}' },

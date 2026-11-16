@@ -4,13 +4,17 @@ import {
 } from './achievement-toast.js'
 import {
   AngleRadians,
+  BIOME_TYPES,
+  ChunkAxis,
   DeltaTimeSecs,
   DimensionIdSchema,
 } from '@nerima-games/mc-kernel'
 import {
   type DebugOverlayModel,
+  FaultCountSchema,
   FramesPerSecondSchema,
   GpuTimeMillisecondsSchema,
+  LoadedChunkCountSchema,
 } from './debug-overlay.js'
 import { Result, Schema } from 'effect'
 
@@ -85,22 +89,22 @@ export type UiQaDebugOverlayState = Readonly<{
   [Key in keyof DebugOverlayModel]: NullWhenUnavailable<DebugOverlayModel[Key]>
 }>
 
-const DebugChunkSchema = struct({ chunkX: Schema.Int, chunkZ: Schema.Int })
-const MIN_DEBUG_COUNT = 0
-const DebugCountSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_DEBUG_COUNT))
+const DebugChunkAxisSchema = Schema.fromBrand('ChunkAxis', ChunkAxis)(Schema.Int)
+const DebugChunkSchema = struct({ chunkX: DebugChunkAxisSchema, chunkZ: DebugChunkAxisSchema })
+const DebugBiomeSchema = literals(BIOME_TYPES)
 
 const DebugOverlayStateSchema: Schema.Codec<UiQaDebugOverlayState, unknown> = struct({
-  biome: nullOr(Schema.String),
+  biome: nullOr(DebugBiomeSchema),
   chunk: nullOr(DebugChunkSchema),
   coordinates: MaybeDebugCoordinatesSchema,
   dimension: MaybeDimensionSchema,
   facing: MaybeDebugFacingSchema,
-  faultCount: Schema.optionalKey(nullOr(DebugCountSchema)),
+  faultCount: nullOr(FaultCountSchema),
   fps: nullOr(FramesPerSecondSchema),
   frameDeltaSecs: MaybeDebugDeltaTimeSecsSchema,
   gpuTimingSupported: MaybeBooleanSchema,
   latestGpuTimeMs: MaybeGpuTimeMillisecondsSchema,
-  loadedChunkCount: Schema.optionalKey(nullOr(DebugCountSchema)),
+  loadedChunkCount: nullOr(LoadedChunkCountSchema),
   qualityPreset: MaybeQualityPresetSchema,
   worldTime: MaybeDebugWorldTimeSchema,
 })

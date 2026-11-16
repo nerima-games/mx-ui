@@ -1,6 +1,7 @@
 import {
   AchievementIdSchema,
   AngleRadians,
+  ChunkAxis,
   DeltaTimeSecs,
   DimensionIdSchema,
   EntityIdSchema,
@@ -16,7 +17,9 @@ import {
   type AchievementToast,
 } from '../src/domain/achievement-toast.js'
 import {
+  FaultCountSchema,
   FramesPerSecondSchema,
+  LoadedChunkCountSchema,
   GpuTimeMillisecondsSchema,
   type DebugOverlayModel,
 } from '../src/domain/debug-overlay.js'
@@ -36,6 +39,8 @@ const toast: AchievementToast = {
 const debugOverlay: DebugOverlayModel = {
   biome: null,
   chunk: null,
+  loadedChunkCount: null,
+  faultCount: null,
   coordinates: { worldX: 0, worldY: 64, worldZ: 0 },
   dimension: Schema.decodeUnknownSync(DimensionIdSchema)('overworld'),
   facing: { yawRadians: AngleRadians(-1.25), pitchRadians: AngleRadians(0) },
@@ -85,19 +90,28 @@ describe('UI QA namespace', () => {
   it('retains host debug values through the observation codec', () => {
     const model: DebugOverlayModel = {
       ...debugOverlay,
-      biome: 'minecraft:plains',
-      chunk: { chunkX: -2, chunkZ: 0 },
-      loadedChunkCount: 12,
-      faultCount: 0,
+      biome: 'plains',
+      chunk: { chunkX: ChunkAxis(-2), chunkZ: ChunkAxis(0) },
+      loadedChunkCount: Schema.decodeUnknownSync(LoadedChunkCountSchema)(12),
+      faultCount: Schema.decodeUnknownSync(FaultCountSchema)(0),
     }
     const state = uiQaStateFromSnapshot({ debugOverlay: model })
     expect(state.debugOverlay).toMatchObject({
-      biome: 'minecraft:plains',
+      biome: 'plains',
       chunk: { chunkX: -2, chunkZ: 0 },
       loadedChunkCount: 12,
       faultCount: 0,
     })
     expect(Schema.decodeUnknownSync(UiQaStateSchema)(state)).toStrictEqual(state)
+  })
+
+  it.each(['loadedChunkCount', 'faultCount'])('requires %s in QA model and output', (field) => {
+    const missingCounter = Object.fromEntries(Object.entries(debugOverlay).filter(([key]) => key !== field))
+    expect(projectionFailure(uiQaStateFromSnapshot({ debugOverlay: missingCounter }))).toStrictEqual({
+      _tag: 'InvalidUiQaSnapshot',
+      field: 'debugOverlay',
+    })
+    expect(Result.isFailure(decodeUiQaState({ achievementToast: null, debugOverlay: missingCounter }))).toBe(true)
   })
 
   it('rejects explicit null snapshot fields with typed failures', () => {
@@ -170,6 +184,7 @@ describe('UI QA namespace', () => {
       { ...debugOverlay, loadedChunkCount: -1 },
       { ...debugOverlay, loadedChunkCount: Number.MAX_SAFE_INTEGER + 1 },
       { ...debugOverlay, faultCount: Number.NaN },
+      { ...debugOverlay, biome: 'minecraft:plains' },
     ]) {
       expect(projectionFailure(uiQaStateFromSnapshot({ debugOverlay: malformedState }))).toStrictEqual({
         _tag: 'InvalidUiQaSnapshot',
