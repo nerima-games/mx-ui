@@ -85,16 +85,22 @@ export type UiQaDebugOverlayState = Readonly<{
   [Key in keyof DebugOverlayModel]: NullWhenUnavailable<DebugOverlayModel[Key]>
 }>
 
+const DebugChunkSchema = struct({ chunkX: Schema.Int, chunkZ: Schema.Int })
+const MIN_DEBUG_COUNT = 0
+const DebugCountSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_DEBUG_COUNT))
+
 const DebugOverlayStateSchema: Schema.Codec<UiQaDebugOverlayState, unknown> = struct({
-  biome: Schema.Null,
-  chunk: Schema.Null,
+  biome: nullOr(Schema.String),
+  chunk: nullOr(DebugChunkSchema),
   coordinates: MaybeDebugCoordinatesSchema,
   dimension: MaybeDimensionSchema,
   facing: MaybeDebugFacingSchema,
+  faultCount: Schema.optionalKey(nullOr(DebugCountSchema)),
   fps: nullOr(FramesPerSecondSchema),
   frameDeltaSecs: MaybeDebugDeltaTimeSecsSchema,
   gpuTimingSupported: MaybeBooleanSchema,
   latestGpuTimeMs: MaybeGpuTimeMillisecondsSchema,
+  loadedChunkCount: Schema.optionalKey(nullOr(DebugCountSchema)),
   qualityPreset: MaybeQualityPresetSchema,
   worldTime: MaybeDebugWorldTimeSchema,
 })
@@ -120,15 +126,17 @@ export const UiQaStateSchema: Schema.Codec<UiQaState, unknown> = struct({
 const nullable = <Value>(value: Value | undefined): Value | null => value ?? null
 
 const debugOverlayStateFromModel = (model: DebugOverlayModel): UiQaDebugOverlayState => ({
-  biome: null,
-  chunk: null,
+  biome: model.biome,
+  chunk: model.chunk,
   coordinates: nullable(model.coordinates),
   dimension: nullable(model.dimension),
   facing: nullable(model.facing),
+  faultCount: nullable(model.faultCount),
   fps: nullable(model.fps),
   frameDeltaSecs: nullable(model.frameDeltaSecs),
   gpuTimingSupported: nullable(model.gpuTimingSupported),
   latestGpuTimeMs: nullable(model.latestGpuTimeMs),
+  loadedChunkCount: nullable(model.loadedChunkCount),
   qualityPreset: nullable(model.qualityPreset),
   worldTime: nullable(model.worldTime),
 })
@@ -163,6 +171,8 @@ const isExactDebugOverlayState = (input: unknown): input is UiQaDebugOverlayStat
     !hasOnlyFields(input, [
       'biome',
       'chunk',
+      'loadedChunkCount',
+      'faultCount',
       'coordinates',
       'dimension',
       'facing',
@@ -178,8 +188,9 @@ const isExactDebugOverlayState = (input: unknown): input is UiQaDebugOverlayStat
     return false
   }
 
-  const { coordinates, facing, worldTime } = input
-  return (coordinates === null || hasOnlyFields(coordinates, ['worldX', 'worldY', 'worldZ'])) &&
+  const { chunk, coordinates, facing, worldTime } = input
+  return (chunk === null || hasOnlyFields(chunk, ['chunkX', 'chunkZ'])) &&
+    (coordinates === null || hasOnlyFields(coordinates, ['worldX', 'worldY', 'worldZ'])) &&
     (facing === null || hasOnlyFields(facing, ['pitchRadians', 'yawRadians'])) &&
     (worldTime === null || hasOnlyFields(worldTime, ['dayLengthTicks', 'ticks']))
 }

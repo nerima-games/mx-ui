@@ -84,6 +84,8 @@ describe('createDebugOverlayView', () => {
         'Facing: None',
         'Dimension: None',
         'Biome: None',
+        'Loaded chunks: None',
+        'Faults: None',
         'World time: None',
         'Frame delta: None',
         'GPU timing supported: None',
@@ -127,6 +129,33 @@ describe('createDebugOverlayView', () => {
     const before = factory.mark()
     view.update(snapshot)
     expect(writeNames(factory.since(before))).toStrictEqual([])
+  })
+
+  it('displays host chunk, biome and counters and clears values that become unavailable', () => {
+    const factory = fakeDocument()
+    const view = createDebugOverlayView(factory, factory.createElement('main'))
+    const root = fakeElement(view.root)
+    view.update({
+      ...emptySnapshot(),
+      chunk: { chunkX: -2, chunkZ: 0 },
+      biome: 'mod:crystal_caves',
+      loadedChunkCount: 12,
+      faultCount: 0,
+    })
+    expect(root.textContent).toContain('Chunk: -2, 0')
+    expect(root.textContent).toContain('Biome: mod:crystal_caves')
+    expect(root.textContent).toContain('Loaded chunks: 12')
+    expect(root.textContent).toContain('Faults: 0')
+
+    view.update({ ...emptySnapshot(), loadedChunkCount: 0, faultCount: 5 })
+    expect(root.textContent).toContain('Chunk: None')
+    expect(root.textContent).toContain('Biome: None')
+    expect(root.textContent).toContain('Loaded chunks: 0')
+    expect(root.textContent).toContain('Faults: 5')
+
+    view.update(emptySnapshot())
+    expect(root.textContent).toContain('Loaded chunks: None')
+    expect(root.textContent).toContain('Faults: None')
   })
 
   it('localizes supported dimensions and quality presets while preserving host extensions', () => {

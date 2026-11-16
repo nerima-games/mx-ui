@@ -40,11 +40,17 @@ export type DebugOverlaySnapshot = Readonly<{
   gpuTimingSupported: boolean | undefined
   latestGpuTimeMs: unknown
   qualityPreset: DebugOverlayQualityPreset | undefined
+  chunk?: Readonly<{ chunkX: number; chunkZ: number }> | undefined
+  biome?: string | undefined
+  loadedChunkCount?: number | undefined
+  faultCount?: number | undefined
 }>
 
 export type DebugOverlayModel = Readonly<{
-  biome: null
-  chunk: null
+  biome: string | null
+  chunk: NonNullable<DebugOverlaySnapshot['chunk']> | null
+  loadedChunkCount?: number | null
+  faultCount?: number | null
   coordinates: Exclude<DebugOverlayFrame['cameraPosition'], undefined> | null
   dimension: Exclude<DebugOverlaySnapshot['dimension'], undefined> | null
   facing:
@@ -64,6 +70,7 @@ export type DebugOverlayModel = Readonly<{
 const { decodeUnknownSync } = Schema
 const FRAME_RATE_NUMERATOR = 1
 const ZERO_FRAME_DELTA_SECS = 0
+const MIN_DEBUG_COUNT = 0
 
 type InvalidDebugOverlaySnapshot = Readonly<{
   readonly _tag: 'InvalidDebugOverlaySnapshot'
@@ -156,6 +163,30 @@ const invalidQualityPresetField = (input: unknown): string | undefined => {
   return 'qualityPreset'
 }
 
+const invalidChunkField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined') {
+    return
+  }
+  if (!isRecord(input) || !Number.isSafeInteger(input['chunkX']) || !Number.isSafeInteger(input['chunkZ'])) {
+    return 'chunk'
+  }
+  return
+}
+
+const invalidBiomeField = (input: unknown): string | undefined => {
+  if (typeof input === 'undefined' || typeof input === 'string') {
+    return
+  }
+  return 'biome'
+}
+
+const invalidCountField = (input: unknown, field: string): string | undefined => {
+  if (typeof input === 'undefined' || (typeof input === 'number' && Number.isSafeInteger(input) && input >= MIN_DEBUG_COUNT)) {
+    return
+  }
+  return field
+}
+
 const invalidSnapshotField = (snapshot: unknown): string | undefined => {
   if (!isRecord(snapshot)) {
     return 'snapshot'
@@ -167,7 +198,11 @@ const invalidSnapshotField = (snapshot: unknown): string | undefined => {
     invalidFrameField(frame) ??
     invalidGpuTimingSupportedField(gpuTimingSupported) ??
     invalidLatestGpuTimeField(latestGpuTimeMs) ??
-    invalidQualityPresetField(qualityPreset)
+    invalidQualityPresetField(qualityPreset) ??
+    invalidChunkField(snapshot['chunk']) ??
+    invalidBiomeField(snapshot['biome']) ??
+    invalidCountField(snapshot['loadedChunkCount'], 'loadedChunkCount') ??
+    invalidCountField(snapshot['faultCount'], 'faultCount')
 }
 
 const isDebugOverlaySnapshot = (input: unknown): input is DebugOverlaySnapshot =>
@@ -223,15 +258,17 @@ export function debugOverlayModel(
     return Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field: invalidField ?? 'snapshot' })
   }
   return {
-    biome: null,
-    chunk: null,
+    biome: snapshot.biome ?? null,
+    chunk: snapshot.chunk ?? null,
     coordinates: snapshot.frame?.cameraPosition ?? null,
     dimension: snapshot.dimension ?? null,
     facing: facingFromCameraPose(snapshot.cameraPose),
+    faultCount: snapshot.faultCount ?? null,
     fps: framesPerSecondFromDelta(snapshot.frame?.deltaSecs),
     frameDeltaSecs: snapshot.frame?.deltaSecs ?? null,
     gpuTimingSupported: snapshot.gpuTimingSupported ?? null,
     latestGpuTimeMs: gpuTimeFromUnknown(snapshot.latestGpuTimeMs),
+    loadedChunkCount: snapshot.loadedChunkCount ?? null,
     qualityPreset: snapshot.qualityPreset ?? null,
     worldTime: snapshot.worldTime ?? null,
   }

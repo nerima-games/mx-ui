@@ -69,6 +69,8 @@ describe('debugOverlayModel', () => {
     expect(debugOverlayModel(emptySnapshot())).toStrictEqual({
       biome: null,
       chunk: null,
+      loadedChunkCount: null,
+      faultCount: null,
       coordinates: null,
       dimension: null,
       facing: null,
@@ -96,6 +98,8 @@ describe('debugOverlayModel', () => {
     expect(debugOverlayModel(snapshot)).toStrictEqual({
       biome: null,
       chunk: null,
+      loadedChunkCount: null,
+      faultCount: null,
       coordinates: { worldX: 0, worldY: 64, worldZ: -0.5 },
       dimension: INITIAL_PLAYER_DIMENSION,
       facing: { pitchRadians: 0, yawRadians: -1.25 },
@@ -106,6 +110,49 @@ describe('debugOverlayModel', () => {
       qualityPreset: 'high',
       worldTime,
     })
+  })
+
+  it('preserves host chunk, biome and counters including zero', () => {
+    const snapshot: DebugOverlaySnapshot = {
+      ...emptySnapshot(),
+      chunk: { chunkX: -2, chunkZ: 0 },
+      biome: 'minecraft:plains',
+      loadedChunkCount: 0,
+      faultCount: 3,
+    }
+    expect(debugOverlayModel(snapshot)).toMatchObject({
+      chunk: { chunkX: -2, chunkZ: 0 },
+      biome: 'minecraft:plains',
+      loadedChunkCount: 0,
+      faultCount: 3,
+    })
+    expect(debugOverlayModel({ ...snapshot, faultCount: 0 })).toMatchObject({ faultCount: 0 })
+  })
+
+  it.each([
+    ['chunk', null],
+    ['chunk', { chunkX: 0.5, chunkZ: 0 }],
+    ['chunk', { chunkX: 0, chunkZ: Infinity }],
+    ['chunk', { chunkX: Number.NaN, chunkZ: 0 }],
+    ['chunk', { chunkX: Number.MAX_SAFE_INTEGER + 1, chunkZ: 0 }],
+    ['chunk', { chunkX: 0 }],
+    ['biome', null],
+    ['biome', 7],
+    ['loadedChunkCount', null],
+    ['loadedChunkCount', -1],
+    ['loadedChunkCount', 0.5],
+    ['loadedChunkCount', Number.MAX_SAFE_INTEGER + 1],
+    ['loadedChunkCount', Infinity],
+    ['faultCount', null],
+    ['faultCount', -1],
+    ['faultCount', 0.5],
+    ['faultCount', Number.MAX_SAFE_INTEGER + 1],
+    ['faultCount', Number.NaN],
+  ])('rejects invalid host field %s=%j without substituting a default', (field, value) => {
+    const snapshot: Record<string, unknown> = { ...emptySnapshot(), [field]: value }
+    expect(debugOverlayModel(snapshot)).toEqual(
+      Result.fail({ _tag: 'InvalidDebugOverlaySnapshot', field }),
+    )
   })
 
   it('keeps a zero frame delta while leaving FPS unavailable', () => {

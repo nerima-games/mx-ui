@@ -67,6 +67,8 @@ describe('UI QA namespace', () => {
       debugOverlay: {
         biome: null,
         chunk: null,
+        loadedChunkCount: null,
+        faultCount: null,
         coordinates: { worldX: 0, worldY: 64, worldZ: 0 },
         dimension: 'overworld',
         facing: { yawRadians: AngleRadians(-1.25), pitchRadians: AngleRadians(0) },
@@ -78,6 +80,24 @@ describe('UI QA namespace', () => {
         worldTime: { dayLengthTicks: 24_000, ticks: 0 },
       },
     })
+  })
+
+  it('retains host debug values through the observation codec', () => {
+    const model: DebugOverlayModel = {
+      ...debugOverlay,
+      biome: 'minecraft:plains',
+      chunk: { chunkX: -2, chunkZ: 0 },
+      loadedChunkCount: 12,
+      faultCount: 0,
+    }
+    const state = uiQaStateFromSnapshot({ debugOverlay: model })
+    expect(state.debugOverlay).toMatchObject({
+      biome: 'minecraft:plains',
+      chunk: { chunkX: -2, chunkZ: 0 },
+      loadedChunkCount: 12,
+      faultCount: 0,
+    })
+    expect(Schema.decodeUnknownSync(UiQaStateSchema)(state)).toStrictEqual(state)
   })
 
   it('rejects explicit null snapshot fields with typed failures', () => {
@@ -144,6 +164,12 @@ describe('UI QA namespace', () => {
       malformedCoordinates,
       malformedFacing,
       malformedWorldTime,
+      { ...debugOverlay, chunk: { chunkX: 0, chunkZ: 0, unexpected: true } },
+      { ...debugOverlay, chunk: { chunkX: 0.5, chunkZ: 0 } },
+      { ...debugOverlay, chunk: { chunkX: Number.MAX_SAFE_INTEGER + 1, chunkZ: 0 } },
+      { ...debugOverlay, loadedChunkCount: -1 },
+      { ...debugOverlay, loadedChunkCount: Number.MAX_SAFE_INTEGER + 1 },
+      { ...debugOverlay, faultCount: Number.NaN },
     ]) {
       expect(projectionFailure(uiQaStateFromSnapshot({ debugOverlay: malformedState }))).toStrictEqual({
         _tag: 'InvalidUiQaSnapshot',
