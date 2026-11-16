@@ -25,9 +25,9 @@ import {
   updateSlotElement,
 } from './slot-element.js'
 import type { UiLanguage, UiMessageKey, UiMessageValues } from '../domain/ui-language.js'
+import { isItemDisplayNameResult, itemDisplayNameValue } from './item-display-name.js'
 import { setLocalizedAttribute, setLocalizedText, uiLanguageForElement, writeLocalizedText } from './ui-localization.js'
 import { Result } from 'effect'
-import { itemDisplayNameValue } from './item-display-name.js'
 
 export type AnvilInteractionView = {
   readonly focusedTarget: AnvilOperationTarget
@@ -50,35 +50,10 @@ type AnvilViewInputFailure = Readonly<{
 const isRecord = (input: unknown): input is Record<string, unknown> =>
   input !== null && typeof input === 'object' && !Array.isArray(input)
 
-const isValidItemDisplayNameFailure = (input: unknown): boolean => {
-  if (!isRecord(input)) {
-    return false
-  }
-  const tag = Reflect.get(input, '_tag')
-  return typeof tag === 'string' && [
-    'ItemDisplayNameUnavailable',
-    'InvalidItemId',
-    'MissingItemDisplayNameResolver',
-    'InvalidItemDisplayName',
-  ].includes(tag)
-}
-
-const isValidItemDisplayNameResult = (input: unknown): boolean => {
-  if (!isRecord(input)) {
-    return false
-  }
-  const tag = Reflect.get(input, '_tag')
-  if (tag === 'Success') {
-    return typeof Reflect.get(input, 'success') === 'string'
-  }
-  return tag === 'Failure' &&
-    isValidItemDisplayNameFailure(Reflect.get(input, 'failure'))
-}
-
 const isValidItemDisplayNameView = (input: unknown): boolean =>
   isRecord(input) &&
   (Reflect.get(input, 'language') === 'en' || Reflect.get(input, 'language') === 'ja') &&
-  isValidItemDisplayNameResult(Reflect.get(input, 'result'))
+  isItemDisplayNameResult(Reflect.get(input, 'result'))
 
 const invalidAnvilSlotRecordField = (slot: Record<string, unknown>): string | undefined => {
   const itemDisplayName = Reflect.get(slot, 'itemDisplayName')

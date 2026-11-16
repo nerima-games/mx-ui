@@ -40,6 +40,34 @@ const isSuccessEnvelope = (
 
 type DisplayNameResult = ItemDisplayNameView['result']
 
+const isItemDisplayNameFailure = (input: unknown): boolean => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return false
+  }
+  const failureTag = Reflect.get(input, '_tag')
+  return typeof failureTag === 'string' && [
+    'InvalidItemDisplayName',
+    'InvalidItemId',
+    'ItemDisplayNameUnavailable',
+    'MissingItemDisplayNameResolver',
+  ].includes(failureTag)
+}
+
+export const isItemDisplayNameResult = (input: unknown): input is DisplayNameResult => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return false
+  }
+  const tag = Reflect.get(input, '_tag')
+  const keys = Reflect.ownKeys(input)
+  const isClonedSuccess = typeof tag === 'undefined' &&
+    keys.length === ONE_RESULT_MEMBER &&
+    keys[FIRST_RESULT_KEY] === 'success'
+  if (tag === 'Success' || isClonedSuccess) {
+    return typeof Reflect.get(input, 'success') === 'string'
+  }
+  return tag === 'Failure' && isItemDisplayNameFailure(Reflect.get(input, 'failure'))
+}
+
 const serializedSuccessDescriptor = (input: DisplayNameResult): PropertyDescriptor | undefined => {
   const descriptors = Object.getOwnPropertyDescriptors(input)
   const keys = Reflect.ownKeys(descriptors)

@@ -195,6 +195,34 @@ describe('createEnchantingTableView', () => {
     expect(Reflect.apply(view.render, view, [{ slots: [undefined], offers: [undefined] }])).toBe(Result.void)
   })
 
+  it('renders a structured-cloned item display-name success', () => {
+    const factory = fakeDocument()
+    const view = createEnchantingTableView(factory, factory.createElement('main'))
+    const model = enchantingTableViewModel({
+      item: { itemId: 'diamond_sword', count: 1 },
+      lapis: undefined,
+      offers: [undefined, undefined, undefined],
+    }, fakeItemDisplayNameOptions())
+    const itemSlot = model.slots.find((slot) => slot.id === 'item')
+    expect(itemSlot).toBeDefined()
+    if (typeof itemSlot === 'undefined') {
+      return
+    }
+    const clonedSlot = { ...itemSlot }
+    expect(Reflect.set(clonedSlot, 'itemDisplayName', {
+      language: 'en',
+      result: { success: 'Host Sword' },
+    })).toBe(true)
+    const clonedModel = {
+      ...model,
+      slots: model.slots.map((slot) => slot.id === 'item' ? clonedSlot : slot),
+    }
+
+    expect(view.render(clonedModel)).toBe(Result.void)
+    expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item').map((slot) => slot.textContent))
+      .toContain('Host Sword')
+  })
+
   it.each([
     { language: 'ja', expected: Result.void },
     { language: 'fr', expected: Result.fail({ _tag: 'InvalidEnchantingTableViewInput', field: 'slots[].itemDisplayName' }) },

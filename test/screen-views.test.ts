@@ -471,6 +471,31 @@ describe('the inventory renderer keeps `unknown` a different screen from `empty`
     }))
   })
 
+  it('renders a structured-cloned carried item display-name success', () => {
+    const factory = fakeDocument()
+    const parent = fakeElement(factory.createElement('div'))
+    const view = createInventoryView(factory, parent)
+    const model = inventoryViewModel({
+      ...emptyInventorySnapshot,
+      carried: testItemStack('stone', 1),
+    }, fakeItemDisplayNameOptions())
+    const { carried } = model
+    expect(carried).toBeDefined()
+    if (typeof carried === 'undefined') {
+      return
+    }
+    const clonedCarried = { ...carried }
+    expect(Reflect.set(clonedCarried, 'itemDisplayName', {
+      language: 'en',
+      result: { success: 'Host Stone' },
+    })).toBe(true)
+    const clonedModel = { ...model, carried: clonedCarried }
+
+    expect(view.render(clonedModel)).toBe(Result.void)
+    expect(fakeElement(view.root).findAll('data-mx-ui', 'slot-item').map((item) => item.textContent))
+      .toContain('Host Stone')
+  })
+
   it('rejects malformed item-display Results and accepts supported unknown-region message values', () => {
     const factory = fakeDocument()
     const parent = fakeElement(factory.createElement('div'))
